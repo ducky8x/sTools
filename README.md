@@ -1,0 +1,40 @@
+# sTools
+
+A Mac app for Minecraft: Java Edition speedrunners — five tools in one elegant, always-dark app.
+
+> **Status:** in design. There is no build yet. The first beta (0.1.0) goes to testers before any public release.
+
+## Tools
+
+| # | Tool | What it does |
+|---|------|--------------|
+| 1 | **NBB Overlay** | Shows Ninjabrain Bot's live result on screen, over the game. |
+| 2 | **Window Backdrop** | Covers everything behind the Minecraft window — under the menu bar and Dock too, on any display — with a color, gradient, image or video. |
+| 3 | **Crosshair** | Draws a customizable crosshair at the exact center of the screen, or your own image. |
+| 4 | **Screen Recording** | Records Minecraft and sTools' overlays, plus windows, displays, cameras, web pages, app audio and microphones arranged on one canvas. |
+| 5 | **Key Rebinder** | Shows your Karabiner-Elements rebinds and Minecraft keybinds on a drawn keyboard and mouse; edit, check against speedrun rules, test keys, manage profiles. |
+
+Also: global hotkeys (off by default), a first-launch introduction that sets up permissions and lets you try every tool, settings for everything, and automatic updates.
+
+## Requirements (planned)
+
+- macOS 15 Sequoia or newer — Apple silicon (Intel best-effort)
+- [Ninjabrain Bot](https://github.com/Ninjabrain1/Ninjabrain-Bot) with its API enabled, for the NBB Overlay
+- [Karabiner-Elements](https://karabiner-elements.pqrs.org) 16.0 or newer, for the Key Rebinder
+- Minecraft 1.16.1 (official launcher or Prism Launcher)
+
+## First open (planned)
+
+sTools isn't notarized, so macOS blocks it the first time. Open it once, then go to **System Settings ▸ Privacy & Security** and click **Open Anyway**. After that it opens normally, and updates install themselves.
+
+## Speedrun rules
+
+- The NBB Overlay shows only what Ninjabrain Bot itself shows, as the rules require for tools using its API (rule A.11.7.a.i).
+- The Key Rebinder's rule checker points out rebinds that may break the remap rules (A.10.1–A.10.4). It only advises; you decide.
+
+## Documentation
+
+
+## License
+
+All rights reserved. Third-party components keep their own licenses: DM Serif Display (SIL Open Font License), Sparkle (MIT).
