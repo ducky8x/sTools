@@ -72,6 +72,10 @@ public enum STSliderMath {
 }
 
 /// A thin track with an accent fill, a round thumb, a rolling monospaced readout and − / + steppers.
+///
+/// On its own the slider shows its label above the track. Where labels are hidden (`.labelsHidden()`, which
+/// `STSettingsRow` applies so its own label names the control) it drops that line and sits on one line: the
+/// track, then the steppers. VoiceOver reads `label` either way.
 public struct STSlider: View {
     @Binding private var value: Double
     private let range: ClosedRange<Double>
@@ -83,6 +87,7 @@ public struct STSlider: View {
     @Environment(\.stTheme) private var theme
     @Environment(\.stSoundPlayer) private var sound
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.labelsVisibility) private var labelsVisibility
     @FocusState private var isFocused: Bool
     @FocusState private var readoutFocused: Bool
     @FocusState private var entryFocused: Bool
@@ -160,26 +165,42 @@ public struct STSlider: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 4) {
-                Text(label)
-                    .stStyle(.label)
-                    .foregroundStyle(theme.inkSecondary)
-                    .accessibilityHidden(true)
-                Spacer(minLength: 12)
-                Button("\u{2212}") { nudge(-1) }
-                    .buttonStyle(STButtonStyle(.quiet))
-                    .disabled(value <= range.lowerBound)
-                    .accessibilityLabel("Decrease \(label)")
-                readout
-                Button("+") { nudge(1) }
-                    .buttonStyle(STButtonStyle(.quiet))
-                    .disabled(value >= range.upperBound)
-                    .accessibilityLabel("Increase \(label)")
+        Group {
+            if labelsVisibility == .hidden {
+                HStack(spacing: 12) {
+                    track.frame(minWidth: 96)
+                    steppers
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 4) {
+                        Text(label)
+                            .stStyle(.label)
+                            .foregroundStyle(theme.inkSecondary)
+                            .accessibilityHidden(true)
+                        Spacer(minLength: 12)
+                        steppers
+                    }
+                    track
+                }
             }
-            track
         }
         .opacity(isEnabled ? 1 : 0.4)
+    }
+
+    /// − readout +.
+    private var steppers: some View {
+        HStack(spacing: 4) {
+            Button("\u{2212}") { nudge(-1) }
+                .buttonStyle(STButtonStyle(.quiet))
+                .disabled(value <= range.lowerBound)
+                .accessibilityLabel("Decrease \(label)")
+            readout
+            Button("+") { nudge(1) }
+                .buttonStyle(STButtonStyle(.quiet))
+                .disabled(value >= range.upperBound)
+                .accessibilityLabel("Increase \(label)")
+        }
     }
 
     private var figuresFont: Font { STFont.figures(14 * theme.textScale) }
@@ -187,12 +208,18 @@ public struct STSlider: View {
     @ViewBuilder private var readout: some View {
         if phase == .idle {
             Button(action: beginEditing) {
-                Text(valueText(value))
-                    .font(figuresFont)
-                    .foregroundStyle(STColor.ink)
-                    .contentTransition(theme.reduceMotion ? .opacity : .numericText(value: value))
-                    .stAnimation(STMotion.quick, value: value)
-                    .frame(minWidth: 44)
+                // Sized to the wider of the two ends' texts, so the steppers (and, on one line, the track)
+                // hold still while the value changes.
+                ZStack {
+                    Text(valueText(range.lowerBound)).font(figuresFont).hidden()
+                    Text(valueText(range.upperBound)).font(figuresFont).hidden()
+                    Text(valueText(value))
+                        .font(figuresFont)
+                        .foregroundStyle(STColor.ink)
+                        .contentTransition(theme.reduceMotion ? .opacity : .numericText(value: value))
+                        .stAnimation(STMotion.quick, value: value)
+                }
+                .frame(minWidth: 44)
             }
             .buttonStyle(.plain)
             .focused($readoutFocused)

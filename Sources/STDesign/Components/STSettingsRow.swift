@@ -2,6 +2,9 @@ import SwiftUI
 
 /// One row of a tool page's settings: a small-caps label on the left, its control on the right,
 /// and a `rule` hairline beneath. Label and control read as one accessibility element.
+///
+/// The row's label names the control, so the control's own visible label is hidden (`.labelsHidden()`);
+/// `STSlider` honors this, and every control keeps its accessibility label.
 public struct STSettingsRow<Control: View>: View {
     private let label: String
     private let showsRule: Bool
@@ -21,7 +24,7 @@ public struct STSettingsRow<Control: View>: View {
                 .stStyle(.label)
                 .foregroundStyle(theme.inkSecondary)
             Spacer(minLength: 16)
-            control
+            control.labelsHidden()
         }
         .padding(.vertical, 12)
         .overlay(alignment: .bottom) {
