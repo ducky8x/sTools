@@ -25,6 +25,9 @@ public enum STFont {
         text(size, weight: weight).monospacedDigit()
     }
 
+    /// DM Serif Display, which the spec keeps for the wordmark in the Prologue's greeting.
+    public static func greetingWordmark(_ size: CGFloat) -> Font { .custom(displayRegularName, size: size) }
+
     static let displayRegularName = "DMSerifDisplay-Regular"
     static let displayItalicName = "DMSerifDisplay-Italic"
 
@@ -36,9 +39,8 @@ public enum STFont {
     /// Registers every bundled font for this process. Safe to call repeatedly and from any thread;
     /// returns whether all of them now resolve to a font.
     ///
-    /// DM Serif Display isn't used by any `STFont` role today (display text moved to Bodoni Moda), but
-    /// stays bundled and registered: the design spec still calls for it in the Prologue greeting, which
-    /// hasn't been built yet.
+    /// DM Serif Display isn't used by any text style (display text moved to Bodoni Moda); it stays bundled
+    /// and registered for the Prologue greeting's wordmark (`greetingWordmark(_:)`).
     @discardableResult
     public static func register() -> Bool {
         _ = registration

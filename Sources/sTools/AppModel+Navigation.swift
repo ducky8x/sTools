@@ -13,6 +13,12 @@ extension AppModel {
     }
 
     func perform(_ command: GoCommand) {
+        // While the introduction runs, ⌘[ and ⌘] are its Back and Skip step, and pages stay closed.
+        if let prologue {
+            if command == .back { prologue.back() }
+            if command == .forward { prologue.skipStep() }
+            return
+        }
         switch command {
         case .back:
             if history.back() != nil { sound.play(.page) }

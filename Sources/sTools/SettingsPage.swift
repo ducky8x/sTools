@@ -95,11 +95,12 @@ struct SettingsPage: View {
                     Button("Reset sTools", role: .destructive) { resetApp() }
                     Button("Cancel", role: .cancel) {}
                 },
-                message: { Text("This clears every setting and brings back the first-launch introduction. Your current settings are backed up first.") })
+                message: { Text("This clears every setting and brings back the first-launch introduction. Your current settings are backed up first, then sTools opens again.") })
 
             PageSectionTitle("Help").padding(.top, 28).padding(.bottom, 4)
             STSettingsRow("Replay Introduction") {
-                Text("Not available yet").stStyle(.body).foregroundStyle(STColor.inkTertiary)
+                Button("Replay Introduction") { model.replayIntroduction() }
+                    .buttonStyle(STButtonStyle(.secondary))
             }
             STSettingsRow("Copy Diagnostics", showsRule: false) {
                 HStack(spacing: 10) {
@@ -160,10 +161,16 @@ struct SettingsPage: View {
         }
     }
 
+    /// Relaunches so that no setting still held in memory is written back (spec 6.2: re-runs the Prologue).
     private func resetApp() {
         Task {
-            _ = try? await model.resetAppSettings()
-            dataMessage = "sTools has been reset. Relaunch to see the introduction again."
+            do {
+                try await model.resetAppSettings()
+                model.settingsWereReset = true
+                AppRelauncher.relaunch()
+            } catch {
+                dataMessage = error.localizedDescription
+            }
         }
     }
 
