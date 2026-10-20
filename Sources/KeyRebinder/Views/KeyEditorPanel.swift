@@ -1,0 +1,138 @@
+import STDesign
+import SwiftUI
+
+/// The selected key: what it sends now, and choosing what it should send (spec 5.5.3).
+struct KeyEditorPanel: View {
+    @Bindable var controller: KeyRebinderController
+    let key: KarabinerEvent
+    let openRule: (Int) -> Void
+
+    @State private var chosen: KarabinerEvent?
+    @State private var showsPicker = false
+    @Environment(\.stTheme) private var theme
+
+    private var binding: EffectiveBinding? { controller.binding(for: key) }
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(KeyNames.name(for: key)).stStyle(.sectionTitle).foregroundStyle(STColor.ink)
+                Spacer()
+                Button("Close") { controller.selectedKey = nil }.buttonStyle(STButtonStyle(.quiet))
+            }
+            Text(statusLine).stStyle(.body).foregroundStyle(theme.inkSecondary)
+            if !actions.isEmpty {
+                Text("In Minecraft: \(actions.joined(separator: ", "))").stStyle(.body).foregroundStyle(theme.inkSecondary)
+            }
+            ForEach(controller.findings(for: key)) { finding in
+                Label(finding.message, systemImage: "circle.fill")
+                    .labelStyle(FindingLabelStyle())
+                    .stStyle(.caption)
+                    .foregroundStyle(STColor.ink)
+            }
+            editing
+        }
+        .padding(18)
+        .background(STColor.surface, in: shape)
+        .overlay { shape.strokeBorder(STColor.rule, lineWidth: 1) }
+        .onChange(of: controller.capturedOutput) { _, captured in
+            guard let captured else { return }
+            chosen = captured
+            controller.capturedOutput = nil
+        }
+        .onChange(of: key) {
+            chosen = nil
+            controller.isCapturingOutput = false
+        }
+        .onDisappear { controller.isCapturingOutput = false }
+    }
+
+    @ViewBuilder private var editing: some View {
+        if let binding, !binding.isDrawable, case .complex(let index, _) = binding.source {
+            Button("Open Rule\u{2026}") { openRule(index) }.buttonStyle(STButtonStyle(.secondary))
+        } else if !controller.canEdit {
+            Text("Editing needs Karabiner-Elements running and ready (see above).")
+                .stStyle(.caption).foregroundStyle(theme.inkTertiary)
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 12) {
+                    Text("Becomes").stStyle(.label).foregroundStyle(theme.inkSecondary)
+                    Text(chosen.map { KeyNames.name(for: $0) } ?? "\u{2014}")
+                        .stStyle(.body).foregroundStyle(chosen == nil ? theme.inkTertiary : theme.accent)
+                        .frame(minWidth: 90, alignment: .leading)
+                    Button(controller.isCapturingOutput ? "Press a key\u{2026}" : "Press") { controller.isCapturingOutput.toggle() }
+                        .buttonStyle(STButtonStyle(.secondary))
+                        .help("Press the key (or mouse button 3 and up) it should become.")
+                    Button("Choose\u{2026}") { showsPicker = true }
+                        .buttonStyle(STButtonStyle(.secondary))
+                        .popover(isPresented: $showsPicker) {
+                            KeyPicker { picked in
+                                chosen = picked
+                                showsPicker = false
+                            }
+                        }
+                }
+                if KeyTable.shared.entry(for: key)?.isUnsafeSource == true {
+                    Text("Rebinding the left button can leave you unable to click. Keep a trackpad or another mouse at hand.")
+                        .stStyle(.caption).foregroundStyle(STColor.danger)
+                }
+                HStack(spacing: 10) {
+                    Button("Save") {
+                        guard let output = chosen else { return }
+                        Task {
+                            await controller.setRebind(key, to: output)
+                            chosen = nil
+                        }
+                    }
+                    .buttonStyle(STButtonStyle(.primary))
+                    .disabled(chosen == nil || controller.isBusy)
+                    if hasSimpleRebind {
+                        Button("Remove Rebind") { Task { await controller.removeRebind(key) } }
+                            .buttonStyle(STButtonStyle(.secondary))
+                            .disabled(controller.isBusy)
+                    }
+                }
+                Text("Saved to the profile\u{2019}s Simple Modifications for \(scopeName). Choosing the key itself removes its rebind.")
+                    .stStyle(.caption).foregroundStyle(theme.inkTertiary)
+            }
+        }
+    }
+
+    private var actions: [String] {
+        EffectiveMapping.output(of: key, in: controller.derived.bindings).map(controller.minecraftActions(for:)) ?? []
+    }
+
+    private var hasSimpleRebind: Bool {
+        let aliases = KeyTable.shared.aliases(of: key)
+        return controller.derived.rebinds.contains { aliases.contains($0.from) }
+    }
+
+    private var scopeName: String {
+        controller.settings.scopeDevice == nil ? "all devices" : "this device"
+    }
+
+    private var statusLine: String {
+        guard let binding else { return "Not rebound." }
+        switch (binding.source, binding.isDrawable, binding.output) {
+        case (.simple, true, let output?):
+            return "Sends \(KeyNames.name(for: output)), through a simple rebind."
+        case (.complex(_, let description), true, let output?):
+            return "Sends \(KeyNames.name(for: output)), through the rule \u{201C}\(description)\u{201D}."
+        case (.complex(_, let description), _, _):
+            return "Driven by the rule \u{201C}\(description)\u{201D}, which the keyboard can\u{2019}t draw simply."
+        default:
+            return "Sends several keys at once, through a simple rebind."
+        }
+    }
+}
+
+/// A small red dot before a checker message.
+struct FindingLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            configuration.icon.font(.system(size: 6)).foregroundStyle(STColor.danger)
+            configuration.title
+        }
+    }
+}
