@@ -17,21 +17,38 @@ extension AppModel {
         Dictionary(uniqueKeysWithValues: HotkeyTool.allCases.map { ($0, isOn(Self.toolID(for: $0))) })
     }
 
-    /// A hotkey press resolves to a set of tool changes and/or a recording toggle (spec 6.1's toggle
-    /// semantics are already resolved by `HotkeyCenter`/`HotkeyAction.resolve`; this just carries them
-    /// out). Plays the stamp sound as the press's confirmation — the on-screen gold-seal HUD the spec
-    /// also calls for isn't built yet: it needs a new transient overlay panel (sTools' own window may
-    /// not even be visible when a global hotkey fires over Minecraft), which is a separate feature in
-    /// its own right rather than a one-line addition here.
-    func handleHotkeyEvent(_ event: HotkeyEvent) {
+    /// One hotkey press (spec 6.1's toggle semantics are already resolved by `HotkeyCenter`): carries out its
+    /// events in order, then confirms the press once — the stamp sound, and unless Home ▸ Hotkeys ▸ Advanced
+    /// turns it off, the seal with a line of what changed, on Minecraft's display. A press that changed
+    /// nothing (a tool needs Accessibility) gets a plain click and its line without the seal.
+    func handleHotkeyPress(_ events: [HotkeyEvent]) {
+        let effects = events.compactMap { handleHotkeyEvent($0) }
+        guard !effects.isEmpty else { return }
+        let changed = HotkeyConfirmation.changedSomething(effects)
+        sound.play(changed ? .stamp : .click)
+        guard hotkeys.showsConfirmation,
+              let display = HotkeyHUDLayout.display(minecraftDisplayID: minecraft.active?.displayID, in: displays.displays)
+        else { return }
+        hotkeyHUD.present(HotkeyConfirmation.summary(effects), sealed: changed, on: display)
+    }
+
+    /// Carries out one event and reports what it did; nil when there was nothing to act on.
+    @discardableResult
+    func handleHotkeyEvent(_ event: HotkeyEvent) -> HotkeyConfirmation.Effect? {
         switch event {
-        case .setTool(let hotkeyTool, let isOn):
-            setTool(Self.toolID(for: hotkeyTool), on: isOn)
+        case .setTool(let hotkeyTool, let wantsOn):
+            let tool = Self.toolID(for: hotkeyTool)
+            setTool(tool, on: wantsOn)
+            if wantsOn && !isOn(tool) { return .needsAccessibility(tool) }
+            return .tool(tool, isOn: isOn(tool))
         case .toggleRecording:
-            guard let recording = controller(for: .screenRecording, as: ScreenRecordingController.self) else { break }
+            guard let recording = controller(for: .screenRecording, as: ScreenRecordingController.self) else { return nil }
+            let effect = HotkeyConfirmation.recordingEffect(
+                phase: recording.phase, canStart: isOn(.screenRecording) || canSwitch(.screenRecording),
+                countdown: recording.options.countdown)
             // Switching on (when needed) goes through `requestEnable`, which keeps rule R10.
             recording.toggleRecording()
+            return effect
         }
-        sound.play(.stamp)
     }
 }

@@ -45,17 +45,18 @@ public final class HotkeyCenter {
     @ObservationIgnored private let store: SettingsStore
     @ObservationIgnored private let registrar: any HotkeyRegistering
     @ObservationIgnored private let toolStates: @MainActor () -> [HotkeyTool: Bool]
-    @ObservationIgnored private let handler: @MainActor (HotkeyEvent) -> Void
+    @ObservationIgnored private let handler: @MainActor ([HotkeyEvent]) -> Void
     @ObservationIgnored private var registered: [UUID: HotkeyCombo] = [:]
     @ObservationIgnored private let log = STLog.logger("Hotkeys")
 
     /// - Parameters:
     ///   - toolStates: Reports which switchable tools are on right now. Read on every press.
-    ///   - handler: Receives one event per tool change and one for recording.
+    ///   - handler: Receives each press's events together, in order: one per tool change, then one for
+    ///     recording. One call per press, so the app can confirm the press once.
     public init(store: SettingsStore,
                 registrar: any HotkeyRegistering,
                 toolStates: @escaping @MainActor () -> [HotkeyTool: Bool],
-                handler: @escaping @MainActor (HotkeyEvent) -> Void) {
+                handler: @escaping @MainActor ([HotkeyEvent]) -> Void) {
         self.store = store
         self.registrar = registrar
         self.toolStates = toolStates
@@ -75,6 +76,16 @@ public final class HotkeyCenter {
     }
 
     public var bindings: [HotkeyBinding] { settings.bindings }
+
+    /// Advanced: whether presses show the on-screen confirmation. Stored only; the app reads it.
+    public var showsConfirmation: Bool {
+        get { settings.showsConfirmation }
+        set {
+            guard newValue != settings.showsConfirmation else { return }
+            settings.showsConfirmation = newValue
+            store.save(settings)
+        }
+    }
 
     public func status(of id: UUID) -> HotkeyStatus? { statuses[id] }
 
@@ -121,8 +132,10 @@ public final class HotkeyCenter {
     private func handlePress(_ id: UUID) {
         guard settings.isEnabled, let binding = settings.bindings.first(where: { $0.id == id }) else { return }
         let outcome = HotkeyAction.resolve(binding.actions, toolStates: toolStates())
-        for change in outcome.toolChanges { handler(.setTool(change.tool, isOn: change.isOn)) }
-        if outcome.togglesRecording { handler(.toggleRecording) }
+        var events = outcome.toolChanges.map { HotkeyEvent.setTool($0.tool, isOn: $0.isOn) }
+        if outcome.togglesRecording { events.append(.toggleRecording) }
+        guard !events.isEmpty else { return }
+        handler(events)
     }
 
     /// Brings registrations and statuses in line with the settings: unregisters what is no longer wanted,

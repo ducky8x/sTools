@@ -49,6 +49,17 @@ final class FakeHotkeyRegistrar: HotkeyRegistering {
     }
 }
 
+/// Records each hotkey confirmation instead of showing a panel.
+@MainActor
+final class FakeHotkeyHUD: HotkeyConfirmationPresenting {
+    private(set) var presented: [(line: String, sealed: Bool, displayID: UInt32)] = []
+    var lines: [String] { presented.map(\.line) }
+
+    func present(_ line: String, sealed: Bool, on display: DisplayInfo) {
+        presented.append((line, sealed, display.id))
+    }
+}
+
 /// Captures what was copied instead of touching the real system pasteboard.
 @MainActor
 final class FakeClipboard: ClipboardWriting {
@@ -86,6 +97,7 @@ final class Harness {
     let controllers: [ToolID: FakeController]
     let opened = OpenedURLs()
     let hotkeyRegistrar: any HotkeyRegistering
+    let hotkeyHUD = FakeHotkeyHUD()
 
     init(accessibility: PermissionStatus = .granted, instances: [MinecraftInstance] = [],
          theme: STTheme = STTheme(), usesRealControllers: Bool = false, hotkeyRegistrar: any HotkeyRegistering = FakeHotkeyRegistrar()) {
@@ -108,7 +120,8 @@ final class Harness {
                .windowBackdrop: BackdropController(services: services),
                .crosshair: CrosshairController(services: services)]
             : fakes.mapValues { $0 as any ToolController }
-        model = AppModel(services: services, theme: theme, sound: .silent, controllers: all, hotkeyRegistrar: hotkeyRegistrar, loginItem: FakeLoginItem())
+        model = AppModel(services: services, theme: theme, sound: .silent, controllers: all, hotkeyRegistrar: hotkeyRegistrar,
+                         hotkeyHUD: hotkeyHUD, loginItem: FakeLoginItem())
     }
 
     deinit {

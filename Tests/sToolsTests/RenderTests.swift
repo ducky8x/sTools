@@ -50,6 +50,12 @@ struct RenderTests {
         #expect(distinctColors(in: rep) > 20)
     }
 
+    @Test func hotkeyConfirmationRenders() {
+        let rep = renderBitmap(HotkeyHUDView(line: "Crosshair on \u{00B7} NBB Overlay on").environment(\.stTheme, STTheme()),
+                               size: CGSize(width: 300, height: 44))
+        #expect(distinctColors(in: rep) > 5)
+    }
+
     @Test func pageAreaRendersEveryRoute() {
         let harness = Harness(usesRealControllers: true)
         for route in [Route.home, .settings] + ToolID.allCases.map(Route.tool) {

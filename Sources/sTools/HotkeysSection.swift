@@ -2,11 +2,18 @@ import STDesign
 import STPlatform
 import SwiftUI
 
-/// Home ▸ Hotkeys (spec 6.1): a master switch, the list of bindings, and an add/edit editor for each.
+/// Home ▸ Hotkeys (spec 6.1): a master switch, the list of bindings, an add/edit editor for each, and
+/// Advanced (spec 2.4) with the press confirmation.
 struct HotkeysSection: View {
     let model: AppModel
     @State private var editingID: UUID?
     @State private var isAddingNew = false
+    @State private var advancedIsOpen: Bool
+
+    init(model: AppModel, advancedIsOpen: Bool = false) {
+        self.model = model
+        _advancedIsOpen = State(initialValue: advancedIsOpen)
+    }
 
     var body: some View {
         PageSectionTitle("Hotkeys").padding(.top, 28).padding(.bottom, 4)
@@ -34,11 +41,21 @@ struct HotkeysSection: View {
             }
             .buttonStyle(STButtonStyle(.secondary))
             .padding(.top, 8)
+            STAdvancedDisclosure(isExpanded: $advancedIsOpen) {
+                STSettingsRow("Show a confirmation", showsRule: false) {
+                    STSwitch(isOn: confirmationBinding, label: "Show a confirmation")
+                }
+            }
+            .padding(.top, 14)
         }
     }
 
     private var enabledBinding: Binding<Bool> {
         Binding(get: { model.hotkeys.isEnabled }, set: { model.hotkeys.isEnabled = $0 })
+    }
+
+    private var confirmationBinding: Binding<Bool> {
+        Binding(get: { model.hotkeys.showsConfirmation }, set: { model.hotkeys.showsConfirmation = $0 })
     }
 }
 
