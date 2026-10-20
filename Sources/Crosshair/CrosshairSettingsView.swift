@@ -39,11 +39,6 @@ public struct CrosshairSettingsView: View {
                     STSettingsRow("Opacity") {
                         STSlider(value: opacityBinding, in: 10...100, label: "Opacity", valueText: { "\(Int($0))%" })
                     }
-                    STSettingsRow("Center side") {
-                        STSegmented(selection: $controller.settings.centerSide, options: [
-                            .init(.rightDown, "Right / Down"), .init(.leftUp, "Left / Up"),
-                        ])
-                    }
                     STSettingsRow("Show only while Minecraft is focused") {
                         STSwitch(isOn: $controller.settings.visibleOnlyWhileMinecraftFocused, label: "Show only while Minecraft is focused")
                     }

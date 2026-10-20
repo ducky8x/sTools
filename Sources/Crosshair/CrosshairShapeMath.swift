@@ -16,11 +16,11 @@ enum CrosshairShapeMath {
     }
 
     /// Where the center point sits inside the hot pixel, as a fraction of a pixel from its left/top edge.
-    /// An odd length centers on a pixel (0.5); an even length has no center pixel, so `side` picks.
-    static func centerFraction(shape: CrosshairSettings.Shape, size: Int, thickness: Int, side: CrosshairSettings.CenterSide) -> Double {
+    /// An odd length centers on a pixel (0.5). An even length has no center pixel; the hot pixel is the one
+    /// just left of (or above) the center (`CrosshairGeometry.centerIndex`), so the center is its right edge.
+    static func centerFraction(shape: CrosshairSettings.Shape, size: Int, thickness: Int) -> Double {
         let length = (shape == .plus || shape == .x) ? thickness : size
-        if length % 2 != 0 { return 0.5 }
-        return side == .rightDown ? 0 : 1
+        return length % 2 != 0 ? 0.5 : 1
     }
 
     /// Whether the point (u, v), relative to the center point (y grows downward), is covered.
@@ -52,11 +52,11 @@ enum CrosshairShapeMath {
 
     /// The shape's coverage mask with `margin` empty pixels on every side (room for an outline).
     static func mask(shape: CrosshairSettings.Shape, size: Int, thickness: Int, gap: Int,
-                     side: CrosshairSettings.CenterSide, margin: Int) -> CrosshairMask {
+                     margin: Int) -> CrosshairMask {
         let reach = Int(halfExtent(shape: shape, size: size, thickness: thickness, gap: gap).rounded(.up))
         let radius = reach + max(margin, 0) + 1
         let canvas = 2 * radius + 2
-        let center = Double(radius) + centerFraction(shape: shape, size: size, thickness: thickness, side: side)
+        let center = Double(radius) + centerFraction(shape: shape, size: size, thickness: thickness)
         let samples = supersampling
         var alpha = [UInt8](repeating: 0, count: canvas * canvas)
         for py in 0..<canvas {

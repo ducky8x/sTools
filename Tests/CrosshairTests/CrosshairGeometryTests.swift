@@ -5,30 +5,27 @@ import Testing
 
 @Suite("Crosshair geometry")
 struct CrosshairGeometryTests {
-    typealias Side = CrosshairSettings.CenterSide
     typealias Anchor = CrosshairSettings.ImageAnchor
 
     // MARK: center index
 
-    @Test(arguments: [(1, 0, 0), (2, 1, 0), (3, 1, 1), (4, 2, 1), (1920, 960, 959), (1921, 960, 960)])
-    func centerIndexPicksTheSideOnEvenCounts(count: Int, rightDown: Int, leftUp: Int) {
-        #expect(CrosshairGeometry.centerIndex(count: count, side: .rightDown) == rightDown)
-        #expect(CrosshairGeometry.centerIndex(count: count, side: .leftUp) == leftUp)
+    // Minecraft centers its crosshair just left of (and above) the middle of an even width, so sTools does too.
+    @Test(arguments: [(1, 0), (2, 0), (3, 1), (4, 1), (1920, 959), (1921, 960)])
+    func centerIndexTakesThePixelLeftOfTheMiddleOnEvenCounts(count: Int, expected: Int) {
+        #expect(CrosshairGeometry.centerIndex(count: count) == expected)
     }
 
     // MARK: anchors
 
     @Test func anchorsPickTheRightSpritePixel() {
         let size = PixelSize(width: 8, height: 6)
-        #expect(CrosshairGeometry.hotPixel(spriteSize: size, anchor: .topLeft, side: .rightDown) == PixelPoint(x: 0, y: 0))
-        #expect(CrosshairGeometry.hotPixel(spriteSize: size, anchor: .topRight, side: .rightDown) == PixelPoint(x: 7, y: 0))
-        #expect(CrosshairGeometry.hotPixel(spriteSize: size, anchor: .bottomLeft, side: .leftUp) == PixelPoint(x: 0, y: 5))
-        #expect(CrosshairGeometry.hotPixel(spriteSize: size, anchor: .bottomRight, side: .leftUp) == PixelPoint(x: 7, y: 5))
-        #expect(CrosshairGeometry.hotPixel(spriteSize: size, anchor: .center, side: .rightDown) == PixelPoint(x: 4, y: 3))
-        #expect(CrosshairGeometry.hotPixel(spriteSize: size, anchor: .center, side: .leftUp) == PixelPoint(x: 3, y: 2))
+        #expect(CrosshairGeometry.hotPixel(spriteSize: size, anchor: .topLeft) == PixelPoint(x: 0, y: 0))
+        #expect(CrosshairGeometry.hotPixel(spriteSize: size, anchor: .topRight) == PixelPoint(x: 7, y: 0))
+        #expect(CrosshairGeometry.hotPixel(spriteSize: size, anchor: .bottomLeft) == PixelPoint(x: 0, y: 5))
+        #expect(CrosshairGeometry.hotPixel(spriteSize: size, anchor: .bottomRight) == PixelPoint(x: 7, y: 5))
+        #expect(CrosshairGeometry.hotPixel(spriteSize: size, anchor: .center) == PixelPoint(x: 3, y: 2))
         let odd = PixelSize(width: 7, height: 5)
-        #expect(CrosshairGeometry.hotPixel(spriteSize: odd, anchor: .center, side: .rightDown) == PixelPoint(x: 3, y: 2))
-        #expect(CrosshairGeometry.hotPixel(spriteSize: odd, anchor: .center, side: .leftUp) == PixelPoint(x: 3, y: 2))
+        #expect(CrosshairGeometry.hotPixel(spriteSize: odd, anchor: .center) == PixelPoint(x: 3, y: 2))
     }
 
     // MARK: placement
@@ -36,56 +33,50 @@ struct CrosshairGeometryTests {
     private func place(
         frame: CGRect = CGRect(x: 0, y: 0, width: 1920, height: 1080), scale: CGFloat = 1,
         sprite: PixelSize = PixelSize(width: 22, height: 22), anchor: Anchor = .center,
-        offset: (Int, Int) = (0, 0), side: Side = .rightDown
+        offset: (Int, Int) = (0, 0)
     ) -> CrosshairGeometry.Placement {
-        let hot = CrosshairGeometry.hotPixel(spriteSize: sprite, anchor: anchor, side: side)
+        let hot = CrosshairGeometry.hotPixel(spriteSize: sprite, anchor: anchor)
         return CrosshairGeometry.placement(
             displayFrame: frame, scale: scale, spriteSize: sprite, hotPixel: hot,
-            offsetX: offset.0, offsetY: offset.1, side: side)
+            offsetX: offset.0, offsetY: offset.1)
     }
 
     @Test func evenSpriteOnEvenDisplayIsCenteredExactlyAtScaleOne() {
-        for side in Side.allCases {
-            let placement = place(side: side)
-            #expect(placement.windowFrame == CGRect(x: 949, y: 529, width: 22, height: 22))
-            #expect(placement.canvasSize == PixelSize(width: 22, height: 22))
-            #expect(placement.spriteOrigin == PixelPoint(x: 0, y: 0))
-        }
+        let placement = place()
+        #expect(placement.windowFrame == CGRect(x: 949, y: 529, width: 22, height: 22))
+        #expect(placement.canvasSize == PixelSize(width: 22, height: 22))
+        #expect(placement.spriteOrigin == PixelPoint(x: 0, y: 0))
     }
 
-    @Test func centerSidePicksThePixelOnEvenDisplays() {
-        let rightDown = place(sprite: PixelSize(width: 21, height: 21), side: .rightDown)
-        #expect(rightDown.targetPixel == PixelPoint(x: 960, y: 540))
-        #expect(rightDown.windowFrame == CGRect(x: 950, y: 529, width: 21, height: 21))
-        let leftUp = place(sprite: PixelSize(width: 21, height: 21), side: .leftUp)
-        #expect(leftUp.targetPixel == PixelPoint(x: 959, y: 539))
-        #expect(leftUp.windowFrame == CGRect(x: 949, y: 530, width: 21, height: 21))
+    @Test func oddSpriteOnEvenDisplayAimsJustLeftOfAndAboveTheMiddle() {
+        let placement = place(sprite: PixelSize(width: 21, height: 21))
+        #expect(placement.targetPixel == PixelPoint(x: 959, y: 539))
+        #expect(placement.windowFrame == CGRect(x: 949, y: 530, width: 21, height: 21))
     }
 
     @Test func oddDisplayHasASingleCenterPixel() {
         let frame = CGRect(x: 0, y: 0, width: 1365, height: 767)
-        for side in Side.allCases {
-            let placement = place(frame: frame, sprite: PixelSize(width: 11, height: 11), side: side)
-            #expect(placement.targetPixel == PixelPoint(x: 682, y: 383))
-            #expect(placement.windowFrame == CGRect(x: 677, y: 767 - 383 - 6, width: 11, height: 11))
-        }
+        let placement = place(frame: frame, sprite: PixelSize(width: 11, height: 11))
+        #expect(placement.targetPixel == PixelPoint(x: 682, y: 383))
+        #expect(placement.windowFrame == CGRect(x: 677, y: 767 - 383 - 6, width: 11, height: 11))
     }
 
     @Test func scaleTwoWorksInWholePointsByPaddingTheCanvas() {
         let frame = CGRect(x: 0, y: 0, width: 1512, height: 982)
         let placement = place(frame: frame, scale: 2, sprite: PixelSize(width: 21, height: 21))
-        #expect(placement.targetPixel == PixelPoint(x: 1512, y: 982))
-        // The sprite's top-left lands on display pixel (1502, 972); the window starts on a whole point.
-        #expect(placement.spriteOrigin == PixelPoint(x: 0, y: 0))
+        #expect(placement.targetPixel == PixelPoint(x: 1511, y: 981))
+        // The sprite's top-left lands on display pixel (1501, 971); the window starts on a whole point, one
+        // pixel earlier.
+        #expect(placement.spriteOrigin == PixelPoint(x: 1, y: 1))
         #expect(placement.canvasSize == PixelSize(width: 22, height: 22))
-        #expect(placement.windowFrame == CGRect(x: 751, y: 982 - 486 - 11, width: 11, height: 11))
+        #expect(placement.windowFrame == CGRect(x: 750, y: 982 - 485 - 11, width: 11, height: 11))
     }
 
     @Test func scaleTwoOddOriginGetsLeadingPadding() {
         let frame = CGRect(x: 0, y: 0, width: 1512, height: 982)
-        let placement = place(frame: frame, scale: 2, sprite: PixelSize(width: 20, height: 20), side: .rightDown)
-        #expect(placement.targetPixel == PixelPoint(x: 1512, y: 982))
-        // Origin = 1512 - 10 = 1502 (even), 982 - 10 = 972 (even): no padding.
+        let placement = place(frame: frame, scale: 2, sprite: PixelSize(width: 20, height: 20))
+        #expect(placement.targetPixel == PixelPoint(x: 1511, y: 981))
+        // Origin = 1511 - 9 = 1502 (even), 981 - 9 = 972 (even): no padding.
         #expect(placement.spriteOrigin == PixelPoint(x: 0, y: 0))
         let shifted = place(frame: frame, scale: 2, sprite: PixelSize(width: 20, height: 20), offset: (1, 1))
         #expect(shifted.spriteOrigin == PixelPoint(x: 1, y: 1))
@@ -96,19 +87,17 @@ struct CrosshairGeometryTests {
     @Test func spriteHotPixelAlwaysLandsOnTheTargetPixel() {
         let offsets = [(0, 0), (3, -2), (-7, 5), (-1, -1), (101, 0)]
         for scale in [CGFloat(1), CGFloat(2)] {
-            for side in Side.allCases {
-                for offset in offsets { checkHotPixel(scale: scale, side: side, offset: offset) }
-            }
+            for offset in offsets { checkHotPixel(scale: scale, offset: offset) }
         }
     }
 
-    private func checkHotPixel(scale: CGFloat, side: Side, offset: (Int, Int)) {
+    private func checkHotPixel(scale: CGFloat, offset: (Int, Int)) {
         let frame = CGRect(x: 100, y: 50, width: 1440, height: 900)
         let sprites = [PixelSize(width: 1, height: 1), PixelSize(width: 22, height: 22),
                        PixelSize(width: 21, height: 14), PixelSize(width: 33, height: 7)]
         for sprite in sprites {
-            let placement = place(frame: frame, scale: scale, sprite: sprite, offset: offset, side: side)
-            let hot = CrosshairGeometry.hotPixel(spriteSize: sprite, anchor: .center, side: side)
+            let placement = place(frame: frame, scale: scale, sprite: sprite, offset: offset)
+            let hot = CrosshairGeometry.hotPixel(spriteSize: sprite, anchor: .center)
             let windowLeftPx = Int(((placement.windowFrame.minX - frame.minX) * scale).rounded())
             let windowTopPx = Int(((frame.maxY - placement.windowFrame.maxY) * scale).rounded())
             #expect(windowLeftPx + placement.spriteOrigin.x + hot.x == placement.targetPixel.x)
@@ -156,11 +145,11 @@ struct CrosshairGeometryTests {
     func imageAnchorPutsItsPointOnTheCenterPixel(anchor: Anchor) {
         let sprite = PixelSize(width: 40, height: 30)
         let placement = place(sprite: sprite, anchor: anchor)
-        let hot = CrosshairGeometry.hotPixel(spriteSize: sprite, anchor: anchor, side: .rightDown)
+        let hot = CrosshairGeometry.hotPixel(spriteSize: sprite, anchor: anchor)
         let windowLeft = Int(placement.windowFrame.minX)
         let windowTop = 1080 - Int(placement.windowFrame.maxY)
-        #expect(windowLeft + hot.x == 960)
-        #expect(windowTop + hot.y == 540)
+        #expect(windowLeft + hot.x == 959)
+        #expect(windowTop + hot.y == 539)
     }
 
     @Test func gridSizeUsesTheBackingScale() {
@@ -173,7 +162,7 @@ struct CrosshairGeometryTests {
     @Test func oddPixelWidthAtScaleTwoHasACenterPixel() {
         let frame = CGRect(x: 0, y: 0, width: 1365.5, height: 700)
         let placement = place(frame: frame, scale: 2, sprite: PixelSize(width: 5, height: 5))
-        #expect(placement.targetPixel == PixelPoint(x: 1365, y: 700))
+        #expect(placement.targetPixel == PixelPoint(x: 1365, y: 699))
     }
 
     // MARK: fitted offset (bounded preview box)
@@ -181,7 +170,7 @@ struct CrosshairGeometryTests {
     @Test func fittedOffsetLeavesSmallOffsetsUntouched() {
         let fitted = CrosshairGeometry.fittedOffset(
             displaySize: PixelSize(width: 320, height: 200), spriteSize: PixelSize(width: 20, height: 20),
-            hotPixel: PixelPoint(x: 10, y: 10), offsetX: 5, offsetY: -3, side: .rightDown)
+            hotPixel: PixelPoint(x: 10, y: 10), offsetX: 5, offsetY: -3)
         #expect(fitted == (5, -3))
     }
 
@@ -192,10 +181,10 @@ struct CrosshairGeometryTests {
         let sprite = PixelSize(width: 60, height: 60)
         let hot = PixelPoint(x: 30, y: 30)
         let fitted = CrosshairGeometry.fittedOffset(
-            displaySize: displaySize, spriteSize: sprite, hotPixel: hot, offsetX: 150, offsetY: 90, side: .rightDown)
+            displaySize: displaySize, spriteSize: sprite, hotPixel: hot, offsetX: 150, offsetY: 90)
         let placement = CrosshairGeometry.placement(
             displayFrame: CGRect(x: 0, y: 0, width: displaySize.width, height: displaySize.height), scale: 1,
-            spriteSize: sprite, hotPixel: hot, offsetX: fitted.x, offsetY: fitted.y, side: .rightDown)
+            spriteSize: sprite, hotPixel: hot, offsetX: fitted.x, offsetY: fitted.y)
         #expect(placement.windowFrame.minX >= 0)
         #expect(placement.windowFrame.minY >= 0)
         #expect(placement.windowFrame.maxX <= CGFloat(displaySize.width))
@@ -207,9 +196,9 @@ struct CrosshairGeometryTests {
         let sprite = PixelSize(width: 500, height: 500)
         let hot = PixelPoint(x: 250, y: 250)
         let fitted = CrosshairGeometry.fittedOffset(
-            displaySize: displaySize, spriteSize: sprite, hotPixel: hot, offsetX: 1000, offsetY: -1000, side: .rightDown)
-        #expect(fitted == (320 / 2 - CrosshairGeometry.centerIndex(count: 320, side: .rightDown),
-                           200 / 2 - CrosshairGeometry.centerIndex(count: 200, side: .rightDown)))
+            displaySize: displaySize, spriteSize: sprite, hotPixel: hot, offsetX: 1000, offsetY: -1000)
+        #expect(fitted == (320 / 2 - CrosshairGeometry.centerIndex(count: 320),
+                           200 / 2 - CrosshairGeometry.centerIndex(count: 200)))
     }
 
     // MARK: fit scale (bounded preview box)

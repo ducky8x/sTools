@@ -30,14 +30,14 @@ struct CrosshairPreview: View {
         // offset can never push the (now always-fitting) sprite's aim point off the box's edge.
         let fitted = CrosshairGeometry.fittedOffset(
             displaySize: mockDisplay, spriteSize: sprite.size, hotPixel: sprite.hot,
-            offsetX: settings.offsetX, offsetY: settings.offsetY, side: settings.centerSide)
+            offsetX: settings.offsetX, offsetY: settings.offsetY)
         // The target (aim) pixel, worked out directly in the mock box's own top-left-origin grid — the
         // same grid Canvas draws in. (The real overlay panel places itself the same direct way, via
         // `CrosshairOverlayView`'s `spriteOrigin`/`canvasSize`.) This mock box is never a real AppKit
         // window, so there's no reason to round-trip through `CrosshairGeometry.placement()`'s
         // bottom-left-origin window frame and flip it back — that detour was real but needless.
-        let targetX = CrosshairGeometry.centerIndex(count: mockDisplay.width, side: settings.centerSide) + fitted.x
-        let targetY = CrosshairGeometry.centerIndex(count: mockDisplay.height, side: settings.centerSide) + fitted.y
+        let targetX = CrosshairGeometry.centerIndex(count: mockDisplay.width) + fitted.x
+        let targetY = CrosshairGeometry.centerIndex(count: mockDisplay.height) + fitted.y
 
         ZStack {
             STColor.raised

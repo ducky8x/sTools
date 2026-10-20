@@ -35,18 +35,20 @@ import Testing
         #expect(CrosshairShapeMath.covers(shape: .x, size: 10, thickness: 2, gap: 0, u: diag, v: diag))
     }
 
+    // Lines and the X are measured across their thickness; dots and circles across their size.
     @Test(arguments: [
-        (CrosshairSettings.Shape.plus, 11, CrosshairSettings.CenterSide.rightDown, 5),
-        (.plus, 11, .leftUp, 5),
-        (.plus, 10, .rightDown, 5),
-        (.plus, 10, .leftUp, 4),
+        (CrosshairSettings.Shape.plus, 10, 3, 0.5),
+        (.plus, 11, 2, 1.0),
+        (.x, 10, 2, 1.0),
+        (.dot, 11, 2, 0.5),
+        (.circle, 10, 3, 1.0),
     ])
-    func centerIndexHandlesOddAndEvenCounts(shape: CrosshairSettings.Shape, count: Int, side: CrosshairSettings.CenterSide, expected: Int) {
-        #expect(CrosshairGeometry.centerIndex(count: count, side: side) == expected)
+    func centerFractionSplitsEvenLengthsAtTheHotPixelsFarEdge(shape: CrosshairSettings.Shape, size: Int, thickness: Int, expected: Double) {
+        #expect(CrosshairShapeMath.centerFraction(shape: shape, size: size, thickness: thickness) == expected)
     }
 
     @Test func maskIsSquareAndCenteredOnTheHotPixel() {
-        let mask = CrosshairShapeMath.mask(shape: .dot, size: 8, thickness: 1, gap: 0, side: .rightDown, margin: 2)
+        let mask = CrosshairShapeMath.mask(shape: .dot, size: 8, thickness: 1, gap: 0, margin: 2)
         #expect(mask.width == mask.height)
         #expect(mask.coverage(x: mask.hot.x, y: mask.hot.y) > 200)
         #expect(mask.coverage(x: 0, y: 0) == 0)
@@ -56,7 +58,7 @@ import Testing
     @Test func maskIsSymmetricAboutTheHotPixel() {
         // Odd thickness centers the shape exactly on the hot pixel in both axes (centerFraction 0.5),
         // so reflecting any pixel through the hot pixel (2*hot - coordinate) must hit equal coverage.
-        let mask = CrosshairShapeMath.mask(shape: .plus, size: 12, thickness: 3, gap: 2, side: .rightDown, margin: 3)
+        let mask = CrosshairShapeMath.mask(shape: .plus, size: 12, thickness: 3, gap: 2, margin: 3)
         var checked = 0
         for y in 0..<mask.height {
             let mirroredY = 2 * mask.hot.y - y
@@ -71,8 +73,26 @@ import Testing
         #expect(checked > mask.width * mask.height / 2, "the reflected region should cover most of the mask")
     }
 
+    @Test func evenThicknessIsSymmetricAboutTheHotPixelsBottomRightCorner() {
+        // The hot pixel sits just left of and above the display's middle, so an even-thickness shape centered
+        // on that pixel's far corner lands exactly on the middle.
+        let mask = CrosshairShapeMath.mask(shape: .plus, size: 12, thickness: 2, gap: 2, margin: 3)
+        var checked = 0
+        for y in 0..<mask.height {
+            let mirroredY = 2 * mask.hot.y + 1 - y
+            guard mirroredY >= 0, mirroredY < mask.height else { continue }
+            for x in 0..<mask.width {
+                let mirroredX = 2 * mask.hot.x + 1 - x
+                guard mirroredX >= 0, mirroredX < mask.width else { continue }
+                #expect(mask.coverage(x: x, y: y) == mask.coverage(x: mirroredX, y: mirroredY))
+                checked += 1
+            }
+        }
+        #expect(checked > mask.width * mask.height / 2, "the reflected region should cover most of the mask")
+    }
+
     @Test func dilationNeverShrinksCoverageAndGrowsByItsWidth() {
-        let base = CrosshairShapeMath.mask(shape: .dot, size: 6, thickness: 1, gap: 0, side: .rightDown, margin: 6)
+        let base = CrosshairShapeMath.mask(shape: .dot, size: 6, thickness: 1, gap: 0, margin: 6)
         let grown = CrosshairOutline.dilated(base, width: 2)
         for y in 0..<base.height {
             for x in 0..<base.width where base.coverage(x: x, y: y) > 0 {
@@ -86,13 +106,13 @@ import Testing
     }
 
     @Test func dilationByZeroIsUnchanged() {
-        let base = CrosshairShapeMath.mask(shape: .x, size: 8, thickness: 2, gap: 1, side: .leftUp, margin: 3)
+        let base = CrosshairShapeMath.mask(shape: .x, size: 8, thickness: 2, gap: 1, margin: 3)
         #expect(CrosshairOutline.dilated(base, width: 0) == base)
     }
 
     @Test(arguments: CrosshairSettings.Shape.allCases)
     func everyShapeProducesANonEmptyMaskExceptImage(shape: CrosshairSettings.Shape) {
-        let mask = CrosshairShapeMath.mask(shape: shape, size: 10, thickness: 2, gap: 0, side: .rightDown, margin: 2)
+        let mask = CrosshairShapeMath.mask(shape: shape, size: 10, thickness: 2, gap: 0, margin: 2)
         let total = mask.alpha.reduce(0) { $0 + Int($1) }
         if shape == .image {
             #expect(total == 0)
