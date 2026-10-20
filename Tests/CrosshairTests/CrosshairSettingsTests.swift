@@ -14,7 +14,7 @@ struct CrosshairSettingsTests {
         #expect(settings.outlineHex == "#000000")
         #expect(settings.outlineWidth == 2)
         #expect(settings.size == 10)
-        #expect(settings.thickness == 3)
+        #expect(settings.thickness == 2)
         #expect(settings.offsetX == 0 && settings.offsetY == 0)
         #expect(settings.imageName == nil)
         #expect(settings.imageScalePercent == 100)

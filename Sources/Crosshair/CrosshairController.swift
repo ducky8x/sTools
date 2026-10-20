@@ -104,6 +104,11 @@ public final class CrosshairController: ToolController {
         return CrosshairRenderer.builtIn(settings: settings)
     }
 
+    /// The crosshair's display in pixels, or nil when there's no display.
+    var displayPixelSize: PixelSize? {
+        targetDisplay().map { CrosshairGeometry.gridSize(frame: $0.frame, scale: $0.backingScale) }
+    }
+
     private func targetDisplay() -> DisplayInfo? {
         switch settings.displayChoice {
         case .followMinecraft:

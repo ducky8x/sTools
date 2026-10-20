@@ -34,11 +34,17 @@ enum CrosshairGeometry {
     }
 
     /// The index of the center pixel among `count` pixels. An even count has no center pixel, so it's the
-    /// one just left of (or above) the true center — where Minecraft centers its own crosshair, so the two
-    /// line up. A shape whose own width is even still lands exactly on the true center (see
-    /// `CrosshairShapeMath.centerFraction`).
+    /// one just left of (or above) the true center. A shape whose own width is even is drawn on that pixel's
+    /// far edge, which is exactly the true center (see `CrosshairShapeMath.centerFraction`).
     static func centerIndex(count: Int) -> Int {
         (max(count, 1) - 1) / 2
+    }
+
+    /// Whether a shape `length` pixels across can sit exactly on the middle of `display`: an even length
+    /// needs an even pixel count and an odd length an odd one, across and down. Otherwise one side of the
+    /// shape is a pixel longer than the other, whichever pixel it's drawn on.
+    static func centersExactly(length: Int, on display: PixelSize) -> Bool {
+        length % 2 == display.width % 2 && length % 2 == display.height % 2
     }
 
     /// The sprite pixel that lands on the target pixel.

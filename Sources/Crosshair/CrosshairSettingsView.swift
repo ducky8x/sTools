@@ -7,6 +7,7 @@ public struct CrosshairSettingsView: View {
     @Bindable private var controller: CrosshairController
     @State private var advancedExpanded = false
     @State private var isResetConfirming = false
+    @Environment(\.stTheme) private var theme
 
     public init(controller: CrosshairController) {
         self.controller = controller
@@ -25,6 +26,14 @@ public struct CrosshairSettingsView: View {
                 } else {
                     CrosshairColorsRow(settings: $controller.settings)
                     CrosshairSizeRow(settings: $controller.settings)
+                    if let display = controller.displayPixelSize,
+                       let note = CrosshairCentering.note(for: controller.settings, on: display) {
+                        Text(note)
+                            .stStyle(.caption)
+                            .foregroundStyle(theme.inkSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.vertical, 8)
+                    }
                 }
                 CrosshairOffsetRow(settings: $controller.settings)
             }
