@@ -1,0 +1,12 @@
+.build/
+build/
+.swiftpm/
+*.xcodeproj/xcuserdata
+.DS_Store
+# Signing material must never be committed.
+*.p12
+*.cer
+*.crt
+*.key
+*.pem
+
