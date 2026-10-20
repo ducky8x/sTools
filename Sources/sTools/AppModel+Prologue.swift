@@ -1,5 +1,7 @@
 import AppKit
+import Backdrop
 import KeyRebinder
+import NBBOverlay
 import Prologue
 import STDesign
 import STPlatform
@@ -10,13 +12,14 @@ import SwiftUI
 extension AppModel: PrologueHost {
     /// Shows the introduction at its saved step, or at `step`. Tools on at this moment stay on at its end.
     func beginPrologue(at step: PrologueStep? = nil) {
+        endTrials()
+        trials = TrialSession()
         toolsOnBeforePrologue = Set(ToolID.allCases.filter(isOn))
         prologue = PrologueModel(store: settings, host: self, startingAt: step)
     }
 
     /// Help ▸ Replay Introduction: from the greeting, whatever page is showing (spec D13).
     func replayIntroduction() {
-        endTrials()
         beginPrologue(at: .greeting)
     }
 
@@ -47,7 +50,7 @@ extension AppModel: PrologueHost {
     }
 
     func trial(_ trial: PrologueTrial) -> TrialContent {
-        TrialContent(items: { [] }, completed: { [] }, controls: { AnyView(EmptyView()) })
+        trialContent(trial)
     }
 
     func toolsToSwitchOff() -> [PrologueTrial] {
@@ -75,8 +78,12 @@ extension AppModel: PrologueHost {
         }
     }
 
-    /// Undoes what the trials put in place for themselves only.
-    func endTrials() {}
+    /// Undoes what the trials put in place for themselves only: the backdrop's stand-in window and the sample result.
+    func endTrials() {
+        trials.stopWatching()
+        controller(for: .windowBackdrop, as: BackdropController.self)?.standIn = nil
+        controller(for: .nbbOverlay, as: NBBOverlayController.self)?.sample = nil
+    }
 }
 
 /// What the Prologue's companion steps say, gathered here (spec 4.2, steps 7 and 8).

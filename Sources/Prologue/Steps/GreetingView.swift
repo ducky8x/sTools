@@ -34,7 +34,8 @@ struct GreetingView: View {
             STColor.background
             VStack(spacing: 0) {
                 Spacer(minLength: 20)
-                PrologueMark(lineProgress: lines, fillAmount: fill, lineColor: theme.accent, fillColor: STColor.ink, lineWidth: 1.25)
+                // The app icon's gold, whatever the accent color is set to.
+                PrologueMark(lineProgress: lines, fillAmount: fill, lineColor: STColor.gold, fillColor: STColor.gold, lineWidth: 1.25)
                     .frame(width: 168, height: 128)
                 TypewriterText(text: Copy.wordmark, isStarted: typesWordmark,
                                completionCount: model.animations.completionCount, fadeSpan: 12)

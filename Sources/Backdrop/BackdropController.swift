@@ -2,6 +2,17 @@ import AppKit
 import Observation
 import STPlatform
 
+/// A window the backdrop sits under while Minecraft isn't running.
+public struct BackdropStandIn: Equatable, Sendable {
+    public var windowNumber: Int
+    public var displayID: UInt32
+
+    public init(windowNumber: Int, displayID: UInt32) {
+        self.windowNumber = windowNumber
+        self.displayID = displayID
+    }
+}
+
 /// Owns the Window Backdrop tool's state and its one overlay panel per covered display (spec 5.2).
 @MainActor
 @Observable
@@ -13,6 +24,12 @@ public final class BackdropController: ToolController {
             services.settings.save(settings)
             reconcile()
         }
+    }
+
+    /// While Minecraft isn't running, the backdrop covers this window's display and sits right under it: the
+    /// Prologue's Window Backdrop trial uses the sTools window (spec D6). Nil everywhere else.
+    public var standIn: BackdropStandIn? {
+        didSet { if standIn != oldValue { reconcile() } }
     }
 
     @ObservationIgnored private let services: ToolServices
@@ -152,6 +169,15 @@ public final class BackdropController: ToolController {
     /// needed; a panel already showing the right content at the right place is left alone by AppKit.
     func reconcile() {
         guard isEnabled else { return }
+        if services.minecraft.active == nil, let standIn,
+           let display = services.displays.displays.first(where: { $0.id == standIn.displayID }) {
+            let panel = panel(for: display.id)
+            let fill = settings.fill(for: display.id)
+            panel.setContent(BackdropFillView(fill: fill, image: image(for: fill), opacity: Double(settings.opacityPercent) / 100))
+            panel.showBelow(frame: display.frame, windowNumber: standIn.windowNumber)
+            for (displayID, other) in panels where displayID != display.id { other.hide() }
+            return
+        }
         let covered = coveredDisplayIDs()
         let plans = BackdropOrdering.plan(
             coveredDisplayIDs: covered.sorted(),

@@ -32,12 +32,18 @@ struct ToolPage: View {
                     action: { Task { await model.allowAccessibility() } })
                 .padding(.top, 18)
             }
-            content.padding(.top, 22)
+            ToolContent(model: model, tool: tool).padding(.top, 22)
         }
         .pollsPermissions(model.permissions, when: tool.requiresAccessibility)
     }
+}
 
-    @ViewBuilder private var content: some View {
+/// A tool's own settings and plate: everything below its page header.
+struct ToolContent: View {
+    let model: AppModel
+    let tool: ToolID
+
+    var body: some View {
         switch tool {
         case .nbbOverlay:
             if let controller = model.controller(for: tool, as: NBBOverlayController.self) {

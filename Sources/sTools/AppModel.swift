@@ -47,6 +47,8 @@ final class AppModel {
         await KarabinerStatus(probes: .live(cli: KarabinerCLI(runner: ProcessCommandRunner(timeout: .seconds(2))))).evaluate()
     }
     @ObservationIgnored var lastKarabinerRequirement: KarabinerRequirement?
+    /// What the Prologue's trials have seen so far; fresh each time the introduction starts.
+    @ObservationIgnored var trials = TrialSession()
 
     /// Home ▸ Hotkeys (spec 6.1). Built lazily so its `toolStates`/`handler` closures can capture
     /// `self` — they only run on an actual key press, well after `init` returns.
