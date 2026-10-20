@@ -1,0 +1,52 @@
+{
+    "schema_version": 3,
+    "global": {
+        "show_in_menu_bar": true,
+        "future_flag": null,
+        "experimental": { "level": 18446744073709551615 }
+    },
+    "profiles": [
+        {
+            "selected": true,
+            "name": "Stage ✦ 日本語",
+            "ignore_pointing_device_events_by_default": true,
+            "simple_modifications": [
+                {
+                    "to": [{ "key_code": "escape" }],
+                    "from": { "key_code": "caps_lock" },
+                    "x_annotation": "kept"
+                }
+            ],
+            "devices": [
+                {
+                    "identifiers": {
+                        "vendor_id": 1452,
+                        "product_id": 834,
+                        "is_keyboard": true,
+                        "device_address": "aa-bb"
+                    },
+                    "mouse_flip_x": false,
+                    "pointing_motion_xy_multiplier": 1.0,
+                    "game_pad_xy_stick_deadzone": 0.1,
+                    "scale": 1e-7,
+                    "negative": -0.5E+3,
+                    "empty_list": [],
+                    "empty_map": {},
+                    "future_device_block": {
+                        "a": [1, 2, 3],
+                        "b": { "c": "d" }
+                    }
+                }
+            ],
+            "future_profile_block": {
+                "z": 1,
+                "a": [
+                    { "k": 1 },
+                    { "k": 2 }
+                ],
+                "m": "x"
+            }
+        }
+    ],
+    "tail_key": ["a", "b"]
+}

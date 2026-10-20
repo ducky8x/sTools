@@ -1,0 +1,403 @@
+import Foundation
+import STPlatform
+
+/// Insets that trim a source, as fractions (0..<1) of the source's own width and height.
+/// Fractions, not pixels, so a crop survives a window being resized.
+public struct CropInsets: Codable, Equatable, Hashable, Sendable {
+    public static let zero = CropInsets()
+    /// The most a source can be cropped on one axis: at least this fraction stays visible.
+    public static let minimumVisibleFraction = 0.02
+
+    public var left: Double
+    public var top: Double
+    public var right: Double
+    public var bottom: Double
+
+    public init(left: Double = 0, top: Double = 0, right: Double = 0, bottom: Double = 0) {
+        self.left = left
+        self.top = top
+        self.right = right
+        self.bottom = bottom
+    }
+
+    public var isZero: Bool { self == .zero }
+
+    /// Insets in pixels of a source that is `sourceSize` big (for the editor's crop fields).
+    public func pixels(of sourceSize: PixelSize) -> (left: Int, top: Int, right: Int, bottom: Int) {
+        let w = Double(sourceSize.width), h = Double(sourceSize.height)
+        return (Int((left * w).rounded()), Int((top * h).rounded()), Int((right * w).rounded()), Int((bottom * h).rounded()))
+    }
+
+    /// Builds insets from pixel values typed in the editor.
+    public init(left: Int, top: Int, right: Int, bottom: Int, of sourceSize: PixelSize) {
+        let w = Double(max(1, sourceSize.width)), h = Double(max(1, sourceSize.height))
+        self.init(left: Double(left) / w, top: Double(top) / h, right: Double(right) / w, bottom: Double(bottom) / h)
+        self = clamped()
+    }
+
+    /// Negative or non-finite values become 0, and an axis never crops away its last 2%.
+    public func clamped() -> CropInsets {
+        func clean(_ v: Double) -> Double { v.isFinite ? max(0, v) : 0 }
+        var l = clean(left), t = clean(top), r = clean(right), b = clean(bottom)
+        let room = 1 - Self.minimumVisibleFraction
+        if l + r > room { let k = room / (l + r); l *= k; r *= k }
+        if t + b > room { let k = room / (t + b); t *= k; b *= k }
+        return CropInsets(left: l, top: t, right: r, bottom: b)
+    }
+}
+
+/// A frame drawn around a source, inside its edge.
+public struct SourceBorder: Codable, Equatable, Hashable, Sendable {
+    /// Width in canvas pixels. 0 means no border.
+    public var width: Double
+    /// `#RRGGBB` or `#RRGGBBAA`.
+    public var colorHex: String
+
+    public init(width: Double = 0, colorHex: String = "#FFFFFF") {
+        self.width = width
+        self.colorHex = colorHex
+    }
+
+    public static let none = SourceBorder()
+}
+
+public struct WindowReference: Codable, Equatable, Hashable, Sendable {
+    /// The `CGWindowID`. Only valid while that window lives; `appName`/`title` re-find it in a later session.
+    public var windowID: UInt32
+    public var appName: String
+    public var bundleID: String?
+    public var title: String
+
+    public init(windowID: UInt32, appName: String, bundleID: String? = nil, title: String) {
+        self.windowID = windowID
+        self.appName = appName
+        self.bundleID = bundleID
+        self.title = title
+    }
+}
+
+public struct DisplayReference: Codable, Equatable, Hashable, Sendable {
+    public var displayID: UInt32
+    public var name: String
+
+    public init(displayID: UInt32, name: String) {
+        self.displayID = displayID
+        self.name = name
+    }
+}
+
+public struct CameraReference: Codable, Equatable, Hashable, Sendable {
+    public var uniqueID: String
+    public var name: String
+
+    public init(uniqueID: String, name: String) {
+        self.uniqueID = uniqueID
+        self.name = name
+    }
+}
+
+public enum VideoSourceKind: Equatable, Hashable, Sendable, Codable {
+    case window(WindowReference)
+    case display(DisplayReference)
+    case camera(CameraReference)
+    /// A web page, rendered off-screen at the source's pixel size.
+    case browser(url: String)
+
+    private enum CodingKeys: String, CodingKey { case type, window, display, camera, url }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        switch try c.decode(String.self, forKey: .type) {
+        case "window": self = .window(try c.decode(WindowReference.self, forKey: .window))
+        case "display": self = .display(try c.decode(DisplayReference.self, forKey: .display))
+        case "camera": self = .camera(try c.decode(CameraReference.self, forKey: .camera))
+        case "browser": self = .browser(url: try c.decode(String.self, forKey: .url))
+        default:
+            throw DecodingError.dataCorruptedError(forKey: .type, in: c, debugDescription: "Unknown video source type")
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .window(let ref):
+            try c.encode("window", forKey: .type)
+            try c.encode(ref, forKey: .window)
+        case .display(let ref):
+            try c.encode("display", forKey: .type)
+            try c.encode(ref, forKey: .display)
+        case .camera(let ref):
+            try c.encode("camera", forKey: .type)
+            try c.encode(ref, forKey: .camera)
+        case .browser(let url):
+            try c.encode("browser", forKey: .type)
+            try c.encode(url, forKey: .url)
+        }
+    }
+}
+
+/// One video source placed on the canvas.
+public struct VideoSource: Codable, Equatable, Hashable, Identifiable, Sendable {
+    public var id: UUID
+    public var kind: VideoSourceKind
+    /// Where the source sits on the canvas, in canvas pixels (top-left origin).
+    public var frame: PixelRect
+    public var crop: CropInsets
+    /// 0...1.
+    public var opacity: Double
+    /// In canvas pixels.
+    public var cornerRadius: Double
+    public var border: SourceBorder
+    /// Stack order: higher draws on top. Use the layout's reorder methods to change it.
+    public var zIndex: Int
+
+    public init(
+        id: UUID = UUID(),
+        kind: VideoSourceKind,
+        frame: PixelRect,
+        crop: CropInsets = .zero,
+        opacity: Double = 1,
+        cornerRadius: Double = 0,
+        border: SourceBorder = .none,
+        zIndex: Int = 0
+    ) {
+        self.id = id
+        self.kind = kind
+        self.frame = frame
+        self.crop = crop
+        self.opacity = opacity
+        self.cornerRadius = cornerRadius
+        self.border = border
+        self.zIndex = zIndex
+    }
+
+    /// A short label for lists.
+    public var title: String {
+        switch kind {
+        case .window(let ref): ref.title.isEmpty ? ref.appName : "\(ref.appName) — \(ref.title)"
+        case .display(let ref): ref.name
+        case .camera(let ref): ref.name
+        case .browser(let url): url
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, kind, frame, crop, opacity, cornerRadius, border, zIndex
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            id: c.value(.id, UUID()),
+            kind: try c.decode(VideoSourceKind.self, forKey: .kind),
+            frame: try c.decode(PixelRect.self, forKey: .frame),
+            crop: c.value(.crop, .zero),
+            opacity: c.value(.opacity, 1),
+            cornerRadius: c.value(.cornerRadius, 0),
+            border: c.value(.border, .none),
+            zIndex: c.value(.zIndex, 0))
+    }
+}
+
+public enum AudioSourceKind: Equatable, Hashable, Sendable, Codable {
+    /// Every audio process of the app with this bundle ID (helpers such as browser renderers included).
+    case app(bundleID: String)
+    case microphone(uniqueID: String)
+    /// The sound of a browser video source.
+    case browser(videoSourceID: UUID)
+
+    private enum CodingKeys: String, CodingKey { case type, bundleID, uniqueID, videoSourceID }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        switch try c.decode(String.self, forKey: .type) {
+        case "app": self = .app(bundleID: try c.decode(String.self, forKey: .bundleID))
+        case "microphone": self = .microphone(uniqueID: try c.decode(String.self, forKey: .uniqueID))
+        case "browser": self = .browser(videoSourceID: try c.decode(UUID.self, forKey: .videoSourceID))
+        default:
+            throw DecodingError.dataCorruptedError(forKey: .type, in: c, debugDescription: "Unknown audio source type")
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .app(let bundleID):
+            try c.encode("app", forKey: .type)
+            try c.encode(bundleID, forKey: .bundleID)
+        case .microphone(let uniqueID):
+            try c.encode("microphone", forKey: .type)
+            try c.encode(uniqueID, forKey: .uniqueID)
+        case .browser(let id):
+            try c.encode("browser", forKey: .type)
+            try c.encode(id, forKey: .videoSourceID)
+        }
+    }
+}
+
+/// One audio source and its volume.
+public struct AudioSource: Codable, Equatable, Hashable, Identifiable, Sendable {
+    public static let volumeRange = 0.0...1.5
+
+    public var id: UUID
+    public var kind: AudioSourceKind
+    /// The track name in the file and the label in the editor.
+    public var name: String
+    /// 0...1.5, default 1.
+    public var volume: Double
+
+    public init(id: UUID = UUID(), kind: AudioSourceKind, name: String, volume: Double = 1) {
+        self.id = id
+        self.kind = kind
+        self.name = name
+        self.volume = Self.clampVolume(volume)
+    }
+
+    public static func clampVolume(_ value: Double) -> Double {
+        guard value.isFinite else { return 1 }
+        return min(volumeRange.upperBound, max(volumeRange.lowerBound, value))
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, kind, name, volume }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            id: c.value(.id, UUID()),
+            kind: try c.decode(AudioSourceKind.self, forKey: .kind),
+            name: c.value(.name, "Audio"),
+            volume: c.value(.volume, 1))
+    }
+}
+
+/// The saved canvas layout: video sources, audio sources, and whether Minecraft's own sound is recorded.
+/// Stored as the `recordingLayout` settings document.
+public struct RecordingLayout: SettingsDocument {
+    public static let name = "recordingLayout"
+    public static let version = 1
+    public static var defaultValue: RecordingLayout { RecordingLayout() }
+
+    public var videoSources: [VideoSource]
+    public var audioSources: [AudioSource]
+    public var includesMinecraftAudio: Bool
+    /// Volume of Minecraft's sound, 0...1.5.
+    public var minecraftAudioVolume: Double
+
+    public init(
+        videoSources: [VideoSource] = [],
+        audioSources: [AudioSource] = [],
+        includesMinecraftAudio: Bool = true,
+        minecraftAudioVolume: Double = 1
+    ) {
+        self.videoSources = videoSources
+        self.audioSources = audioSources
+        self.includesMinecraftAudio = includesMinecraftAudio
+        self.minecraftAudioVolume = AudioSource.clampVolume(minecraftAudioVolume)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case videoSources, audioSources, includesMinecraftAudio, minecraftAudioVolume
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            videoSources: c.value(.videoSources, []),
+            audioSources: c.value(.audioSources, []),
+            includesMinecraftAudio: c.value(.includesMinecraftAudio, true),
+            minecraftAudioVolume: c.value(.minecraftAudioVolume, 1))
+    }
+
+    /// Video sources from the back of the stack to the front. Ties keep their saved order.
+    public var orderedVideoSources: [VideoSource] {
+        videoSources.enumerated()
+            .sorted { ($0.element.zIndex, $0.offset) < ($1.element.zIndex, $1.offset) }
+            .map(\.element)
+    }
+
+    // MARK: Editing
+
+    /// Adds a source on top of the stack.
+    public mutating func add(_ source: VideoSource) {
+        var source = source
+        source.zIndex = (videoSources.map(\.zIndex).max() ?? -1) + 1
+        videoSources.append(source)
+    }
+
+    public mutating func removeVideoSource(_ id: UUID) {
+        videoSources.removeAll { $0.id == id }
+        audioSources.removeAll { source in
+            if case .browser(let videoID) = source.kind { return videoID == id }
+            return false
+        }
+        normalizeStackOrder()
+    }
+
+    public mutating func add(_ source: AudioSource) {
+        audioSources.append(source)
+    }
+
+    public mutating func removeAudioSource(_ id: UUID) {
+        audioSources.removeAll { $0.id == id }
+    }
+
+    public mutating func setVolume(_ volume: Double, forAudioSource id: UUID) {
+        guard let index = audioSources.firstIndex(where: { $0.id == id }) else { return }
+        audioSources[index].volume = AudioSource.clampVolume(volume)
+    }
+
+    public mutating func bringToFront(_ id: UUID) {
+        move(id) { order, index in order.append(order.remove(at: index)) }
+    }
+
+    public mutating func sendToBack(_ id: UUID) {
+        move(id) { order, index in order.insert(order.remove(at: index), at: 0) }
+    }
+
+    public mutating func moveForward(_ id: UUID) {
+        move(id) { order, index in
+            guard index < order.count - 1 else { return }
+            order.swapAt(index, index + 1)
+        }
+    }
+
+    public mutating func moveBackward(_ id: UUID) {
+        move(id) { order, index in
+            guard index > 0 else { return }
+            order.swapAt(index, index - 1)
+        }
+    }
+
+    /// Rewrites `zIndex` as 0, 1, 2, … in the current stack order.
+    public mutating func normalizeStackOrder() {
+        let order = orderedVideoSources.map(\.id)
+        for (z, id) in order.enumerated() {
+            if let i = videoSources.firstIndex(where: { $0.id == id }) { videoSources[i].zIndex = z }
+        }
+    }
+
+    /// Pulls every value into its legal range for a canvas of `canvas` pixels.
+    public mutating func sanitize(canvas: PixelSize) {
+        for i in videoSources.indices {
+            videoSources[i].frame = LayoutMath.clamp(videoSources[i].frame, to: canvas)
+            videoSources[i].crop = videoSources[i].crop.clamped()
+            let opacity = videoSources[i].opacity
+            videoSources[i].opacity = opacity.isFinite ? min(1, max(0, opacity)) : 1
+            let radius = videoSources[i].cornerRadius
+            videoSources[i].cornerRadius = radius.isFinite ? max(0, radius) : 0
+            let width = videoSources[i].border.width
+            videoSources[i].border.width = width.isFinite ? max(0, width) : 0
+        }
+        for i in audioSources.indices { audioSources[i].volume = AudioSource.clampVolume(audioSources[i].volume) }
+        minecraftAudioVolume = AudioSource.clampVolume(minecraftAudioVolume)
+    }
+
+    private mutating func move(_ id: UUID, _ change: (inout [UUID], Int) -> Void) {
+        var order = orderedVideoSources.map(\.id)
+        guard let index = order.firstIndex(of: id) else { return }
+        change(&order, index)
+        for (z, sourceID) in order.enumerated() {
+            if let i = videoSources.firstIndex(where: { $0.id == sourceID }) { videoSources[i].zIndex = z }
+        }
+    }
+}

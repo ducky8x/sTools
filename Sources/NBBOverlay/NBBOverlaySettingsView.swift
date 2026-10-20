@@ -1,0 +1,165 @@
+import STDesign
+import SwiftUI
+
+/// Everything below the page header for the NBB Overlay tool: reachability, the live preview plate,
+/// the everyday settings, then an Advanced section (spec 5.1.5).
+public struct NBBOverlaySettingsView: View {
+    @Bindable private var controller: NBBOverlayController
+    @State private var advancedExpanded = false
+    @State private var isResetConfirming = false
+
+    public init(controller: NBBOverlayController) {
+        self.controller = controller
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            if controller.isEnabled, !controller.isReachable {
+                STRequirementStrip(
+                    kind: .warning,
+                    message: "Ninjabrain Bot isn't reachable at localhost:52533 — enable its API under Settings ▸ Advanced in Ninjabrain Bot.")
+            }
+            if let version = controller.nbbVersion {
+                Text("Ninjabrain Bot \(version)").stStyle(.caption).foregroundStyle(STColor.inkSecondary)
+            }
+
+            VStack(alignment: .leading, spacing: 0) {
+                STSettingsRow("Move and resize by dragging") {
+                    STSwitch(isOn: $controller.settings.placementModeEnabled, label: "Move and resize by dragging")
+                }
+                if controller.settings.placementModeEnabled {
+                    STSettingsRow("Snap to edges and center", showsRule: false) {
+                        STSwitch(isOn: $controller.settings.snappingEnabled, label: "Snap to edges and center")
+                    }
+                    Text("Turn the tool on, then drag the overlay on screen to move it, or its corner handle to resize. The fields below still work the same way, and update live as you drag.")
+                        .stStyle(.caption).foregroundStyle(STColor.inkSecondary).padding(.bottom, 10)
+                }
+                STSettingsRow("Position") {
+                    HStack(spacing: 8) {
+                        STNumberField(value: offsetXBinding, label: "Horizontal offset")
+                        STNumberField(value: offsetYBinding, label: "Vertical offset")
+                    }
+                }
+                STSettingsRow("Width") {
+                    STSlider(value: widthBinding, in: Double(NBBOverlaySettings.widthRange.lowerBound)...Double(NBBOverlaySettings.widthRange.upperBound), label: "Width", valueText: { "\(Int($0)) px" })
+                }
+                STSettingsRow("Aspect ratio") {
+                    STSegmented(selection: aspectRatioPresetBinding, options: NBBAspectRatioPreset.allCases.map { STSegmentedOption($0, $0.title) })
+                }
+                if aspectRatioPresetBinding.wrappedValue == .custom {
+                    STSettingsRow("Custom ratio", showsRule: false) {
+                        STSlider(value: aspectRatioBinding, in: NBBOverlaySettings.aspectRatioRange, step: 0.05, label: "Custom ratio", valueText: { String(format: "%.2f", $0) })
+                    }
+                }
+                STSettingsRow("Plate opacity") {
+                    STSlider(value: plateOpacityBinding, in: Double(NBBOverlaySettings.plateOpacityRange.lowerBound)...Double(NBBOverlaySettings.plateOpacityRange.upperBound), label: "Plate opacity", valueText: { "\(Int($0))%" })
+                }
+                STSettingsRow("Show when there is data") {
+                    STSwitch(isOn: $controller.settings.requiresData, label: "Show when there is data")
+                }
+                STSettingsRow("Show only while Minecraft is focused") {
+                    STSwitch(isOn: $controller.settings.requiresMinecraftFocus, label: "Show only while Minecraft is focused")
+                }
+                STSettingsRow("Predictions") { STSwitch(isOn: $controller.settings.showsPredictions, label: "Predictions") }
+                STSettingsRow("Eye throws") { STSwitch(isOn: $controller.settings.showsEyeThrows, label: "Eye throws") }
+                STSettingsRow("Boat state") { STSwitch(isOn: $controller.settings.showsBoatState, label: "Boat state") }
+                STSettingsRow("Information messages", showsRule: false) {
+                    STSwitch(isOn: $controller.settings.showsInformationMessages, label: "Information messages")
+                }
+            }
+
+            STAdvancedDisclosure(isExpanded: $advancedExpanded) {
+                VStack(alignment: .leading, spacing: 0) {
+                    STSettingsRow("Location column") { STSwitch(isOn: $controller.settings.showsLocationColumn, label: "Location column") }
+                    STSettingsRow("Certainty column") { STSwitch(isOn: $controller.settings.showsCertaintyColumn, label: "Certainty column") }
+                    STSettingsRow("Distance column") { STSwitch(isOn: $controller.settings.showsDistanceColumn, label: "Distance column") }
+                    STSettingsRow("Prediction rows") {
+                        STSlider(value: maxRowsBinding, in: Double(NBBOverlaySettings.maxPredictionRowsRange.lowerBound)...Double(NBBOverlaySettings.maxPredictionRowsRange.upperBound), label: "Prediction rows", valueText: { "\(Int($0))" })
+                    }
+                    STSettingsRow("Fade on reset") { STSwitch(isOn: $controller.settings.fadeOnResetEnabled, label: "Fade on reset") }
+                    if controller.settings.fadeOnResetEnabled {
+                        STSettingsRow("Fade duration") {
+                            STSlider(value: $controller.settings.fadeSeconds, in: 0...2, label: "Fade duration", valueText: { String(format: "%.2fs", $0) })
+                        }
+                    }
+                    STSettingsRow("Reset", showsRule: false) {
+                        Button("Reset to default\u{2026}") { isResetConfirming = true }
+                            .buttonStyle(STButtonStyle(.secondary))
+                    }
+                }
+            }
+        }
+        .confirmationDialog(
+            "Reset NBB Overlay to default?", isPresented: $isResetConfirming, titleVisibility: .visible,
+            actions: {
+                Button("Reset to Default", role: .destructive) { controller.resetToDefault() }
+                Button("Cancel", role: .cancel) {}
+            },
+            message: { Text("This sets every NBB Overlay setting back to its default.") })
+    }
+
+    private var offsetXBinding: Binding<Int> {
+        Binding(get: { controller.settings.offsetX }, set: { controller.settings.offsetX = $0 })
+    }
+
+    private var offsetYBinding: Binding<Int> {
+        Binding(get: { controller.settings.offsetY }, set: { controller.settings.offsetY = $0 })
+    }
+
+    private var widthBinding: Binding<Double> {
+        Binding(get: { Double(controller.settings.width) }, set: { controller.settings.width = Int($0.rounded()) })
+    }
+
+    private var aspectRatioBinding: Binding<Double> {
+        Binding(get: { controller.settings.aspectRatio }, set: { controller.settings.aspectRatio = $0 })
+    }
+
+    /// Reads back as whichever preset the current ratio matches (or `.custom`); picking a fixed
+    /// preset applies its ratio immediately, picking `.custom` just reveals the free-form slider.
+    private var aspectRatioPresetBinding: Binding<NBBAspectRatioPreset> {
+        Binding(
+            get: { NBBAspectRatioPreset.matching(controller.settings.aspectRatio) },
+            set: { preset in
+                if let ratio = preset.ratio { controller.settings.aspectRatio = ratio }
+            })
+    }
+
+    private var plateOpacityBinding: Binding<Double> {
+        Binding(get: { Double(controller.settings.plateOpacityPercent) }, set: { controller.settings.plateOpacityPercent = Int($0.rounded()) })
+    }
+
+    private var maxRowsBinding: Binding<Double> {
+        Binding(get: { Double(controller.settings.maxPredictionRows) }, set: { controller.settings.maxPredictionRows = Int($0.rounded()) })
+    }
+}
+
+/// A small labeled integer field, for the position X/Y typed input (spec 5.1.5 "or type X/Y").
+private struct STNumberField: View {
+    @Binding var value: Int
+    let label: String
+    @State private var text = ""
+    @Environment(\.stTheme) private var theme
+
+    var body: some View {
+        TextField(label, text: $text)
+            .textFieldStyle(.plain)
+            .font(.system(size: 13 * theme.textScale).monospacedDigit())
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .frame(width: 64)
+            .background(STColor.surface, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(theme.stroke, lineWidth: 1))
+            .multilineTextAlignment(.trailing)
+            .accessibilityLabel(label)
+            .onAppear { text = String(value) }
+            .onChange(of: value) { _, newValue in text = String(newValue) }
+            .onSubmit { commit() }
+            .onChange(of: text) { _, newValue in
+                if let parsed = Int(newValue) { value = parsed }
+            }
+    }
+
+    private func commit() {
+        if let parsed = Int(text) { value = parsed } else { text = String(value) }
+    }
+}

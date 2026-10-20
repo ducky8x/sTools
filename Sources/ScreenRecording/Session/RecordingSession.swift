@@ -1,0 +1,153 @@
+import CoreMedia
+import CoreVideo
+import Foundation
+import os
+
+/// One recording: the frame clock composites the rig's latest frames into the writer at the output rate, and
+/// the sound collected since the last tick goes in alongside (spec 5.4.2).
+public final class RecordingSession: @unchecked Sendable {
+    /// Audio is written this far behind the video clock, so sources that deliver a little late are not padded
+    /// with silence and then trimmed.
+    public static let audioLag = 0.25
+
+    public struct Configuration: Sendable {
+        public var layout: RecordingLayout
+        public var options: RecordingOptions
+        public var canvas: PixelSize
+        public var baseName: String
+        /// Where the .mov is written; the options' folder when nil.
+        public var directory: URL?
+
+        public init(layout: RecordingLayout, options: RecordingOptions, canvas: PixelSize, baseName: String, directory: URL? = nil) {
+            self.layout = layout
+            self.options = options
+            self.canvas = canvas
+            self.baseName = baseName
+            self.directory = directory
+        }
+
+        public var outputSize: PixelSize { LayoutMath.outputSize(options.outputSize, canvas: canvas) }
+    }
+
+    public let configuration: Configuration
+    public let tracks: [AudioSourceTrack]
+    public var writerEvents: AsyncStream<WriterEvent> { writer.events }
+
+    private let rig: CaptureRig
+    private let writer: RecordingWriter
+    private let compositor: Compositor
+    private let clock: any MediaClock
+    private let driver: any TickDriver
+    private var frameClock: FrameClock?
+    private var bus: AudioMixBus?
+    private let state = OSAllocatedUnfairLock(initialState: TickState())
+    /// Held for a whole tick. `stop()` takes it too, so a tick already running when Stop is pressed finishes
+    /// first and none runs after: otherwise a late tick could write older sound after the final block.
+    private let tickGate = NSLock()
+    private var isStopped = false
+
+    private struct TickState {
+        var lastTick: FrameTick?
+        var skippedSlots = 0
+        var compositorMisses = 0
+        /// Ticks skipped because the encoder wasn't ready; nothing was drawn for them.
+        var encoderBusy = 0
+    }
+
+    public init(
+        configuration: Configuration, rig: CaptureRig, clock: any MediaClock = HostMediaClock(),
+        driver: (any TickDriver)? = nil, freeSpace: any FreeSpaceProvider = VolumeFreeSpaceProvider()
+    ) throws {
+        self.configuration = configuration
+        self.rig = rig
+        self.clock = clock
+        self.driver = driver ?? DispatchTickDriver(queue: DispatchQueue(label: "sTools.recording.frames", qos: .userInteractive))
+        let output = configuration.outputSize
+        tracks = AudioSourceTrack.tracks(for: configuration.layout).filter { rig.audioTracks.contains($0.id) }
+        let trackNames = tracks.isEmpty ? [] : [AudioSourceTrack.mixTitle] + tracks.map(\.title)
+        var writerConfiguration = WriterConfiguration(
+            options: configuration.options, baseName: configuration.baseName, canvas: output,
+            audioTrackNames: trackNames, directory: configuration.directory)
+        writerConfiguration.canvas = output
+        writer = RecordingWriter(configuration: writerConfiguration, freeSpace: freeSpace)
+        compositor = try Compositor(outputSize: output)
+    }
+
+    /// Starts writing now.
+    public func start() throws {
+        let origin = clock.now()
+        try writer.start(at: .zero)
+        let bus = AudioMixBus(origin: origin, tracks: tracks)
+        self.bus = bus
+        rig.attach(bus)
+        let frameClock = FrameClock(
+            framesPerSecond: configuration.options.frameRate.framesPerSecond, clock: clock, driver: driver
+        ) { [weak self] tick in self?.tick(tick) }
+        self.frameClock = frameClock
+        frameClock.start(origin: origin)
+    }
+
+    /// Stops ticking, writes the last of the sound, and finalizes the file(s).
+    public func stop() async -> WriterResult {
+        frameClock?.stop()
+        tickGate.withLock { isStopped = true }
+        let last = state.withLock { $0.lastTick }
+        if let last, let bus {
+            // Give late sound its lag's worth of time to arrive, then close every track at the last frame's end.
+            try? await Task.sleep(for: .seconds(Self.audioLag))
+            let end = CMTimeAdd(last.hostTime, CMTime(value: 1, timescale: CMTimeScale(configuration.options.frameRate.framesPerSecond)))
+            if let block = bus.finish(at: end) { write(block) }
+        }
+        rig.attach(nil)
+        return await writer.finish()
+    }
+
+    // MARK: Live readouts
+
+    public var elapsedSeconds: Double { state.withLock { $0.lastTick.map { CMTimeGetSeconds($0.time) } ?? 0 } }
+    public var currentFileSize: Int64 { writer.currentFileSize }
+    /// Frames the encoder or the compositor couldn't take, plus slots the clock missed.
+    public var droppedFrames: Int {
+        let local = state.withLock { $0.skippedSlots + $0.compositorMisses + $0.encoderBusy }
+        return writer.droppedFrameCount + local
+    }
+
+    // MARK: Ticking
+
+    private func tick(_ tick: FrameTick) {
+        tickGate.lock()
+        defer { tickGate.unlock() }
+        guard !isStopped else { return }
+        state.withLock {
+            $0.lastTick = tick
+            $0.skippedSlots += tick.skippedSlots
+        }
+        let snapshot = rig.hub.snapshot()
+        let frames = snapshot.frames.mapValues(\.frame)
+        if writer.canAcceptFrame {
+            let plan = CompositionPlan.make(
+                layout: configuration.layout, canvas: configuration.canvas, output: compositor.outputSize,
+                frames: frames.mapValues(CompositionPlan.FrameGeometry.init))
+            if let buffer = compositor.render(plan, frames: frames) {
+                writer.append(frame: buffer, at: tick.time)
+            } else {
+                state.withLock { $0.compositorMisses += 1 }
+            }
+        } else {
+            state.withLock { $0.encoderBusy += 1 }
+        }
+        if let bus, let block = bus.drain(upTo: CMTimeSubtract(tick.hostTime, CMTime(seconds: Self.audioLag, preferredTimescale: 1_000_000))) {
+            write(block)
+        }
+    }
+
+    private func write(_ block: AudioBlock) {
+        guard !tracks.isEmpty else { return }
+        let time = CMTime(value: block.startFrame, timescale: CMTimeScale(AudioFormat.sampleRate))
+        writer.append(audio: TrackAudio(track: 0, time: time, samples: block.mix))
+        for (index, track) in tracks.enumerated() {
+            let samples = block.tracks[track.id] ?? [Float](repeating: 0, count: block.frameCount * AudioFormat.channelCount)
+            writer.append(audio: TrackAudio(track: index + 1, time: time, samples: samples))
+        }
+    }
+}

@@ -2,7 +2,7 @@
 
 A Mac app for Minecraft: Java Edition speedrunners — five tools in one elegant, always-dark app.
 
-> **Status:** in design. There is no build yet. The first beta (0.1.0) goes to testers before any public release.
+> **Status:** in development. Built so far: the app itself, Crosshair, Window Backdrop, NBB Overlay, hotkeys and settings, Key Rebinder and Screen Recording. Still to come: the first-launch introduction and the beta release. The first beta (0.1.0) goes to testers before any public release.
 
 ## Tools
 
