@@ -25,8 +25,15 @@ public final class OverlayPanel: NSPanel {
         set { ignoresMouseEvents = !newValue }
     }
 
-    public init(role: Role = .topmost) {
+    /// Keeps the panel out of every capture: other apps' screenshots and recordings (`sharingType`), and
+    /// sTools' own Screen Recording, whose base layer skips it (`visibleWindowNumbers()`) and whose display
+    /// sources exclude it (`captureExcludedWindowNumbers()`). Off by default: overlays belong in recordings.
+    /// Fixed at creation because the window server won't take a window back from `sharingType = .none`.
+    public let isExcludedFromCapture: Bool
+
+    public init(role: Role = .topmost, isExcludedFromCapture: Bool = false) {
         self.role = role
+        self.isExcludedFromCapture = isExcludedFromCapture
         super.init(
             contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -38,7 +45,7 @@ public final class OverlayPanel: NSPanel {
         backgroundColor = .clear
         hasShadow = false
         hidesOnDeactivate = false
-        sharingType = .readOnly
+        sharingType = isExcludedFromCapture ? .none : .readOnly
         switch role {
         case .topmost:
             ignoresMouseEvents = true
@@ -59,9 +66,20 @@ public final class OverlayPanel: NSPanel {
     }
 
     /// The window numbers of every overlay and backdrop panel on screen: what a recording's base layer
-    /// includes besides Minecraft (rule R5), and nothing else of sTools.
+    /// includes besides Minecraft (rule R5), and nothing else of sTools. Panels excluded from capture
+    /// are left out.
     public static func visibleWindowNumbers() -> [UInt32] {
-        NSApp.windows.compactMap { $0 as? OverlayPanel }.filter(\.isVisible).map { UInt32($0.windowNumber) }
+        NSApp.windows.compactMap { $0 as? OverlayPanel }
+            .filter { $0.isVisible && !$0.isExcludedFromCapture }
+            .map { UInt32($0.windowNumber) }
+    }
+
+    /// The window numbers of every panel excluded from capture, shown or not, so a whole-display
+    /// recording can leave them out even if one appears after the recording started.
+    public static func captureExcludedWindowNumbers() -> [UInt32] {
+        NSApp.windows.compactMap { $0 as? OverlayPanel }
+            .filter { $0.isExcludedFromCapture && $0.windowNumber > 0 }
+            .map { UInt32($0.windowNumber) }
     }
 
     override public var canBecomeKey: Bool { false }

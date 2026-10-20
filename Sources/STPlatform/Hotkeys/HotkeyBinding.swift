@@ -33,17 +33,22 @@ public struct HotkeySettings: SettingsDocument {
     /// The master switch. Off by default; while off, nothing is registered with the system.
     public var isEnabled: Bool
     public var bindings: [HotkeyBinding]
+    /// Advanced: whether a press shows the on-screen confirmation (a seal and what changed). On by default;
+    /// the sound plays either way.
+    public var showsConfirmation: Bool
 
-    public init(isEnabled: Bool = false, bindings: [HotkeyBinding] = []) {
+    public init(isEnabled: Bool = false, bindings: [HotkeyBinding] = [], showsConfirmation: Bool = true) {
         self.isEnabled = isEnabled
         self.bindings = bindings
+        self.showsConfirmation = showsConfirmation
     }
 
-    private enum CodingKeys: String, CodingKey { case isEnabled, bindings }
+    private enum CodingKeys: String, CodingKey { case isEnabled, bindings, showsConfirmation }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.init(isEnabled: try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? false,
-                  bindings: try container.decodeIfPresent([HotkeyBinding].self, forKey: .bindings) ?? [])
+                  bindings: try container.decodeIfPresent([HotkeyBinding].self, forKey: .bindings) ?? [],
+                  showsConfirmation: try container.decodeIfPresent(Bool.self, forKey: .showsConfirmation) ?? true)
     }
 }

@@ -9,6 +9,25 @@ struct HotkeySettingsTests {
         #expect(HotkeySettings.version == 1)
         #expect(HotkeySettings.defaultValue.isEnabled == false)
         #expect(HotkeySettings.defaultValue.bindings.isEmpty)
+        #expect(HotkeySettings.defaultValue.showsConfirmation)
+    }
+
+    /// Documents saved before the confirmation setting existed keep their switch and bindings, and get it on.
+    @Test func olderDocumentsWithoutShowsConfirmationDecodeWithItOn() throws {
+        let json = """
+        {"isEnabled":true,"bindings":[{"id":"5B0C8B8E-6D0B-4F1E-9B7B-0B7C1C3D4E5F",
+         "combo":{"keyCode":8,"modifiers":6144},"actions":["toggle.crosshair"]}]}
+        """
+        let settings = try JSONDecoder().decode(HotkeySettings.self, from: Data(json.utf8))
+        #expect(settings.isEnabled)
+        #expect(settings.bindings.count == 1)
+        #expect(settings.showsConfirmation)
+    }
+
+    @Test func showsConfirmationOffRoundTrips() throws {
+        let value = HotkeySettings(isEnabled: true, bindings: [], showsConfirmation: false)
+        let decoded = try JSONDecoder().decode(HotkeySettings.self, from: JSONEncoder().encode(value))
+        #expect(decoded == value)
     }
 
     @Test func bindingDropsRepeatedActionsKeepingOrder() {

@@ -34,6 +34,8 @@ private final class Harness {
     let registrar = FakeRegistrar()
     var tools: [HotkeyTool: Bool] = [:]
     var events: [HotkeyEvent] = []
+    /// Each handler call, so tests can check a press arrives as one call.
+    var presses: [[HotkeyEvent]] = []
     var center: HotkeyCenter!
 
     init(preload: HotkeySettings? = nil) async {
@@ -48,7 +50,10 @@ private final class Harness {
     func makeCenter() {
         center = HotkeyCenter(store: store, registrar: registrar,
                               toolStates: { [unowned self] in tools },
-                              handler: { [unowned self] in events.append($0) })
+                              handler: { [unowned self] in
+                                  events.append(contentsOf: $0)
+                                  presses.append($0)
+                              })
     }
 
     deinit { try? FileManager.default.removeItem(at: directory) }
@@ -253,6 +258,14 @@ struct HotkeyCenterTests {
         #expect(h.events == [.setTool(.screenRecording, isOn: true), .toggleRecording])
     }
 
+    @Test func aPressArrivesAsOneHandlerCall() async {
+        let h = await Harness()
+        h.center.isEnabled = true
+        let id = h.center.add(combo: ctrlOptC, actions: [.toggle(.crosshair), .toggle(.nbbOverlay), .startStopRecording])
+        h.registrar.press(id)
+        #expect(h.presses == [[.setTool(.crosshair, isOn: true), .setTool(.nbbOverlay, isOn: true), .toggleRecording]])
+    }
+
     @Test func pressWhileDisabledDoesNothing() async {
         let h = await Harness()
         h.center.isEnabled = true
@@ -292,6 +305,23 @@ struct HotkeyCenterTests {
         let h = await Harness(preload: HotkeySettings(isEnabled: false, bindings: [binding]))
         #expect(h.center.bindings == [binding])
         #expect(h.registrar.active.isEmpty)
+    }
+
+    @Test func showsConfirmationDefaultsOnAndPersistsWithoutTouchingRegistrations() async {
+        let h = await Harness()
+        h.center.isEnabled = true
+        let id = h.center.add(combo: ctrlOptC, actions: [.toggle(.crosshair)])
+        let logBefore = h.registrar.log
+        #expect(h.center.showsConfirmation)
+
+        h.center.showsConfirmation = false
+        await h.store.flush()
+        #expect(h.registrar.log == logBefore)
+        #expect(h.center.status(of: id) == .registered)
+
+        let relaunched = HotkeyCenter(store: SettingsStore(directory: h.directory), registrar: FakeRegistrar(),
+                                      toolStates: { [:] }, handler: { _ in })
+        #expect(!relaunched.showsConfirmation)
     }
 
     @Test func settingTheSwitchToItsCurrentValueDoesNothing() async {

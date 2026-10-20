@@ -41,18 +41,22 @@ final class AppModel {
     @ObservationIgnored lazy var hotkeys: HotkeyCenter = HotkeyCenter(
         store: services.settings, registrar: hotkeyRegistrar,
         toolStates: { [weak self] in self?.hotkeyToolStates() ?? [:] },
-        handler: { [weak self] event in self?.handleHotkeyEvent(event) })
+        handler: { [weak self] events in self?.handleHotkeyPress(events) })
+    /// Shows each press's confirmation over the game.
+    @ObservationIgnored let hotkeyHUD: any HotkeyConfirmationPresenting
 
     /// Every tool starts off (spec 3.5). `controllers` holds the tools that exist so far.
     init(services: ToolServices, theme: STTheme, sound: STSoundPlayer, controllers: [ToolID: any ToolController],
          keyRebinder: KeyRebinderController? = nil,
-         hotkeyRegistrar: any HotkeyRegistering, loginItem: any LoginItemControlling) {
+         hotkeyRegistrar: any HotkeyRegistering, hotkeyHUD: any HotkeyConfirmationPresenting,
+         loginItem: any LoginItemControlling) {
         self.services = services
         self.theme = theme
         self.sound = sound
         self.controllers = controllers
         self.keyRebinder = keyRebinder
         self.hotkeyRegistrar = hotkeyRegistrar
+        self.hotkeyHUD = hotkeyHUD
         self.loginItem = loginItem
         let loaded = services.settings.load(AppearanceSettings.self)
         loaded.apply(to: theme)
@@ -82,7 +86,7 @@ final class AppModel {
             .crosshair: CrosshairController(services: services),
             .screenRecording: ScreenRecordingController(services: services),
         ], keyRebinder: KeyRebinderController(services: services),
-        hotkeyRegistrar: CarbonHotkeyRegistrar(), loginItem: SystemLoginItem())
+        hotkeyRegistrar: CarbonHotkeyRegistrar(), hotkeyHUD: HotkeyHUD(theme: theme), loginItem: SystemLoginItem())
         minecraft.start()
         _ = hotkeys // starts registering any saved hotkeys immediately, matching the other services.
         restoreToolsIfNeeded()
