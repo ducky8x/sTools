@@ -41,7 +41,7 @@ public struct CrosshairSettings: SettingsDocument {
     public var outlineWidth = 2
     /// Arm length for Plus and X, diameter for Dot and Circle.
     public var size = 10
-    public var thickness = 2
+    public var thickness = 3
     /// Positive moves the crosshair right.
     public var offsetX = 0
     /// Positive moves the crosshair down.

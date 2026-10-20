@@ -27,7 +27,7 @@ public struct NBBOverlaySettings: SettingsDocument {
     public static let fadeSecondsRange = 0.0...2.0
 
     /// Pixels right (+) or left (-) of the display's center.
-    public var offsetX = -568
+    public var offsetX = 750
     /// Pixels down (+) or up (-) from the display's center; the spec default sits at the vertical
     /// center of Minecraft's display, so this starts at 0.
     public var offsetY = 0
