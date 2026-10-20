@@ -12,14 +12,37 @@ struct CrosshairCenteringTests {
         settings.shape = shape
         settings.size = size
         settings.thickness = thickness
+        settings.offsetX = 0
+        settings.offsetY = 0
         return settings
     }
 
-    @Test func theDefaultCrosshairIsExactlyCenteredOnCommonDisplays() {
+    // The default is offset on purpose, onto Minecraft's own crosshair, so it isn't flagged as off-center.
+    @Test func offsetCrosshairsAreNotFlagged() {
+        #expect(CrosshairCentering.note(for: CrosshairSettings.defaultValue, on: fullHD) == nil)
+        var nudged = settings(.plus, thickness: 3)
+        #expect(CrosshairCentering.note(for: nudged, on: fullHD) != nil)
+        nudged.offsetX = 1
+        #expect(CrosshairCentering.note(for: nudged, on: fullHD) == nil)
+    }
+
+    // At GUI scale 3 on 1920 x 1080, Minecraft's 15-unit crosshair starts at (1920 / 3 - 15) / 2 = 312 units
+    // across and (1080 / 3 - 15) / 2 = 172 down (whole units), so its 3 px center line covers columns
+    // 3 * 319 ..< 3 * 320 and rows 3 * 179 ..< 3 * 180. The default's center line must cover the same pixels.
+    @Test func theDefaultCoversMinecraftsCrosshairAtGUIScaleThree() {
         let defaults = CrosshairSettings.defaultValue
-        for display in [fullHD, PixelSize(width: 2560, height: 1440), PixelSize(width: 3024, height: 1964), PixelSize(width: 3840, height: 2160)] {
-            #expect(CrosshairCentering.note(for: defaults, on: display) == nil)
-        }
+        let fill = CrosshairShapeMath.mask(shape: defaults.shape, size: defaults.size, thickness: defaults.thickness, gap: defaults.gap, margin: 0)
+        let placement = CrosshairGeometry.placement(
+            displayFrame: CGRect(x: 0, y: 0, width: 1920, height: 1080), scale: 1,
+            spriteSize: PixelSize(width: fill.width, height: fill.height), hotPixel: fill.hot,
+            offsetX: defaults.offsetX, offsetY: defaults.offsetY)
+        let left = placement.targetPixel.x - fill.hot.x
+        let top = placement.targetPixel.y - fill.hot.y
+        // Sample the vertical arm 5 px above the center and the horizontal arm 5 px left of it.
+        let lineColumns = (0..<fill.width).filter { fill.coverage(x: $0, y: fill.hot.y - 5) == 255 }
+        let lineRows = (0..<fill.height).filter { fill.coverage(x: fill.hot.x - 5, y: $0) == 255 }
+        #expect(lineColumns.map { left + $0 } == Array(957...959))
+        #expect(lineRows.map { top + $0 } == Array(537...539))
     }
 
     @Test(arguments: [(2, true), (3, false), (4, true), (1, false)])
