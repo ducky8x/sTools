@@ -26,6 +26,7 @@ struct RootView: View {
             ZStack {
                 if let prologue = model.prologue {
                     PrologueView(model: prologue)
+                        .id(ObjectIdentifier(prologue))
                         .transition(model.theme.reduceMotion
                                     ? .opacity
                                     : .asymmetric(insertion: .opacity, removal: .offset(x: -80).combined(with: .opacity)))
