@@ -75,7 +75,8 @@ struct KeyboardPlate: View {
                     .stStyle(.caption)
                     .foregroundStyle(theme.inkSecondary)
             }
-            Text("Gold is what a key sends now. \u{25C6} a rule drives the key; select it to see the rule. A red dot is a checker finding.")
+            Text("Gold is what a key sends now. \u{25C6} a rule drives the key; select it to see the rule."
+                 + (controller.settings.checkerEnabled ? " A red dot is a checker finding." : ""))
                 .stStyle(.caption)
                 .foregroundStyle(theme.inkTertiary)
         }
