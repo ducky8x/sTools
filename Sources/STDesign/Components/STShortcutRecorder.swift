@@ -176,34 +176,49 @@ struct STShortcutRecorderModel: Equatable {
 // MARK: - Event monitor
 
 /// A local `NSEvent` monitor that exists only while recording. It swallows every key press so the
-/// shortcut being recorded doesn't also trigger menu commands or type into other controls.
+/// shortcut being recorded doesn't also trigger menu commands or type into other controls, and reports
+/// clicks (which end recording) and the app losing focus without swallowing them.
 @MainActor
 final class STShortcutKeyMonitor {
     enum Event {
         case keyDown(keyCode: UInt16, modifiers: STShortcutModifiers)
         case flagsChanged(STShortcutModifiers)
+        /// A click anywhere, or sTools stopped being the active app.
+        case interrupted
     }
 
     private var token: Any?
+    private var resignObserver: NSObjectProtocol?
     var isActive: Bool { token != nil }
 
     func start(_ handle: @escaping @MainActor (Event) -> Void) {
         stop()
-        token = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
-            let modifiers = STShortcutModifiers(event.modifierFlags)
-            if event.type == .keyDown {
+        token = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged, .leftMouseDown, .rightMouseDown, .otherMouseDown]) { event in
+            switch event.type {
+            case .keyDown:
                 let keyCode = event.keyCode
+                let modifiers = STShortcutModifiers(event.modifierFlags)
                 MainActor.assumeIsolated { handle(.keyDown(keyCode: keyCode, modifiers: modifiers)) }
                 return nil
+            case .flagsChanged:
+                let modifiers = STShortcutModifiers(event.modifierFlags)
+                MainActor.assumeIsolated { handle(.flagsChanged(modifiers)) }
+                return event
+            default:
+                MainActor.assumeIsolated { handle(.interrupted) }
+                return event
             }
-            MainActor.assumeIsolated { handle(.flagsChanged(modifiers)) }
-            return event
+        }
+        resignObserver = NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { handle(.interrupted) }
         }
     }
 
     func stop() {
         if let token { NSEvent.removeMonitor(token) }
         token = nil
+        if let resignObserver { NotificationCenter.default.removeObserver(resignObserver) }
+        resignObserver = nil
     }
 }
 
@@ -211,8 +226,9 @@ final class STShortcutKeyMonitor {
 
 /// A shortcut field in the house text-field style: `surface` fill, a `stroke` baseline that turns to an
 /// accent underline while recording. Click it, or focus it and press Return, to record; then press the
-/// shortcut. Esc cancels, Delete clears. Key monitoring runs only while recording, and a click
-/// elsewhere (focus loss) cancels.
+/// shortcut. Esc cancels, Delete clears. Key monitoring runs only while recording; a click anywhere else, or
+/// switching to another app, cancels. (Not SwiftUI focus: clicking the field itself makes macOS report a
+/// focus change mid-click, which used to cancel recording the moment it began.)
 ///
 /// `validate` returns nil to accept a shortcut or a short reason to refuse it (shown in place of the
 /// prompt while recording continues). The default accepts any known key with a modifier, or F1 to F20 alone.
@@ -245,10 +261,12 @@ public struct STShortcutRecorder: View {
             .overlay(alignment: .bottom) { underline }
             .opacity(isEnabled ? 1 : 0.4)
             .contentShape(Rectangle())
-            .onTapGesture(perform: startRecording)
             .focusable(isEnabled)
             .focused($isFocused)
             .focusEffectDisabled()
+            // Outside the focus modifiers: inside them, macOS spends the click on giving focus and the tap
+            // never fires, so the field turns gold but never starts recording.
+            .onTapGesture(perform: startRecording)
             .onKeyPress(.return) {
                 guard !model.isRecording else { return .ignored }
                 startRecording()
@@ -256,9 +274,6 @@ public struct STShortcutRecorder: View {
             }
             .onChange(of: model.isRecording) { _, recording in
                 if recording { startMonitoring() } else { monitor.stop() }
-            }
-            .onChange(of: isFocused) { _, focused in
-                if !focused { stopRecording() }
             }
             .onChange(of: isEnabled) { _, enabled in
                 if !enabled { stopRecording() }
@@ -327,6 +342,8 @@ public struct STShortcutRecorder: View {
             switch event {
             case .flagsChanged(let modifiers):
                 model.flagsChanged(modifiers)
+            case .interrupted:
+                stopRecording()
             case .keyDown(let keyCode, let modifiers):
                 switch model.keyDown(keyCode: keyCode, modifiers: modifiers, validate: validate) {
                 case .commit(let recorded):
