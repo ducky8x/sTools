@@ -306,8 +306,21 @@ public final class ScreenRecordingController: ToolController {
         }
     }
 
-    /// Stops and finalizes; then asks Save or Delete, or saves straight away when that question is turned off.
-    public func stopRecording(explanation: String?) async {
+    /// Records for `duration` and saves under the date-and-time name without asking: the Prologue's 5-second test
+    /// (spec 4.2, D7: saved like any recording). Returns whether a file was saved.
+    @discardableResult
+    public func recordTest(for duration: Duration) async -> Bool {
+        await startRecording()
+        guard phase == .recording else { return false }
+        try? await Task.sleep(for: duration)
+        guard phase == .recording else { return false }
+        await stopRecording(explanation: nil, savesWithoutAsking: true)
+        return lastSaved != nil
+    }
+
+    /// Stops and finalizes; then asks Save or Delete, or saves straight away when that question is turned off (or
+    /// `savesWithoutAsking`).
+    public func stopRecording(explanation: String?, savesWithoutAsking: Bool = false) async {
         guard phase == .recording, let session else { return }
         phase = .finishing
         readoutTask?.cancel()
@@ -325,7 +338,7 @@ public final class ScreenRecordingController: ToolController {
             return
         }
         finished = done
-        if options.askSaveDelete {
+        if options.askSaveDelete && !savesWithoutAsking {
             phase = .deciding
         } else {
             await save(name: nil)

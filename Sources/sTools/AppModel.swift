@@ -2,6 +2,7 @@ import Backdrop
 import Crosshair
 import KeyRebinder
 import NBBOverlay
+import Prologue
 import ScreenRecording
 import Observation
 import STDesign
@@ -25,6 +26,8 @@ final class AppModel {
     var general: GeneralSettings
     var updates: UpdateSettings
     var toolIsOn: [ToolID: Bool] = [:]
+    /// The first-launch introduction while it runs (spec 4); nil once finished or skipped.
+    var prologue: PrologueModel?
 
     @ObservationIgnored let controllers: [ToolID: any ToolController]
     /// Key Rebinder has no on/off switch, so it isn't one of `controllers`.
@@ -34,6 +37,18 @@ final class AppModel {
     @ObservationIgnored var isPollingForTools = false
     /// Set by the root view so the Dock icon can bring the window back after it was closed.
     @ObservationIgnored var openMainWindow: (() -> Void)?
+    /// Tools already on when the introduction began; its end leaves them on.
+    @ObservationIgnored var toolsOnBeforePrologue: Set<ToolID> = []
+    /// After Reset sTools nothing in memory may be written back before the relaunch.
+    @ObservationIgnored var settingsWereReset = false
+    /// The Prologue's live companion checks (spec 4.2, steps 7 and 8); tests replace them.
+    @ObservationIgnored var pingNinjabrainBot: @MainActor () async -> Bool = { await NBBConnection.ping() }
+    @ObservationIgnored var evaluateKarabiner: @MainActor () async -> KarabinerRequirement = {
+        await KarabinerStatus(probes: .live(cli: KarabinerCLI(runner: ProcessCommandRunner(timeout: .seconds(2))))).evaluate()
+    }
+    @ObservationIgnored var lastKarabinerRequirement: KarabinerRequirement?
+    /// What the Prologue's trials have seen so far; fresh each time the introduction starts.
+    @ObservationIgnored var trials = TrialSession()
 
     /// Home ▸ Hotkeys (spec 6.1). Built lazily so its `toolStates`/`handler` closures can capture
     /// `self` — they only run on an actual key press, well after `init` returns.
@@ -70,6 +85,7 @@ final class AppModel {
             self.setTool(.screenRecording, on: true)
             return self.isOn(.screenRecording)
         }
+        if PrologueModel.isNeeded(in: services.settings) { beginPrologue() }
     }
 
     /// The production wiring: real services, the live Accessibility source and the tool controllers.
@@ -128,7 +144,7 @@ final class AppModel {
         let onAtQuit = ToolID.allCases.filter(isOn).map(\.rawValue)
         // A recording in progress is finished and kept under its date-and-time name; nobody is asked.
         await controller(for: .screenRecording, as: ScreenRecordingController.self)?.finishForQuit()
-        if general.restoreToolsAtQuit {
+        if general.restoreToolsAtQuit && !settingsWereReset {
             general.toolsOnAtQuit = onAtQuit
             settings.save(general)
         }

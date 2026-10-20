@@ -99,13 +99,16 @@ final class Harness {
     let hotkeyRegistrar: any HotkeyRegistering
     let hotkeyHUD = FakeHotkeyHUD()
 
+    /// `prologueCompleted: false` launches as a first launch, with the introduction showing.
     init(accessibility: PermissionStatus = .granted, instances: [MinecraftInstance] = [],
-         theme: STTheme = STTheme(), usesRealControllers: Bool = false, hotkeyRegistrar: any HotkeyRegistering = FakeHotkeyRegistrar()) {
+         theme: STTheme = STTheme(), usesRealControllers: Bool = false, hotkeyRegistrar: any HotkeyRegistering = FakeHotkeyRegistrar(),
+         prologueCompleted: Bool = true) {
         self.hotkeyRegistrar = hotkeyRegistrar
         directory = FileManager.default.temporaryDirectory.appending(path: "sTools-app-\(UUID().uuidString)")
         prober = FakeProber(accessibility: accessibility)
         source = StaticMinecraftWindowSource(instances: instances)
         store = SettingsStore(directory: directory, debounce: .milliseconds(10))
+        if prologueCompleted { store.save(AppState(prologueCompleted: true)) }
         var fakes: [ToolID: FakeController] = [:]
         if !usesRealControllers {
             for tool in ToolID.allCases where tool.hasSwitch { fakes[tool] = FakeController() }
@@ -122,6 +125,8 @@ final class Harness {
             : fakes.mapValues { $0 as any ToolController }
         model = AppModel(services: services, theme: theme, sound: .silent, controllers: all, hotkeyRegistrar: hotkeyRegistrar,
                          hotkeyHUD: hotkeyHUD, loginItem: FakeLoginItem())
+        model.pingNinjabrainBot = { false }
+        model.evaluateKarabiner = { .notInstalled }
     }
 
     deinit {
