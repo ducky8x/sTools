@@ -4,18 +4,6 @@ import SwiftUI
 
 // Pages still being built: each shows its title only.
 
-struct PermissionStepView: View {
-    let model: PrologueModel
-    let permission: Permission
-    var body: some View { StepPage { StepTitle(model: model, title: permission.title, standfirst: permission.reason) } }
-}
-
-struct CompanionStepView: View {
-    let model: PrologueModel
-    let companion: PrologueCompanion
-    var body: some View { StepPage { StepTitle(model: model, title: companion == .ninjabrainBot ? "Ninjabrain Bot" : "Karabiner-Elements") } }
-}
-
 struct TrialStepView: View {
     let model: PrologueModel
     let trial: PrologueTrial

@@ -152,6 +152,18 @@ struct PrologueModelTests {
         #expect(host.performedActions == [.karabiner])
     }
 
+    @Test func theLeavingPageDoesNotStopTheArrivingPagesCheck() async {
+        let host = FakeHost()
+        host.companionStatuses[.karabiner] = .ready
+        let model = makeModel(StoreBox(), host: host, at: .ninjabrainBot)
+        model.startWatching(.ninjabrainBot)
+        model.next()
+        model.startWatching(.karabiner)
+        model.stopWatching(.ninjabrainBot)
+        #expect(await waitUntil { model.companionStatuses[.karabiner] == .ready })
+        model.stopWatching(.karabiner)
+    }
+
     @Test func showingAPermissionStepReadsItsStatusAtOnce() {
         let host = FakeHost()
         let model = makeModel(StoreBox(), host: host, at: .accessibility)

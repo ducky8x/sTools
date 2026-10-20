@@ -112,6 +112,8 @@ final class Harness {
                .crosshair: CrosshairController(services: services)]
             : fakes.mapValues { $0 as any ToolController }
         model = AppModel(services: services, theme: theme, sound: .silent, controllers: all, hotkeyRegistrar: hotkeyRegistrar, loginItem: FakeLoginItem())
+        model.pingNinjabrainBot = { false }
+        model.evaluateKarabiner = { .notInstalled }
     }
 
     deinit {

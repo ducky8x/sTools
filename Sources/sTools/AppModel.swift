@@ -41,6 +41,12 @@ final class AppModel {
     @ObservationIgnored var toolsOnBeforePrologue: Set<ToolID> = []
     /// After Reset sTools nothing in memory may be written back before the relaunch.
     @ObservationIgnored var settingsWereReset = false
+    /// The Prologue's live companion checks (spec 4.2, steps 7 and 8); tests replace them.
+    @ObservationIgnored var pingNinjabrainBot: @MainActor () async -> Bool = { await NBBConnection.ping() }
+    @ObservationIgnored var evaluateKarabiner: @MainActor () async -> KarabinerRequirement = {
+        await KarabinerStatus(probes: .live(cli: KarabinerCLI(runner: ProcessCommandRunner(timeout: .seconds(2))))).evaluate()
+    }
+    @ObservationIgnored var lastKarabinerRequirement: KarabinerRequirement?
 
     /// Home ▸ Hotkeys (spec 6.1). Built lazily so its `toolStates`/`handler` closures can capture
     /// `self` — they only run on an actual key press, well after `init` returns.

@@ -11,7 +11,8 @@ struct StepPage<Content: View>: View {
             VStack(alignment: .leading, spacing: 0) {
                 content
             }
-            .frame(maxWidth: maxWidth, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: maxWidth)
             .padding(.horizontal, 40)
             .padding(.top, 30)
             .padding(.bottom, 24)
@@ -35,6 +36,8 @@ struct StepTitle: View {
             TypewriterText(text: title, isStarted: true, completionCount: model.animations.completionCount)
                 .stStyle(.pageTitle)
                 .foregroundStyle(STColor.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
                 .accessibilityAddTraits(.isHeader)
             STGiltRule()
                 .padding(.top, 6)

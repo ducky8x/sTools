@@ -24,7 +24,9 @@ public final class PrologueModel {
     @ObservationIgnored private var finalePending: [PrologueTrial] = []
     @ObservationIgnored private var companionTask: Task<Void, Never>?
     @ObservationIgnored private var activationObserver: NSObjectProtocol?
-    @ObservationIgnored private var isPollingPermissions = false
+    @ObservationIgnored private var watchedCompanion: PrologueCompanion?
+    /// Pages showing a permission's status; while one leaves another may already be arriving.
+    @ObservationIgnored private var permissionWatchers = 0
 
     /// Resumes at the saved step (spec D14), or starts at `step` when given.
     public init(store: SettingsStore, host: (any PrologueHost)? = nil, startingAt step: PrologueStep? = nil,
@@ -87,8 +89,7 @@ public final class PrologueModel {
 
     private func end() {
         completeFinale()
-        stopWatchingCompanion()
-        stopPollingPermissions()
+        stopAllPolling()
         save()
         if let outcome = flow.outcome { host?.prologueDidEnd(outcome) }
     }
@@ -99,17 +100,24 @@ public final class PrologueModel {
 
     // MARK: Preparations
 
-    /// Polls permission statuses every second and on activation while a Preparations step shows.
+    /// Polls permission statuses every second and on activation while a Preparations step shows. Calls are
+    /// counted, because the arriving page appears before the leaving one disappears.
     public func startPollingPermissions() {
-        guard !isPollingPermissions, let host else { return }
-        isPollingPermissions = true
-        host.permissions.beginPolling()
+        guard let host else { return }
+        permissionWatchers += 1
+        if permissionWatchers == 1 { host.permissions.beginPolling() }
     }
 
     public func stopPollingPermissions() {
-        guard isPollingPermissions else { return }
-        isPollingPermissions = false
-        host?.permissions.endPolling()
+        guard permissionWatchers > 0 else { return }
+        permissionWatchers -= 1
+        if permissionWatchers == 0 { host?.permissions.endPolling() }
+    }
+
+    private func stopAllPolling() {
+        if permissionWatchers > 0 { host?.permissions.endPolling() }
+        permissionWatchers = 0
+        stopWatching(watchedCompanion)
     }
 
     public func status(of permission: Permission) -> PermissionStatus {
@@ -140,7 +148,8 @@ public final class PrologueModel {
 
     /// Checks a companion app now, then every second and whenever sTools becomes active, until told to stop.
     public func startWatching(_ companion: PrologueCompanion) {
-        stopWatchingCompanion()
+        stopWatching(watchedCompanion)
+        watchedCompanion = companion
         companionTask = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
@@ -158,7 +167,10 @@ public final class PrologueModel {
         }
     }
 
-    public func stopWatchingCompanion() {
+    /// Stops checking `companion`; a page leaving after the next one started watching leaves that one alone.
+    public func stopWatching(_ companion: PrologueCompanion?) {
+        guard let companion, companion == watchedCompanion else { return }
+        watchedCompanion = nil
         companionTask?.cancel()
         companionTask = nil
         if let activationObserver { NotificationCenter.default.removeObserver(activationObserver) }
