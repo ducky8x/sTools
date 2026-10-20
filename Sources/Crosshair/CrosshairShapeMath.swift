@@ -19,8 +19,13 @@ enum CrosshairShapeMath {
     /// An odd length centers on a pixel (0.5). An even length has no center pixel; the hot pixel is the one
     /// just left of (or above) the center (`CrosshairGeometry.centerIndex`), so the center is its right edge.
     static func centerFraction(shape: CrosshairSettings.Shape, size: Int, thickness: Int) -> Double {
-        let length = (shape == .plus || shape == .x) ? thickness : size
-        return length % 2 != 0 ? 0.5 : 1
+        centeringLength(shape: shape, size: size, thickness: thickness) % 2 != 0 ? 0.5 : 1
+    }
+
+    /// The width that decides where a shape's middle falls: the line thickness for Plus and X, the
+    /// diameter for Dot and Circle.
+    static func centeringLength(shape: CrosshairSettings.Shape, size: Int, thickness: Int) -> Int {
+        (shape == .plus || shape == .x) ? thickness : size
     }
 
     /// Whether the point (u, v), relative to the center point (y grows downward), is covered.
