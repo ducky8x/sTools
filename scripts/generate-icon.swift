@@ -8,7 +8,7 @@
 //   sTools.icns                    the pre-macOS 26 icon, built with iconutil from a temporary .iconset
 // With a preview directory it also writes the .icns artwork as preview-<size>.png at 1024, 256, 64, 32, 16.
 //
-// The mark: a duck hanging by one wing from a stool, in a single flat color on the app's background. The
+// The mark: a duck hanging by one wing from a stool, in the app's gold on the app's background. The
 // stool keeps its serif character: a slab seat over a bar, and splayed legs whose feet flare out in
 // bracketed serifs. Every shape is defined once, in 1024-point icon coordinates (origin top left, y down),
 // then merged with path operations into one compound path (the eye and the wing's outline are cut out of
@@ -36,7 +36,7 @@ struct GeneratorError: Error, CustomStringConvertible {
 
 enum Tone {
     static let background = "#0B0A09"   // STPalette.background
-    static let mark = "#F4EFE6"         // STPalette.ink
+    static let mark = "#D9AE52"         // STPalette.gold, the app's accent
 }
 
 // MARK: - Path helpers
