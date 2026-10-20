@@ -53,8 +53,10 @@ public final class ScreenCapture: NSObject, VideoCapture, SCStreamOutput, SCStre
 
     public func start(deliver: @escaping @Sendable (VideoCaptureEvent) -> Void) async throws {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-        let overlays = await MainActor.run { Set(OverlayPanel.visibleWindowNumbers()) }
-        let (filter, included) = try makeFilter(content, overlays: overlays)
+        let (overlays, excluded) = await MainActor.run {
+            (Set(OverlayPanel.visibleWindowNumbers()), Set(OverlayPanel.captureExcludedWindowNumbers()))
+        }
+        let (filter, included) = try makeFilter(content, overlays: overlays, excluded: excluded)
         let configuration = SCStreamConfiguration()
         let scale = CGFloat(filter.pointPixelScale)
         configuration.width = max(2, Int((filter.contentRect.width * scale).rounded()))
@@ -90,14 +92,18 @@ public final class ScreenCapture: NSObject, VideoCapture, SCStreamOutput, SCStre
 
     // MARK: Filters
 
-    private func makeFilter(_ content: SCShareableContent, overlays: Set<UInt32>) throws -> (SCContentFilter, Set<UInt32>) {
+    /// `excluded` lists sTools panels that must never be recorded (the hotkey confirmation); a whole display
+    /// would otherwise pick them up.
+    private func makeFilter(_ content: SCShareableContent, overlays: Set<UInt32>,
+                            excluded: Set<UInt32> = []) throws -> (SCContentFilter, Set<UInt32>) {
         switch target {
         case .window(let id):
             guard let window = content.windows.first(where: { $0.windowID == id }) else { throw CaptureError.notFound("The window") }
             return (SCContentFilter(desktopIndependentWindow: window), [id])
         case .display(let id):
             guard let display = content.displays.first(where: { $0.displayID == id }) else { throw CaptureError.notFound("The display") }
-            return (SCContentFilter(display: display, excludingWindows: []), [])
+            let hidden = content.windows.filter { excluded.contains($0.windowID) }
+            return (SCContentFilter(display: display, excludingWindows: hidden), [])
         case .base(let minecraftID):
             guard let minecraft = content.windows.first(where: { $0.windowID == minecraftID }) else {
                 throw CaptureError.notFound("Minecraft\u{2019}s window")
