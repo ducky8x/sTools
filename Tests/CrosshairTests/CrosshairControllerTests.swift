@@ -8,9 +8,14 @@ import UniformTypeIdentifiers
 
 @MainActor
 private func makeServices(tempDirectory: URL, instances: [MinecraftInstance] = []) -> ToolServices {
+    makeServices(tempDirectory: tempDirectory, source: StaticMinecraftWindowSource(instances: instances))
+}
+
+@MainActor
+private func makeServices(tempDirectory: URL, source: StaticMinecraftWindowSource) -> ToolServices {
     let settings = SettingsStore(directory: tempDirectory)
     let displays = DisplayDirectory()
-    let minecraft = MinecraftLocator(source: StaticMinecraftWindowSource(instances: instances))
+    let minecraft = MinecraftLocator(source: source)
     let permissions = PermissionCenter(prober: NeverPromptingProber())
     return ToolServices(settings: settings, displays: displays, minecraft: minecraft, permissions: permissions)
 }
@@ -63,6 +68,35 @@ struct CrosshairControllerTests {
         #expect(controller.isEnabled == false)
         controller.setEnabled(false)
         #expect(controller.isEnabled == false)
+    }
+
+    // Regression: "Show only while Minecraft is focused" decided once, when the tool was switched on, and
+    // never looked again when Minecraft gained or lost focus. Minecraft stays unfocused here, so the test
+    // never puts a crosshair on screen.
+    @MainActor
+    @Test func focusOnlyModeLooksAgainWhenMinecraftChanges() async throws {
+        func minecraft(x: CGFloat) -> MinecraftInstance {
+            let window = MinecraftWindow(windowNumber: 42, processID: 4242, title: "Minecraft* 1.16.1", frame: CGRect(x: x, y: 0, width: 800, height: 600))
+            return MinecraftInstance(window: window, launchDate: Date(timeIntervalSince1970: 1), isFrontmost: false)
+        }
+        let source = StaticMinecraftWindowSource(instances: [minecraft(x: 0)])
+        let services = makeServices(tempDirectory: tempDirectory(), source: source)
+        services.minecraft.start()
+        defer { services.minecraft.stop() }
+        let controller = CrosshairController(services: services)
+        controller.settings.visibleOnlyWhileMinecraftFocused = true
+        controller.setEnabled(true)
+        defer { controller.setEnabled(false) }
+        #expect(!controller.isOverlayShown)
+
+        let looks = controller.placementCount
+        source.instances = [minecraft(x: 40)]
+        let deadline = ContinuousClock.now + .seconds(2)
+        while controller.placementCount == looks, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(controller.placementCount > looks, "the crosshair should look again when Minecraft changes")
+        #expect(!controller.isOverlayShown)
     }
 
     @MainActor
