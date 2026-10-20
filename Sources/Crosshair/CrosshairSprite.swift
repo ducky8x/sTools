@@ -15,8 +15,7 @@ enum CrosshairRenderer {
     static func builtIn(settings: CrosshairSettings) -> CrosshairSprite {
         let margin = settings.outlineEnabled ? settings.outlineWidth : 0
         let fillMask = CrosshairShapeMath.mask(
-            shape: settings.shape, size: settings.size, thickness: settings.thickness, gap: settings.gap,
-            side: settings.centerSide, margin: margin)
+            shape: settings.shape, size: settings.size, thickness: settings.thickness, gap: settings.gap, margin: margin)
         let outlineMask = settings.outlineEnabled ? CrosshairOutline.dilated(fillMask, width: settings.outlineWidth) : nil
         // Composite the outline and fill at full strength first. Blending each layer at a reduced opacity
         // separately would stack their alphas (and mix their colors) instead of giving one uniform result,
@@ -37,7 +36,7 @@ enum CrosshairRenderer {
         let width = max(1, Int((Double(source.width) * scale).rounded()))
         let height = max(1, Int((Double(source.height) * scale).rounded()))
         let hot = CrosshairGeometry.hotPixel(
-            spriteSize: PixelSize(width: width, height: height), anchor: settings.imageAnchor, side: settings.centerSide)
+            spriteSize: PixelSize(width: width, height: height), anchor: settings.imageAnchor)
         let composite = renderFullStrength(width: width, height: height) { context in
             context.interpolationQuality = .high
             context.draw(source, in: CGRect(x: 0, y: 0, width: width, height: height))

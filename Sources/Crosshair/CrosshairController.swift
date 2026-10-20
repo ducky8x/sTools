@@ -92,7 +92,7 @@ public final class CrosshairController: ToolController {
         let placement = CrosshairGeometry.placement(
             displayFrame: display.frame, scale: display.backingScale,
             spriteSize: sprite.size, hotPixel: sprite.hot,
-            offsetX: settings.offsetX, offsetY: settings.offsetY, side: settings.centerSide)
+            offsetX: settings.offsetX, offsetY: settings.offsetY)
         panel.setContent(CrosshairOverlayView(image: sprite.image, spriteOrigin: placement.spriteOrigin, canvasSize: placement.canvasSize))
         panel.show(frame: placement.windowFrame)
     }
