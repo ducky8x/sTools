@@ -8,6 +8,10 @@
 	<string>sTools</string>
 	<key>CFBundleExecutable</key>
 	<string>sTools</string>
+	<key>CFBundleIconFile</key>
+	<string>sTools</string>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.ducky8x.sTools</string>
 	<key>CFBundleInfoDictionaryVersion</key>

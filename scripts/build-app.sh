@@ -188,6 +188,27 @@ done < <(find "$BIN_PATH" -maxdepth 1 -type d -name '*.bundle' -print0)
     fail "sTools_STDesign.bundle was not produced by the build"
 echo "    copied $BUNDLE_COUNT resource bundle(s)"
 
+echo "==> Adding the app icon"
+# packaging/AppIcon.icon (an Icon Composer document) compiles to Assets.car, which macOS reads through
+# CFBundleIconName; packaging/sTools.icns is the flat fallback named by CFBundleIconFile. Both are made by
+# scripts/generate-icon.swift. actool's own fallback .icns is not used: it lacks the 32, 256 and 512 sizes.
+ICON_BUILD="$ROOT/build/AppIcon"
+rm -rf "$ICON_BUILD"
+mkdir -p "$ICON_BUILD"
+MIN_MACOS="$(plutil -extract LSMinimumSystemVersion raw "$ROOT/packaging/Info.plist")"
+if ! ACTOOL_LOG="$(xcrun actool "$ROOT/packaging/AppIcon.icon" --compile "$ICON_BUILD" \
+        --app-icon AppIcon --platform macosx --target-device mac --minimum-deployment-target "$MIN_MACOS" \
+        --output-partial-info-plist "$ICON_BUILD/partial.plist" \
+        --errors --warnings --output-format human-readable-text 2>&1)" || [[ ! -f "$ICON_BUILD/Assets.car" ]]; then
+    echo "$ACTOOL_LOG" >&2
+    fail "actool could not compile packaging/AppIcon.icon (it needs the Xcode 26 or newer actool)"
+fi
+[[ "$(plutil -extract CFBundleIconName raw "$ICON_BUILD/partial.plist")" == \
+   "$(plutil -extract CFBundleIconName raw "$APP/Contents/Info.plist")" ]] ||
+    fail "CFBundleIconName in packaging/Info.plist does not match the icon in packaging/AppIcon.icon"
+cp "$ICON_BUILD/Assets.car" "$APP/Contents/Resources/Assets.car"
+cp "$ROOT/packaging/sTools.icns" "$APP/Contents/Resources/sTools.icns"
+
 if [[ "$MODE" == "release" ]]; then
     ARCHS="$(lipo -archs "$APP/Contents/MacOS/sTools")"
     for arch in arm64 x86_64; do
