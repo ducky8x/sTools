@@ -104,6 +104,29 @@ struct PrologueProgressHeader: View {
     @Environment(\.stTheme) private var theme
 
     var body: some View {
+        // Centered when there's room; beside the count when the sidebar is back and the page is narrower.
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 0) {
+                count.hidden()
+                Spacer(minLength: 16)
+                parts
+                Spacer(minLength: 16)
+                count
+            }
+            HStack(spacing: 0) {
+                parts
+                Spacer(minLength: 12)
+                count
+            }
+        }
+        .padding(.horizontal, 28)
+        .padding(.top, 22)
+        .padding(.bottom, 6)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(flow.step.part.title), step \(flow.step.number) of \(PrologueStep.count)")
+    }
+
+    private var parts: some View {
         HStack(spacing: 10) {
             ForEach(ProloguePart.allCases, id: \.self) { part in
                 Text(part.title)
@@ -114,18 +137,15 @@ struct PrologueProgressHeader: View {
                 }
             }
         }
-        .frame(maxWidth: .infinity)
-        .overlay(alignment: .trailing) {
-            Text("Step \(flow.step.number) of \(PrologueStep.count)")
-                .stStyle(.label)
-                .foregroundStyle(theme.inkTertiary)
-                .monospacedDigit()
-                .padding(.trailing, 28)
-        }
-        .padding(.top, 22)
-        .padding(.bottom, 6)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(flow.step.part.title), step \(flow.step.number) of \(PrologueStep.count)")
+        .fixedSize()
+    }
+
+    private var count: some View {
+        Text("Step \(flow.step.number) of \(PrologueStep.count)")
+            .stStyle(.label)
+            .foregroundStyle(theme.inkTertiary)
+            .monospacedDigit()
+            .fixedSize()
     }
 
     private func color(for part: ProloguePart) -> Color {

@@ -18,6 +18,7 @@ struct GreetingView: View {
     @Environment(\.stSoundPlayer) private var sound
 
     @State private var blackout = 1.0
+    @State private var markOpacity = 1.0
     @State private var lines = 0.0
     @State private var fill = 0.0
     @State private var typesWordmark = false
@@ -37,6 +38,7 @@ struct GreetingView: View {
                 // The app icon's gold, whatever the accent color is set to.
                 PrologueMark(lineProgress: lines, fillAmount: fill, lineColor: STColor.gold, fillColor: STColor.gold, lineWidth: 1.25)
                     .frame(width: 168, height: 128)
+                    .opacity(markOpacity)
                 TypewriterText(text: Copy.wordmark, isStarted: typesWordmark,
                                completionCount: model.animations.completionCount, fadeSpan: 12)
                     .font(STFont.greetingWordmark(72 * theme.textScale))
@@ -100,10 +102,18 @@ struct GreetingView: View {
         withAnimation(STMotion.standard) { showsBegin = true }
     }
 
+    /// Reduce Motion: the same stages, each a short crossfade; nothing draws, rises or types.
     private func playReduced() async {
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) {
+            markOpacity = 0
+            lines = 1
+            fill = 1
+        }
         withAnimation(STMotion.reducedFade) { blackout = 0 }
         guard await pause(0.3) else { return }
-        withAnimation(STMotion.reducedFade) { lines = 1; fill = 1 }
+        withAnimation(STMotion.reducedFade) { markOpacity = 1 }
         guard await pause(0.4) else { return }
         typesWordmark = true
         withAnimation(STMotion.reducedFade) { drawsRule = true }
@@ -126,6 +136,7 @@ struct GreetingView: View {
         instant.disablesAnimations = true
         withTransaction(instant) {
             blackout = 0
+            markOpacity = 1
             lines = 1
             fill = 1
             typesWordmark = true
