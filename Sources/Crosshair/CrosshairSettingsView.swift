@@ -15,8 +15,14 @@ public struct CrosshairSettingsView: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            STPlate {
-                CrosshairPreview(settings: controller.settings, customImage: controller.previewImage)
+            VStack(alignment: .leading, spacing: 8) {
+                STPlate {
+                    CrosshairPreview(settings: controller.settings, customImage: controller.previewImage)
+                }
+                Text(CrosshairCentering.minecraftNote)
+                    .stStyle(.caption)
+                    .foregroundStyle(theme.inkSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             VStack(alignment: .leading, spacing: 0) {

@@ -1,10 +1,16 @@
 import Foundation
 
-/// Explains on the Crosshair page when the chosen width can't be split evenly across the display's middle.
+/// Notes on the Crosshair page about where the crosshair lands.
 enum CrosshairCentering {
-    /// Nil when the crosshair sits exactly on the middle of `display`, or for an image (placed by its anchor).
+    /// Owner-tested: Minecraft draws its crosshair just left of and above the middle (at GUI scale 3 on
+    /// 1920 x 1080 its center line covers columns 957-959 and rows 537-539), and the default covers it exactly.
+    static let minecraftNote = "With the default settings, this crosshair sits exactly on Minecraft\u{2019}s own when Minecraft covers the menu bar and Dock (1920 \u{00D7} 1080, GUI scale 3)."
+
+    /// Explains when the chosen width can't be split evenly across the display's middle. Nil when it sits
+    /// exactly on the middle, when an offset moves it off the middle on purpose, or for an image (placed by
+    /// its anchor).
     static func note(for settings: CrosshairSettings, on display: PixelSize) -> String? {
-        guard settings.shape != .image else { return nil }
+        guard settings.shape != .image, settings.offsetX == 0, settings.offsetY == 0 else { return nil }
         let length = CrosshairShapeMath.centeringLength(shape: settings.shape, size: settings.size, thickness: settings.thickness)
         guard !CrosshairGeometry.centersExactly(length: length, on: display) else { return nil }
         let dimensions = "\(display.width) \u{00D7} \(display.height)"

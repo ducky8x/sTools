@@ -40,12 +40,13 @@ public struct CrosshairSettings: SettingsDocument {
     public var outlineHex = "#000000"
     public var outlineWidth = 2
     /// Arm length for Plus and X, diameter for Dot and Circle.
-    public var size = 10
-    public var thickness = 2
-    /// Positive moves the crosshair right.
-    public var offsetX = 0
+    public var size = 11
+    public var thickness = 3
+    /// Positive moves the crosshair right. The default -1, -1 puts the crosshair on Minecraft's own, which
+    /// sits just left of and above the display's middle (see `CrosshairCentering.minecraftNote`).
+    public var offsetX = -1
     /// Positive moves the crosshair down.
-    public var offsetY = 0
+    public var offsetY = -1
     /// The imported image, relative to the sTools support folder (`Images/<uuid>.<ext>`).
     public var imageName: String?
     public var imageScalePercent = 100
