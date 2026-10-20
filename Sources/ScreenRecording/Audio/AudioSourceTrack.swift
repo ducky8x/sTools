@@ -1,0 +1,49 @@
+import Foundation
+
+/// One audio track of the recording file: its source, the name players show, and the volume it has in the mix.
+public struct AudioSourceTrack: Equatable, Sendable {
+    public static let mixTitle = "Mix"
+    public static let minecraftTitle = "Minecraft"
+
+    public var id: AudioTrackID
+    public var title: String
+    public var volume: Double
+
+    public init(id: AudioTrackID, title: String, volume: Double) {
+        self.id = id
+        self.title = title
+        self.volume = volume
+    }
+
+    /// The tracks after the mix, in file order: Minecraft (when included), then the layout's audio sources.
+    /// Titles are the source names, trimmed; an empty name becomes "Audio" and a repeated title gets " 2", " 3", ...
+    /// so every track is distinguishable in a player's track menu.
+    public static func tracks(for layout: RecordingLayout) -> [AudioSourceTrack] {
+        var tracks: [AudioSourceTrack] = []
+        if layout.includesMinecraftAudio {
+            tracks.append(AudioSourceTrack(id: .minecraft, title: minecraftTitle, volume: layout.minecraftAudioVolume))
+        }
+        for source in layout.audioSources {
+            let trimmed = source.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            tracks.append(AudioSourceTrack(id: .source(source.id), title: trimmed.isEmpty ? "Audio" : trimmed, volume: source.volume))
+        }
+        var used: Set<String> = [mixTitle.lowercased()]
+        for i in tracks.indices {
+            let base = tracks[i].title
+            var candidate = base
+            var n = 2
+            while used.contains(candidate.lowercased()) {
+                candidate = "\(base) \(n)"
+                n += 1
+            }
+            used.insert(candidate.lowercased())
+            tracks[i].title = candidate
+        }
+        return tracks
+    }
+
+    /// A mixer with each track's volume as its gain.
+    public static func mixer(for tracks: [AudioSourceTrack]) -> AudioMixer {
+        AudioMixer(gains: Dictionary(tracks.map { ($0.id, Float($0.volume)) }, uniquingKeysWith: { first, _ in first }))
+    }
+}
