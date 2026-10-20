@@ -4,8 +4,11 @@ import SwiftUI
 /// The scrolling, padded column every page sits in.
 struct PageContainer<Content: View>: View {
     private let content: Content
+    private let maxWidth: CGFloat
 
-    init(@ViewBuilder content: () -> Content) {
+    /// `maxWidth` widens the column for a page whose plate needs the room (the Key Rebinder's keyboard).
+    init(maxWidth: CGFloat = 640, @ViewBuilder content: () -> Content) {
+        self.maxWidth = maxWidth
         self.content = content()
     }
 
@@ -14,7 +17,7 @@ struct PageContainer<Content: View>: View {
             VStack(alignment: .leading, spacing: 0) {
                 content
             }
-            .frame(maxWidth: 640, alignment: .leading)
+            .frame(maxWidth: maxWidth, alignment: .leading)
             .padding(.horizontal, 36)
             .padding(.top, 40)
             .padding(.bottom, 40)

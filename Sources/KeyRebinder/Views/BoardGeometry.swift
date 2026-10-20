@@ -1,10 +1,13 @@
 import CoreGraphics
 
-/// Where the keyboard and the mouse sit on the plate, in points. A laptop keyboard leaves room for the mouse
-/// beside it; a full-size one is already wide, so the mouse goes underneath, below the keypad.
+/// Where the keyboard and the mouse sit on the plate, in points. Keys never shrink below `minimumUnit` (a key
+/// you can read and click). The mouse goes beside the keyboard when that still leaves keys at least that big,
+/// else underneath (below the keypad) when that fits; when nothing fits, it stays beside and the plate scrolls.
 struct BoardGeometry: Equatable {
     static let mouseScale: CGFloat = 0.75
     static let gap: CGFloat = 0.75
+    static let minimumUnit: CGFloat = 36
+    static let maximumUnit: CGFloat = 64
 
     /// Points per key unit.
     let unit: CGFloat
@@ -13,21 +16,46 @@ struct BoardGeometry: Equatable {
     let mouseOrigin: CGPoint
     let size: CGSize
 
+    /// The largest board that fits `width`, but never with keys under `minimumUnit`: then the board is wider
+    /// than `width` and the plate scrolls sideways.
     init(layout: KeyboardLayout, width: CGFloat) {
-        let mouse = CGSize(width: MouseLayout.size.width * Self.mouseScale, height: MouseLayout.size.height * Self.mouseScale)
-        mouseBesideKeyboard = layout.formFactor == .laptop
-        if mouseBesideKeyboard {
-            unit = width / (layout.size.width + Self.gap + mouse.width)
-            mouseOrigin = CGPoint(x: layout.size.width + Self.gap, y: (layout.size.height - mouse.height) / 2)
-            size = CGSize(width: width, height: layout.size.height * unit)
+        let mouse = Self.mouseSize
+        let besideUnits = layout.size.width + Self.gap + mouse.width
+        let besideUnit = width / besideUnits
+        let belowUnit = width / layout.size.width
+        if besideUnit >= Self.minimumUnit {
+            self.init(layout: layout, unit: min(besideUnit, Self.maximumUnit), mouseBeside: true)
+        } else if belowUnit >= Self.minimumUnit {
+            self.init(layout: layout, unit: min(belowUnit, Self.maximumUnit), mouseBeside: false)
         } else {
-            unit = width / layout.size.width
-            mouseOrigin = CGPoint(x: layout.size.width - mouse.width, y: layout.size.height + Self.gap)
-            size = CGSize(width: width, height: (layout.size.height + Self.gap + mouse.height) * unit)
+            // Scrolling anyway: keep the board short, mouse alongside.
+            self.init(layout: layout, unit: Self.minimumUnit, mouseBeside: true)
         }
     }
 
-    /// A keyboard key's parts, in points.
+    init(layout: KeyboardLayout, unit: CGFloat, mouseBeside: Bool) {
+        let mouse = Self.mouseSize
+        self.unit = unit
+        mouseBesideKeyboard = mouseBeside
+        if mouseBeside {
+            mouseOrigin = CGPoint(x: layout.size.width + Self.gap, y: max(0, (layout.size.height - mouse.height) / 2))
+            size = CGSize(width: (layout.size.width + Self.gap + mouse.width) * unit, height: max(layout.size.height, mouse.height) * unit)
+        } else {
+            mouseOrigin = CGPoint(x: layout.size.width - mouse.width, y: layout.size.height + Self.gap)
+            size = CGSize(width: layout.size.width * unit, height: (layout.size.height + Self.gap + mouse.height) * unit)
+        }
+    }
+
+    /// A picture-only board scaled to exactly `width`, however small (the layout chooser's preview).
+    static func preview(layout: KeyboardLayout, width: CGFloat) -> BoardGeometry {
+        BoardGeometry(layout: layout, unit: width / (layout.size.width + gap + mouseSize.width), mouseBeside: true)
+    }
+
+    private static var mouseSize: CGSize {
+        CGSize(width: MouseLayout.size.width * mouseScale, height: MouseLayout.size.height * mouseScale)
+    }
+
+/// A keyboard key's parts, in points.
     func rects(forKey key: KeyCap) -> [CGRect] {
         key.frames.map { scaled($0, origin: .zero, scale: 1) }
     }
