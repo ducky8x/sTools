@@ -7,6 +7,7 @@ struct KeyboardPlate: View {
     let layout: KeyboardLayout
 
     @Environment(\.stTheme) private var theme
+    @State private var availableWidth: CGFloat = 0
 
     var body: some View {
         STPlate {
@@ -24,20 +25,33 @@ struct KeyboardPlate: View {
         }
     }
 
+    /// Keys stay big enough to read and click; when even that doesn't fit, the board scrolls sideways.
     private var board: some View {
-        let reference = BoardGeometry(layout: layout, width: 1000).size
-        return GeometryReader { proxy in
-            KeyboardBoard(
-                layout: layout,
-                geometry: BoardGeometry(layout: layout, width: proxy.size.width),
-                state: state(for:),
-                arcTarget: { controller.settings.showsHoverArcs ? arcTarget(for: $0) : nil },
-                describe: describe(_:),
-                onSelect: { key in controller.selectedKey = controller.selectedKey == key ? nil : key })
+        let geometry = BoardGeometry(layout: layout, width: max(availableWidth, 1))
+        let drawing = KeyboardBoard(
+            layout: layout,
+            geometry: geometry,
+            state: state(for:),
+            arcTarget: { controller.settings.showsHoverArcs ? arcTarget(for: $0) : nil },
+            describe: describe(_:),
+            onSelect: { key in controller.selectedKey = controller.selectedKey == key ? nil : key })
+        let scrolling = isScrolling(geometry)
+        // A scroll view takes the width it's offered whatever its content's size, so measuring it gives the
+        // room actually available.
+        return ScrollView(.horizontal) {
+            drawing.padding(.bottom, scrolling ? 12 : 0)
         }
-        .aspectRatio(reference.width / reference.height, contentMode: .fit)
+        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+        .scrollIndicators(scrolling ? .visible : .hidden)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: geometry.size.height + (scrolling ? 12 : 0))
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { availableWidth = $0 }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Keyboard and mouse")
+    }
+
+    private func isScrolling(_ geometry: BoardGeometry) -> Bool {
+        availableWidth > 0 && geometry.size.width > availableWidth + 0.5
     }
 
     @ViewBuilder private var footer: some View {
@@ -50,6 +64,11 @@ struct KeyboardPlate: View {
                 Text("Shortcuts macOS takes first (\u{2318}-Tab, Spotlight, Mission Control) can\u{2019}t be shown here.")
                     .stStyle(.caption)
                     .foregroundStyle(theme.inkTertiary)
+            }
+            if isScrolling(BoardGeometry(layout: layout, width: max(availableWidth, 1))) {
+                Text("Scroll sideways to see the rest, or make the window wider to see the whole keyboard.")
+                    .stStyle(.caption)
+                    .foregroundStyle(theme.inkSecondary)
             }
             if !higherButtons.isEmpty {
                 Text("Mouse buttons above 8: " + higherButtons.joined(separator: ", "))

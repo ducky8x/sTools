@@ -15,7 +15,8 @@ struct ToolPage: View {
     private var needsAccessibility: Bool { tool.requiresAccessibility && !model.accessibilityGranted }
 
     var body: some View {
-        PageContainer {
+        // The Key Rebinder's keyboard needs more than the usual 640 pt column to be big enough to use.
+        PageContainer(maxWidth: tool == .keyRebinder ? 1400 : 640) {
             STPageHeader(title: tool.title, tagline: tool.tagline) {
                 if tool.hasSwitch {
                     STSwitch(isOn: model.switchBinding(tool), label: tool.title)

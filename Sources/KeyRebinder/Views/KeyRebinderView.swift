@@ -13,23 +13,30 @@ public struct KeyRebinderView: View {
         self.controller = controller
     }
 
+    /// Everything but the keyboard keeps the app's usual reading width; the page around it is wider so the
+    /// keyboard can be drawn big enough to use.
+    private static let columnWidth: CGFloat = 640
+
     public var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            strips
+            strips.frame(maxWidth: Self.columnWidth, alignment: .leading)
             if let layout = controller.layout {
                 KeyboardPlate(controller: controller, layout: layout)
-                if let key = controller.selectedKey {
-                    KeyEditorPanel(controller: controller, key: key) { ruleBeingEdited = RuleSheetItem(index: $0) }
+                VStack(alignment: .leading, spacing: 20) {
+                    if let key = controller.selectedKey {
+                        KeyEditorPanel(controller: controller, key: key) { ruleBeingEdited = RuleSheetItem(index: $0) }
+                    }
+                    if controller.config != nil {
+                        if controller.settings.checkerEnabled { FindingsSection(controller: controller) }
+                        FnKeysSection(controller: controller)
+                        ComplexRulesSection(controller: controller) { ruleBeingEdited = RuleSheetItem(index: $0) }
+                    }
                 }
-                if controller.config != nil {
-                    if controller.settings.checkerEnabled { FindingsSection(controller: controller) }
-                    FnKeysSection(controller: controller)
-                    ComplexRulesSection(controller: controller) { ruleBeingEdited = RuleSheetItem(index: $0) }
-                }
+                .frame(maxWidth: Self.columnWidth, alignment: .leading)
             } else {
-                LayoutChooser(controller: controller)
+                LayoutChooser(controller: controller).frame(maxWidth: Self.columnWidth, alignment: .leading)
             }
-            KeyRebinderSettingsSection(controller: controller)
+            KeyRebinderSettingsSection(controller: controller).frame(maxWidth: Self.columnWidth, alignment: .leading)
         }
         .task { await controller.refresh() }
         .onAppear {

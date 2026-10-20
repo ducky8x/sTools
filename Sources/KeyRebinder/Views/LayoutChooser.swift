@@ -11,7 +11,7 @@ struct LayoutChooser: View {
 
     var body: some View {
         let layout = KeyboardLayout(shape: shape, formFactor: formFactor)
-        let reference = BoardGeometry(layout: layout, width: 1000).size
+        let reference = BoardGeometry.preview(layout: layout, width: 1000).size
         STPlate {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Which keyboard should sTools draw?").stStyle(.sectionTitle).foregroundStyle(STColor.ink)
@@ -23,7 +23,7 @@ struct LayoutChooser: View {
                 }
                 GeometryReader { proxy in
                     KeyboardBoard(
-                        layout: layout, geometry: BoardGeometry(layout: layout, width: proxy.size.width),
+                        layout: layout, geometry: BoardGeometry.preview(layout: layout, width: proxy.size.width),
                         state: { _ in KeyCapState() }, arcTarget: { _ in nil }, describe: { _ in "" }, onSelect: nil)
                 }
                 .aspectRatio(reference.width / reference.height, contentMode: .fit)
