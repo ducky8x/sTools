@@ -15,6 +15,9 @@ struct YoureSetView: View {
     @Environment(\.stTheme) private var theme
     @Environment(\.stSoundPlayer) private var sound
     @State private var typed: Bool
+    /// Bumped each time the step is completed at once. The rule and the line are put up afresh in their final place,
+    /// because setting a value an animation is already heading for doesn't stop the animation.
+    @State private var settleCount = 0
 
     /// `settled` starts with the rule and the line in place, as they show while motion is reduced.
     init(model: PrologueModel, settled: Bool = false) {
@@ -34,6 +37,7 @@ struct YoureSetView: View {
                 .accessibilityAddTraits(.isHeader)
             DrawnRule(isDrawn: typed)
                 .frame(width: 180)
+                .id(settleCount)
                 .padding(.top, 14)
             Text(Copy.line)
                 .stStyle(.standfirst)
@@ -43,6 +47,7 @@ struct YoureSetView: View {
                 .frame(maxWidth: 380)
                 .padding(.top, 18)
                 .opacity(typed ? 1 : 0)
+                .id(settleCount)
             Spacer(minLength: 24)
         }
         .padding(.horizontal, 32)
@@ -53,6 +58,11 @@ struct YoureSetView: View {
             model.animations.run(for: TypewriterText.duration(of: Copy.title, fadeSpan: 8) + .milliseconds(900))
         }
         .onChange(of: model.animations.completionCount) { _, _ in
+            // Completed: the rule and the line are there at once, even if they were already on their way.
+            withTransaction(STMotion.instant) {
+                typed = true
+                settleCount += 1
+            }
             finishTyping()
             model.completeFinale()
         }
