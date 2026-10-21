@@ -443,6 +443,36 @@ struct ReduceAnimationsWindowTests {
         #expect(sameImage(after, window(fresh).capture()))
     }
 
+    /// The whole introduction in the real window, Continue on every step: every step is complete when it appears,
+    /// so no key is ever spent completing something, the Finale switches the tried tools off with nothing pending,
+    /// and it ends at Home.
+    @Test(arguments: [false, true])
+    func theWholeIntroductionRunsThroughWithNothingPending(byMacOS: Bool) throws {
+        let harness = byMacOS ? Harness(theme: STTheme(systemReduceMotion: true)) : reducedHarness()
+        harness.model.beginPrologue(at: .greeting)
+        let hosted = window(harness)
+        let prologue = try #require(harness.model.prologue)
+        var seen: [PrologueStep] = []
+        while let step = harness.model.prologue?.step, seen.count <= PrologueStep.count {
+            seen.append(step)
+            _ = hosted.capture()
+            #expect(!prologue.animations.isRunning, "nothing for a key to complete on \(step)")
+            switch step {
+            case .crosshairTrial: harness.model.setTool(.crosshair, on: true)
+            case .backdropTrial: harness.model.setTool(.windowBackdrop, on: true)
+            case .youreSet:
+                #expect(!harness.model.isOn(.crosshair) && !harness.model.isOn(.windowBackdrop), "off together, at once")
+                #expect(!prologue.isFinaleRunning)
+            default: break
+            }
+            prologue.next()
+        }
+        #expect(seen == PrologueStep.allCases)
+        #expect(harness.model.prologue == nil)
+        #expect(harness.model.route == .home)
+        #expect(harness.store.load(AppState.self).prologueCompleted)
+    }
+
     @Test func theWindowItselfOpensAndClosesWithoutAppKitsAnimation() {
         #expect(WindowConfigurator.animationBehavior(reducesMotion: true) == .none)
         #expect(WindowConfigurator.animationBehavior(reducesMotion: false) == .default)
