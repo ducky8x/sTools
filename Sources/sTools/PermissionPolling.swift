@@ -1,17 +1,32 @@
 import STPlatform
 import SwiftUI
 
-/// Keeps the permission center polling `permissions` for as long as the page is on screen, when `isNeeded`.
+/// Keeps the permission center polling `permissions` for as long as the page is on screen and its window can be
+/// seen, when `isNeeded`. Nobody can watch a status change in a window that's minimized or behind the game, and
+/// sTools becoming active rereads it anyway.
 struct PermissionPolling: ViewModifier {
     let permissions: PermissionCenter
     let shown: Set<Permission>
     let isNeeded: Bool
+    @Environment(\.stWindowIsVisible) private var windowIsVisible
+    @State private var isAppeared = false
     @State private var token: PermissionCenter.PollingToken?
 
     func body(content: Content) -> some View {
         content
-            .onAppear { start() }
-            .onDisappear { stop() }
+            .onAppear {
+                isAppeared = true
+                update()
+            }
+            .onDisappear {
+                isAppeared = false
+                update()
+            }
+            .onChange(of: windowIsVisible) { update() }
+    }
+
+    private func update() {
+        if isAppeared && windowIsVisible { start() } else { stop() }
     }
 
     private func start() {

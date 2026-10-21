@@ -45,9 +45,13 @@ struct RootView: View {
         .frame(minWidth: 680, minHeight: 500)
         .background(STColor.background)
         .ignoresSafeArea()
-        .background(WindowConfigurator(reducesMotion: reducesMotion, onWillClose: { model.mainWindowWillClose() }))
+        .background(WindowConfigurator(reducesMotion: reducesMotion, onWillClose: { model.mainWindowWillClose() },
+                                       onVisibilityChange: { visible in
+                                           if model.isMainWindowVisible != visible { model.isMainWindowVisible = visible }
+                                       }))
         .stMotionRoot(model.theme)
         .environment(\.stTheme, model.theme)
+        .environment(\.stWindowIsVisible, model.isMainWindowVisible)
         .environment(\.stSoundPlayer, model.sound)
         .preferredColorScheme(.dark)
         .onChange(of: contrast, initial: true) { _, value in model.theme.increaseContrast = value == .increased }

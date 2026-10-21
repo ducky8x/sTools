@@ -28,6 +28,9 @@ final class AppModel {
     var toolIsOn: [ToolID: Bool] = [:]
     /// The first-launch introduction while it runs (spec 4); nil once finished or skipped.
     var prologue: PrologueModel?
+    /// Whether the main window can be seen (open, not minimized, not covered by Minecraft or a locked screen). Pages
+    /// pause their polling and previews while it's false.
+    var isMainWindowVisible = true
 
     @ObservationIgnored let controllers: [ToolID: any ToolController]
     /// Key Rebinder has no on/off switch, so it isn't one of `controllers`.
