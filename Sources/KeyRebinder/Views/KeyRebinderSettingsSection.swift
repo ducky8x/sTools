@@ -5,6 +5,8 @@ import SwiftUI
 /// The Key Rebinder's settings (spec 5.5.9): main rows, then Advanced.
 struct KeyRebinderSettingsSection: View {
     @Bindable var controller: KeyRebinderController
+    /// Whether the page shows sTools hotkeys, which Advanced ▸ Show hotkeys switches. False in the Prologue's trial.
+    var showsHotkeys = true
 
     @State private var showsAdvanced = false
     @State private var isResetConfirming = false
@@ -55,6 +57,11 @@ struct KeyRebinderSettingsSection: View {
                     STSettingsRow("Hover arcs") {
                         STSwitch(isOn: $controller.settings.showsHoverArcs, label: "Hover arcs")
                     }
+                    if Self.offersShowHotkeys(controller: controller, showsHotkeys: showsHotkeys) {
+                        STSettingsRow("Show hotkeys") {
+                            STSwitch(isOn: $controller.settings.showsHotkeys, label: "Show hotkeys")
+                        }
+                    }
                     STSettingsRow("Backups kept") {
                         STSegmented(selection: backupsBinding, options: KeyRebinderSettings.backupsKeptChoices.map { STSegmentedOption($0, "\($0)") })
                     }
@@ -73,6 +80,11 @@ struct KeyRebinderSettingsSection: View {
         } message: {
             Text("Your keyboard layout, scope and checker choices go back to their defaults. Your rebinds in Karabiner-Elements are not touched.")
         }
+    }
+
+    /// Advanced ▸ Show hotkeys appears once the page has a hotkey list to show, and never in the trial.
+    static func offersShowHotkeys(controller: KeyRebinderController, showsHotkeys: Bool) -> Bool {
+        showsHotkeys && controller.hotkeyCenter != nil
     }
 
     private var optionsStatus: String {

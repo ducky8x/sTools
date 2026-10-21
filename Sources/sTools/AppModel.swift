@@ -22,19 +22,30 @@ final class AppModel {
     var minecraft: MinecraftLocator { services.minecraft }
 
     var history = NavigationHistory()
+    /// Where the next page shown should scroll to; the page clears it once it has.
+    var pendingPageAnchor: PageAnchor?
     var appearance: AppearanceSettings
     var general: GeneralSettings
     var updates: UpdateSettings
     var toolIsOn: [ToolID: Bool] = [:]
     /// The first-launch introduction while it runs (spec 4); nil once finished or skipped.
     var prologue: PrologueModel?
+    /// Whether the main window can be seen (open, not minimized, not covered by Minecraft or a locked screen). Pages
+    /// pause their polling and previews while it's false.
+    var isMainWindowVisible = true
+    /// False from the moment the main window closes until it's shown again. While closed (and no introduction is
+    /// running), the window holds no pages at all, so their views, layers and caches are given back.
+    var isMainWindowOpen = true
 
     @ObservationIgnored let controllers: [ToolID: any ToolController]
     /// Key Rebinder has no on/off switch, so it isn't one of `controllers`.
     @ObservationIgnored let keyRebinder: KeyRebinderController?
+    /// Settings ▸ Updates and Check for Updates… (spec 6.3); its updater is Sparkle in the app, nil or a fake in tests.
+    let updateCenter: UpdateCenter
     @ObservationIgnored let loginItem: any LoginItemControlling
     @ObservationIgnored var wasAccessibilityGranted: Bool
-    @ObservationIgnored var isPollingForTools = false
+    /// Held while a tool that needs Accessibility runs, so a revoked grant turns it off (`updateToolPolling()`).
+    @ObservationIgnored var toolPolling: PermissionCenter.PollingToken?
     /// Set by the root view so the Dock icon can bring the window back after it was closed.
     @ObservationIgnored var openMainWindow: (() -> Void)?
     /// Tools already on when the introduction began; its end leaves them on.
@@ -64,7 +75,7 @@ final class AppModel {
 
     /// Every tool starts off (spec 3.5). `controllers` holds the tools that exist so far.
     init(services: ToolServices, theme: STTheme, sound: STSoundPlayer, controllers: [ToolID: any ToolController],
-         keyRebinder: KeyRebinderController? = nil,
+         keyRebinder: KeyRebinderController? = nil, updater: (any AppUpdating)? = nil,
          hotkeyRegistrar: any HotkeyRegistering, hotkeyHUD: any HotkeyConfirmationPresenting,
          loginItem: any LoginItemControlling) {
         self.services = services
@@ -72,6 +83,7 @@ final class AppModel {
         self.sound = sound
         self.controllers = controllers
         self.keyRebinder = keyRebinder
+        updateCenter = UpdateCenter(updater: updater, notices: AlertUpdateNoticePresenter(theme: theme))
         self.hotkeyRegistrar = hotkeyRegistrar
         self.hotkeyHUD = hotkeyHUD
         self.loginItem = loginItem
@@ -82,12 +94,15 @@ final class AppModel {
         updates = services.settings.load(UpdateSettings.self)
         wasAccessibilityGranted = services.permissions.status(.accessibility) == .granted
         watchAccessibility()
+        updateCenter.apply(updates)
         (controllers[.screenRecording] as? ScreenRecordingController)?.requestEnable = { [weak self] in
             guard let self else { return false }
             self.setTool(.screenRecording, on: true)
             return self.isOn(.screenRecording)
         }
         if PrologueModel.isNeeded(in: services.settings) { beginPrologue() }
+        // The Key Rebinder shows, edits and advises on the hotkey list; without one, the list isn't built here.
+        keyRebinder?.connect(hotkeys: hotkeys)
     }
 
     /// The production wiring: real services, the live Accessibility source and the tool controllers.
@@ -103,7 +118,7 @@ final class AppModel {
             .windowBackdrop: BackdropController(services: services),
             .crosshair: CrosshairController(services: services),
             .screenRecording: ScreenRecordingController(services: services),
-        ], keyRebinder: KeyRebinderController(services: services),
+        ], keyRebinder: KeyRebinderController(services: services), updater: AppUpdater(),
         hotkeyRegistrar: CarbonHotkeyRegistrar(), hotkeyHUD: HotkeyHUD(theme: theme), loginItem: SystemLoginItem())
         minecraft.start()
         _ = hotkeys // starts registering any saved hotkeys immediately, matching the other services.
@@ -116,13 +131,7 @@ final class AppModel {
     /// window again.
     func mainWindowWillClose() {
         guard let recording = controller(for: .screenRecording, as: ScreenRecordingController.self), recording.isRecording else { return }
-        let alert = NSAlert()
-        alert.messageText = "Screen Recording is still recording."
-        alert.informativeText = "It can keep recording with the window closed. Open sTools from the Dock to stop it later."
-        alert.addButton(withTitle: "Keep Recording")
-        alert.addButton(withTitle: "Stop and Save")
-        alert.addButton(withTitle: "Cancel")
-        switch alert.runModal() {
+        switch stillRecordingAlert().runModal() {
         case .alertFirstButtonReturn:
             break
         case .alertSecondButtonReturn:
@@ -133,6 +142,21 @@ final class AppModel {
         default:
             DispatchQueue.main.async { [weak self] in self?.openMainWindow?() }
         }
+    }
+
+    /// The question asked when the window closes mid-recording: Keep Recording, Stop and Save, or Cancel. While
+    /// motion is reduced it appears without AppKit's alert animation, like the window it comes from (spec 3.4).
+    func stillRecordingAlert() -> NSAlert {
+        let alert = NSAlert()
+        alert.messageText = "Screen Recording is still recording."
+        alert.informativeText = "It can keep recording with the window closed. Open sTools from the Dock to stop it later."
+        alert.addButton(withTitle: "Keep Recording")
+        alert.addButton(withTitle: "Stop and Save")
+        alert.addButton(withTitle: "Cancel")
+        // Laid out now rather than just before it shows, so nothing redoes its window after this.
+        alert.layout()
+        alert.window.animationBehavior = WindowConfigurator.animationBehavior(reducesMotion: theme.reduceMotion)
+        return alert
     }
 
     /// The controller registered for `tool`, if it is of type `type`.

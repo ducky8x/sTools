@@ -17,6 +17,15 @@ extension AppModel {
         Dictionary(uniqueKeysWithValues: HotkeyTool.allCases.map { ($0, isOn(Self.toolID(for: $0))) })
     }
 
+    /// Home's "Show on Keyboard": asks the Key Rebinder to select the drawn key that sends `combo`'s key, then
+    /// opens its page. False, with the page left as it was, when there is no Key Rebinder or no drawn key sends it.
+    @discardableResult
+    func showHotkeyOnKeyboard(_ combo: HotkeyCombo) -> Bool {
+        guard hotkeys.advisor?.selectKey(for: combo) == true else { return false }
+        navigate(to: .tool(.keyRebinder))
+        return true
+    }
+
     /// One hotkey press (spec 6.1's toggle semantics are already resolved by `HotkeyCenter`): carries out its
     /// events in order, then confirms the press once — the stamp sound, and unless Home ▸ Hotkeys ▸ Advanced
     /// turns it off, the seal with a line of what changed, on Minecraft's display. A press that changed

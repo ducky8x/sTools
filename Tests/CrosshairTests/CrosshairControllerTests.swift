@@ -75,6 +75,37 @@ struct CrosshairControllerTests {
         #expect(!controller.isOverlayShown)
     }
 
+    // Minecraft gaining or losing focus, or its window moving on the same display, makes the crosshair look again,
+    // but it must not draw again: the overlay redraws only when its content changes (spec 3.1).
+    @MainActor
+    @Test func lookingAgainWithoutAChangeDoesNotDrawAgain() async throws {
+        func minecraft(x: CGFloat, frontmost: Bool) -> MinecraftInstance {
+            let window = MinecraftWindow(windowNumber: 42, processID: 4242, title: "Minecraft* 1.16.1", frame: CGRect(x: x, y: 0, width: 800, height: 600))
+            return MinecraftInstance(window: window, launchDate: Date(timeIntervalSince1970: 1), isFrontmost: frontmost, displayID: fullHDDisplay.id)
+        }
+        let source = StaticMinecraftWindowSource(instances: [minecraft(x: 0, frontmost: true)])
+        let services = makeServices(tempDirectory: tempDirectory(), source: source)
+        services.minecraft.start()
+        defer { services.minecraft.stop() }
+        let controller = makeController(services)
+        controller.setEnabled(true)
+        defer { controller.setEnabled(false) }
+        #expect(controller.drawCount == 1)
+
+        let looks = controller.placementCount
+        source.instances = [minecraft(x: 40, frontmost: false)]
+        let deadline = ContinuousClock.now + .seconds(2)
+        while controller.placementCount == looks, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(controller.placementCount > looks)
+        #expect(controller.drawCount == 1)
+        #expect(controller.isOverlayShown)
+
+        controller.settings.fillHex = "#FF0000"
+        #expect(controller.drawCount == 2)
+    }
+
     @MainActor
     @Test func importingAnUnreadableFileReportsAnErrorAndKeepsTheShape() {
         let directory = tempDirectory()

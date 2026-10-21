@@ -1,12 +1,20 @@
+import CoreGraphics
 import Foundation
 import Testing
 @testable import NBBOverlay
 @testable import STPlatform
 
+/// The tests' one display, its main, far outside every real display, so the overlay panel ordered in never shows on
+/// screen.
+private let offScreenDisplay = DisplayInfo(
+    id: 1, name: "Off screen", frame: CGRect(x: -9000, y: -9000, width: 1920, height: 1080),
+    bounds: CGRect(x: -9000, y: 9000, width: 1920, height: 1080), backingScale: 1,
+    pixelSize: CGSize(width: 1920, height: 1080), isMain: true)
+
 @MainActor
 private func makeServices(tempDirectory: URL, instances: [MinecraftInstance] = []) -> ToolServices {
     let settings = SettingsStore(directory: tempDirectory)
-    let displays = DisplayDirectory()
+    let displays = DisplayDirectory(screenProvider: { [offScreenDisplay] })
     let minecraft = MinecraftLocator(source: StaticMinecraftWindowSource(instances: instances))
     let permissions = PermissionCenter(prober: NeverPromptingProber())
     return ToolServices(settings: settings, displays: displays, minecraft: minecraft, permissions: permissions)
@@ -46,6 +54,44 @@ struct NBBOverlayControllerTests {
         let reloaded = NBBOverlayController(services: makeServices(tempDirectory: directory), connection: NBBConnection(source: FakeEventSource([])))
         #expect(reloaded.settings.offsetX == 77)
         #expect(reloaded.settings.width == 400)
+    }
+
+    /// Moving the overlay, or a refresh that changes nothing it draws, leaves its content alone; new content, a new
+    /// look or switching off and on again builds it again.
+    @MainActor
+    @Test func onlyAChangeInWhatItDrawsRebuildsTheOverlay() {
+        let controller = NBBOverlayController(services: makeServices(tempDirectory: tempDirectory()), connection: NBBConnection(source: FakeEventSource([])))
+        controller.sample = NBBEvents.Stronghold(
+            resultType: .triangulation,
+            predictions: [NBBEvents.Prediction(chunkX: -41, chunkZ: 108, certainty: 0.94, overworldDistance: 1580)],
+            eyeThrows: [], playerPosition: nil)
+        controller.setEnabled(true)
+        defer { controller.setEnabled(false) }
+        #expect(controller.drawCount == 1)
+
+        controller.settings.offsetX += 40
+        controller.settings.offsetY -= 25
+        #expect(controller.drawCount == 1, "moving only moves the panel")
+
+        controller.settings.width = 400
+        #expect(controller.drawCount == 2)
+
+        controller.setEnabled(false)
+        controller.setEnabled(true)
+        #expect(controller.drawCount == 3, "switching off let the content go")
+    }
+
+    /// The page's preview shows only Ninjabrain Bot's live result: the intro's sample stays in the intro (spec 4,
+    /// step 12).
+    @MainActor
+    @Test func thePreviewNeverShowsTheIntrosSample() {
+        let controller = NBBOverlayController(services: makeServices(tempDirectory: tempDirectory()), connection: NBBConnection(source: FakeEventSource([])))
+        controller.sample = NBBEvents.Stronghold(
+            resultType: .triangulation,
+            predictions: [NBBEvents.Prediction(chunkX: -41, chunkZ: 108, certainty: 0.94, overworldDistance: 1580)],
+            eyeThrows: [], playerPosition: nil)
+        #expect(controller.previewContent == .hidden)
+        #expect(controller.previewMessages.isEmpty)
     }
 
     @MainActor

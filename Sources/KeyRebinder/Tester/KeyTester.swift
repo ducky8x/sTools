@@ -1,3 +1,5 @@
+import STPlatform
+
 /// The live key tester's logic (spec 5.5.5). Apps see events after Karabiner rebinds them, so the tester takes
 /// what arrived and works back, from the current rebinds, to the physical keys that produce it.
 public enum KeyTester {
@@ -8,9 +10,14 @@ public enum KeyTester {
         public let sources: [KarabinerEvent]
         /// Minecraft's actions on `arrived`, when its keybinds are known.
         public let minecraftActions: [String]
+        /// The sTools hotkeys on `arrived`, whatever their modifiers, in list order.
+        public var hotkeys: [HotkeyBinding] = []
+        /// Whether hotkeys were paused because sTools was in front, which is why a hotkey's own key could arrive.
+        public var hotkeysArePaused = false
 
-        /// The one line the plate shows.
-        public func summary(table: KeyTable = .shared) -> String {
+        /// The one line the plate shows. `showsHotkeys` false leaves out the sTools hotkeys on the key (the
+        /// Prologue's trial).
+        public func summary(table: KeyTable = .shared, showsHotkeys: Bool = true) -> String {
             let arrivedName = KeyNames.name(for: arrived, table: table)
             var line: String
             switch sources {
@@ -24,14 +31,22 @@ public enum KeyTester {
                 line = "\(arrivedName) arrived; it comes from \(from)."
             }
             if !minecraftActions.isEmpty { line += " In Minecraft: \(minecraftActions.joined(separator: ", "))." }
+            if showsHotkeys, !hotkeys.isEmpty {
+                let list = hotkeys.map(\.listing).joined(separator: ", ")
+                let one = hotkeys.count == 1
+                line += " sTools \(one ? "hotkey" : "hotkeys") on \(arrivedName): \(list)."
+                if hotkeysArePaused { line += one ? " It pauses while sTools is in front." : " They pause while sTools is in front." }
+            }
             return line
         }
     }
 
-    /// Traces `arrived` back to the physical keys that produce it.
+    /// Traces `arrived` back to the physical keys that produce it, and names the sTools `hotkeys` on its key.
+    /// `hotkeysPaused` says hotkeys were paused while it arrived.
     public static func trace(
         _ arrived: KarabinerEvent, physicalKeys: [KarabinerEvent], bindings: [KarabinerEvent: EffectiveBinding],
-        minecraftKeybinds: [MinecraftKeybind]? = nil, table: KeyTable = .shared
+        minecraftKeybinds: [MinecraftKeybind]? = nil, hotkeys: [HotkeyBinding] = [], hotkeysPaused: Bool = false,
+        table: KeyTable = .shared
     ) -> Trace {
         let target = table.canonical(arrived)
         let sources = physicalKeys.filter { key in
@@ -40,7 +55,9 @@ public enum KeyTester {
         let actions = (minecraftKeybinds ?? []).filter { keybind in
             keybind.event.map(table.canonical) == target
         }.map(\.display)
-        return Trace(arrived: arrived, sources: sources, minecraftActions: actions)
+        let keyCode = table.virtualKeyCode(for: arrived)
+        let onKey = keyCode.map { code in hotkeys.filter { Int($0.combo.keyCode) == code } } ?? []
+        return Trace(arrived: arrived, sources: sources, minecraftActions: actions, hotkeys: onKey, hotkeysArePaused: hotkeysPaused)
     }
 
     /// The event a key press arrives as, from its macOS virtual key code.

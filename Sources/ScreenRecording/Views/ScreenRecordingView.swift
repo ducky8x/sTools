@@ -6,7 +6,9 @@ import SwiftUI
 public struct ScreenRecordingView: View {
     @Bindable private var controller: ScreenRecordingController
     @State private var selection: UUID?
+    @State private var isAppeared = false
     @Environment(\.stTheme) private var theme
+    @Environment(\.stWindowIsVisible) private var windowIsVisible
 
     public init(controller: ScreenRecordingController) {
         self.controller = controller
@@ -45,8 +47,17 @@ public struct ScreenRecordingView: View {
             RecordingSoundSection(controller: controller)
             RecordingSettingsSection(controller: controller)
         }
-        .onAppear { controller.setPreviewVisible(true) }
-        .onDisappear { controller.setPreviewVisible(false) }
+        // The live preview only renders while it can be seen: not while the window is minimized, closed or behind
+        // the game.
+        .onAppear {
+            isAppeared = true
+            controller.setPreviewVisible(windowIsVisible)
+        }
+        .onDisappear {
+            isAppeared = false
+            controller.setPreviewVisible(false)
+        }
+        .onChange(of: windowIsVisible) { _, visible in controller.setPreviewVisible(isAppeared && visible) }
         .sheet(isPresented: Binding(get: { controller.phase == .deciding }, set: { _ in })) {
             // A sheet is a window of its own, so it gets its own motion root.
             SaveDeleteSheet(controller: controller).stMotionRoot(theme)

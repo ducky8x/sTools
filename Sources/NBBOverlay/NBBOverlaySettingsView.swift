@@ -23,6 +23,10 @@ public struct NBBOverlaySettingsView: View {
                 Text("Ninjabrain Bot \(version)").stStyle(.caption).foregroundStyle(STColor.inkSecondary)
             }
 
+            STPlate {
+                NBBPagePreview(controller: controller)
+            }
+
             VStack(alignment: .leading, spacing: 0) {
                 STSettingsRow("Move and resize by dragging") {
                     STSwitch(isOn: $controller.settings.placementModeEnabled, label: "Move and resize by dragging")
@@ -36,8 +40,8 @@ public struct NBBOverlaySettingsView: View {
                 }
                 STSettingsRow("Position") {
                     HStack(spacing: 8) {
-                        STNumberField(value: offsetXBinding, label: "Horizontal offset")
-                        STNumberField(value: offsetYBinding, label: "Vertical offset")
+                        STNumberField(value: offsetXBinding, label: "Horizontal offset", axis: "X")
+                        STNumberField(value: offsetYBinding, label: "Vertical offset", axis: "Y")
                     }
                 }
                 STSettingsRow("Width") {
@@ -76,12 +80,8 @@ public struct NBBOverlaySettingsView: View {
                     STSettingsRow("Prediction rows") {
                         STSlider(value: maxRowsBinding, in: Double(NBBOverlaySettings.maxPredictionRowsRange.lowerBound)...Double(NBBOverlaySettings.maxPredictionRowsRange.upperBound), label: "Prediction rows", valueText: { "\(Int($0))" })
                     }
-                    STSettingsRow("Fade on reset") { STSwitch(isOn: $controller.settings.fadeOnResetEnabled, label: "Fade on reset") }
-                    if controller.settings.fadeOnResetEnabled {
-                        STSettingsRow("Fade duration") {
-                            STSlider(value: $controller.settings.fadeSeconds, in: 0...2, label: "Fade duration", valueText: { String(format: "%.2fs", $0) })
-                        }
-                    }
+                    // "Fade on reset" and its duration (spec 5.1) stay hidden until the overlay can fade: today it
+                    // shows and hides at once. The stored values are kept for when it does.
                     STSettingsRow("Reset", showsRule: false) {
                         Button("Reset to default\u{2026}") { isResetConfirming = true }
                             .buttonStyle(STButtonStyle(.secondary))
@@ -137,13 +137,25 @@ public struct NBBOverlaySettingsView: View {
 private struct STNumberField: View {
     @Binding var value: Int
     let label: String
+    /// The small-caps letter in front of the field, so it's clear which box is which.
+    let axis: String
     @State private var text = ""
     @Environment(\.stTheme) private var theme
 
     var body: some View {
+        HStack(spacing: 6) {
+            Text(axis)
+                .stStyle(.label)
+                .foregroundStyle(theme.inkSecondary)
+                .accessibilityHidden(true)
+            field
+        }
+    }
+
+    private var field: some View {
         TextField(label, text: $text)
             .textFieldStyle(.plain)
-            .font(.system(size: 13 * theme.textScale).monospacedDigit())
+            .font(STFont.figures(13 * theme.textScale))
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             .frame(width: 64)
@@ -161,5 +173,43 @@ private struct STNumberField: View {
 
     private func commit() {
         if let parsed = Int(text) { value = parsed } else { text = String(value) }
+    }
+}
+
+/// The page's preview (spec 3.5: every tool page has one): the overlay as it shows over the game with Ninjabrain
+/// Bot's live result, shrunk to fit if it's wider than the plate, or a line saying where it will appear.
+private struct NBBPagePreview: View {
+    let controller: NBBOverlayController
+    @Environment(\.stTheme) private var theme
+
+    private var settings: NBBOverlaySettings {
+        var settings = controller.settings
+        settings.placementModeEnabled = false
+        return settings
+    }
+
+    private var overlaySize: CGSize {
+        CGSize(width: CGFloat(settings.width), height: CGFloat(settings.width) / settings.aspectRatio)
+    }
+
+    var body: some View {
+        let content = controller.previewContent
+        let messages = controller.previewMessages
+        if content == .hidden && messages.isEmpty {
+            Text("Ninjabrain Bot\u{2019}s result appears here as it will over the game, once it has one.")
+                .stStyle(.caption)
+                .foregroundStyle(theme.inkTertiary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity, minHeight: 96)
+                .padding(.horizontal, 16)
+        } else {
+            GeometryReader { proxy in
+                let scale = min(1, (proxy.size.width - 20) / overlaySize.width)
+                NBBOverlayView(content: content, messages: messages, settings: settings)
+                    .scaleEffect(scale)
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+            }
+            .frame(height: overlaySize.height * min(1, 600 / overlaySize.width) + 20)
+        }
     }
 }

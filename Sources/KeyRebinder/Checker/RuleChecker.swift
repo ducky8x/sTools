@@ -1,3 +1,5 @@
+import STPlatform
+
 /// The conflict & rule checker (spec 5.5.4).
 public enum RuleChecker {
     public struct Context: Sendable {
@@ -8,11 +10,19 @@ public enum RuleChecker {
         public var minecraftKeybinds: [MinecraftKeybind]?
         /// The A.10.x findings; off leaves only the Karabiner conflicts.
         public var includesSpeedrunRules: Bool
+        /// The sTools hotkeys macOS accepted, while hotkeys are on (`HotkeyCenter.activeBindings`). A hotkey with no
+        /// modifiers consumes its key, so the game never gets it: A.10.1's "several keys produce the same input"
+        /// skips that key, as long as Minecraft binds no modifier key (while one is held, the hotkey doesn't fire).
+        public var hotkeys: [HotkeyBinding] = []
 
-        public init(physicalKeys: [KarabinerEvent], minecraftKeybinds: [MinecraftKeybind]?, includesSpeedrunRules: Bool = true) {
+        public init(
+            physicalKeys: [KarabinerEvent], minecraftKeybinds: [MinecraftKeybind]?, includesSpeedrunRules: Bool = true,
+            hotkeys: [HotkeyBinding] = []
+        ) {
             self.physicalKeys = physicalKeys
             self.minecraftKeybinds = minecraftKeybinds
             self.includesSpeedrunRules = includesSpeedrunRules
+            self.hotkeys = hotkeys
         }
     }
 
@@ -27,6 +37,29 @@ public enum RuleChecker {
             result += check.oneKeyOneInput() + check.buttonsOnly() + check.noRepeatAbuse() + check.noMacros()
         }
         return result
+    }
+
+    /// "Hotkey takes a game key": one finding for each hotkey that takes a key Minecraft uses (`HotkeyGameCheck`),
+    /// pointing at the physical keys that send the hotkey's key, or at the key itself when none does. Needs no
+    /// `karabiner.json` (without one every key sends itself). Pass the hotkeys macOS accepted; invalid and
+    /// action-less ones are skipped again, and of several on one combination only the first counts. Kept apart from
+    /// `findings(in:...)`, so the speedrun-rule switch never hides it.
+    public static func hotkeyFindings(
+        physicalKeys: [KarabinerEvent], bindings: [KarabinerEvent: EffectiveBinding], hotkeys: [HotkeyBinding],
+        minecraftKeybinds: [MinecraftKeybind]?, table: KeyTable = .shared
+    ) -> [CheckerFinding] {
+        var claimed = Set<HotkeyCombo>()
+        var findings: [CheckerFinding] = []
+        for hotkey in hotkeys where hotkey.combo.isValid && !hotkey.actions.isEmpty && claimed.insert(hotkey.combo).inserted {
+            guard let caution = HotkeyGameCheck.caution(for: hotkey.combo, minecraftKeybinds: minecraftKeybinds, table: table) else {
+                continue
+            }
+            let sources = HotkeyKeys.sources(ofKeyCode: hotkey.combo.keyCode, physicalKeys: physicalKeys, bindings: bindings, table: table)
+            findings.append(CheckerFinding(
+                kind: .hotkeyTakesGameKey, keys: sources.isEmpty ? [caution.key] : sources,
+                message: HotkeyGameCheck.findingMessage(for: hotkey, caution: caution, minecraftKeybinds: minecraftKeybinds, table: table)))
+        }
+        return findings
     }
 }
 
@@ -178,7 +211,11 @@ private struct Check {
             }
         }
 
-        // Several keys that end up as the same input.
+        // Several keys that end up as the same input. A modifier-free sTools hotkey consumes its key, so the game
+        // never gets that input, but only while no modifier is held: macOS matches a hotkey's modifiers exactly, so
+        // while one Minecraft binds is held (Shift for Sneak, Control for Sprint) the hotkey doesn't fire and every
+        // key reaches the game as that input again. So the skip needs Minecraft to bind no modifier key (its
+        // keybinds, or 1.16.1's defaults when they're unknown).
         var producers: [KarabinerEvent: [KarabinerEvent]] = [:]
         var order: [KarabinerEvent] = []
         for key in context.physicalKeys {
@@ -187,8 +224,14 @@ private struct Check {
             if producers[canonical] == nil { order.append(canonical) }
             producers[canonical, default: []].append(key)
         }
+        let modifiersAreFree = HotkeyGameCheck.boundModifiers(
+            context.minecraftKeybinds ?? HotkeyGameCheck.defaultKeybinds, table: table).isEmpty
+        let consumed: Set<Int> = modifiersAreFree
+            ? Set(context.hotkeys.filter { $0.combo.modifiers.isEmpty && $0.combo.isValid && !$0.actions.isEmpty }.map { Int($0.combo.keyCode) })
+            : []
         for output in order {
             guard let keys = producers[output], keys.count > 1, isGameInput(output) else { continue }
+            if let virtualKey = table.virtualKeyCode(for: output), consumed.contains(virtualKey) { continue }
             var message = "\(list(keys)) \(keys.count == 2 ? "both" : "all") produce \(name(output))"
             if let actions = gameActions?[output] { message += " (\(actions.joined(separator: ", ")) in Minecraft)" }
             findings.append(CheckerFinding(kind: .oneKeyOneInput, keys: keys, message: message + "; each game input may have only one key."))

@@ -38,5 +38,13 @@
 	<string>sTools records your voice when you add a microphone to a recording.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://raw.githubusercontent.com/ducky8x/sTools-releases/main/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>__EDKEY__</string>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
 </dict>
 </plist>

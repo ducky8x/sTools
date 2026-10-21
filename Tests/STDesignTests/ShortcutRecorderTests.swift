@@ -9,6 +9,8 @@ private let keyEscape: UInt16 = 53
 private let keyDelete: UInt16 = 51
 private let keyForwardDelete: UInt16 = 117
 private let keyReturn: UInt16 = 36
+/// No key has this code, so the recorder refuses it.
+private let keyUnknown: UInt16 = 999
 
 // MARK: - Values
 
@@ -49,6 +51,18 @@ struct ShortcutValueTests {
         let names = STShortcutKeys.functionKeyCodes.map { STShortcut(keyCode: $0, modifiers: []).display }
         #expect(names == (1...20).map { "F\($0)" })
     }
+
+    /// The keys added so every drawn key the Key Rebinder can put a hotkey on has a name.
+    @Test func newKeyNames() {
+        let named: [(UInt16, String)] = [
+            (10, "§"), (71, "Pad Clear"), (93, "¥"), (94, "_"), (95, "Pad ,"), (102, "英数"), (104, "かな"), (110, "Menu"),
+        ]
+        for (code, name) in named {
+            #expect(STShortcut(keyCode: code, modifiers: []).display == name)
+            #expect(STShortcut(keyCode: code, modifiers: [.control, .option]).display == "⌃⌥" + name)
+            #expect(STShortcutRecorderLogic.basicRejection(STShortcut(keyCode: code, modifiers: [])) == nil, "key code \(code)")
+        }
+    }
 }
 
 // MARK: - Logic
@@ -68,13 +82,22 @@ struct ShortcutLogicTests {
         #expect(outcome(keyF5, []) == .commit(STShortcut(keyCode: keyF5, modifiers: [])))
     }
 
-    @Test func unmodifiedLetterIsRejected() {
-        #expect(outcome(keyC, []) == .reject("Hold ⌃ ⌥ ⇧ or ⌘ too"))
-        #expect(outcome(keyReturn, []) == .reject("Hold ⌃ ⌥ ⇧ or ⌘ too"))
+    /// C, Return, Space, Tab, Pad 1 and ←: any known key commits alone.
+    @Test func unmodifiedKeysCommit() {
+        for code: UInt16 in [keyC, keyReturn, 49, 48, 83, 123] {
+            #expect(outcome(code, []) == .commit(STShortcut(keyCode: code, modifiers: [])), "key code \(code)")
+        }
+    }
+
+    @Test func shiftOrOptionAloneCommits() {
+        #expect(outcome(keyC, .shift) == .commit(STShortcut(keyCode: keyC, modifiers: .shift)))
+        #expect(outcome(keyC, .option) == .commit(STShortcut(keyCode: keyC, modifiers: .option)))
     }
 
     @Test func unknownKeyIsRejected() {
         #expect(outcome(56, .command) == .reject("That key can't be used"))
+        #expect(outcome(56, []) == .reject("That key can't be used"))
+        #expect(outcome(999, []) == .reject("That key can't be used"))
     }
 
     @Test func escapeAloneCancels() {
@@ -128,15 +151,16 @@ struct ShortcutModelTests {
     @Test func rejectionKeepsRecordingWithAMessage() {
         var model = STShortcutRecorderModel()
         model.begin()
-        #expect(model.keyDown(keyCode: keyC, modifiers: [], validate: basic) == .none)
+        #expect(model.keyDown(keyCode: keyUnknown, modifiers: [], validate: basic) == .none)
         #expect(model.isRecording)
-        #expect(model.message == "Hold ⌃ ⌥ ⇧ or ⌘ too")
+        #expect(model.message == "That key can't be used")
     }
 
     @Test func movingModifiersClearsTheMessageAndShowsThemLive() {
         var model = STShortcutRecorderModel()
         model.begin()
-        _ = model.keyDown(keyCode: keyC, modifiers: [], validate: basic)
+        _ = model.keyDown(keyCode: keyUnknown, modifiers: [], validate: basic)
+        #expect(model.message == "That key can't be used")
         model.flagsChanged([.control, .option])
         #expect(model.message == nil)
         #expect(model.heldModifiers == [.control, .option])
@@ -159,7 +183,8 @@ struct ShortcutModelTests {
     @Test func beginResetsStaleState() {
         var model = STShortcutRecorderModel()
         model.begin()
-        _ = model.keyDown(keyCode: keyC, modifiers: [], validate: basic)
+        _ = model.keyDown(keyCode: keyUnknown, modifiers: .shift, validate: basic)
+        #expect(model.message == "That key can't be used")
         model.cancel()
         model.begin()
         #expect(model.message == nil)

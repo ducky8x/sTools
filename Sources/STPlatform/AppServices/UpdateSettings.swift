@@ -1,7 +1,8 @@
 import Foundation
 
-/// Settings ▸ Updates (spec 6.2). Sparkle itself isn't integrated yet (that's M8); this just holds the
-/// two preferences so the toggles have somewhere to live and M8 can read them directly.
+/// Settings ▸ Updates (spec 6.2): whether sTools checks for updates by itself (daily), and whether it also
+/// downloads and installs them without asking. The app hands both to Sparkle (spec 6.3) at launch and on change.
+/// Installing is off by default, so a found update is shown and the person decides.
 public struct UpdateSettings: SettingsDocument {
     public static let name = "updates"
     public static let version = 1
@@ -10,7 +11,7 @@ public struct UpdateSettings: SettingsDocument {
     public var checksAutomatically: Bool
     public var installsAutomatically: Bool
 
-    public init(checksAutomatically: Bool = true, installsAutomatically: Bool = true) {
+    public init(checksAutomatically: Bool = true, installsAutomatically: Bool = false) {
         self.checksAutomatically = checksAutomatically
         self.installsAutomatically = installsAutomatically
     }
@@ -22,6 +23,6 @@ public struct UpdateSettings: SettingsDocument {
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         checksAutomatically = try container.decodeIfPresent(Bool.self, forKey: .checksAutomatically) ?? true
-        installsAutomatically = try container.decodeIfPresent(Bool.self, forKey: .installsAutomatically) ?? true
+        installsAutomatically = try container.decodeIfPresent(Bool.self, forKey: .installsAutomatically) ?? false
     }
 }
