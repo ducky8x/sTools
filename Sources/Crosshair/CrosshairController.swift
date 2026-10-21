@@ -22,6 +22,10 @@ public final class CrosshairController: ToolController {
     @ObservationIgnored private var customImage: CGImage?
     @ObservationIgnored private var customImageError: String?
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
+    @ObservationIgnored private var isWatchingMinecraft = false
+    /// How many times the overlay's visibility and place were worked out, and whether it's up. For tests.
+    @ObservationIgnored private(set) var placementCount = 0
+    @ObservationIgnored private(set) var isOverlayShown = false
 
     /// `imagesDirectory` defaults to `~/Library/Application Support/sTools/Images`; pass a temp
     /// directory in tests.
@@ -41,7 +45,7 @@ public final class CrosshairController: ToolController {
         } else {
             for observer in observers { NotificationCenter.default.removeObserver(observer) }
             observers.removeAll()
-            panel.hide()
+            hidePanel()
         }
     }
 
@@ -76,25 +80,52 @@ public final class CrosshairController: ToolController {
         observers.append(center.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.refreshIfEnabled() }
         })
+        if !isWatchingMinecraft { watchMinecraft() }
+    }
+
+    /// Minecraft's focus and display, and the display list, are `@Observable`; this re-arms itself after
+    /// every change while the tool is on, so "Show only while Minecraft is focused" and Follow Minecraft
+    /// react as soon as Minecraft changes.
+    private func watchMinecraft() {
+        isWatchingMinecraft = true
+        withObservationTracking {
+            _ = services.minecraft.active
+            _ = services.displays.displays
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                isWatchingMinecraft = false
+                guard isEnabled else { return }
+                refreshIfEnabled()
+                watchMinecraft()
+            }
+        }
     }
 
     private func refreshIfEnabled() {
         guard isEnabled else { return }
+        placementCount += 1
         guard let display = targetDisplay() else {
-            panel.hide()
+            hidePanel()
             return
         }
         if settings.visibleOnlyWhileMinecraftFocused, services.minecraft.active?.isFrontmost != true {
-            panel.hide()
+            hidePanel()
             return
         }
         let sprite = currentSprite()
         let placement = CrosshairGeometry.placement(
             displayFrame: display.frame, scale: display.backingScale,
             spriteSize: sprite.size, hotPixel: sprite.hot,
-            offsetX: settings.offsetX, offsetY: settings.offsetY, side: settings.centerSide)
+            offsetX: settings.offsetX, offsetY: settings.offsetY)
         panel.setContent(CrosshairOverlayView(image: sprite.image, spriteOrigin: placement.spriteOrigin, canvasSize: placement.canvasSize))
         panel.show(frame: placement.windowFrame)
+        isOverlayShown = true
+    }
+
+    private func hidePanel() {
+        panel.hide()
+        isOverlayShown = false
     }
 
     private func currentSprite() -> CrosshairSprite {
@@ -102,6 +133,11 @@ public final class CrosshairController: ToolController {
             return CrosshairRenderer.image(customImage, settings: settings)
         }
         return CrosshairRenderer.builtIn(settings: settings)
+    }
+
+    /// The crosshair's display in pixels, or nil when there's no display.
+    var displayPixelSize: PixelSize? {
+        targetDisplay().map { CrosshairGeometry.gridSize(frame: $0.frame, scale: $0.backingScale) }
     }
 
     private func targetDisplay() -> DisplayInfo? {

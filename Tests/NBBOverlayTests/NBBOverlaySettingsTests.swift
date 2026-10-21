@@ -7,6 +7,7 @@ import Testing
 struct NBBOverlaySettingsTests {
     @Test func defaultsMatchTheSpec() {
         let settings = NBBOverlaySettings.defaultValue
+        #expect(settings.offsetX == 750 && settings.offsetY == 0)
         #expect(settings.width == 320)
         #expect(settings.aspectRatio == 1.6)
         #expect(settings.plateOpacityPercent == 85)

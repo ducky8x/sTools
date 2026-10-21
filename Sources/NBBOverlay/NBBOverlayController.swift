@@ -35,6 +35,18 @@ public final class NBBOverlayController: ToolController {
         settings = services.settings.load(NBBOverlaySettings.self)
     }
 
+    /// A sample result for the Prologue's NBB Overlay trial (spec D5), shown only while Ninjabrain Bot sends
+    /// nothing, and labeled as a sample on the overlay. Nil everywhere else.
+    public var sample: NBBEvents.Stronghold? {
+        didSet { if sample != oldValue { refreshIfEnabled() } }
+    }
+
+    /// Ninjabrain Bot's latest stronghold result, as it sent it.
+    public var stronghold: NBBEvents.Stronghold? { connection.stronghold }
+
+    /// The line under a sample result.
+    public static let sampleNote = "Sample result: Ninjabrain Bot isn\u{2019}t connected."
+
     /// Ninjabrain Bot's reported version, for the page's requirement strip.
     public var nbbVersion: String? { connection.version }
     /// Whether the stronghold subscription is currently connected.
@@ -143,10 +155,12 @@ public final class NBBOverlayController: ToolController {
             return
         }
         currentDisplay = display
+        let showsSample = connection.stronghold == nil && sample != nil
         let content = NBBOverlayLayout.content(
-            stronghold: connection.stronghold, blind: connection.blind, divine: connection.divine,
+            stronghold: connection.stronghold ?? sample, blind: connection.blind, divine: connection.divine,
             boat: connection.boat, allAdvancements: connection.allAdvancements, maxPredictionRows: settings.maxPredictionRows)
-        let messages = NBBOverlayLayout.plainTextMessages(from: connection.informationMessages?.informationMessages ?? [])
+        var messages = NBBOverlayLayout.plainTextMessages(from: connection.informationMessages?.informationMessages ?? [])
+        if showsSample { messages.append((severity: .info, text: Self.sampleNote)) }
 
         // Placement mode always shows the plate (so there's something to grab), regardless of data or
         // focus; otherwise both independent restrictions apply (spec: "an option for both").

@@ -9,7 +9,7 @@ struct BackdropSettingsTests {
         let settings = BackdropSettings.defaultValue
         #expect(settings.additionalDisplayIDs.isEmpty)
         #expect(settings.fill.kind == .color)
-        #expect(settings.fill.color == "#0B0A09")
+        #expect(settings.fill.color == "#15120F")
         #expect(settings.displayFills.isEmpty)
         #expect(settings.opacityPercent == 100)
         #expect(settings.hideOnFullScreenScope == .thisDisplay)

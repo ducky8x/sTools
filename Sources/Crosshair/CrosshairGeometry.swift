@@ -33,27 +33,31 @@ enum CrosshairGeometry {
         PixelSize(width: Int((frame.width * scale).rounded()), height: Int((frame.height * scale).rounded()))
     }
 
-    /// The index of the center pixel among `count` pixels. With an even count there is no center
-    /// pixel, so `side` picks the one just right of (or below) the true center, or just left of (or above) it.
-    static func centerIndex(count: Int, side: CrosshairSettings.CenterSide) -> Int {
-        let count = max(count, 1)
-        switch side {
-        case .rightDown: return count / 2
-        case .leftUp: return (count - 1) / 2
-        }
+    /// The index of the center pixel among `count` pixels. An even count has no center pixel, so it's the
+    /// one just left of (or above) the true center. A shape whose own width is even is drawn on that pixel's
+    /// far edge, which is exactly the true center (see `CrosshairShapeMath.centerFraction`).
+    static func centerIndex(count: Int) -> Int {
+        (max(count, 1) - 1) / 2
+    }
+
+    /// Whether a shape `length` pixels across can sit exactly on the middle of `display`: an even length
+    /// needs an even pixel count and an odd length an odd one, across and down. Otherwise one side of the
+    /// shape is a pixel longer than the other, whichever pixel it's drawn on.
+    static func centersExactly(length: Int, on display: PixelSize) -> Bool {
+        length % 2 == display.width % 2 && length % 2 == display.height % 2
     }
 
     /// The sprite pixel that lands on the target pixel.
     static func hotPixel(
-        spriteSize: PixelSize, anchor: CrosshairSettings.ImageAnchor, side: CrosshairSettings.CenterSide
+        spriteSize: PixelSize, anchor: CrosshairSettings.ImageAnchor
     ) -> PixelPoint {
         let right = max(spriteSize.width, 1) - 1
         let bottom = max(spriteSize.height, 1) - 1
         switch anchor {
         case .center:
             return PixelPoint(
-                x: centerIndex(count: spriteSize.width, side: side),
-                y: centerIndex(count: spriteSize.height, side: side))
+                x: centerIndex(count: spriteSize.width),
+                y: centerIndex(count: spriteSize.height))
         case .topLeft: return PixelPoint(x: 0, y: 0)
         case .topRight: return PixelPoint(x: right, y: 0)
         case .bottomLeft: return PixelPoint(x: 0, y: bottom)
@@ -68,12 +72,12 @@ enum CrosshairGeometry {
     /// inside a slightly larger canvas rather than the window sitting on a half point.
     static func placement(
         displayFrame: CGRect, scale: CGFloat, spriteSize: PixelSize, hotPixel: PixelPoint,
-        offsetX: Int, offsetY: Int, side: CrosshairSettings.CenterSide
+        offsetX: Int, offsetY: Int
     ) -> Placement {
         let grid = gridSize(frame: displayFrame, scale: scale)
         let target = PixelPoint(
-            x: (centerIndex(count: grid.width, side: side) + offsetX).clamped(to: 0...max(grid.width - 1, 0)),
-            y: (centerIndex(count: grid.height, side: side) + offsetY).clamped(to: 0...max(grid.height - 1, 0)))
+            x: (centerIndex(count: grid.width) + offsetX).clamped(to: 0...max(grid.width - 1, 0)),
+            y: (centerIndex(count: grid.height) + offsetY).clamped(to: 0...max(grid.height - 1, 0)))
         let origin = PixelPoint(x: target.x - hotPixel.x, y: target.y - hotPixel.y)
         let unit = max(1, Int(scale.rounded()))
         let canvasLeft = floorMultiple(origin.x, of: unit)
@@ -113,10 +117,10 @@ enum CrosshairGeometry {
     /// its shape. Call this before `placement` when placing into a bounded preview, not a real display.
     static func fittedOffset(
         displaySize: PixelSize, spriteSize: PixelSize, hotPixel: PixelPoint,
-        offsetX: Int, offsetY: Int, side: CrosshairSettings.CenterSide
+        offsetX: Int, offsetY: Int
     ) -> (x: Int, y: Int) {
-        let centerX = centerIndex(count: displaySize.width, side: side)
-        let centerY = centerIndex(count: displaySize.height, side: side)
+        let centerX = centerIndex(count: displaySize.width)
+        let centerY = centerIndex(count: displaySize.height)
         let fittedTargetX = fittedTarget(wanted: centerX + offsetX, displayExtent: displaySize.width, hot: hotPixel.x, spriteExtent: spriteSize.width)
         let fittedTargetY = fittedTarget(wanted: centerY + offsetY, displayExtent: displaySize.height, hot: hotPixel.y, spriteExtent: spriteSize.height)
         return (fittedTargetX - centerX, fittedTargetY - centerY)

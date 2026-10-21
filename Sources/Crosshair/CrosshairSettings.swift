@@ -20,15 +20,6 @@ public struct CrosshairSettings: SettingsDocument {
         case center, topLeft, topRight, bottomLeft, bottomRight
     }
 
-    /// Which pixel counts as the center when a width or height is even.
-    public enum CenterSide: String, Codable, CaseIterable, Sendable {
-        /// The pixel just right of (or below) the true center.
-        case rightDown
-        /// The pixel just left of (or above) the true center.
-        case leftUp
-    }
-
-
     public enum DisplayChoice: String, Codable, CaseIterable, Sendable {
         case followMinecraft
         case specific
@@ -49,19 +40,19 @@ public struct CrosshairSettings: SettingsDocument {
     public var outlineHex = "#000000"
     public var outlineWidth = 2
     /// Arm length for Plus and X, diameter for Dot and Circle.
-    public var size = 10
-    public var thickness = 2
-    /// Positive moves the crosshair right.
-    public var offsetX = 0
+    public var size = 11
+    public var thickness = 3
+    /// Positive moves the crosshair right. The default -1, -1 puts the crosshair on Minecraft's own, which
+    /// sits just left of and above the display's middle (see `CrosshairCentering.minecraftNote`).
+    public var offsetX = -1
     /// Positive moves the crosshair down.
-    public var offsetY = 0
+    public var offsetY = -1
     /// The imported image, relative to the sTools support folder (`Images/<uuid>.<ext>`).
     public var imageName: String?
     public var imageScalePercent = 100
     public var imageAnchor: ImageAnchor = .center
     public var gap = 0
     public var opacityPercent = 100
-    public var centerSide: CenterSide = .rightDown
     /// An independent restriction, not an alternative to being "on" (spec 5.3.2's Visibility setting,
     /// reshaped per feedback: a single on/off switch rather than exclusive options, so it composes
     /// cleanly with the same setting on other tools).
@@ -112,7 +103,6 @@ public struct CrosshairSettings: SettingsDocument {
         imageAnchor = container.lossy(ImageAnchor.self, .imageAnchor) ?? defaults.imageAnchor
         gap = container.lossy(Int.self, .gap) ?? defaults.gap
         opacityPercent = container.lossy(Int.self, .opacityPercent) ?? defaults.opacityPercent
-        centerSide = container.lossy(CenterSide.self, .centerSide) ?? defaults.centerSide
         visibleOnlyWhileMinecraftFocused = container.lossy(Bool.self, .visibleOnlyWhileMinecraftFocused) ?? defaults.visibleOnlyWhileMinecraftFocused
         displayChoice = container.lossy(DisplayChoice.self, .displayChoice) ?? defaults.displayChoice
         specificDisplayID = container.lossy(UInt32.self, .specificDisplayID)

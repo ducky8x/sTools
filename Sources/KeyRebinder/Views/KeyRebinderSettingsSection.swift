@@ -40,17 +40,18 @@ struct KeyRebinderSettingsSection: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.bottom, 8)
                 }
+                STSettingsRow("Checker") {
+                    STSwitch(isOn: $controller.settings.checkerEnabled, label: "Checker")
+                }
+                if controller.settings.checkerEnabled {
+                    STSettingsRow("Speedrun-rule findings") {
+                        STSwitch(isOn: $controller.settings.checkerIncludesSpeedrunRules, label: "Speedrun-rule findings")
+                    }
+                }
             }
 
             STAdvancedDisclosure(isExpanded: $showsAdvanced) {
                 VStack(alignment: .leading, spacing: 0) {
-                    STSettingsRow("Checker") {
-                        STSwitch(isOn: $controller.settings.checkerEnabled, label: "Checker")
-                    }
-                    STSettingsRow("Speedrun-rule findings") {
-                        STSwitch(isOn: $controller.settings.checkerIncludesSpeedrunRules, label: "Speedrun-rule findings")
-                            .disabled(!controller.settings.checkerEnabled)
-                    }
                     STSettingsRow("Hover arcs") {
                         STSwitch(isOn: $controller.settings.showsHoverArcs, label: "Hover arcs")
                     }

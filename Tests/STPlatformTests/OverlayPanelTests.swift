@@ -107,6 +107,14 @@ struct OverlayPanelConfigurationTests {
         #expect(!panel.isReleasedWhenClosed)
     }
 
+    @Test func aPanelExcludedFromCaptureIsHiddenFromSharing() {
+        #expect(!OverlayPanel().isExcludedFromCapture)
+        let panel = OverlayPanel(role: .topmost, isExcludedFromCapture: true)
+        #expect(panel.isExcludedFromCapture)
+        #expect(panel.sharingType == NSWindow.SharingType.none)
+        #expect(panel.ignoresMouseEvents)
+    }
+
     @Test func hostsSwiftUIContentWithAClearBackground() throws {
         let panel = OverlayPanel()
         panel.setContent(Text("Hello"))
@@ -182,6 +190,31 @@ struct OverlayPanelWindowServerTests {
         defer { panel.hide() }
         #expect(panel.frame == moved)
         #expect(try #require(waitForRecord(panel.windowNumber)).isOnScreen)
+    }
+
+    /// What Screen Recording reads for its base layer (rule R5) and its display sources. Both panels sit
+    /// far outside every display, so nothing shows on a real screen.
+    @Test func recordingListsLeaveOutPanelsExcludedFromCapture() {
+        let overlay = OverlayPanel()
+        let hidden = OverlayPanel(isExcludedFromCapture: true)
+        let offScreen = CGRect(x: -8000, y: -8000, width: 120, height: 80)
+        overlay.show(frame: offScreen)
+        hidden.show(frame: offScreen.offsetBy(dx: 140, dy: 0))
+        defer {
+            overlay.hide()
+            hidden.hide()
+        }
+
+        let visible = OverlayPanel.visibleWindowNumbers()
+        #expect(visible.contains(UInt32(overlay.windowNumber)))
+        #expect(!visible.contains(UInt32(hidden.windowNumber)))
+
+        let excluded = OverlayPanel.captureExcludedWindowNumbers()
+        #expect(excluded.contains(UInt32(hidden.windowNumber)))
+        #expect(!excluded.contains(UInt32(overlay.windowNumber)))
+
+        hidden.hide()
+        #expect(OverlayPanel.captureExcludedWindowNumbers().contains(UInt32(hidden.windowNumber)))
     }
 
     @Test func hidingTwiceIsHarmless() {

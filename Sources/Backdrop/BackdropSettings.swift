@@ -25,7 +25,7 @@ public struct BackdropSettings: SettingsDocument {
 
     public struct Fill: Codable, Equatable, Sendable {
         public var kind: FillKind = .color
-        public var color = "#0B0A09"
+        public var color = "#15120F"
         public var gradientStartColor = "#0B0A09"
         public var gradientEndColor = "#2A241C"
         /// Linear gradient direction, 0 = left to right, increasing clockwise.

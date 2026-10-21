@@ -166,7 +166,8 @@ struct AppModelTests {
         let services = ToolServices(settings: store, displays: DisplayDirectory(),
                                     minecraft: MinecraftLocator(source: StaticMinecraftWindowSource()),
                                     permissions: PermissionCenter(prober: FakeProber(), openURL: { _ in }))
-        let model = AppModel(services: services, theme: STTheme(), sound: .silent, controllers: [:], hotkeyRegistrar: FakeHotkeyRegistrar(), loginItem: FakeLoginItem())
+        let model = AppModel(services: services, theme: STTheme(), sound: .silent, controllers: [:], hotkeyRegistrar: FakeHotkeyRegistrar(),
+                             hotkeyHUD: FakeHotkeyHUD(), loginItem: FakeLoginItem())
         #expect(!model.theme.soundsEnabled)
         #expect(model.theme.accentHex == "#7DBF86")
     }

@@ -13,15 +13,14 @@ struct CrosshairSettingsTests {
         #expect(settings.outlineEnabled)
         #expect(settings.outlineHex == "#000000")
         #expect(settings.outlineWidth == 2)
-        #expect(settings.size == 10)
-        #expect(settings.thickness == 2)
-        #expect(settings.offsetX == 0 && settings.offsetY == 0)
+        #expect(settings.size == 11)
+        #expect(settings.thickness == 3)
+        #expect(settings.offsetX == -1 && settings.offsetY == -1)
         #expect(settings.imageName == nil)
         #expect(settings.imageScalePercent == 100)
         #expect(settings.imageAnchor == .center)
         #expect(settings.gap == 0)
         #expect(settings.opacityPercent == 100)
-        #expect(settings.centerSide == .rightDown)
         #expect(settings.visibleOnlyWhileMinecraftFocused == false)
         #expect(settings.displayChoice == .followMinecraft)
         #expect(settings.specificDisplayID == nil)
@@ -37,7 +36,6 @@ struct CrosshairSettingsTests {
         settings.offsetY = 12
         settings.imageName = "Images/0F0E0D0C-0000-0000-0000-000000000001.png"
         settings.imageAnchor = .bottomRight
-        settings.centerSide = .leftUp
         settings.visibleOnlyWhileMinecraftFocused = true
         settings.displayChoice = .specific
         settings.specificDisplayID = 77
@@ -77,11 +75,19 @@ struct CrosshairSettingsTests {
 
     @Test func unusableValuesFallBackToDefaults() throws {
         let json = """
-        {"shape": "hexagon", "fillHex": "red", "outlineHex": "#12", "imageAnchor": 7, "centerSide": null,
+        {"shape": "hexagon", "fillHex": "red", "outlineHex": "#12", "imageAnchor": 7,
          "visibleOnlyWhileMinecraftFocused": "sometimes", "displayChoice": "all", "size": "big"}
         """
         let decoded = try JSONDecoder().decode(CrosshairSettings.self, from: Data(json.utf8))
         #expect(decoded == CrosshairSettings.defaultValue)
+    }
+
+    @Test func olderFilesWithACenterSideStillLoad() throws {
+        // Center side was a setting before crosshairs always centered the way Minecraft's does.
+        let decoded = try JSONDecoder().decode(CrosshairSettings.self, from: Data(#"{"centerSide":"rightDown","size":12}"#.utf8))
+        var expected = CrosshairSettings.defaultValue
+        expected.size = 12
+        #expect(decoded == expected)
     }
 
     @Test func hexColorsAreNormalizedToUppercase() throws {

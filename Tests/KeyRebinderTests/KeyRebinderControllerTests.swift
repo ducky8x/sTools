@@ -223,6 +223,12 @@ struct KeyRebinderControllerTests {
         #expect(controller.findings(for: .key("left_control")).count == 1)
         controller.settings.checkerIncludesSpeedrunRules = false
         #expect(controller.derived.findings.isEmpty)
+        controller.settings.checkerIncludesSpeedrunRules = true
+        #expect(!controller.derived.findings.isEmpty)
+        controller.settings.checkerEnabled = false
+        #expect(controller.derived.findings.isEmpty)
+        #expect(controller.derived.flaggedKeys.isEmpty)
+        #expect(controller.findings(for: .key("left_control")).isEmpty)
     }
 
     @Test func minecraftKeybindsComeFromTheChosenFile() async throws {

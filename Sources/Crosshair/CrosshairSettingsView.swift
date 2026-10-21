@@ -7,6 +7,7 @@ public struct CrosshairSettingsView: View {
     @Bindable private var controller: CrosshairController
     @State private var advancedExpanded = false
     @State private var isResetConfirming = false
+    @Environment(\.stTheme) private var theme
 
     public init(controller: CrosshairController) {
         self.controller = controller
@@ -14,8 +15,14 @@ public struct CrosshairSettingsView: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            STPlate {
-                CrosshairPreview(settings: controller.settings, customImage: controller.previewImage)
+            VStack(alignment: .leading, spacing: 8) {
+                STPlate {
+                    CrosshairPreview(settings: controller.settings, customImage: controller.previewImage)
+                }
+                Text(CrosshairCentering.minecraftNote)
+                    .stStyle(.caption)
+                    .foregroundStyle(theme.inkSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             VStack(alignment: .leading, spacing: 0) {
@@ -25,6 +32,14 @@ public struct CrosshairSettingsView: View {
                 } else {
                     CrosshairColorsRow(settings: $controller.settings)
                     CrosshairSizeRow(settings: $controller.settings)
+                    if let display = controller.displayPixelSize,
+                       let note = CrosshairCentering.note(for: controller.settings, on: display) {
+                        Text(note)
+                            .stStyle(.caption)
+                            .foregroundStyle(theme.inkSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.vertical, 8)
+                    }
                 }
                 CrosshairOffsetRow(settings: $controller.settings)
             }
@@ -38,11 +53,6 @@ public struct CrosshairSettingsView: View {
                     }
                     STSettingsRow("Opacity") {
                         STSlider(value: opacityBinding, in: 10...100, label: "Opacity", valueText: { "\(Int($0))%" })
-                    }
-                    STSettingsRow("Center side") {
-                        STSegmented(selection: $controller.settings.centerSide, options: [
-                            .init(.rightDown, "Right / Down"), .init(.leftUp, "Left / Up"),
-                        ])
                     }
                     STSettingsRow("Show only while Minecraft is focused") {
                         STSwitch(isOn: $controller.settings.visibleOnlyWhileMinecraftFocused, label: "Show only while Minecraft is focused")

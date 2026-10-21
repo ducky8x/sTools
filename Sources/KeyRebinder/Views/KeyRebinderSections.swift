@@ -71,7 +71,13 @@ struct FindingsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionHeading("Checker")
+            HStack(alignment: .firstTextBaseline) {
+                SectionHeading("Checker")
+                Spacer()
+                Button("Turn Off") { controller.settings.checkerEnabled = false }
+                    .buttonStyle(STButtonStyle(.quiet))
+                    .help("Hide the checker and its red dots. Turn it back on in the settings below.")
+            }
             Text(controller.minecraftKeybinds == nil
                  ? "Advisory only: nothing is ever blocked. Without Minecraft\u{2019}s keybinds, every key counts as a game input."
                  : "Advisory only: nothing is ever blocked. Speedrun-rule findings cover keys Minecraft uses.")

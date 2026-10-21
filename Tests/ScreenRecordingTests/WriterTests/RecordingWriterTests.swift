@@ -41,6 +41,52 @@ struct RecordingWriterTests {
         #expect(info.audioTracks.isEmpty)
     }
 
+    /// Intel Macs' encoders take no constant quality; this Mac's software H.264 encoder stands in for them.
+    @Test func manualQualityRecordsOnAnEncoderWithoutConstantQuality() async throws {
+        let dir = try WriterFixture.makeDirectory()
+        let config = WriterFixture.configuration(dir, audio: [], codec: .h264, quality: .manual(0.6))
+        let writer = RecordingWriter(
+            configuration: config, freeSpace: FakeFreeSpace(.max), readinessOverride: nil, allowsHardwareEncoder: false)
+        try writer.start(at: .zero)
+        await WriterFixture.feed(writer, frames: 30, audioTracks: 0)
+        let result = await writer.finish()
+
+        #expect(result.stopReason == .finished)
+        let info = try await MovieInfo.load(try #require(result.files.first))
+        #expect(info.videoCodec == "avc1")
+        #expect(info.videoSampleCount == 30)
+    }
+
+    @Test func manualQualityStaysConstantQualityWhereTheEncoderOffersIt() throws {
+        // The software HEVC encoder takes a constant quality, as Apple silicon's hardware encoders do.
+        let settings = RecordingWriter.videoSettings(
+            for: Self.settingsConfiguration(codec: .hevc, quality: .manual(0.6)), allowsHardwareEncoder: false)
+        let compression = try #require(settings[AVVideoCompressionPropertiesKey] as? [String: Any])
+        #expect(compression[AVVideoQualityKey] as? Double == 0.6)
+        #expect(compression[AVVideoAverageBitRateKey] == nil)
+    }
+
+    @Test func manualQualitySetsTheBitRateWhereTheEncoderHasNoConstantQuality() throws {
+        func compression(_ quality: Double) throws -> [String: Any] {
+            let settings = RecordingWriter.videoSettings(
+                for: Self.settingsConfiguration(codec: .h264, quality: .manual(quality)), allowsHardwareEncoder: false)
+            return try #require(settings[AVVideoCompressionPropertiesKey] as? [String: Any])
+        }
+        let low = try compression(0.2)
+        let high = try compression(0.9)
+        #expect(low[AVVideoQualityKey] == nil)
+        #expect(high[AVVideoQualityKey] == nil)
+        let lowRate = try #require(low[AVVideoAverageBitRateKey] as? Int)
+        let highRate = try #require(high[AVVideoAverageBitRateKey] as? Int)
+        #expect(lowRate < highRate)
+    }
+
+    private static func settingsConfiguration(codec: VideoCodec, quality: VideoQuality) -> WriterConfiguration {
+        WriterConfiguration(
+            directory: FileManager.default.temporaryDirectory, baseName: "settings",
+            canvas: PixelSize(width: 1920, height: 1080), frameRate: 60, codec: codec, quality: quality)
+    }
+
     @Test func automaticBitRateScalesWithSizeFrameRateAndCodec() {
         let hd = PixelSize(width: 1920, height: 1080)
         let h264 = RecordingWriter.automaticBitRate(canvas: hd, frameRate: 60, codec: .h264)

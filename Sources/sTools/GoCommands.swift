@@ -19,6 +19,10 @@ struct GoCommands: Commands {
                 if command == .tool(.keyRebinder) || command == .settings { Divider() }
             }
         }
+        CommandGroup(replacing: .help) {
+            Button("Replay Introduction") { model.replayIntroduction() }
+            Button("Copy Diagnostics") { model.copyDiagnostics() }
+        }
     }
 
     @ViewBuilder
@@ -29,7 +33,14 @@ struct GoCommands: Commands {
     }
 
     private func isDisabled(_ command: GoCommand) -> Bool {
-        switch command {
+        if let flow = model.prologue?.flow {
+            switch command {
+            case .back: return !flow.canGoBack
+            case .forward: return !flow.canMoveOn || flow.isLastStep
+            default: return true
+            }
+        }
+        return switch command {
         case .back: !model.canGoBack
         case .forward: !model.canGoForward
         default: false

@@ -30,6 +30,14 @@ public final class NBBConnection {
 
     public var isRunning: Bool { !tasks.isEmpty }
 
+    /// One `GET /api/v1/ping`: whether Ninjabrain Bot's API answers right now (the Prologue's live check).
+    public static func ping(baseURL: URL = defaultBaseURL, timeout: TimeInterval = 1) async -> Bool {
+        let request = URLRequest(url: baseURL.appending(path: "api/v1/ping"), timeoutInterval: timeout)
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let status = (response as? HTTPURLResponse)?.statusCode else { return false }
+        return (200..<300).contains(status)
+    }
+
     public func start() {
         guard tasks.isEmpty else { return }
         tasks.append(subscribeStronghold())

@@ -158,6 +158,21 @@ struct ScreenRecordingControllerTests {
         harness.controller.setEnabled(false)
     }
 
+    @Test func theTestRecordingIsSavedWithoutAsking() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        harness.controller.options.fileType = .mov
+        await harness.arm()
+        harness.factory.bases[42]?.push(.frame(VideoFrame(pixelBuffer: WriterFixture.makeFrame(index: 1, size: PixelSize(width: 320, height: 180)), hostTime: HostMediaClock().now())))
+        let saved = await harness.controller.recordTest(for: .milliseconds(300))
+        #expect(saved)
+        #expect(harness.controller.options.askSaveDelete)
+        #expect(harness.controller.phase == .idle)
+        let file = try #require(harness.controller.lastSaved?.files.first)
+        #expect(FileManager.default.fileExists(atPath: file.path))
+        harness.controller.setEnabled(false)
+    }
+
     @Test func theLayoutIsLockedWhileRecording() async throws {
         let harness = Harness()
         defer { harness.remove() }

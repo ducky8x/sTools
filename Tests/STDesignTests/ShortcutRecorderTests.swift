@@ -253,3 +253,88 @@ struct ShortcutRenderTests {
         #expect(distinctColors(rep) > 1)
     }
 }
+
+// MARK: - Clicking (regression: a click focused the field but recording never started)
+
+@MainActor
+private final class ShortcutBox {
+    var shortcut: STShortcut?
+}
+
+/// Clicks reach a window that isn't key only when the view accepts the first mouse; the off-screen test window
+/// can't become key while another app is in front, so the host accepts it.
+private final class FirstMouseHost: NSHostingView<AnyView> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+@MainActor
+private struct ClickHarness {
+    let box = ShortcutBox()
+    let window: NSWindow
+    let host: FirstMouseHost
+
+    init() {
+        _ = NSApplication.shared
+        STFont.register()
+        let box = box
+        let recorder = STShortcutRecorder(shortcut: Binding(get: { box.shortcut }, set: { box.shortcut = $0 }), label: "Key combination")
+        host = FirstMouseHost(rootView: AnyView(VStack { recorder.frame(width: 240) }.padding(20).frame(width: 320, height: 120, alignment: .top)))
+        host.frame = CGRect(x: 0, y: 0, width: 320, height: 120)
+        // Far outside every display, so nothing ever shows on screen.
+        window = NSWindow(contentRect: CGRect(x: -8000, y: -8000, width: 320, height: 120), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        window.orderFront(nil)
+        spin(0.3)
+    }
+
+    func spin(_ seconds: TimeInterval) {
+        let end = Date().addingTimeInterval(seconds)
+        repeat { RunLoop.current.run(until: Date().addingTimeInterval(0.03)) } while Date() < end
+    }
+
+    /// A click at `y` points from the window's bottom.
+    func click(atY y: CGFloat) {
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            let event = NSEvent.mouseEvent(
+                with: type, location: NSPoint(x: 60, y: y), modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0)!
+            NSApp.sendEvent(event)
+            spin(0.1)
+        }
+        spin(0.2)
+    }
+
+    func press(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) {
+        let event = NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber, context: nil, characters: "c", charactersIgnoringModifiers: "c", isARepeat: false, keyCode: keyCode)!
+        NSApp.sendEvent(event)
+        spin(0.2)
+    }
+
+    func close() { window.orderOut(nil) }
+}
+
+@Suite("STShortcutRecorder clicks", .serialized)
+@MainActor
+struct ShortcutRecorderClickTests {
+    /// The recorder sits 20 pt below the top of a 120 pt window.
+    private let recorderY: CGFloat = 120 - 20 - 14
+
+    @Test func clickingRecordsTheNextShortcut() {
+        let harness = ClickHarness()
+        defer { harness.close() }
+        harness.click(atY: recorderY)
+        harness.press(keyCode: 8, modifiers: [.control, .option])
+        #expect(harness.box.shortcut == STShortcut(keyCode: 8, modifiers: [.control, .option]))
+    }
+
+    @Test func clickingElsewhereCancels() {
+        let harness = ClickHarness()
+        defer { harness.close() }
+        harness.click(atY: recorderY)
+        harness.click(atY: 10)
+        harness.press(keyCode: 8, modifiers: [.control, .option])
+        #expect(harness.box.shortcut == nil)
+    }
+}

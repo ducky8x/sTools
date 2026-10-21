@@ -49,6 +49,17 @@ final class FakeHotkeyRegistrar: HotkeyRegistering {
     }
 }
 
+/// Records each hotkey confirmation instead of showing a panel.
+@MainActor
+final class FakeHotkeyHUD: HotkeyConfirmationPresenting {
+    private(set) var presented: [(line: String, sealed: Bool, displayID: UInt32)] = []
+    var lines: [String] { presented.map(\.line) }
+
+    func present(_ line: String, sealed: Bool, on display: DisplayInfo) {
+        presented.append((line, sealed, display.id))
+    }
+}
+
 /// Captures what was copied instead of touching the real system pasteboard.
 @MainActor
 final class FakeClipboard: ClipboardWriting {
@@ -86,14 +97,18 @@ final class Harness {
     let controllers: [ToolID: FakeController]
     let opened = OpenedURLs()
     let hotkeyRegistrar: any HotkeyRegistering
+    let hotkeyHUD = FakeHotkeyHUD()
 
+    /// `prologueCompleted: false` launches as a first launch, with the introduction showing.
     init(accessibility: PermissionStatus = .granted, instances: [MinecraftInstance] = [],
-         theme: STTheme = STTheme(), usesRealControllers: Bool = false, hotkeyRegistrar: any HotkeyRegistering = FakeHotkeyRegistrar()) {
+         theme: STTheme = STTheme(), usesRealControllers: Bool = false, hotkeyRegistrar: any HotkeyRegistering = FakeHotkeyRegistrar(),
+         prologueCompleted: Bool = true) {
         self.hotkeyRegistrar = hotkeyRegistrar
         directory = FileManager.default.temporaryDirectory.appending(path: "sTools-app-\(UUID().uuidString)")
         prober = FakeProber(accessibility: accessibility)
         source = StaticMinecraftWindowSource(instances: instances)
         store = SettingsStore(directory: directory, debounce: .milliseconds(10))
+        if prologueCompleted { store.save(AppState(prologueCompleted: true)) }
         var fakes: [ToolID: FakeController] = [:]
         if !usesRealControllers {
             for tool in ToolID.allCases where tool.hasSwitch { fakes[tool] = FakeController() }
@@ -108,7 +123,10 @@ final class Harness {
                .windowBackdrop: BackdropController(services: services),
                .crosshair: CrosshairController(services: services)]
             : fakes.mapValues { $0 as any ToolController }
-        model = AppModel(services: services, theme: theme, sound: .silent, controllers: all, hotkeyRegistrar: hotkeyRegistrar, loginItem: FakeLoginItem())
+        model = AppModel(services: services, theme: theme, sound: .silent, controllers: all, hotkeyRegistrar: hotkeyRegistrar,
+                         hotkeyHUD: hotkeyHUD, loginItem: FakeLoginItem())
+        model.pingNinjabrainBot = { false }
+        model.evaluateKarabiner = { .notInstalled }
     }
 
     deinit {
