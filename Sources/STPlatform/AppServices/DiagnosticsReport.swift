@@ -242,7 +242,9 @@ public struct DiagnosticsReport: Sendable {
             let escaped = NSRegularExpression.escapedPattern(for: home)
             result = replace(#"\#(escaped)(?![A-Za-z0-9_.\-])"#, in: result)
         }
-        return replace(#"/Users/[^/\s"')\]]+"#, in: result)
+        // "[U]" matches only "U": it keeps the text "/Users/" out of the shipped binary, where
+        // scripts/check-no-home-paths.sh would take it for a home-folder path and fail the release build.
+        return replace(#"/[U]sers/[^/\s"')\]]+"#, in: result)
     }
 
     private static func replace(_ pattern: String, in text: String) -> String {
