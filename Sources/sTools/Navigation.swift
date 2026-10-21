@@ -7,6 +7,12 @@ enum Route: Hashable, Sendable {
     case settings
 }
 
+/// A place inside a page that navigation can scroll to.
+enum PageAnchor: Hashable, Sendable {
+    /// Home ▸ Hotkeys.
+    case hotkeys
+}
+
 /// Browser-style back/forward history. Pure value type.
 struct NavigationHistory: Equatable, Sendable {
     private var entries: [Route]

@@ -22,6 +22,8 @@ final class AppModel {
     var minecraft: MinecraftLocator { services.minecraft }
 
     var history = NavigationHistory()
+    /// Where the next page shown should scroll to; the page clears it once it has.
+    var pendingPageAnchor: PageAnchor?
     var appearance: AppearanceSettings
     var general: GeneralSettings
     var updates: UpdateSettings

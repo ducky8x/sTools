@@ -343,3 +343,30 @@ struct HomeHotkeysRenderTests {
         #expect(paused.representation(using: .png, properties: [:]) != live.representation(using: .png, properties: [:]))
     }
 }
+
+/// The Key Rebinder's Open Hotkeys lands on Home's Hotkeys section, not the top of Home, even with Home open.
+@MainActor
+@Suite("Open Hotkeys")
+struct OpenHotkeysTests {
+    @Test func opensHomeAtItsHotkeys() {
+        let harness = Harness(accessibility: .granted)
+        harness.model.navigate(to: .tool(.keyRebinder))
+        harness.model.openHotkeys()
+        #expect(harness.model.route == .home)
+        #expect(harness.model.pendingPageAnchor == .hotkeys)
+    }
+
+    @Test func scrollsHomeEvenWhenItIsAlreadyOpen() {
+        let harness = Harness(accessibility: .granted)
+        #expect(harness.model.route == .home)
+        harness.model.openHotkeys()
+        #expect(harness.model.pendingPageAnchor == .hotkeys)
+    }
+
+    @Test func theKeyRebindersButtonOpensHotkeysAndTheTrialHasNone() {
+        let harness = Harness(accessibility: .granted)
+        ToolContent(model: harness.model, tool: .keyRebinder).openHotkeys?()
+        #expect(harness.model.pendingPageAnchor == .hotkeys)
+        #expect(ToolContent(model: harness.model, tool: .keyRebinder, isTrial: true).openHotkeys == nil)
+    }
+}
