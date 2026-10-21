@@ -275,12 +275,12 @@ struct HotkeyCenterTests {
         h.center.isEnabled = true
         let id = h.center.add(combo: ctrlOptC, actions: [.toggle(.crosshair), .toggle(.nbbOverlay)])
 
-        h.registrar.press(id)
+        h.registrar.tap(id)
         #expect(h.events == [.setTool(.crosshair, isOn: true), .setTool(.nbbOverlay, isOn: true)])
 
         h.events.removeAll()
         h.tools = [.crosshair: true, .nbbOverlay: true]
-        h.registrar.press(id)
+        h.registrar.tap(id)
         #expect(h.events == [.setTool(.crosshair, isOn: false), .setTool(.nbbOverlay, isOn: false)])
     }
 
@@ -289,9 +289,9 @@ struct HotkeyCenterTests {
         h.center.isEnabled = true
         let id = h.center.add(combo: ctrlOptC, actions: [.toggle(.crosshair)])
         h.tools = [.crosshair: true]
-        h.registrar.press(id)
+        h.registrar.tap(id)
         h.tools = [.crosshair: false]
-        h.registrar.press(id)
+        h.registrar.tap(id)
         #expect(h.events == [.setTool(.crosshair, isOn: false), .setTool(.crosshair, isOn: true)])
     }
 
@@ -507,6 +507,86 @@ struct HotkeyCenterTests {
         center.appIsActive = true
         center.isEnabled = false
         #expect(h.presses == [[.startTimer]])
+    }
+
+    // MARK: Held keys
+
+    /// Whether macOS repeats a held hotkey is still to be confirmed on hardware (spec 6.1). Either way, a press for a
+    /// key that is still down is ignored until its release.
+    @Test func aHeldKeysRepeatsAreIgnoredUntilItsRelease() async {
+        let h = await Harness()
+        h.center.isEnabled = true
+        let id = h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
+        h.registrar.press(id)
+        h.tools = [.crosshair: true]
+        h.registrar.press(id)
+        h.registrar.press(id)
+        #expect(h.presses == [[.setTool(.crosshair, isOn: true)]])
+
+        h.registrar.release(id)
+        h.registrar.press(id)
+        #expect(h.presses == [[.setTool(.crosshair, isOn: true)], [.setTool(.crosshair, isOn: false)]])
+    }
+
+    /// A second press within 0.4 s cancels the timer (spec 5.6.2), so a held key's repeats must never reach it.
+    @Test func aHeldTimerKeyNeverLooksLikeADoublePress() async {
+        let h = await Harness()
+        h.center.isEnabled = true
+        let id = h.center.add(combo: f13, actions: [.startTimer])
+        h.registrar.press(id)
+        h.registrar.press(id)
+        h.registrar.press(id)
+        h.registrar.release(id)
+        #expect(h.presses == [[.startTimer], [.startTimerReleased]])
+    }
+
+    /// The timer's double press is two separate presses, each with its release.
+    @Test func separatePressesStillCount() async {
+        let h = await Harness()
+        h.center.isEnabled = true
+        let id = h.center.add(combo: f13, actions: [.startTimer])
+        h.registrar.tap(id)
+        h.registrar.tap(id)
+        #expect(h.presses == [[.startTimer], [.startTimerReleased], [.startTimer], [.startTimerReleased]])
+    }
+
+    @Test func eachHotkeysKeyIsTrackedOnItsOwn() async {
+        let h = await Harness()
+        h.center.isEnabled = true
+        let timer = h.center.add(combo: f13, actions: [.startTimer])
+        let crosshair = h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
+        h.registrar.press(timer)
+        h.registrar.press(crosshair)
+        h.registrar.press(timer)
+        h.registrar.release(crosshair)
+        h.registrar.press(crosshair)
+        #expect(h.presses == [[.startTimer], [.setTool(.crosshair, isOn: true)], [.setTool(.crosshair, isOn: true)]])
+    }
+
+    /// An unregistration forgets the key, so once hotkeys are live again its next press counts, although macOS never
+    /// reported the release.
+    @Test func aPauseForgetsTheKeysThatWereDown() async {
+        let h = await Harness()
+        h.center.isEnabled = true
+        let id = h.center.add(combo: f13, actions: [.startTimer])
+        h.registrar.press(id)
+        h.center.appIsActive = true
+        h.center.appIsActive = false
+        h.registrar.press(id)
+        #expect(h.presses == [[.startTimer], [.startTimerReleased], [.startTimer]])
+    }
+
+    /// A registrar that doesn't report releases can't tell a held key from a new press, so every press counts.
+    @Test func aRegistrarWithoutReleasesCountsEveryPress() async {
+        let h = await Harness()
+        let registrar = PressOnlyRegistrar()
+        let center = HotkeyCenter(store: h.store, registrar: registrar, toolStates: { [:] },
+                                  handler: { [unowned h] in h.presses.append($0) })
+        center.isEnabled = true
+        let id = center.add(combo: f13, actions: [.startTimer])
+        registrar.onPress?(id)
+        registrar.onPress?(id)
+        #expect(h.presses == [[.startTimer], [.startTimer]])
     }
 
     // MARK: Persistence

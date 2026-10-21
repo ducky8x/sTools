@@ -49,11 +49,12 @@ public enum HotkeyStatus: Equatable, Sendable {
 /// once), so a refusal shows the moment a hotkey is added. When the pause ends everything registers for real.
 ///
 /// Presses count only for a binding registered right now, so a press macOS delivered just before an unregistration
-/// is ignored. With a registrar that reports releases, the center also keeps which keys are down: a press that sent
-/// Start timer gets `.startTimerReleased` when its key comes up, and a release whose press didn't count is ignored,
-/// so releases are ignored while paused, as presses are. When a binding whose key is down is unregistered (a pause,
-/// the master switch, an edit or removal), macOS can't report that release any more, so the center sends it itself
-/// and forgets the key.
+/// is ignored. With a registrar that reports releases, the center also keeps which keys are down: a press for a key
+/// that is still down is a repeat and is ignored until its release, a press that sent Start timer gets
+/// `.startTimerReleased` when its key comes up, and a release whose press didn't count is ignored, so releases are
+/// ignored while paused, as presses are. When a binding whose key is down is unregistered (a pause, the master
+/// switch, an edit or removal), macOS can't report that release any more, so the center sends it itself and forgets
+/// the key.
 @MainActor
 @Observable
 public final class HotkeyCenter {
@@ -79,9 +80,9 @@ public final class HotkeyCenter {
     @ObservationIgnored private var registered: [UUID: HotkeyCombo] = [:]
     /// Combinations macOS accepted this run, so a pause tries each one only once. A refusal forgets it again.
     @ObservationIgnored private var accepted: Set<HotkeyCombo> = []
-    /// The registered bindings whose key is down: pressed, and not released or unregistered since. Each says
-    /// whether its press sent Start timer, so its release sends `.startTimerReleased`. Always empty with a
-    /// registrar that doesn't report releases.
+    /// The registered bindings whose key is down: pressed, and not released or unregistered since. A press for one
+    /// of them is a repeat. Each says whether its press sent Start timer, so its release sends `.startTimerReleased`.
+    /// Always empty with a registrar that doesn't report releases.
     @ObservationIgnored private var keysDown: [UUID: Bool] = [:]
     @ObservationIgnored private let log = STLog.logger("Hotkeys")
 
@@ -205,10 +206,16 @@ public final class HotkeyCenter {
     private var reportsReleases: Bool { registrar.onRelease != nil }
 
     /// A press counts only for a binding registered right now: nothing is while hotkeys are off or paused, and a
-    /// press macOS delivered just before an unregistration is stale.
+    /// press macOS delivered just before an unregistration is stale. A press for a key that is still down is a
+    /// repeat and is ignored until its release, so a held key never looks like a double press (which cancels the
+    /// timer); separate presses still count. Whether macOS repeats held hotkeys at all is to be confirmed on
+    /// hardware (spec 6.1); the rule is harmless if it doesn't.
     private func handlePress(_ id: UUID) {
         guard registered[id] != nil, let binding = settings.bindings.first(where: { $0.id == id }) else { return }
-        if reportsReleases { keysDown[id] = binding.actions.contains(.startTimer) }
+        if reportsReleases {
+            guard keysDown[id] == nil else { return }
+            keysDown[id] = binding.actions.contains(.startTimer)
+        }
         let outcome = HotkeyAction.resolve(binding.actions, toolStates: toolStates())
         var events = outcome.toolChanges.map { HotkeyEvent.setTool($0.tool, isOn: $0.isOn) }
         if outcome.togglesRecording { events.append(.toggleRecording) }
