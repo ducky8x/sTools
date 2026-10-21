@@ -56,6 +56,31 @@ struct NBBOverlayControllerTests {
         #expect(reloaded.settings.width == 400)
     }
 
+    /// Moving the overlay, or a refresh that changes nothing it draws, leaves its content alone; new content, a new
+    /// look or switching off and on again builds it again.
+    @MainActor
+    @Test func onlyAChangeInWhatItDrawsRebuildsTheOverlay() {
+        let controller = NBBOverlayController(services: makeServices(tempDirectory: tempDirectory()), connection: NBBConnection(source: FakeEventSource([])))
+        controller.sample = NBBEvents.Stronghold(
+            resultType: .triangulation,
+            predictions: [NBBEvents.Prediction(chunkX: -41, chunkZ: 108, certainty: 0.94, overworldDistance: 1580)],
+            eyeThrows: [], playerPosition: nil)
+        controller.setEnabled(true)
+        defer { controller.setEnabled(false) }
+        #expect(controller.drawCount == 1)
+
+        controller.settings.offsetX += 40
+        controller.settings.offsetY -= 25
+        #expect(controller.drawCount == 1, "moving only moves the panel")
+
+        controller.settings.width = 400
+        #expect(controller.drawCount == 2)
+
+        controller.setEnabled(false)
+        controller.setEnabled(true)
+        #expect(controller.drawCount == 3, "switching off let the content go")
+    }
+
     /// The page's preview shows only Ninjabrain Bot's live result: the intro's sample stays in the intro (spec 4,
     /// step 12).
     @MainActor
