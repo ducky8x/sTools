@@ -155,6 +155,9 @@ public final class CrosshairController: ToolController {
         targetDisplay().map { CrosshairGeometry.gridSize(frame: $0.frame, scale: $0.backingScale) }
     }
 
+    /// Whether macOS resamples the crosshair's display (a scaled resolution), where nothing can be pixel-exact.
+    var isOnScaledDisplay: Bool { targetDisplay()?.isScaledMode ?? false }
+
     private func targetDisplay() -> DisplayInfo? {
         switch settings.displayChoice {
         case .followMinecraft:

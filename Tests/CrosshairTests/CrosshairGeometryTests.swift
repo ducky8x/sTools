@@ -1,4 +1,5 @@
 import CoreGraphics
+import STPlatform
 import Testing
 
 @testable import Crosshair
@@ -250,11 +251,18 @@ struct CrosshairGeometryTests {
 
     // MARK: scaled modes
 
-    @Test func scaledModesAreRecognizedFromThePixelRatio() {
-        let frame = CGRect(x: 0, y: 0, width: 1440, height: 900)
-        #expect(!CrosshairGeometry.isScaledMode(frame: frame, backingScale: 2, pixelSize: CGSize(width: 2880, height: 1800)))
-        #expect(CrosshairGeometry.isScaledMode(frame: frame, backingScale: 2, pixelSize: CGSize(width: 2560, height: 1600)))
-        #expect(!CrosshairGeometry.isScaledMode(frame: frame, backingScale: 1, pixelSize: CGSize(width: 1440, height: 900)))
-        #expect(CrosshairGeometry.isScaledMode(frame: frame, backingScale: 1, pixelSize: CGSize(width: 1920, height: 1200)))
+    /// The panel's own size against what the display draws: a 3024 x 1964 panel drawing 1147 x 745 points at 2x
+    /// (2294 x 1490) is resampled; a 4K panel drawing 1920 x 1080 at 2x isn't.
+    @Test func scaledModesAreRecognizedFromThePanelsOwnSize() {
+        func display(_ size: CGSize, scale: CGFloat, native: CGSize?) -> DisplayInfo {
+            DisplayInfo(id: 1, name: "Test", frame: CGRect(origin: .zero, size: size), bounds: CGRect(origin: .zero, size: size),
+                        backingScale: scale, pixelSize: CGSize(width: size.width * scale, height: size.height * scale),
+                        isMain: true, nativePixelSize: native)
+        }
+        #expect(display(CGSize(width: 1147, height: 745), scale: 2, native: CGSize(width: 3024, height: 1964)).isScaledMode)
+        #expect(!display(CGSize(width: 1512, height: 982), scale: 2, native: CGSize(width: 3024, height: 1964)).isScaledMode)
+        #expect(!display(CGSize(width: 1920, height: 1080), scale: 2, native: CGSize(width: 3840, height: 2160)).isScaledMode)
+        #expect(display(CGSize(width: 1440, height: 900), scale: 1, native: CGSize(width: 1920, height: 1200)).isScaledMode)
+        #expect(!display(CGSize(width: 1440, height: 900), scale: 2, native: nil).isScaledMode, "unknown panel: no note")
     }
 }

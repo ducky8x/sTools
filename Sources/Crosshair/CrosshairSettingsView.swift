@@ -23,6 +23,12 @@ public struct CrosshairSettingsView: View {
                     .stStyle(.caption)
                     .foregroundStyle(theme.inkSecondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if controller.isOnScaledDisplay {
+                    Text(CrosshairCentering.scaledModeNote)
+                        .stStyle(.caption)
+                        .foregroundStyle(theme.inkSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             VStack(alignment: .leading, spacing: 0) {

@@ -141,12 +141,6 @@ enum CrosshairGeometry {
         return wanted.clamped(to: minTarget...maxTarget)
     }
 
-    /// Whether macOS is resampling this display (a "More Space" resolution): the mode's native pixel
-    /// size differs from the frame's size times the backing scale.
-    static func isScaledMode(frame: CGRect, backingScale: CGFloat, pixelSize: CGSize) -> Bool {
-        abs(pixelSize.width - frame.width * backingScale) > 0.5 || abs(pixelSize.height - frame.height * backingScale) > 0.5
-    }
-
     private static func floorMultiple(_ value: Int, of unit: Int) -> Int {
         let remainder = ((value % unit) + unit) % unit
         return value - remainder
