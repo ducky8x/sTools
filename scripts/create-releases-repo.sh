@@ -81,7 +81,7 @@ gh repo create "$REPO" --public --description "$DESCRIPTION" --source "$CLONE" -
 
 echo "==> Checking the feed URL sTools reads (GitHub may take a minute to serve it)"
 for attempt in 1 2 3 4 5 6; do
-    if curl -fsS "$FEED_URL" | cmp -s - "$TEMPLATES/appcast.xml"; then
+    if curl -fsS "$FEED_URL" 2>/dev/null | cmp -s - "$TEMPLATES/appcast.xml"; then
         echo
         echo "Created https://github.com/$REPO with its local clone at $(shown "$CLONE")."
         echo "sTools now finds the feed at $FEED_URL (no versions in it yet)."
