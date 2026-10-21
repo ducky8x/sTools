@@ -1,10 +1,14 @@
-// Generates sTools' UI sound set as 16-bit mono 44.1 kHz WAV files.
+// Generates sTools' sounds as 16-bit mono 44.1 kHz WAV files: the UI sound set, and Timer Overlay's sTools
+// alarms in an `Alarms` subfolder.
 //
 // Usage: swift scripts/generate-sounds.swift <outputDirectory>
+// (the app's own: swift scripts/generate-sounds.swift Sources/STDesign/Resources/Sounds)
 //
 // The synthesis is fully deterministic (no system randomness, a fixed-seed noise source), so running it
-// twice produces byte-identical files. Every sound is soft, short and warm: sine fundamentals with a gentle
+// twice produces byte-identical files. Every sound is soft and warm: sine fundamentals with a gentle
 // extra partial, exponential decays, a raised-cosine attack and a release fade so nothing clicks or pops.
+// The UI sounds are short; the alarms are alarm-length (1–2 s) strikes of bars and bells, each partial
+// decaying at its own rate so the upper ones die away first.
 
 import Foundation
 
@@ -135,6 +139,66 @@ let specs: [SoundSpec] = [
     },
 ]
 
+// MARK: - Timer Overlay's sTools alarms
+
+/// One partial of a struck bar or bell: its frequency as a multiple of the note's, its level and its decay.
+typealias Partial = (ratio: Double, amplitude: Double, decayTau: Double)
+
+/// One strike: a voice per partial, each decaying at its own rate, so the strike mellows as it rings.
+func strike(at start: Double, _ frequency: Double, _ partials: [Partial], attack: Double = 0.004,
+            gain: Double = 1) -> [Voice] {
+    partials.map { partial in
+        Voice(start: start, frequency: frequency * partial.ratio, attack: attack, decayTau: partial.decayTau,
+              gain: gain * partial.amplitude)
+    }
+}
+
+/// A soft mallet on a metal bar: the fundamental, a quiet octave and the bar's bright fourth harmonic.
+let malletBar: [Partial] = [(1, 1, 0.60), (2, 0.07, 0.25), (4, 0.10, 0.07)]
+/// A small glass bell, the family of the UI chime.
+let glassBell: [Partial] = [(1, 1, 0.42), (2, 0.20, 0.24), (2.76, 0.11, 0.14), (5.4, 0.035, 0.05)]
+/// A tower bell: hum, prime, minor-third tierce, quint and nominal, plus a slightly sharp prime that beats
+/// against the true one for the bell's slow shimmer.
+let towerBell: [Partial] = [
+    (0.5, 0.55, 1.00), (1, 1, 0.75), (1.003, 0.25, 0.75), (1.19, 0.40, 0.50), (1.5, 0.25, 0.36),
+    (2, 0.45, 0.32), (2.5, 0.12, 0.18), (3, 0.10, 0.12), (4.2, 0.04, 0.07),
+]
+/// A wooden bar: a short fundamental and the bar's two inharmonic overtones.
+let woodBar: [Partial] = [(1, 1, 0.11), (3.93, 0.22, 0.025), (9.2, 0.05, 0.008)]
+
+/// Alarm-length sounds, 1–2 s, each with its own character. Each peak is set so the sound's loudest 100 ms,
+/// A-weighted, sits at about −22.5 dBFS: the four sound equally loud, about as loud as the louder macOS alert
+/// sounds (Hero, Blow, Tink) and about 3 dB above Ping, so switching sounds keeps the alarm's volume about the
+/// same. The low sounds get higher peaks because the ear hears less of their energy.
+let alarmSpecs: [SoundSpec] = [
+    // Ember: a mellow arpeggio rising to the octave, C5 E5 G5 C6.
+    SoundSpec(name: "ember", duration: 1.600, peak: 0.19, releaseSeconds: 0.400) { duration in
+        let notes: [(start: Double, frequency: Double, gain: Double)] = [
+            (0.00, 523.25, 0.70), (0.15, 659.25, 0.78), (0.30, 783.99, 0.86), (0.45, 1_046.50, 1.00),
+        ]
+        return render(notes.flatMap { strike(at: $0.start, $0.frequency, malletBar, gain: $0.gain) },
+                      duration: duration)
+    },
+    // Lantern: a bright bell, an open fifth G5 and D6, struck twice.
+    SoundSpec(name: "lantern", duration: 1.400, peak: 0.18, releaseSeconds: 0.350) { duration in
+        let strikes: [(start: Double, gain: Double)] = [(0.00, 1.00), (0.32, 0.80)]
+        return render(strikes.flatMap {
+            strike(at: $0.start, 783.99, glassBell, attack: 0.003, gain: $0.gain)
+                + strike(at: $0.start, 1_174.66, glassBell, attack: 0.003, gain: 0.5 * $0.gain)
+        }, duration: duration)
+    },
+    // Toll: one deep tower bell on D4, left to ring.
+    SoundSpec(name: "toll", duration: 1.900, peak: 0.38, releaseSeconds: 0.500) { duration in
+        render(strike(at: 0, 293.66, towerBell, attack: 0.005), duration: duration)
+    },
+    // Knock: a wooden knock-knock, twice.
+    SoundSpec(name: "knock", duration: 1.200, peak: 0.30, releaseSeconds: 0.300) { duration in
+        let knocks: [(start: Double, gain: Double)] = [(0.00, 1.00), (0.13, 0.85), (0.50, 1.00), (0.63, 0.85)]
+        return render(knocks.flatMap { strike(at: $0.start, 392.00, woodBar, attack: 0.0015, gain: $0.gain) },
+                      duration: duration)
+    },
+]
+
 func wavData(_ samples: [Double]) -> Data {
     var data = Data()
     func append<T: FixedWidthInteger>(_ value: T) {
@@ -159,12 +223,17 @@ func wavData(_ samples: [Double]) -> Data {
     return data
 }
 
-func generate(into directory: URL) throws {
+func write(_ specs: [SoundSpec], into directory: URL) throws {
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     for spec in specs {
         let samples = finish(spec.synthesize(spec.duration), peak: spec.peak, releaseSeconds: spec.releaseSeconds)
         try wavData(samples).write(to: directory.appendingPathComponent("\(spec.name).wav"), options: .atomic)
     }
+}
+
+func generate(into directory: URL) throws {
+    try write(specs, into: directory)
+    try write(alarmSpecs, into: directory.appendingPathComponent("Alarms", isDirectory: true))
 }
 
 guard CommandLine.arguments.count == 2 else {
