@@ -20,6 +20,9 @@ struct TypewriterText: View {
     @State private var hasFinished = false
     /// `completionCount` when this appeared: a later value means "complete" arrived before the typing began.
     @State private var countAtAppear: Int?
+    /// Bumped when the typing is completed early. The typing animates `progress` toward a target it already holds,
+    /// so setting it again leaves the animation running; a fresh identity brings the text up whole instead.
+    @State private var cutCount = 0
 
     private var target: Double { Double(text.count) + fadeSpan }
 
@@ -35,6 +38,7 @@ struct TypewriterText: View {
                 Text(text).opacity(isStarted || hasStarted ? 1 : 0)
             } else {
                 Text(text).textRenderer(TypewriterRenderer(progress: progress, fadeSpan: fadeSpan))
+                    .id(cutCount)
             }
         }
         .onAppear {
@@ -62,7 +66,10 @@ struct TypewriterText: View {
     private func finishNow() {
         guard hasStarted || isStarted, !hasFinished else { return }
         hasStarted = true
-        withTransaction(STMotion.instant) { progress = target }
+        withTransaction(STMotion.instant) {
+            progress = target
+            cutCount += 1
+        }
         finish()
     }
 
