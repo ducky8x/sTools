@@ -14,6 +14,10 @@ public struct DisplayInfo: Identifiable, Equatable, Sendable {
     /// Native pixels of the display's current mode.
     public let pixelSize: CGSize
     public let isMain: Bool
+    /// The panel's own pixels: the mode macOS marks as native. Nil when no mode carries the mark. A scaled
+    /// resolution's current mode reports its backing size (2294 x 1490 on a 3024 x 1964 panel), so this is the
+    /// only way to tell it's resampled.
+    public let nativePixelSize: CGSize?
 
     public init(
         id: UInt32,
@@ -22,7 +26,8 @@ public struct DisplayInfo: Identifiable, Equatable, Sendable {
         bounds: CGRect,
         backingScale: CGFloat,
         pixelSize: CGSize,
-        isMain: Bool
+        isMain: Bool,
+        nativePixelSize: CGSize? = nil
     ) {
         self.id = id
         self.name = name
@@ -31,6 +36,24 @@ public struct DisplayInfo: Identifiable, Equatable, Sendable {
         self.backingScale = backingScale
         self.pixelSize = pixelSize
         self.isMain = isMain
+        self.nativePixelSize = nativePixelSize
+    }
+
+    /// Whether macOS draws this display at a resolution other than the panel's own ("More Space" or "Larger
+    /// Text") and resamples it, so nothing on it can be pixel-exact. False when the panel's size isn't known.
+    public var isScaledMode: Bool {
+        guard let nativePixelSize else { return false }
+        return abs(nativePixelSize.width - frame.width * backingScale) > 0.5
+            || abs(nativePixelSize.height - frame.height * backingScale) > 0.5
+    }
+
+    /// The size of the mode macOS marks as native (IOKit's `kDisplayModeNativeFlag`), looking at every mode
+    /// including the duplicate low-resolution ones.
+    static func nativePixelSize(of displayID: CGDirectDisplayID) -> CGSize? {
+        let options = [kCGDisplayShowDuplicateLowResolutionModes as String: true] as CFDictionary
+        guard let modes = CGDisplayCopyAllDisplayModes(displayID, options) as? [CGDisplayMode] else { return nil }
+        let nativeFlag: UInt32 = 0x0200_0000
+        return modes.first { $0.ioFlags & nativeFlag != 0 }.map { CGSize(width: $0.pixelWidth, height: $0.pixelHeight) }
     }
 
     /// Returns nil when the screen carries no display ID.
@@ -53,7 +76,8 @@ public struct DisplayInfo: Identifiable, Equatable, Sendable {
             bounds: CGDisplayBounds(displayID),
             backingScale: screen.backingScaleFactor,
             pixelSize: pixelSize,
-            isMain: displayID == CGMainDisplayID()
+            isMain: displayID == CGMainDisplayID(),
+            nativePixelSize: Self.nativePixelSize(of: displayID)
         )
     }
 }
