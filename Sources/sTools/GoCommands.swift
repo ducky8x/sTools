@@ -9,6 +9,10 @@ struct GoCommands: Commands {
         CommandGroup(replacing: .appSettings) {
             item(.settings, title: "Settings\u{2026}")
         }
+        CommandGroup(after: .appInfo) {
+            Button("Check for Updates\u{2026}") { model.updater?.checkForUpdates() }
+                .disabled(model.updater?.isAvailable != true)
+        }
         CommandMenu("Go") {
             ForEach(GoCommand.menu, id: \.self) { command in
                 item(command, title: command.title)

@@ -23,6 +23,7 @@ extension AppModel {
             set: { value in
                 self.updates[keyPath: keyPath] = value
                 self.settings.save(self.updates)
+                self.updater?.apply(self.updates)
             })
     }
 

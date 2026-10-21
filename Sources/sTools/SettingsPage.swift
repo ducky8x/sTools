@@ -58,8 +58,16 @@ struct SettingsPage: View {
             STSettingsRow("Check automatically") {
                 STSwitch(isOn: model.updatesBinding(\.checksAutomatically), label: "Check automatically")
             }
-            STSettingsRow("Download and install automatically", showsRule: false) {
+            STSettingsRow("Download and install automatically") {
                 STSwitch(isOn: model.updatesBinding(\.installsAutomatically), label: "Download and install automatically")
+            }
+            STSettingsRow("Check now", showsRule: false) {
+                Button("Check for Updates\u{2026}") { model.updater?.checkForUpdates() }
+                    .buttonStyle(STButtonStyle(.secondary))
+                    .disabled(model.updater?.isAvailable != true)
+            }
+            if let reason = model.updater?.unavailableReason ?? (model.updater == nil ? "Updates work in the packaged app only." : nil) {
+                Text(reason).stStyle(.caption).foregroundStyle(STColor.inkSecondary).padding(.top, 4)
             }
 
             PageSectionTitle("Data").padding(.top, 28).padding(.bottom, 4)

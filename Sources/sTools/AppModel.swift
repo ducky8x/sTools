@@ -29,6 +29,8 @@ final class AppModel {
     @ObservationIgnored let controllers: [ToolID: any ToolController]
     /// Key Rebinder has no on/off switch, so it isn't one of `controllers`.
     @ObservationIgnored let keyRebinder: KeyRebinderController?
+    /// Sparkle; nil in tests and previews.
+    @ObservationIgnored let updater: AppUpdater?
     @ObservationIgnored let loginItem: any LoginItemControlling
     @ObservationIgnored var wasAccessibilityGranted: Bool
     @ObservationIgnored var isPollingForTools = false
@@ -45,13 +47,14 @@ final class AppModel {
 
     /// Every tool starts off (spec 3.5). `controllers` holds the tools that exist so far.
     init(services: ToolServices, theme: STTheme, sound: STSoundPlayer, controllers: [ToolID: any ToolController],
-         keyRebinder: KeyRebinderController? = nil,
+         keyRebinder: KeyRebinderController? = nil, updater: AppUpdater? = nil,
          hotkeyRegistrar: any HotkeyRegistering, loginItem: any LoginItemControlling) {
         self.services = services
         self.theme = theme
         self.sound = sound
         self.controllers = controllers
         self.keyRebinder = keyRebinder
+        self.updater = updater
         self.hotkeyRegistrar = hotkeyRegistrar
         self.loginItem = loginItem
         let loaded = services.settings.load(AppearanceSettings.self)
@@ -61,6 +64,7 @@ final class AppModel {
         updates = services.settings.load(UpdateSettings.self)
         wasAccessibilityGranted = services.permissions.status(.accessibility) == .granted
         watchAccessibility()
+        updater?.apply(updates)
         (controllers[.screenRecording] as? ScreenRecordingController)?.requestEnable = { [weak self] in
             guard let self else { return false }
             self.setTool(.screenRecording, on: true)
@@ -81,7 +85,7 @@ final class AppModel {
             .windowBackdrop: BackdropController(services: services),
             .crosshair: CrosshairController(services: services),
             .screenRecording: ScreenRecordingController(services: services),
-        ], keyRebinder: KeyRebinderController(services: services),
+        ], keyRebinder: KeyRebinderController(services: services), updater: AppUpdater(),
         hotkeyRegistrar: CarbonHotkeyRegistrar(), loginItem: SystemLoginItem())
         minecraft.start()
         _ = hotkeys // starts registering any saved hotkeys immediately, matching the other services.
