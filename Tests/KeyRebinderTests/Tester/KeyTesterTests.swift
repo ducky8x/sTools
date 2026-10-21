@@ -1,6 +1,7 @@
 import Carbon.HIToolbox
 import Testing
 @testable import KeyRebinder
+import STPlatform
 
 @Suite struct KeyTesterTests {
     let keys = KeyboardLayout(shape: .ansi, formFactor: .laptop).keys.map(\.event) + MouseLayout.buttons.map(\.event)
@@ -52,6 +53,43 @@ import Testing
         let trace = KeyTester.trace(.key("left_control"), physicalKeys: keys, bindings: [:], minecraftKeybinds: keybinds)
         #expect(trace.minecraftActions == ["Sprint"])
         #expect(trace.summary() == "Left Control, not rebound. In Minecraft: Sprint.")
+    }
+
+    @Test func aPressOnAHotkeysKeyNamesIt() {
+        let withOption = HotkeyFixtures.hotkey("f18", .option)
+        let alone = HotkeyFixtures.hotkey("f18", [], [.toggle(.nbbOverlay), .toggle(.crosshair)])
+        let elsewhere = HotkeyFixtures.hotkey("f19")
+        let rebound = bindings([("caps_lock", "f18")])
+        let trace = KeyTester.trace(.key("f18"), physicalKeys: keys, bindings: rebound, hotkeys: [withOption, elsewhere])
+        #expect(trace.hotkeys == [withOption])
+        #expect(!trace.hotkeysArePaused)
+        #expect(trace.summary() == "F18 arrived; it comes from Caps Lock. sTools hotkey on F18: \u{2325}F18 (Crosshair).")
+
+        let paused = KeyTester.trace(
+            .key("f18"), physicalKeys: keys, bindings: rebound, hotkeys: [withOption, alone, elsewhere], hotkeysPaused: true)
+        #expect(paused.hotkeys == [withOption, alone])
+        #expect(paused.hotkeysArePaused)
+        #expect(paused.summary() == "F18 arrived; it comes from Caps Lock. sTools hotkeys on F18: \u{2325}F18 (Crosshair), "
+            + "F18 (NBB Overlay + Crosshair). They pause while sTools is in front.")
+        let one = KeyTester.trace(.key("f18"), physicalKeys: keys, bindings: rebound, hotkeys: [withOption], hotkeysPaused: true)
+        #expect(one.summary().hasSuffix("sTools hotkey on F18: \u{2325}F18 (Crosshair). It pauses while sTools is in front."))
+    }
+
+    @Test func theHotkeySentenceComesAfterMinecraftsActionsAndCanBeLeftOut() {
+        let keybinds = MinecraftKeybinds.parse(optionsText: "key_key.drop:key.keyboard.q")
+        let trace = KeyTester.trace(
+            .key("q"), physicalKeys: keys, bindings: [:], minecraftKeybinds: keybinds, hotkeys: [HotkeyFixtures.hotkey("q", .shift)],
+            hotkeysPaused: true)
+        #expect(trace.summary() == "Q, not rebound. In Minecraft: Drop item. sTools hotkey on Q: \u{21E7}Q (Crosshair). It pauses while sTools is in front.")
+        #expect(trace.summary(showsHotkeys: false) == "Q, not rebound. In Minecraft: Drop item.")
+    }
+
+    @Test func keysAndButtonsWithoutHotkeysSayNothingMore() {
+        let hotkeys = [HotkeyFixtures.hotkey("f18")]
+        #expect(KeyTester.trace(.key("a"), physicalKeys: keys, bindings: [:], hotkeys: hotkeys).summary() == "A, not rebound.")
+        let button = KeyTester.trace(.pointing("button4"), physicalKeys: keys, bindings: [:], hotkeys: hotkeys, hotkeysPaused: true)
+        #expect(button.hotkeys.isEmpty)
+        #expect(button.summary() == "Mouse Button 4, not rebound.")
     }
 
     @Test func arrivingEventsComeFromKeyCodesAndButtons() {
