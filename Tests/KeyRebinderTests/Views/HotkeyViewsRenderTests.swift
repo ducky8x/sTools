@@ -434,6 +434,21 @@ struct KeyPanelHotkeyRenderTests {
         #expect(rig.center.bindings.isEmpty)
     }
 
+    /// "Hold" and "Does" stay on one line at every text size the app allows (Appearance ▸ Text size, 90–130%).
+    @Test func theHoldAndDoesLabelsStayOnOneLineAtEveryTextSize() {
+        _ = STFont.register()
+        for scale in [0.9, 1.0, 1.3] {
+            let theme = STTheme(textScale: scale)
+            func height(_ view: some View) -> CGFloat {
+                NSHostingView(rootView: view.environment(\.stTheme, theme)).fittingSize.height
+            }
+            let line = height(Text("D").stStyle(.label))
+            for title in ["Hold", "Does"] {
+                #expect(abs(height(KeyHotkeysBlock.ChipsLabel(title)) - line) < 0.5, "\(title) at \(scale)")
+            }
+        }
+    }
+
     /// Editing ⌥F18 on Caps Lock (→ F18), then saving a rebind of Caps Lock in the same panel: the editor closes
     /// unsaved, instead of staying open as a new hotkey's editor that would move ⌥F18 to Caps Lock's new key.
     @Test func aRebindOfTheKeyClosesTheEditorOfOneOfItsHotkeys() async throws {
