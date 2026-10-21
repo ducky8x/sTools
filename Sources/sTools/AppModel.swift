@@ -34,7 +34,8 @@ final class AppModel {
     @ObservationIgnored let keyRebinder: KeyRebinderController?
     @ObservationIgnored let loginItem: any LoginItemControlling
     @ObservationIgnored var wasAccessibilityGranted: Bool
-    @ObservationIgnored var isPollingForTools = false
+    /// Held while a tool that needs Accessibility runs, so a revoked grant turns it off (`updateToolPolling()`).
+    @ObservationIgnored var toolPolling: PermissionCenter.PollingToken?
     /// Set by the root view so the Dock icon can bring the window back after it was closed.
     @ObservationIgnored var openMainWindow: (() -> Void)?
     /// Tools already on when the introduction began; its end leaves them on.

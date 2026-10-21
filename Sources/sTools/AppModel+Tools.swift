@@ -60,15 +60,21 @@ extension AppModel {
         }
     }
 
-    /// While a tool runs the permission center keeps polling, so a revoked grant turns it off promptly.
+    /// How often a running tool rereads Accessibility in case the system's change notice never comes. The notice and
+    /// sTools becoming active reread it at once; this is only the backstop, slow enough to cost nothing during a run.
+    static let toolPollingInterval: Duration = .seconds(15)
+
+    var isPollingForTools: Bool { toolPolling != nil }
+
+    /// While a tool runs the permission center watches Accessibility (and only Accessibility, the one these tools
+    /// need), so a revoked grant turns them off.
     private func updateToolPolling() {
         let anyRunning = ToolID.allCases.contains { $0.requiresAccessibility && isOn($0) }
-        if anyRunning && !isPollingForTools {
-            permissions.beginPolling()
-            isPollingForTools = true
-        } else if !anyRunning && isPollingForTools {
-            permissions.endPolling()
-            isPollingForTools = false
+        if anyRunning && toolPolling == nil {
+            toolPolling = permissions.beginPolling([.accessibility], interval: Self.toolPollingInterval)
+        } else if !anyRunning, let token = toolPolling {
+            permissions.endPolling(token)
+            toolPolling = nil
         }
     }
 }

@@ -13,6 +13,7 @@ import Testing
 final class FakeProber: PermissionProbing {
     private let statuses = Mutex<[Permission: PermissionStatus]>([:])
     private let requests = Mutex<[Permission]>([])
+    private let reads = Mutex<[Permission: Int]>([:])
 
     init(accessibility: PermissionStatus = .granted) {
         statuses.withLock { $0[.accessibility] = accessibility }
@@ -24,8 +25,12 @@ final class FakeProber: PermissionProbing {
         statuses.withLock { $0[permission] = status }
     }
 
+    /// How many times `permission` was read.
+    func readCount(_ permission: Permission) -> Int { reads.withLock { $0[permission] ?? 0 } }
+
     func status(for permission: Permission) -> PermissionStatus {
-        statuses.withLock { $0[permission] ?? .denied }
+        reads.withLock { $0[permission, default: 0] += 1 }
+        return statuses.withLock { $0[permission] ?? .denied }
     }
 
     func request(_ permission: Permission) async -> PermissionStatus {
