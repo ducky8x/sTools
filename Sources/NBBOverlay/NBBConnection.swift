@@ -19,7 +19,11 @@ public final class NBBConnection {
 
     @ObservationIgnored private let baseURL: URL
     @ObservationIgnored private let source: any NBBEventSource
-    @ObservationIgnored private var tasks: [Task<Void, Never>] = []
+    /// The stronghold subscription, which runs whenever the connection does.
+    @ObservationIgnored private var primary: Task<Void, Never>?
+    /// The other five subscriptions and the version check, which run only while the stronghold one is connected:
+    /// while Ninjabrain Bot isn't running, one refused connection every 5 s instead of seven.
+    @ObservationIgnored private var secondaries: [Task<Void, Never>] = []
 
     public init(baseURL: URL = NBBConnection.defaultBaseURL, source: any NBBEventSource = URLSessionEventSource()) {
         self.baseURL = baseURL
@@ -28,7 +32,10 @@ public final class NBBConnection {
 
     public static let defaultBaseURL = URL(string: "http://localhost:52533")!
 
-    public var isRunning: Bool { !tasks.isEmpty }
+    public var isRunning: Bool { primary != nil }
+
+    /// How many subscriptions (and the version check) are running, for tests.
+    var runningTaskCount: Int { (primary == nil ? 0 : 1) + secondaries.count }
 
     /// One `GET /api/v1/ping`: whether Ninjabrain Bot's API answers right now (the Prologue's live check).
     public static func ping(baseURL: URL = defaultBaseURL, timeout: TimeInterval = 1) async -> Bool {
@@ -39,19 +46,37 @@ public final class NBBConnection {
     }
 
     public func start() {
-        guard tasks.isEmpty else { return }
-        tasks.append(subscribeStronghold())
-        tasks.append(subscribe(path: "blind") { [weak self] in self?.blind = $0 })
-        tasks.append(subscribe(path: "divine") { [weak self] in self?.divine = $0 })
-        tasks.append(subscribe(path: "boat") { [weak self] in self?.boat = $0 })
-        tasks.append(subscribe(path: "information-messages") { [weak self] (value: NBBEvents.InformationMessages) in self?.informationMessages = value })
-        tasks.append(subscribe(path: "all-advancements") { [weak self] in self?.allAdvancements = $0 })
-        tasks.append(Task { [weak self] in await self?.fetchVersion() })
+        guard primary == nil else { return }
+        primary = subscribeStronghold()
+    }
+
+    /// Ninjabrain Bot answers every endpoint or none, so the others follow the stronghold stream: they start when it
+    /// connects and stop when it drops, keeping what they last received.
+    private func strongholdConnectionChanged(_ connected: Bool) {
+        if isReachable != connected { isReachable = connected }
+        guard primary != nil else { return }
+        if connected {
+            guard secondaries.isEmpty else { return }
+            // A reconnect re-sends the whole state; only a value that differs may redraw the overlay.
+            secondaries.append(subscribe(path: "blind") { [weak self] in if self?.blind != $0 { self?.blind = $0 } })
+            secondaries.append(subscribe(path: "divine") { [weak self] in if self?.divine != $0 { self?.divine = $0 } })
+            secondaries.append(subscribe(path: "boat") { [weak self] in if self?.boat != $0 { self?.boat = $0 } })
+            secondaries.append(subscribe(path: "information-messages") { [weak self] (value: NBBEvents.InformationMessages) in
+                if self?.informationMessages != value { self?.informationMessages = value }
+            })
+            secondaries.append(subscribe(path: "all-advancements") { [weak self] in if self?.allAdvancements != $0 { self?.allAdvancements = $0 } })
+            if version == nil { secondaries.append(Task { [weak self] in await self?.fetchVersion() }) }
+        } else {
+            for task in secondaries { task.cancel() }
+            secondaries.removeAll()
+        }
     }
 
     public func stop() {
-        for task in tasks { task.cancel() }
-        tasks.removeAll()
+        primary?.cancel()
+        primary = nil
+        for task in secondaries { task.cancel() }
+        secondaries.removeAll()
         stronghold = nil
         blind = nil
         divine = nil
@@ -69,10 +94,10 @@ public final class NBBConnection {
             await subscription.run(
                 onEvent: { data in
                     guard let value = Self.decode(NBBEvents.Stronghold.self, from: data) else { return }
-                    Task { @MainActor in self?.stronghold = value }
+                    Task { @MainActor in if self?.stronghold != value { self?.stronghold = value } }
                 },
                 onConnectionChange: { connected in
-                    Task { @MainActor in self?.isReachable = connected }
+                    Task { @MainActor in self?.strongholdConnectionChanged(connected) }
                 })
         }
     }
