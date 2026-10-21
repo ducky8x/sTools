@@ -146,24 +146,28 @@ struct KeyHotkeysBlock: View {
 
     /// Adds a hotkey on `keyCode`, or changes `existing`: the combination, Hold and Does chips, what blocks saving,
     /// the notes (which never block), then Save Hotkey (secondary: the rebind's Save stays the panel's one primary
-    /// button), Delete and Cancel.
+    /// button), Delete and Cancel. While a karabiner.json change waits, only Cancel works.
     private func editor(on keyCode: UInt16, existing: HotkeyBinding?) -> some View {
         let draft = draft ?? HotkeyDraft()
         let combo = draft.combo(on: keyCode)
         let center = controller.hotkeyCenter
         let problem = center.flatMap { draft.problem(on: keyCode, in: $0) }
         let notes = center?.notes(for: combo) ?? []
+        let isWaiting = controller.pendingEdit != nil
         return VStack(alignment: .leading, spacing: 10) {
             Text(combo.displayString)
                 .stStyle(.body)
                 .foregroundStyle(theme.accent)
                 .accessibilityLabel(HotkeyWording.spokenName(for: combo))
-            chipsRow("Hold") {
-                STChips(selection: holdSelection, options: HotkeyDraft.holdChoices, label: "Hold")
+            Group {
+                chipsRow("Hold") {
+                    STChips(selection: holdSelection, options: HotkeyDraft.holdChoices, label: "Hold")
+                }
+                chipsRow("Does") {
+                    STChips(selection: doesSelection, options: HotkeyAction.allCases.map { STSegmentedOption($0, $0.title) }, label: "Does")
+                }
             }
-            chipsRow("Does") {
-                STChips(selection: doesSelection, options: HotkeyAction.allCases.map { STSegmentedOption($0, $0.title) }, label: "Does")
-            }
+            .disabled(isWaiting)
             if let problem {
                 Text(problem).stStyle(.caption).foregroundStyle(STColor.danger)
             }
@@ -177,19 +181,19 @@ struct KeyHotkeysBlock: View {
             HStack(spacing: 14) {
                 Button("Save Hotkey") { save() }
                     .buttonStyle(STButtonStyle(.secondary))
-                    .disabled(center.map { !draft.canSave(on: keyCode, in: $0) } ?? true)
+                    .disabled(isWaiting || center.map { !draft.canSave(on: keyCode, in: $0) } ?? true)
                 if let existing {
                     Button("Delete") {
                         controller.deleteHotkey(existing.id)
                         self.draft = nil
                     }
                     .buttonStyle(STButtonStyle(.quiet))
+                    .disabled(isWaiting)
                     .accessibilityLabel("Delete \(HotkeyWording.spokenName(for: existing.combo))")
                 }
                 Button("Cancel") { self.draft = nil }.buttonStyle(STButtonStyle(.quiet))
             }
         }
-        .disabled(controller.pendingEdit != nil)
     }
 
     /// A small-caps label beside its chips. The chips name their own group for VoiceOver.
