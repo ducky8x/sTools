@@ -26,7 +26,9 @@ let package = Package(
             linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]),
         .testTarget(name: "STDesignTests", dependencies: ["STDesign"]),
         .testTarget(name: "STPlatformTests", dependencies: ["STPlatform"]),
-        .testTarget(name: "sToolsTests", dependencies: ["sTools"]),
+        // The test bundle finds Sparkle.framework next to it in the build folder.
+        .testTarget(name: "sToolsTests", dependencies: ["sTools"],
+                    linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@loader_path/../../.."])]),
     ]
     + tools.map { name in
         .testTarget(name: "\(name)Tests", dependencies: [.byName(name: name), "STDesign", "STPlatform"])
