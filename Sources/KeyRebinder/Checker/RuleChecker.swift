@@ -12,7 +12,7 @@ public enum RuleChecker {
         public var includesSpeedrunRules: Bool
         /// The sTools hotkeys macOS accepted, while hotkeys are on (`HotkeyCenter.activeBindings`). A hotkey with no
         /// modifiers consumes its key, so the game never gets it: A.10.1's "several keys produce the same input"
-        /// skips that key.
+        /// skips that key, as long as Minecraft binds no modifier key (while one is held, the hotkey doesn't fire).
         public var hotkeys: [HotkeyBinding] = []
 
         public init(
@@ -212,7 +212,10 @@ private struct Check {
         }
 
         // Several keys that end up as the same input. A modifier-free sTools hotkey consumes its key, so the game
-        // never gets that input.
+        // never gets that input, but only while no modifier is held: macOS matches a hotkey's modifiers exactly, so
+        // while one Minecraft binds is held (Shift for Sneak, Control for Sprint) the hotkey doesn't fire and every
+        // key reaches the game as that input again. So the skip needs Minecraft to bind no modifier key (its
+        // keybinds, or 1.16.1's defaults when they're unknown).
         var producers: [KarabinerEvent: [KarabinerEvent]] = [:]
         var order: [KarabinerEvent] = []
         for key in context.physicalKeys {
@@ -221,7 +224,11 @@ private struct Check {
             if producers[canonical] == nil { order.append(canonical) }
             producers[canonical, default: []].append(key)
         }
-        let consumed = Set(context.hotkeys.filter { $0.combo.modifiers.isEmpty && $0.combo.isValid && !$0.actions.isEmpty }.map { Int($0.combo.keyCode) })
+        let modifiersAreFree = HotkeyGameCheck.boundModifiers(
+            context.minecraftKeybinds ?? HotkeyGameCheck.defaultKeybinds, table: table).isEmpty
+        let consumed: Set<Int> = modifiersAreFree
+            ? Set(context.hotkeys.filter { $0.combo.modifiers.isEmpty && $0.combo.isValid && !$0.actions.isEmpty }.map { Int($0.combo.keyCode) })
+            : []
         for output in order {
             guard let keys = producers[output], keys.count > 1, isGameInput(output) else { continue }
             if let virtualKey = table.virtualKeyCode(for: output), consumed.contains(virtualKey) { continue }

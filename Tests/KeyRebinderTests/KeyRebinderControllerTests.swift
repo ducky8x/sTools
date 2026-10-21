@@ -553,6 +553,11 @@ struct KeyRebinderHotkeyTests {
         defer { harness.remove() }
         let center = try #require(harness.center)
         let controller = harness.controller
+        // Minecraft binds no modifier key, so an accepted bare F18 hotkey always fires and the game never gets F18.
+        let options = harness.directory.appending(path: "options.txt")
+        try Data("key_key.hotbar.1:key.keyboard.f18\n".utf8).write(to: options)
+        controller.settings.customOptionsFilePath = options.path
+        #expect(controller.minecraftKeybinds != nil)
         harness.registrar.refused = [HotkeyFixtures.combo("f18"), HotkeyFixtures.combo("f3")]
         let f18 = center.add(combo: HotkeyFixtures.combo("f18"), actions: [.toggle(.crosshair)])
         center.add(combo: HotkeyFixtures.combo("f3"), actions: [.toggle(.crosshair)])
@@ -567,6 +572,12 @@ struct KeyRebinderHotkeyTests {
         center.update(f18, actions: [.toggle(.nbbOverlay)])
         #expect(await eventually { !controller.derived.findings.contains { $0.kind == .oneKeyOneInput } })
         #expect(controller.hotkeyMark(for: .key("caps_lock")) == .working)
+
+        // Once Minecraft sneaks on Shift, the hotkey doesn't fire while Shift is held, so the game gets F18 again.
+        try Data("key_key.sneak:key.keyboard.left.shift\nkey_key.hotbar.1:key.keyboard.f18\n".utf8).write(to: options)
+        controller.loadMinecraftKeybinds()
+        controller.recompute()
+        #expect(controller.derived.findings.contains { $0.kind == .oneKeyOneInput && $0.message.contains("both produce F18") })
     }
 
     @Test func hotkeyFindingsNeedNoKarabinerFile() async throws {
