@@ -31,6 +31,9 @@ final class AppModel {
     /// Whether the main window can be seen (open, not minimized, not covered by Minecraft or a locked screen). Pages
     /// pause their polling and previews while it's false.
     var isMainWindowVisible = true
+    /// False from the moment the main window closes until it's shown again. While closed (and no introduction is
+    /// running), the window holds no pages at all, so their views, layers and caches are given back.
+    var isMainWindowOpen = true
 
     @ObservationIgnored let controllers: [ToolID: any ToolController]
     /// Key Rebinder has no on/off switch, so it isn't one of `controllers`.

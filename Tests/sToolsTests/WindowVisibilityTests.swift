@@ -65,5 +65,32 @@ struct WindowVisibilityTests {
     @Test func theModelStartsOutTreatingTheWindowAsVisible() {
         let harness = Harness()
         #expect(harness.model.isMainWindowVisible)
+        #expect(harness.model.isMainWindowOpen)
+    }
+
+    @Test func aClosedWindowKeepsNoPagesUnlessTheIntroductionRuns() {
+        #expect(RootView.keepsContent(isWindowOpen: true, isIntroductionRunning: false))
+        #expect(!RootView.keepsContent(isWindowOpen: false, isIntroductionRunning: false))
+        // The introduction would start its ceremony over if its views were rebuilt, so it stays.
+        #expect(RootView.keepsContent(isWindowOpen: false, isIntroductionRunning: true))
+    }
+
+    @Test func closingTheWindowReleasesItsPagesAndReopeningBuildsThemAgain() async {
+        let harness = Harness()
+        let host = NSHostingView(rootView: RootView(model: harness.model))
+        host.frame = CGRect(x: 0, y: 0, width: 760, height: 560)
+        host.layoutSubtreeIfNeeded()
+        // Home polls Accessibility while it's showing.
+        #expect(await waitUntil { harness.model.permissions.isPolling })
+
+        harness.model.isMainWindowOpen = false
+        host.layoutSubtreeIfNeeded()
+        // The page is gone, and its poll with it.
+        #expect(await waitUntil { !harness.model.permissions.isPolling })
+
+        harness.model.isMainWindowOpen = true
+        host.layoutSubtreeIfNeeded()
+        #expect(await waitUntil { harness.model.permissions.isPolling })
+        _ = host
     }
 }

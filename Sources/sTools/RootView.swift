@@ -13,7 +13,43 @@ struct RootView: View {
     private var showsSidebar: Bool { model.prologue?.showsSidebar ?? true }
     private var reducesMotion: Bool { model.theme.reduceMotion }
 
+    /// Whether the window holds its pages: always while it's open, and while the introduction runs, which must not
+    /// start over when the window comes back.
+    static func keepsContent(isWindowOpen: Bool, isIntroductionRunning: Bool) -> Bool {
+        isWindowOpen || isIntroductionRunning
+    }
+
     var body: some View {
+        Group {
+            if Self.keepsContent(isWindowOpen: model.isMainWindowOpen, isIntroductionRunning: model.prologue != nil) {
+                content
+            } else {
+                // The closed window keeps only this; reopening it builds the current page again.
+                Color.clear
+            }
+        }
+        .frame(minWidth: 680, minHeight: 500)
+        .background(STColor.background)
+        .ignoresSafeArea()
+        .background(WindowConfigurator(reducesMotion: reducesMotion,
+                                       onWillClose: {
+                                           model.isMainWindowOpen = false
+                                           model.mainWindowWillClose()
+                                       },
+                                       onVisibilityChange: { visible in
+                                           if model.isMainWindowVisible != visible { model.isMainWindowVisible = visible }
+                                           if visible && !model.isMainWindowOpen { model.isMainWindowOpen = true }
+                                       }))
+        .stMotionRoot(model.theme)
+        .environment(\.stTheme, model.theme)
+        .environment(\.stWindowIsVisible, model.isMainWindowVisible)
+        .environment(\.stSoundPlayer, model.sound)
+        .preferredColorScheme(.dark)
+        .onChange(of: contrast, initial: true) { _, value in model.theme.increaseContrast = value == .increased }
+        .onAppear { model.openMainWindow = { openWindow(id: "main") } }
+    }
+
+    private var content: some View {
         HStack(spacing: 0) {
             if showsSidebar {
                 HStack(spacing: 0) {
@@ -42,19 +78,5 @@ struct RootView: View {
             .clipped()
         }
         .animation(STMotion.resolve(STMotion.page, reduce: reducesMotion), value: showsSidebar)
-        .frame(minWidth: 680, minHeight: 500)
-        .background(STColor.background)
-        .ignoresSafeArea()
-        .background(WindowConfigurator(reducesMotion: reducesMotion, onWillClose: { model.mainWindowWillClose() },
-                                       onVisibilityChange: { visible in
-                                           if model.isMainWindowVisible != visible { model.isMainWindowVisible = visible }
-                                       }))
-        .stMotionRoot(model.theme)
-        .environment(\.stTheme, model.theme)
-        .environment(\.stWindowIsVisible, model.isMainWindowVisible)
-        .environment(\.stSoundPlayer, model.sound)
-        .preferredColorScheme(.dark)
-        .onChange(of: contrast, initial: true) { _, value in model.theme.increaseContrast = value == .increased }
-        .onAppear { model.openMainWindow = { openWindow(id: "main") } }
     }
 }
