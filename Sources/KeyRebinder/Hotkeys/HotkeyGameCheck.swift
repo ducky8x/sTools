@@ -171,8 +171,7 @@ public enum HotkeyGameCheck {
     ) -> String {
         let combo = hotkey.combo
         let byDefault = minecraftKeybinds == nil
-        let actions = HotkeyWording.summary(hotkey.actions)
-        let subject = "The sTools hotkey \(combo.displayString)" + (actions.isEmpty ? "" : " (\(actions))")
+        let subject = "The sTools hotkey \(hotkey.listing)"
         let exact = caution.taken.filter { $0.held.isEmpty }.map(\.use)
         if !exact.isEmpty {
             return "\(subject) keeps \(combo.displayString) from Minecraft, which uses it for \(usesList(exact, byDefault: byDefault))."
@@ -300,4 +299,13 @@ public struct HotkeyGameCaution: Hashable, Sendable {
     public let text: String
 
     public var uses: [HotkeyGameCheck.Use] { taken.map(\.use) }
+}
+
+extension HotkeyBinding {
+    /// How the Key Rebinder lists a hotkey in its sentences: "⌥F18 (Crosshair + NBB Overlay)", or just the
+    /// combination when it has no actions.
+    var listing: String {
+        let actions = HotkeyWording.summary(self.actions)
+        return combo.displayString + (actions.isEmpty ? "" : " (\(actions))")
+    }
 }

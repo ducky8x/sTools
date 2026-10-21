@@ -32,10 +32,7 @@ public enum KeyTester {
             }
             if !minecraftActions.isEmpty { line += " In Minecraft: \(minecraftActions.joined(separator: ", "))." }
             if showsHotkeys, !hotkeys.isEmpty {
-                let list = hotkeys.map { hotkey in
-                    let actions = HotkeyWording.summary(hotkey.actions)
-                    return hotkey.combo.displayString + (actions.isEmpty ? "" : " (\(actions))")
-                }.joined(separator: ", ")
+                let list = hotkeys.map(\.listing).joined(separator: ", ")
                 let one = hotkeys.count == 1
                 line += " sTools \(one ? "hotkey" : "hotkeys") on \(arrivedName): \(list)."
                 if hotkeysArePaused { line += one ? " It pauses while sTools is in front." : " They pause while sTools is in front." }
