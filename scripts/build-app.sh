@@ -3,8 +3,11 @@
 #
 # Usage: scripts/build-app.sh [debug|release] [--adhoc] [--keychain <path>]
 #
-#   debug       Host architecture only (fast). The default.
-#   release     Universal binary (arm64 + x86_64).
+#   debug       Host architecture only (fast). The default. Keeps its debug info; never ship it.
+#   release     Universal binary (arm64 + x86_64), for shipping. Its debug symbols go to a dSYM in
+#               build/dSYMs/sTools-<version>-<build>/ (kept for crash reports, never shipped) and are stripped
+#               from the app, and the build fails when anything in the app holds "/Users/" or the account name
+#               (scripts/check-no-home-paths.sh).
 #   --adhoc     Debug only. When the "ducky8x" identity does not exist, sign ad hoc instead of failing.
 #   --keychain  Look for the identity in, and sign with, this keychain instead of the search list.
 #               For testing the signing flow with a throwaway keychain.
@@ -35,6 +38,11 @@ usage() {
 fail() {
     echo "error: $*" >&2
     exit 1
+}
+
+# The UUID and architecture of each slice of a Mach-O file or dSYM, one per line, sorted.
+macho_uuids() {
+    xcrun dwarfdump --uuid "$1" | awk '{ print $2, $3 }' | sort
 }
 
 MODE=""
@@ -159,7 +167,10 @@ cd "$ROOT"
 
 echo "==> Building ($MODE)"
 if [[ "$MODE" == "release" ]]; then
-    BUILD_FLAGS=(-c release --arch arm64 --arch x86_64)
+    # Swift Build, pinned: the native build system's Bundle.module accessor (STDesign and KeyRebinder fall back
+    # to it) holds the build folder's absolute path as a string literal, which no strip removes. Swift Build's
+    # accessor holds no path: it looks in the main bundle's and its own bundle's resources and in the main bundle.
+    BUILD_FLAGS=(-c release --arch arm64 --arch x86_64 --build-system swiftbuild)
 else
     BUILD_FLAGS=(-c debug)
 fi
@@ -215,6 +226,37 @@ if [[ "$MODE" == "release" ]]; then
         [[ " $ARCHS " == *" $arch "* ]] || fail "release binary lacks $arch (has: $ARCHS)"
     done
     echo "    architectures: $ARCHS"
+
+    # Debug info names every source and object file by its absolute path, in the home folder, so it carries the
+    # account name, often a real name. dsymutil first collects it into a dSYM for symbolicating crash
+    # reports, then strip -S takes it out of every Mach-O in the app. Compiler prefix maps (-debug-prefix-map,
+    # -file-prefix-map) are not used instead: the linker still records each object file's absolute path, they do
+    # not reach string literals, and they miss any spelling of the path other than the one they are given.
+    DSYM_DIR="$ROOT/build/dSYMs/sTools-$VERSION-$BUILD_NUMBER"
+    echo "==> Saving the debug symbols to ${DSYM_DIR#"$ROOT/"} and stripping them from the app"
+    rm -rf "$DSYM_DIR"
+    mkdir -p "$DSYM_DIR"
+    STRIPPED=0
+    while IFS= read -r -d '' macho; do
+        [[ "$(file -b "$macho")" == Mach-O* ]] || continue
+        dsym=""
+        # A debug map (OSO entries naming the object files) is what dsymutil reads the debug info through.
+        if xcrun nm -ap "$macho" | awk '$5 == "OSO" { found = 1 } END { exit !found }'; then
+            dsym="$DSYM_DIR/$(basename "$macho").dSYM"
+            [[ ! -e "$dsym" ]] || fail "two binaries in the app are named $(basename "$macho")"
+            xcrun dsymutil "$macho" -o "$dsym"
+        fi
+        xcrun strip -S "$macho"
+        if [[ -n "$dsym" ]]; then
+            [[ "$(macho_uuids "$dsym")" == "$(macho_uuids "$macho")" ]] ||
+                fail "the dSYM does not match ${macho#"$APP/"} after stripping"
+            echo "    ${macho#"$APP/"}: stripped; $(basename "$dsym") matches its $(macho_uuids "$macho" | wc -l | tr -d ' ') slices"
+        else
+            echo "    ${macho#"$APP/"}: stripped (it had no debug map)"
+        fi
+        STRIPPED=$((STRIPPED + 1))
+    done < <(find "$APP" -type f -print0)
+    [[ "$STRIPPED" -gt 0 ]] || fail "found no Mach-O binary in the app to strip"
 fi
 
 echo "==> Signing with $SIGN_DESCRIPTION"
@@ -244,6 +286,15 @@ grep -Eq '^CodeDirectory .*flags=0x[0-9a-f]+\([^)]*runtime' <<< "$SIGNATURE_INFO
     fail "Hardened Runtime is not enabled"
 codesign -dr - "$APP" 2>&1 | grep -E '^(# )?designated'
 
+if [[ "$MODE" == "release" ]]; then
+    echo "==> Checking the app for home-folder paths and the account name"
+    "$ROOT/scripts/check-no-home-paths.sh" "$APP" ||
+        fail "build/sTools.app must not ship: it holds \"/Users/\" or the account name (listed above)"
+fi
+
 echo
 echo "Built $APP ($MODE, version $VERSION, build $BUILD_NUMBER)"
+if [[ "$MODE" == "release" ]]; then
+    echo "Debug symbols for its crash reports: ${DSYM_DIR#"$ROOT/"} (not shipped; keep them)"
+fi
 echo "Run it with: open \"$APP\""
