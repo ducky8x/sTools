@@ -379,7 +379,13 @@ if [[ "$MODE" == "release" ]]; then
                 fail "dsymutil could not save all of the debug symbols of ${macho#"$APP/"}"
             fi
         fi
-        xcrun strip -S "$macho"
+        # strip warns that it breaks a binary's signature (everything is signed again below); anything else it says
+        # is passed on with the home folder shortened.
+        STRIP_STATUS=0
+        STRIP_LOG="$(xcrun strip -S "$macho" 2>&1)" || STRIP_STATUS=$?
+        grep -v 'changes being made to the file will invalidate the code signature' <<< "$STRIP_LOG" |
+            grep -v '^$' | mask_home >&2 || true
+        [[ "$STRIP_STATUS" -eq 0 ]] || fail "strip failed on ${macho#"$APP/"}"
         if [[ -n "$dsym" ]]; then
             [[ "$(macho_uuids "$dsym")" == "$(macho_uuids "$macho")" ]] ||
                 fail "the dSYM does not match ${macho#"$APP/"} after stripping"
