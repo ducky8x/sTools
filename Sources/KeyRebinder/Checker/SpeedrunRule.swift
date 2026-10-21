@@ -40,10 +40,12 @@ public struct CheckerFinding: Hashable, Sendable, Identifiable {
     public enum Kind: String, CaseIterable, Sendable {
         case duplicateRebind, shadowedRule, chainedRebind
         case oneKeyOneInput, buttonsOnly, noRepeatAbuse, noMacros
+        /// An sTools hotkey takes a key Minecraft uses. A configuration conflict, not a speedrun rule.
+        case hotkeyTakesGameKey
 
         public var rule: SpeedrunRule? {
             switch self {
-            case .duplicateRebind, .shadowedRule, .chainedRebind: nil
+            case .duplicateRebind, .shadowedRule, .chainedRebind, .hotkeyTakesGameKey: nil
             case .oneKeyOneInput: .oneKeyOneInput
             case .buttonsOnly: .buttonsOnly
             case .noRepeatAbuse: .noRepeatAbuse
@@ -56,6 +58,7 @@ public struct CheckerFinding: Hashable, Sendable, Identifiable {
             case .duplicateRebind: "Duplicate rebind"
             case .shadowedRule: "Shadowed rule"
             case .chainedRebind: "Chained rebind"
+            case .hotkeyTakesGameKey: "Hotkey takes a game key"
             default: rule.map { "\($0.number) \u{2014} \($0.title.lowercased())" } ?? ""
             }
         }
