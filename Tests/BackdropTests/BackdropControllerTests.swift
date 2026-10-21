@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import ImageIO
 import Testing
@@ -28,6 +29,31 @@ private func tempDirectory() -> URL {
 
 @Suite("Backdrop controller", .serialized)
 struct BackdropControllerTests {
+    // Every app switch re-orders the backdrop under Minecraft, but the full-screen fill is drawn only when it
+    // changes (spec 3.1). The panels are placed without ever being ordered onto a screen.
+    @MainActor
+    @Test func reorderingWithoutAChangeDoesNotDrawTheFillAgain() async {
+        let displays = DisplayDirectory()
+        guard let display = displays.displays.first else { return }
+        let window = MinecraftWindow(windowNumber: 42, processID: 4242, title: "Minecraft* 1.16.1", frame: display.frame)
+        let minecraft = MinecraftInstance(window: window, launchDate: Date(timeIntervalSince1970: 1), isFrontmost: true, displayID: display.id)
+        let services = makeServices(tempDirectory: tempDirectory(), instances: [minecraft])
+        services.minecraft.refresh()
+        let controller = BackdropController(services: services, imagesDirectory: tempDirectory(), showsPanels: false)
+        controller.setEnabled(true)
+        defer { controller.setEnabled(false) }
+        #expect(controller.drawCount == 1)
+
+        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didActivateApplicationNotification, object: nil)
+        controller.reconcile()
+        #expect(controller.drawCount == 1)
+
+        controller.settings.fill.color = "#223344"
+        #expect(controller.drawCount == 2)
+        controller.settings.opacityPercent = 50
+        #expect(controller.drawCount == 3)
+    }
+
     @MainActor
     @Test func loadsDefaultsWhenNothingIsStored() {
         let controller = BackdropController(services: makeServices(tempDirectory: tempDirectory()))

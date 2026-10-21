@@ -34,17 +34,36 @@ public final class BackdropController: ToolController {
 
     @ObservationIgnored private let services: ToolServices
     @ObservationIgnored private let imagesDirectory: URL
+    @ObservationIgnored private let showsPanels: Bool
     @ObservationIgnored private var panels: [UInt32: OverlayPanel] = [:]
     @ObservationIgnored private var images: [String: CGImage] = [:]
     @ObservationIgnored private var imageImportErrorsByDisplay: [UInt32: String] = [:]
     @ObservationIgnored private var mainImageImportError: String?
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
+    /// What each display's panel shows now, so re-ordering it (on every app switch while the tool is on) doesn't
+    /// draw the same full-screen fill again.
+    @ObservationIgnored private var drawnFills: [UInt32: DrawnFill] = [:]
+    /// How many times a fill was drawn into a panel. For tests.
+    @ObservationIgnored private(set) var drawCount = 0
+
+    private struct DrawnFill: Equatable {
+        var fill: BackdropSettings.Fill
+        var opacityPercent: Int
+        var hasImage: Bool
+    }
 
     /// `imagesDirectory` defaults to `~/Library/Application Support/sTools/Images`; pass a temp
     /// directory in tests.
-    public init(services: ToolServices, imagesDirectory: URL = SettingsStore.defaultDirectory().appending(path: "Images", directoryHint: .isDirectory)) {
+    public convenience init(services: ToolServices, imagesDirectory: URL = SettingsStore.defaultDirectory().appending(path: "Images", directoryHint: .isDirectory)) {
+        self.init(services: services, imagesDirectory: imagesDirectory, showsPanels: true)
+    }
+
+    /// Tests pass `showsPanels: false`: panels still get their content and frame, but are never ordered onto a
+    /// screen.
+    init(services: ToolServices, imagesDirectory: URL, showsPanels: Bool) {
         self.services = services
         self.imagesDirectory = imagesDirectory
+        self.showsPanels = showsPanels
         settings = services.settings.load(BackdropSettings.self)
         loadImagesIfNeeded()
     }
@@ -172,9 +191,8 @@ public final class BackdropController: ToolController {
         if services.minecraft.active == nil, let standIn,
            let display = services.displays.displays.first(where: { $0.id == standIn.displayID }) {
             let panel = panel(for: display.id)
-            let fill = settings.fill(for: display.id)
-            panel.setContent(BackdropFillView(fill: fill, image: image(for: fill), opacity: Double(settings.opacityPercent) / 100))
-            panel.showBelow(frame: display.frame, windowNumber: standIn.windowNumber)
+            draw(settings.fill(for: display.id), in: panel, displayID: display.id)
+            show(panel, frame: display.frame, below: standIn.windowNumber)
             for (displayID, other) in panels where displayID != display.id { other.hide() }
             return
         }
@@ -194,13 +212,30 @@ public final class BackdropController: ToolController {
                 continue
             }
             let panel = panel(for: plan.displayID)
-            let fill = settings.fill(for: plan.displayID)
-            panel.setContent(BackdropFillView(fill: fill, image: image(for: fill), opacity: Double(settings.opacityPercent) / 100))
-            panel.showBelow(frame: display.frame, windowNumber: Int(belowWindowNumber))
+            draw(settings.fill(for: plan.displayID), in: panel, displayID: plan.displayID)
+            show(panel, frame: display.frame, below: Int(belowWindowNumber))
         }
         for (displayID, panel) in panels where !covered.contains(displayID) {
             panel.hide()
         }
+    }
+
+    private func show(_ panel: OverlayPanel, frame: CGRect, below windowNumber: Int) {
+        if showsPanels {
+            panel.showBelow(frame: frame, windowNumber: windowNumber)
+        } else {
+            panel.moveTo(frame: frame)
+        }
+    }
+
+    /// Gives `panel` the fill, unless it already shows exactly that.
+    private func draw(_ fill: BackdropSettings.Fill, in panel: OverlayPanel, displayID: UInt32) {
+        let image = image(for: fill)
+        let drawn = DrawnFill(fill: fill, opacityPercent: settings.opacityPercent, hasImage: image != nil)
+        guard drawnFills[displayID] != drawn else { return }
+        panel.setContent(BackdropFillView(fill: fill, image: image, opacity: Double(settings.opacityPercent) / 100))
+        drawnFills[displayID] = drawn
+        drawCount += 1
     }
 
     /// Minecraft's own display (while it's running) plus every additional display the user checked,
