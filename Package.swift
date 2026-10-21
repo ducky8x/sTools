@@ -1,7 +1,7 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
-let tools = ["Crosshair", "Backdrop", "NBBOverlay", "KeyRebinder", "ScreenRecording", "Prologue"]
+let tools = ["Crosshair", "Backdrop", "NBBOverlay", "KeyRebinder", "ScreenRecording", "Prologue", "TimerOverlay"]
 
 let package = Package(
     name: "sTools",

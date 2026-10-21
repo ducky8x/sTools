@@ -2,7 +2,8 @@ import STDesign
 import SwiftUI
 
 /// Step 14 (spec 4.2): "You're set." typewrites, a rule draws, and every tool switched on during the trials turns
-/// off in turn — the sidebar is back, so each switch can be seen going off.
+/// off in turn — the sidebar is back, so each switch can be seen going off. While motion is reduced it's all there
+/// at once and the tools go off together.
 struct YoureSetView: View {
     let model: PrologueModel
 
@@ -13,7 +14,13 @@ struct YoureSetView: View {
 
     @Environment(\.stTheme) private var theme
     @Environment(\.stSoundPlayer) private var sound
-    @State private var typed = false
+    @State private var typed: Bool
+
+    /// `settled` starts with the rule and the line in place, as they show while motion is reduced.
+    init(model: PrologueModel, settled: Bool = false) {
+        self.model = model
+        _typed = State(initialValue: settled)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -41,6 +48,8 @@ struct YoureSetView: View {
         .padding(.horizontal, 32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
+            // While motion is reduced nothing plays, so there's nothing for a key to complete.
+            guard !theme.reduceMotion else { return }
             model.animations.run(for: TypewriterText.duration(of: Copy.title, fadeSpan: 8) + .milliseconds(900))
         }
         .onChange(of: model.animations.completionCount) { _, _ in
@@ -52,12 +61,13 @@ struct YoureSetView: View {
         }
     }
 
+    /// The title is in: the rule and the line arrive, and the Finale switches the tried tools off, in turn or (while
+    /// motion is reduced) together. Safe to call again: the Finale runs once.
     private func finishTyping() {
-        guard !typed else { return }
-        withAnimation(STMotion.resolve(.timingCurve(0.2, 0.8, 0.2, 1, duration: 0.6), reduce: theme.reduceMotion)) {
-            typed = true
+        if !typed {
+            STMotion.animate(.timingCurve(0.2, 0.8, 0.2, 1, duration: 0.6), reduce: theme.reduceMotion) { typed = true }
         }
-        model.runFinale()
+        model.runFinale(inTurn: !theme.reduceMotion)
     }
 }
 

@@ -69,7 +69,8 @@ enum CrosshairGeometry {
     /// are positive). The target is kept on the display.
     ///
     /// The window starts on a whole point and covers a whole number of points, so the sprite is padded
-    /// inside a slightly larger canvas rather than the window sitting on a half point.
+    /// inside a slightly larger canvas rather than the window sitting on a half point. AppKit floors a
+    /// window's origin to whole points even on a 2x display, so a half point would move it a pixel.
     static func placement(
         displayFrame: CGRect, scale: CGFloat, spriteSize: PixelSize, hotPixel: PixelPoint,
         offsetX: Int, offsetY: Int
@@ -80,8 +81,12 @@ enum CrosshairGeometry {
             y: (centerIndex(count: grid.height) + offsetY).clamped(to: 0...max(grid.height - 1, 0)))
         let origin = PixelPoint(x: target.x - hotPixel.x, y: target.y - hotPixel.y)
         let unit = max(1, Int(scale.rounded()))
-        let canvasLeft = floorMultiple(origin.x, of: unit)
-        let canvasTop = floorMultiple(origin.y, of: unit)
+        // Whole points are whole multiples of `unit` pixels from the global origin. From the display's own
+        // corner they're the same, unless that corner sits on a half point (an odd pixel count at 2x).
+        let edgeX = Int((displayFrame.minX * scale).rounded())
+        let edgeY = Int((displayFrame.maxY * scale).rounded())
+        let canvasLeft = floorMultiple(origin.x + edgeX, of: unit) - edgeX
+        let canvasTop = floorMultiple(origin.y - edgeY, of: unit) + edgeY
         let spriteOrigin = PixelPoint(x: origin.x - canvasLeft, y: origin.y - canvasTop)
         let canvas = PixelSize(
             width: ceilMultiple(spriteOrigin.x + spriteSize.width, of: unit),

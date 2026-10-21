@@ -13,7 +13,7 @@ protocol HotkeyConfirmationPresenting: AnyObject {
 /// The hotkey confirmation (spec 6.1, motion per 3.4): a gold seal stamping in beside one line of what
 /// changed, low and centered on Minecraft's display. It lives in a click-through panel that never takes
 /// focus from the game and never appears in recordings. It fades out after a moment; a new press starts
-/// it over.
+/// it over. While motion is reduced it appears and leaves at once, after the same moment.
 @MainActor
 final class HotkeyHUD: HotkeyConfirmationPresenting {
     private let theme: STTheme
@@ -38,7 +38,7 @@ final class HotkeyHUD: HotkeyConfirmationPresenting {
     func present(_ line: String, sealed: Bool, on display: DisplayInfo) {
         dismissal?.cancel()
         // Fresh content each press, so the seal stamps in again.
-        let content = HotkeyHUDView(line: line, sealed: sealed).environment(\.stTheme, theme)
+        let content = HotkeyHUDView(line: line, sealed: sealed).stMotionRoot(theme).environment(\.stTheme, theme)
         panel.setContent(content)
         // The panel's host doesn't size itself, so measure the content separately.
         let size = NSHostingController(rootView: content)
@@ -53,17 +53,21 @@ final class HotkeyHUD: HotkeyConfirmationPresenting {
         dismissal = Task { [weak self, hold, fadeOutDuration] in
             try? await Task.sleep(for: hold)
             guard !Task.isCancelled, let self else { return }
-            animateAlpha(to: 0, duration: fadeOutDuration)
-            try? await Task.sleep(for: .seconds(fadeOutDuration))
-            guard !Task.isCancelled else { return }
+            // Read again here: the setting may have changed while the line was up.
+            if !theme.reduceMotion {
+                animateAlpha(to: 0, duration: fadeOutDuration)
+                try? await Task.sleep(for: .seconds(fadeOutDuration))
+                guard !Task.isCancelled else { return }
+            }
             panel.hide()
         }
     }
 
-    /// Animating to a new value replaces any fade still running, so a press mid-fade-out comes back at once.
+    /// Animating to a new value replaces any fade still running, so a press mid-fade-out comes back at once. While
+    /// motion is reduced the duration is zero: the value is there at once, and any fade still running stops.
     private func animateAlpha(to alpha: CGFloat, duration: TimeInterval) {
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = duration
+            context.duration = theme.reduceMotion ? 0 : duration
             panel.animator().alphaValue = alpha
         }
     }

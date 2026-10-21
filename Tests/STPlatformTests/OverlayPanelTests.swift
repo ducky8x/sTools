@@ -39,10 +39,18 @@ private func prepareApplication() {
     NSApp.setActivationPolicy(.accessory)
 }
 
-private func testFrame() -> CGRect {
-    let origin = NSScreen.main?.frame.origin ?? .zero
-    return CGRect(x: origin.x + 40, y: origin.y + 40, width: 120, height: 80)
+/// A frame far outside every display, so a panel ordered in at it never shows on a real screen: tests never put
+/// windows on the visible screen. The window server still lists the panel, with its level, as on screen. Fails the
+/// test before anything is ordered in if a display ever reaches that far.
+@MainActor
+private func offScreenFrame(dx: CGFloat = 0, dy: CGFloat = 0) throws -> CGRect {
+    let frame = CGRect(x: -9000 + dx, y: -9000 + dy, width: 120, height: 80)
+    try #require(!NSScreen.screens.contains { $0.frame.intersects(frame) }, "a display reaches \(frame)")
+    return frame
 }
+
+/// The few tests that must order a window onto a real display run only when `STOOLS_TESTS_ON_SCREEN=1` is set.
+private let onScreenTestsAllowed = ProcessInfo.processInfo.environment["STOOLS_TESTS_ON_SCREEN"] == "1"
 
 @Suite("OverlayPanel configuration", .serialized)
 @MainActor
@@ -141,10 +149,11 @@ struct OverlayPanelConfigurationTests {
 struct OverlayPanelWindowServerTests {
     init() { prepareApplication() }
 
+    /// The window server reports a window's level wherever it sits, so the panel stays far off every display.
     @Test func showPlacesThePanelAboveTheMenuBarAndDockAndHideRemovesIt() throws {
         let panel = OverlayPanel()
         panel.setContent(Color.clear)
-        panel.show(frame: testFrame())
+        panel.show(frame: try offScreenFrame())
         defer { panel.hide() }
 
         let record = try #require(waitForRecord(panel.windowNumber))
@@ -157,24 +166,42 @@ struct OverlayPanelWindowServerTests {
         #expect(waitForRecord(panel.windowNumber, present: false) == nil)
     }
 
-    @Test func showDoesNotActivateTheApplicationOrBecomeKey() {
+    @Test func showDoesNotActivateTheApplicationOrBecomeKey() throws {
         let panel = OverlayPanel()
-        panel.show(frame: testFrame())
+        panel.show(frame: try offScreenFrame())
         defer { panel.hide() }
         #expect(!panel.isKeyWindow)
         #expect(!panel.isMainWindow)
         #expect(panel.isVisible)
     }
 
-    @Test func showAppliesTheRequestedFrame() {
+    @Test func showAppliesTheRequestedFrame() throws {
         let panel = OverlayPanel()
-        let frame = testFrame()
+        let frame = try offScreenFrame()
         panel.show(frame: frame)
         defer { panel.hide() }
         #expect(panel.frame == frame)
     }
 
-    @Test func aFrameCoveringTheMenuBarIsNotConstrained() throws {
+    /// AppKit's default moves a window that sits below the menu bar's level, as the backdrop does, and pokes above a
+    /// display's top edge down under the menu bar; every panel keeps the frame it was given. Asked of every real
+    /// display directly, so nothing is ordered in.
+    @Test(arguments: [OverlayPanel.Role.topmost, .backdrop])
+    func aFrameCoveringTheMenuBarIsNotConstrained(role: OverlayPanel.Role) {
+        let panel = OverlayPanel(role: role)
+        for screen in NSScreen.screens {
+            let acrossTheTopEdge = CGRect(x: screen.frame.minX + 40, y: screen.frame.maxY - 10, width: 120, height: 80)
+            for frame in [screen.frame, acrossTheTopEdge] {
+                #expect(panel.constrainFrameRect(frame, to: screen) == frame)
+            }
+        }
+    }
+
+    /// The same, end to end, as AppKit orders the panel in over a real display's menu bar, which no frame off every
+    /// display can stand in for. This puts a clear panel over the whole main display, and tests never put windows
+    /// on the visible screen, so it runs only when `STOOLS_TESTS_ON_SCREEN=1` is set.
+    @Test(.enabled(if: onScreenTestsAllowed, "orders a panel onto the main display; set STOOLS_TESTS_ON_SCREEN=1"))
+    func aPanelShownOverTheWholeMainDisplayIsNotConstrained() throws {
         let screen = try #require(NSScreen.main)
         let panel = OverlayPanel()
         panel.show(frame: screen.frame)
@@ -184,22 +211,20 @@ struct OverlayPanelWindowServerTests {
 
     @Test func showingAgainMovesAndKeepsItVisible() throws {
         let panel = OverlayPanel()
-        panel.show(frame: testFrame())
-        let moved = testFrame().offsetBy(dx: 30, dy: 10)
+        panel.show(frame: try offScreenFrame())
+        let moved = try offScreenFrame(dx: 30, dy: 10)
         panel.show(frame: moved)
         defer { panel.hide() }
         #expect(panel.frame == moved)
         #expect(try #require(waitForRecord(panel.windowNumber)).isOnScreen)
     }
 
-    /// What Screen Recording reads for its base layer (rule R5) and its display sources. Both panels sit
-    /// far outside every display, so nothing shows on a real screen.
-    @Test func recordingListsLeaveOutPanelsExcludedFromCapture() {
+    /// What Screen Recording reads for its base layer (rule R5) and its display sources.
+    @Test func recordingListsLeaveOutPanelsExcludedFromCapture() throws {
         let overlay = OverlayPanel()
         let hidden = OverlayPanel(isExcludedFromCapture: true)
-        let offScreen = CGRect(x: -8000, y: -8000, width: 120, height: 80)
-        overlay.show(frame: offScreen)
-        hidden.show(frame: offScreen.offsetBy(dx: 140, dy: 0))
+        overlay.show(frame: try offScreenFrame())
+        hidden.show(frame: try offScreenFrame(dx: 140))
         defer {
             overlay.hide()
             hidden.hide()
@@ -217,10 +242,10 @@ struct OverlayPanelWindowServerTests {
         #expect(OverlayPanel.captureExcludedWindowNumbers().contains(UInt32(hidden.windowNumber)))
     }
 
-    @Test func hidingTwiceIsHarmless() {
+    @Test func hidingTwiceIsHarmless() throws {
         let panel = OverlayPanel()
         panel.hide()
-        panel.show(frame: testFrame())
+        panel.show(frame: try offScreenFrame())
         panel.hide()
         panel.hide()
         #expect(!panel.isVisible)
