@@ -38,7 +38,7 @@ struct TrialToolControls: View {
             ToolContent(model: model, tool: tool)
                 .padding(.top, 18)
         }
-        .pollsPermissions(model.permissions, when: tool.requiresAccessibility)
+        .pollsPermissions(model.permissions, showing: tool.permissionsShown, when: tool.requiresAccessibility)
     }
 }
 
