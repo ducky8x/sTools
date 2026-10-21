@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import Testing
 
 @testable import STPlatform
@@ -14,6 +15,21 @@ struct OverlayPanelMotionTests {
     func appKitNeverAnimatesAnOverlay(role: OverlayPanel.Role) {
         #expect(OverlayPanel(role: role).animationBehavior == .none)
         #expect(OverlayPanel(role: role, isExcludedFromCapture: true).animationBehavior == .none)
+    }
+
+    /// Far outside every display, so ordering it in never shows anything on a screen.
+    @Test(arguments: [OverlayPanel.Role.topmost, .backdrop])
+    func showingAndHidingLandAtOnce(role: OverlayPanel.Role) {
+        let panel = OverlayPanel(role: role)
+        panel.setContent(Color.clear)
+        let frame = CGRect(x: -9000, y: -9000, width: 120, height: 80)
+        defer { panel.hide() }
+        panel.show(frame: frame)
+        #expect(panel.isVisible)
+        #expect(panel.alphaValue == 1, "no fade in")
+        #expect(panel.frame == frame)
+        panel.hide()
+        #expect(!panel.isVisible, "gone at once, no fade out")
     }
 
     @Test func movingNeverAnimates() {
