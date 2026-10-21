@@ -50,7 +50,7 @@ struct ToolContent: View {
     /// pressing it. Nil in the trial.
     var openHotkeys: (() -> Void)? {
         guard !isTrial else { return nil }
-        return { [model] in model.navigate(to: .home) }
+        return { [model] in model.openHotkeys() }
     }
 
     var body: some View {

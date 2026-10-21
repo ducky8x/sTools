@@ -12,6 +12,12 @@ extension AppModel {
         sound.play(.page)
     }
 
+    /// Opens Home scrolled to its Hotkeys section (the Key Rebinder's Open Hotkeys), even when Home is already open.
+    func openHotkeys() {
+        pendingPageAnchor = .hotkeys
+        navigate(to: .home)
+    }
+
     func perform(_ command: GoCommand) {
         // While the introduction runs, ⌘[ and ⌘] are its Back and Skip step, and pages stay closed.
         if let prologue {
