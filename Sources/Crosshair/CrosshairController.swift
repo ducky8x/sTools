@@ -18,7 +18,9 @@ public final class CrosshairController: ToolController {
 
     @ObservationIgnored private let services: ToolServices
     @ObservationIgnored private let imagesDirectory: URL
-    @ObservationIgnored private let panel = OverlayPanel(role: .topmost)
+    /// The overlay's one window. Internal so tests can read back its frame and content.
+    @ObservationIgnored let panel = OverlayPanel(role: .topmost)
+    @ObservationIgnored private let showsPanel: Bool
     @ObservationIgnored private var customImage: CGImage?
     @ObservationIgnored private var customImageError: String?
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
@@ -29,9 +31,16 @@ public final class CrosshairController: ToolController {
 
     /// `imagesDirectory` defaults to `~/Library/Application Support/sTools/Images`; pass a temp
     /// directory in tests.
-    public init(services: ToolServices, imagesDirectory: URL = SettingsStore.defaultDirectory().appending(path: "Images", directoryHint: .isDirectory)) {
+    public convenience init(services: ToolServices, imagesDirectory: URL = SettingsStore.defaultDirectory().appending(path: "Images", directoryHint: .isDirectory)) {
+        self.init(services: services, imagesDirectory: imagesDirectory, showsPanel: true)
+    }
+
+    /// Tests pass `showsPanel: false`: the panel still gets its content and frame, but is never ordered
+    /// onto a screen.
+    init(services: ToolServices, imagesDirectory: URL, showsPanel: Bool) {
         self.services = services
         self.imagesDirectory = imagesDirectory
+        self.showsPanel = showsPanel
         settings = services.settings.load(CrosshairSettings.self)
         loadCustomImageIfNeeded()
     }
@@ -119,7 +128,11 @@ public final class CrosshairController: ToolController {
             spriteSize: sprite.size, hotPixel: sprite.hot,
             offsetX: settings.offsetX, offsetY: settings.offsetY)
         panel.setContent(CrosshairOverlayView(image: sprite.image, spriteOrigin: placement.spriteOrigin, canvasSize: placement.canvasSize))
-        panel.show(frame: placement.windowFrame)
+        if showsPanel {
+            panel.show(frame: placement.windowFrame)
+        } else {
+            panel.moveTo(frame: placement.windowFrame)
+        }
         isOverlayShown = true
     }
 
