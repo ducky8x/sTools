@@ -38,7 +38,8 @@ final class HotkeyViewRig {
     /// - Parameters:
     ///   - config: the starting `karabiner.json`, profile "P"; nil writes none.
     ///   - ready: whether Karabiner-Elements answers, which editing rebinds (and Use F20) needs.
-    init(config: String?, ready: Bool = true) throws {
+    ///   - connected: false leaves the controller without a hotkey list, like the Key Rebinder before the app wires it.
+    init(config: String?, ready: Bool = true, connected: Bool = true) throws {
         directory = FileManager.default.temporaryDirectory
             .appending(path: "stools-hotkey-views-\(UUID().uuidString)", directoryHint: .isDirectory)
         let karabiner = directory.appending(path: "karabiner", directoryHint: .isDirectory)
@@ -56,7 +57,7 @@ final class HotkeyViewRig {
             services: services, configURL: configURL,
             backupsDirectory: directory.appending(path: "backups", directoryHint: .isDirectory), cli: cli, probes: probes)
         center = HotkeyCenter(store: settings, registrar: registrar, toolStates: { [:] }, handler: { _ in })
-        controller.connect(hotkeys: center)
+        if connected { controller.connect(hotkeys: center) }
     }
 
     /// Loads Karabiner's state and the file, draws `shape` `formFactor` and turns hotkeys on (or leaves them off).
@@ -363,5 +364,77 @@ struct KeyPanelHotkeyRenderTests {
         let cantCarry = block(.key("left_shift"))
 
         #expect(Set([off, rows, rowsAndEditor, cantCarry]).count == 4)
+    }
+}
+
+// MARK: - Findings and settings
+
+@MainActor
+@Suite("Key Rebinder findings and settings with hotkeys", .serialized)
+struct FindingsAndSettingsHotkeyTests {
+    @Test func hotkeyFindingsShowEvenWithoutKarabinerJSONButNotInTheTrial() async throws {
+        let rig = try HotkeyViewRig(config: nil)
+        defer { rig.remove() }
+        await rig.prepare()
+        let controller = rig.controller
+        #expect(controller.config == nil)
+        #expect(!KeyRebinderView.showsFindings(controller: controller, showsHotkeys: true))
+        await rig.add("f3")
+        #expect(KeyRebinderView.showsFindings(controller: controller, showsHotkeys: true))
+        #expect(!KeyRebinderView.showsFindings(controller: controller, showsHotkeys: false))
+        #expect(FindingsSection.findings(controller: controller, showsHotkeyFindings: true).map(\.kind) == [.hotkeyTakesGameKey])
+        #expect(FindingsSection.findings(controller: controller, showsHotkeyFindings: false).isEmpty)
+        controller.settings.checkerEnabled = false
+        #expect(!KeyRebinderView.showsFindings(controller: controller, showsHotkeys: true))
+    }
+
+    @Test func withKarabinerJSONTheSectionShowsWhileTheCheckerIsOn() async throws {
+        let rig = try HotkeyViewRig(config: HotkeyViewRig.profile([("caps_lock", "f18")]))
+        defer { rig.remove() }
+        await rig.prepare(hotkeysOn: false)
+        let controller = rig.controller
+        #expect(KeyRebinderView.showsFindings(controller: controller, showsHotkeys: false))
+        #expect(KeyRebinderView.showsFindings(controller: controller, showsHotkeys: true))
+        controller.settings.checkerEnabled = false
+        #expect(!KeyRebinderView.showsFindings(controller: controller, showsHotkeys: true))
+    }
+
+    @Test func theCaptionSaysHotkeyFindingsUseTheDefaultKeysWhenKeybindsAreUnknown() async throws {
+        let unknown = "Advisory only: nothing is ever blocked. Without Minecraft\u{2019}s keybinds, speedrun-rule findings count every key as a game input"
+        let known = "Advisory only: nothing is ever blocked. Speedrun-rule findings cover keys Minecraft uses."
+        #expect(FindingsSection.caption(keybindsKnown: false, hotkeyFindingsCanShow: false) == unknown + ".")
+        #expect(FindingsSection.caption(keybindsKnown: false, hotkeyFindingsCanShow: true)
+            == unknown + ", and hotkey findings use Minecraft\u{2019}s default keys.")
+        #expect(FindingsSection.caption(keybindsKnown: true, hotkeyFindingsCanShow: false) == known)
+        #expect(FindingsSection.caption(keybindsKnown: true, hotkeyFindingsCanShow: true) == known)
+
+        let rig = try HotkeyViewRig(config: nil)
+        defer { rig.remove() }
+        await rig.prepare(hotkeysOn: false)
+        let controller = rig.controller
+        #expect(!FindingsSection.hotkeyFindingsCanShow(controller: controller, showsHotkeyFindings: true))
+        controller.turnHotkeysOn()
+        #expect(FindingsSection.hotkeyFindingsCanShow(controller: controller, showsHotkeyFindings: true))
+        #expect(!FindingsSection.hotkeyFindingsCanShow(controller: controller, showsHotkeyFindings: false))
+        controller.settings.showsHotkeys = false
+        #expect(!FindingsSection.hotkeyFindingsCanShow(controller: controller, showsHotkeyFindings: true))
+    }
+
+    @Test func showHotkeysIsOfferedOnlyWithAHotkeyListOutsideTheTrial() async throws {
+        let rig = try HotkeyViewRig(config: nil)
+        defer { rig.remove() }
+        #expect(KeyRebinderSettingsSection.offersShowHotkeys(controller: rig.controller, showsHotkeys: true))
+        #expect(!KeyRebinderSettingsSection.offersShowHotkeys(controller: rig.controller, showsHotkeys: false))
+        let unconnected = try HotkeyViewRig(config: nil, connected: false)
+        defer { unconnected.remove() }
+        #expect(!KeyRebinderSettingsSection.offersShowHotkeys(controller: unconnected.controller, showsHotkeys: true))
+    }
+
+    @Test func resettingTheSettingsTurnsShowHotkeysBackOn() throws {
+        let rig = try HotkeyViewRig(config: nil)
+        defer { rig.remove() }
+        rig.controller.settings.showsHotkeys = false
+        rig.controller.resetToDefault()
+        #expect(rig.controller.settings.showsHotkeys)
     }
 }
