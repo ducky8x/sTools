@@ -21,8 +21,9 @@ public struct STGiltRule: View {
             .frame(height: 1)
             .scaleEffect(x: showsFull ? 1 : 0, anchor: .leading)
             .onAppear {
-                guard animatesIn, !theme.reduceMotion else { return }
-                withAnimation(.timingCurve(0.2, 0.8, 0.2, 1, duration: 0.6)) { isDrawn = true }
+                // Drawn for good either way: a rule that appeared while reduced mustn't vanish when motion returns.
+                guard animatesIn, !isDrawn else { return }
+                STMotion.animate(.timingCurve(0.2, 0.8, 0.2, 1, duration: 0.6), reduce: theme.reduceMotion) { isDrawn = true }
             }
             .accessibilityHidden(true)
     }

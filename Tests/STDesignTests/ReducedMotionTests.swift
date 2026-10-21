@@ -368,6 +368,21 @@ struct ReducedMotionComponentTests {
         #expect(!sameImage(component(STGiltRule(), theme: STTheme(), size: size).capture(), drawn))
     }
 
+    /// Found in the bug hunt: a rule that appeared while reduced was only drawn because of the theme, so turning
+    /// Reduce animations off (on the Settings page, under its own gilt rule) made it vanish.
+    @Test func aGiltRuleStaysDrawnWhenMotionComesBack() {
+        let size = CGSize(width: 120, height: 1)
+        let drawn = component(STGiltRule(animatesIn: false), theme: STTheme(), size: size).capture()
+        let theme = STTheme(motionMode: .reduced)
+        let hosted = component(STGiltRule(), theme: theme, size: size)
+        #expect(sameImage(hosted.capture(), drawn))
+        theme.motionMode = .full
+        #expect(sameImage(hosted.capture(), drawn), "still drawn, not gone")
+        theme.systemReduceMotion = true
+        theme.systemReduceMotion = false
+        #expect(sameImage(hosted.capture(), drawn))
+    }
+
     @Test func theDisclosureOpensAtOnce() {
         let size = CGSize(width: 240, height: 90)
         func make(_ box: MotionBox) -> some View {
