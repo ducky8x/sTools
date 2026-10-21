@@ -23,6 +23,8 @@ public struct KeyRebinderSettings: SettingsDocument {
     public var checkerEnabled = true
     public var checkerIncludesSpeedrunRules = true
     public var showsHoverArcs = true
+    /// Advanced: the sTools hotkeys on the page (rings on keys, the panel's Hotkeys part, hotkey findings).
+    public var showsHotkeys = true
     public var backupsKept = 20
 
     public init() {}
@@ -47,6 +49,7 @@ public struct KeyRebinderSettings: SettingsDocument {
         checkerEnabled = container.lossy(Bool.self, .checkerEnabled) ?? defaults.checkerEnabled
         checkerIncludesSpeedrunRules = container.lossy(Bool.self, .checkerIncludesSpeedrunRules) ?? defaults.checkerIncludesSpeedrunRules
         showsHoverArcs = container.lossy(Bool.self, .showsHoverArcs) ?? defaults.showsHoverArcs
+        showsHotkeys = container.lossy(Bool.self, .showsHotkeys) ?? defaults.showsHotkeys
         let kept = container.lossy(Int.self, .backupsKept) ?? defaults.backupsKept
         backupsKept = min(max(kept, Self.backupsKeptRange.lowerBound), Self.backupsKeptRange.upperBound)
     }
