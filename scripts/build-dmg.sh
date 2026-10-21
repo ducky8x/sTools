@@ -20,6 +20,13 @@
 # the background is referenced by an alias and bookmark that record that volume. A volume already mounted
 # there is refused rather than worked around.
 #
+# The bookmark also records where the disk image file was while it was written, so the image is made in a work
+# folder in the per-user temporary folder ($TMPDIR, /var/folders/.../T), outside the home folder: a path in the
+# home folder carries the account name, often a real name. Nothing in the DMG may hold "/Users/" or the account
+# name: scripts/check-no-home-paths.sh checks the staged files and the .DS_Store, then the whole uncompressed
+# image (file system records and free space included) before it is compressed, then every file of the finished
+# DMG and the DMG file itself; any finding fails the build.
+#
 # The DMG itself is not signed: macOS checks the app's signature, not the disk image's.
 
 set -euo pipefail
@@ -104,7 +111,12 @@ readonly MOUNT_POINT="/Volumes/$VOLUME_NAME"
 
 readonly OUTPUT="$ROOT/build/sTools-$VERSION.dmg"
 mkdir -p "$ROOT/build"
-WORK="$(mktemp -d "$ROOT/build/.dmg-work.XXXXXX")"
+# In the per-user temporary folder, never in build/: the background's bookmark records the image's path (see
+# the top). mktemp -t takes the system's per-user folder (where $TMPDIR points by default) even when TMPDIR is
+# changed, and falls back to $TMPDIR and /tmp. pwd -P spells the path the way hdiutil and the bookmarks report
+# it (/private/var/..., not /var/...).
+WORK="$(mktemp -d -t sTools-dmg)" || fail "cannot create a work folder in the temporary folder"
+WORK="$(cd "$WORK" && pwd -P)"
 readonly WORK
 ATTACHED=""
 
@@ -125,6 +137,13 @@ cleanup() {
     rm -rf "$WORK"
 }
 trap cleanup EXIT
+
+WORK_LOWER="$(printf '%s' "$WORK" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+ACCOUNT_LOWER="$(id -un | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+if [[ "$WORK" == *"/Users/"* || "$WORK_LOWER" == *"$ACCOUNT_LOWER"* ]]; then
+    fail "the temporary folder is in the home folder, and the DMG would record its path;" \
+        "set TMPDIR to a folder outside it"
+fi
 
 # Attaches a disk image (extra hdiutil options follow the path) and sets ATTACHED and ATTACHED_MOUNT.
 # macOS 26 and later print a deprecation notice for these options; it is dropped, other messages are kept.
@@ -183,17 +202,27 @@ if [[ -n "$VOLUME_ICON" ]]; then
     chflags hidden "$MOUNT_POINT/.VolumeIcon.icns"
 fi
 rm -rf "$MOUNT_POINT/.fseventsd" "$MOUNT_POINT/.Spotlight-V100" "$MOUNT_POINT/.Trashes" 2>/dev/null || true
+
+echo "==> Checking for \"/Users/\" and the account name before compressing"
+# Everything that went onto the volume, file by file, so a finding names its file; then, once it is detached,
+# the whole image byte for byte: extended attributes, the file system's own records and its free space too.
+"$ROOT/scripts/check-no-home-paths.sh" "$WORK/stage" "$MOUNT_POINT/.DS_Store" ||
+    fail "the DMG would carry \"/Users/\" or the account name (listed above)." \
+        "Package a release build (scripts/build-app.sh release): a debug build keeps its debug info"
 sync
 detach "$ATTACHED"
 ATTACHED=""
+"$ROOT/scripts/check-no-home-paths.sh" "$WORK/rw.dmg" ||
+    fail "the uncompressed image carries \"/Users/\" or the account name outside its files"
 
 echo "==> Compressing to ${OUTPUT#"$ROOT/"}"
 hdiutil convert -quiet "$WORK/rw.dmg" -format UDZO -imagekey zlib-level=9 -ov -o "$OUTPUT"
 hdiutil verify -quiet "$OUTPUT" || fail "hdiutil verify failed for $OUTPUT"
 
 echo "==> Checking the DMG's contents"
-mkdir -p "$WORK/check"
-attach "$OUTPUT" -readonly -mountpoint "$WORK/check"
+# Named like the volume, so the check below reports paths as users see them (sTools/sTools.app/...).
+mkdir -p "$WORK/check/$VOLUME_NAME"
+attach "$OUTPUT" -readonly -mountpoint "$WORK/check/$VOLUME_NAME"
 CHECK="$ATTACHED_MOUNT"
 [[ -d "$CHECK/$APP_NAME" ]] || fail "the DMG has no $APP_NAME"
 codesign --verify --deep --strict "$CHECK/$APP_NAME" 2>/dev/null || fail "the app's signature broke in the DMG"
@@ -216,6 +245,14 @@ if [[ -n "$VOLUME_ICON" ]]; then
     [[ -f "$CHECK/.VolumeIcon.icns" ]] || fail "the DMG has no volume icon"
 fi
 sed 's/^/    /' <<< "$LAYOUT" | cut -c1-160
+# What ships: every file of the finished DMG, .DS_Store included, and the DMG file itself (its block table and
+# trailer are not compressed).
+if ! "$ROOT/scripts/check-no-home-paths.sh" "$CHECK" "$OUTPUT"; then
+    detach "$ATTACHED"
+    ATTACHED=""
+    rm -f "$OUTPUT"
+    fail "the DMG carries \"/Users/\" or the account name (listed above); it was deleted"
+fi
 detach "$ATTACHED"
 ATTACHED=""
 
