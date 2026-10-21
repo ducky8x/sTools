@@ -25,6 +25,9 @@ struct GreetingView: View {
     @State private var typesLine: Bool
     @State private var showsBegin: Bool
     @State private var ceremony: Task<Void, Never>?
+    /// Bumped each time the ceremony settles at once. The pieces that move are put up afresh in their final place,
+    /// because setting a value an animation is already heading for doesn't stop the animation.
+    @State private var settleCount = 0
 
     /// How long the full ceremony runs, Begin included.
     static let length: Duration = .milliseconds(4_100)
@@ -49,6 +52,7 @@ struct GreetingView: View {
                 // The app icon's gold, whatever the accent color is set to.
                 PrologueMark(lineProgress: lines, fillAmount: fill, lineColor: STColor.gold, fillColor: STColor.gold, lineWidth: 1.25)
                     .frame(width: 168, height: 128)
+                    .id(settleCount)
                 TypewriterText(text: Copy.wordmark, isStarted: typesWordmark,
                                completionCount: model.animations.completionCount, fadeSpan: 12)
                     .font(STFont.greetingWordmark(72 * theme.textScale))
@@ -58,6 +62,7 @@ struct GreetingView: View {
                     .accessibilityAddTraits(.isHeader)
                 DrawnRule(isDrawn: drawsRule)
                     .frame(width: 236)
+                    .id(settleCount)
                     .padding(.top, 4)
                 TypewriterText(text: Copy.line, isStarted: typesLine, completionCount: model.animations.completionCount, fadeSpan: 6)
                     // New York italic, as the spec asks: the bundled text face has no italic.
@@ -74,12 +79,14 @@ struct GreetingView: View {
                             .transition(theme.reduceMotion ? .identity : .opacity.combined(with: .offset(y: 6)))
                     }
                 }
+                .id(settleCount)
                 .frame(height: 40)
                 .padding(.top, 34)
                 Spacer(minLength: 20)
             }
             Color.black
                 .opacity(blackout)
+                .id(settleCount)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
         }
@@ -126,7 +133,7 @@ struct GreetingView: View {
         settle()
     }
 
-    /// Everything in its final place, at once.
+    /// Everything in its final place, at once, including whatever was still on its way there.
     private func settle() {
         withTransaction(STMotion.instant) {
             blackout = 0
@@ -136,6 +143,7 @@ struct GreetingView: View {
             drawsRule = true
             typesLine = true
             showsBegin = true
+            settleCount += 1
         }
     }
 }
