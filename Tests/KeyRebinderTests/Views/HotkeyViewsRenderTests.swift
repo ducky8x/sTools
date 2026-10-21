@@ -331,6 +331,33 @@ struct KeyPanelHotkeyTests {
         #expect(!quit.canSave(on: 12, in: rig.center))
     }
 
+    @Test func theEditorOpensWhereItsDraftBelongsAndClosesOnceItsHotkeyLeftTheKey() {
+        let binding = HotkeyBinding(combo: HotkeyCombo(keyCode: 79, modifiers: .option), actions: [.toggle(.crosshair)])
+        let other = HotkeyBinding(combo: HotkeyCombo(keyCode: 79, modifiers: []), actions: [.toggle(.nbbOverlay)])
+        #expect(KeyHotkeysBlock.editorPlace(for: nil, among: [binding]) == nil)
+        #expect(KeyHotkeysBlock.editorPlace(for: HotkeyDraft(), among: [binding]) == .add)
+        #expect(KeyHotkeysBlock.editorPlace(for: HotkeyDraft(), among: []) == .add)
+        #expect(KeyHotkeysBlock.editorPlace(for: HotkeyDraft(binding), among: [other, binding]) == .row(binding.id))
+        // The key sends something else now, so the hotkey isn't on it: Save Hotkey would move it to the new key.
+        #expect(KeyHotkeysBlock.editorPlace(for: HotkeyDraft(binding), among: [other]) == nil)
+        #expect(KeyHotkeysBlock.editorPlace(for: HotkeyDraft(binding), among: []) == nil)
+    }
+
+    @Test func theBlocksIdentityFollowsWhatTheKeySends() async throws {
+        let rig = try HotkeyViewRig(config: HotkeyViewRig.profile([("caps_lock", "f18")]))
+        defer { rig.remove() }
+        await rig.prepare(hotkeysOn: false)
+        let controller = rig.controller
+        let before = KeyHotkeysBlock.identity(of: .key("caps_lock"), controller: controller)
+        #expect(before == KeyHotkeysBlock.identity(of: .key("caps_lock"), controller: controller))
+        #expect(before != KeyHotkeysBlock.identity(of: .key("a"), controller: controller))
+        await controller.setRebind(.key("caps_lock"), to: .key("f20"))
+        #expect(KeyHotkeysBlock.identity(of: .key("caps_lock"), controller: controller) != before)
+        await controller.removeRebind(.key("caps_lock"))
+        // Caps Lock sends itself, which can't carry hotkeys.
+        #expect(KeyHotkeysBlock.identity(of: .key("caps_lock"), controller: controller) != before)
+    }
+
     @Test func holdOffersTheFourModifiersInMacOSOrder() {
         #expect(HotkeyDraft.holdChoices.map(\.title) == ["Control", "Option", "Shift", "Command"])
         #expect(HotkeyDraft.holdChoices.map(\.value) == [.control, .option, .shift, .command])
@@ -404,6 +431,49 @@ struct KeyPanelHotkeyRenderTests {
         let switched = png(of: page)
         #expect(switched == png(panel(.key("a")), size: size))
         #expect(switched != png(panel(.key("a"), draft: draft), size: size))
+        #expect(rig.center.bindings.isEmpty)
+    }
+
+    /// Editing ⌥F18 on Caps Lock (→ F18), then saving a rebind of Caps Lock in the same panel: the editor closes
+    /// unsaved, instead of staying open as a new hotkey's editor that would move ⌥F18 to Caps Lock's new key.
+    @Test func aRebindOfTheKeyClosesTheEditorOfOneOfItsHotkeys() async throws {
+        let rig = try HotkeyViewRig(config: HotkeyViewRig.profile([("caps_lock", "f18")]))
+        defer { rig.remove() }
+        await rig.prepare()
+        let id = await rig.add("f18", .option)
+        let edited = try #require(rig.center.bindings.first { $0.id == id })
+        let size = CGSize(width: 680, height: 760)
+        func panel(draft: HotkeyDraft? = nil) -> KeyEditorPanel {
+            KeyEditorPanel(controller: rig.controller, key: .key("caps_lock"), hotkeyDraft: draft, openRule: { _ in })
+        }
+        let page = host(rendered(panel(draft: HotkeyDraft(edited)), size: size), size: size)
+        #expect(png(of: page) != png(panel(), size: size))
+
+        await rig.controller.setRebind(.key("caps_lock"), to: .key("f20"))
+        #expect(rig.controller.hotkeyTarget(for: .key("caps_lock")).keyCode == 90)
+        page.rootView = rendered(panel(), size: size)
+        #expect(png(of: page) == png(panel(), size: size))
+        #expect(rig.center.bindings.map(\.combo) == [HotkeyFixtures.combo("f18", .option)])
+    }
+
+    /// An editor adding a hotkey closes too when the key starts sending another key, rather than adding it there.
+    @Test func aRebindOfTheKeyClosesTheEditorOfANewHotkey() async throws {
+        let rig = try HotkeyViewRig(config: HotkeyViewRig.profile([("caps_lock", "f18")]))
+        defer { rig.remove() }
+        await rig.prepare()
+        var draft = HotkeyDraft()
+        draft.hold = [.shift]
+        draft.does = [.toggle(.nbbOverlay)]
+        let size = CGSize(width: 680, height: 760)
+        func panel(draft: HotkeyDraft? = nil) -> KeyEditorPanel {
+            KeyEditorPanel(controller: rig.controller, key: .key("caps_lock"), hotkeyDraft: draft, openRule: { _ in })
+        }
+        let page = host(rendered(panel(draft: draft), size: size), size: size)
+        #expect(png(of: page) != png(panel(), size: size))
+
+        await rig.controller.setRebind(.key("caps_lock"), to: .key("f20"))
+        page.rootView = rendered(panel(), size: size)
+        #expect(png(of: page) == png(panel(), size: size))
         #expect(rig.center.bindings.isEmpty)
     }
 }

@@ -55,9 +55,10 @@ struct KeyEditorPanel: View {
             if showsHotkeys && controller.showsHotkeyLayer {
                 Rectangle().fill(STColor.rule).frame(height: 1).accessibilityHidden(true)
                 Text("Hotkeys").stStyle(.label).foregroundStyle(theme.inkSecondary).accessibilityAddTraits(.isHeader)
-                // A new identity per key: selecting another key closes the editor unsaved.
+                // A new identity per key and per key code it sends: selecting another key, or a change to what this
+                // key sends, closes the editor unsaved.
                 KeyHotkeysBlock(controller: controller, key: key, chosen: $chosen, openHotkeys: openHotkeys, draft: hotkeyDraft)
-                    .id(key)
+                    .id(KeyHotkeysBlock.identity(of: key, controller: controller))
             }
         }
         .padding(18)

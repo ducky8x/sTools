@@ -5,8 +5,9 @@ import SwiftUI
 /// The key panel's Hotkeys part (spec 5.5.3, 6.1): the sTools hotkeys on what the selected key sends after
 /// Karabiner, an inline editor that adds or changes one with Hold and Does chips, and, for a key that can't carry
 /// hotkeys, why not and the spare key it could become. Hotkeys live in `hotkeys.json`, never in `karabiner.json`, so
-/// all of this works without Karabiner-Elements; only Use F20 needs it. The panel gives the block `.id(key)`, so
-/// selecting another key closes the editor unsaved.
+/// all of this works without Karabiner-Elements; only Use F20 needs it. The panel gives the block a new identity
+/// (`identity(of:controller:)`) per key and per key code the key sends, so selecting another key, or a rebind of this
+/// one, closes the editor unsaved.
 struct KeyHotkeysBlock: View {
     /// What the block shows for a key.
     enum Content: Equatable {
@@ -53,6 +54,36 @@ struct KeyHotkeysBlock: View {
             isRuleDriven: target == .ruleDriven)
     }
 
+    /// Where the inline editor sits.
+    enum EditorPlace: Equatable {
+        /// In place of the row of the hotkey it changes.
+        case row(UUID)
+        /// In place of Add Hotkey…, adding a new hotkey.
+        case add
+    }
+
+    /// Where the editor for `draft` sits among the key's `hotkeys`: in place of the row it changes, or of Add
+    /// Hotkey… for a new one. Nil keeps it closed: there is no draft, or the hotkey it changes isn't on this key any
+    /// more because the key sends another key now. Hotkeys never move with a rebind, and saving that draft would move
+    /// its hotkey onto the key's new output.
+    static func editorPlace(for draft: HotkeyDraft?, among hotkeys: [HotkeyBinding]) -> EditorPlace? {
+        guard let draft else { return nil }
+        guard let id = draft.editing else { return .add }
+        return hotkeys.contains { $0.id == id } ? .row(id) : nil
+    }
+
+    /// The block's identity in the panel: the key and the key code its hotkeys listen for. Selecting another key, or a
+    /// change to what this key sends (its rebind saved or removed, `karabiner.json` changed elsewhere, a change waiting
+    /// for Save This), gives the block a new identity, so an open editor closes unsaved.
+    struct Identity: Hashable {
+        let key: KarabinerEvent
+        let keyCode: UInt16?
+    }
+
+    static func identity(of key: KarabinerEvent, controller: KeyRebinderController) -> Identity {
+        Identity(key: key, keyCode: controller.hotkeyTarget(for: key).keyCode)
+    }
+
     var body: some View {
         switch Self.content(for: key, controller: controller) {
         case .off:
@@ -81,6 +112,7 @@ struct KeyHotkeysBlock: View {
     /// Editing waits while a karabiner.json change waits for Save This or Discard.
     @ViewBuilder private func hotkeys(on keyCode: UInt16) -> some View {
         let hotkeys = controller.hotkeys(on: key)
+        let place = Self.editorPlace(for: draft, among: hotkeys)
         let isWaiting = controller.pendingEdit != nil
         VStack(alignment: .leading, spacing: 0) {
             if let note = controller.hotkeySourceNote(for: key) {
@@ -91,13 +123,13 @@ struct KeyHotkeysBlock: View {
                     .padding(.bottom, 4)
             }
             ForEach(hotkeys) { hotkey in
-                if draft?.editing == hotkey.id {
+                if place == .row(hotkey.id) {
                     editor(on: keyCode, existing: hotkey).padding(.vertical, 10)
                 } else {
                     row(hotkey).disabled(isWaiting)
                 }
             }
-            if let draft, !hotkeys.contains(where: { $0.id == draft.editing }) {
+            if place == .add {
                 editor(on: keyCode, existing: nil).padding(.top, 10)
             } else {
                 Button("Add Hotkey\u{2026}") { draft = HotkeyDraft() }
@@ -217,8 +249,13 @@ struct KeyHotkeysBlock: View {
         Binding(get: { draft?.does ?? [] }, set: { draft?.does = $0 })
     }
 
+    /// Saves the draft: a new hotkey, or the one it changes while that is still on this key (never one the key
+    /// stopped sending, which would move it).
     private func save() {
-        guard let draft else { return }
+        guard let draft, Self.editorPlace(for: draft, among: controller.hotkeys(on: key)) != nil else {
+            self.draft = nil
+            return
+        }
         let actions = HotkeyAction.allCases.filter(draft.does.contains)
         if controller.saveHotkey(on: key, editing: draft.editing, modifiers: draft.modifiers, actions: actions) != nil {
             self.draft = nil
