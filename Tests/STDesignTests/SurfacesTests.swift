@@ -191,7 +191,22 @@ struct TypingAnimationModelTests {
 
 // MARK: - Offscreen rendering helpers
 
-/// A view hosted in an unshown window, drawn to bitmaps at 2x as a Retina display would.
+/// A borderless window with a fixed backing scale. A plain window takes the scale of the display it's on,
+/// and SwiftUI lays text out and rasterizes it at that scale, so a render would change with the main display.
+private final class FixedScaleWindow: NSWindow {
+    private let scale: CGFloat
+
+    init(contentRect: CGRect, scale: CGFloat) {
+        self.scale = scale
+        super.init(contentRect: contentRect, styleMask: [.borderless], backing: .buffered, defer: false)
+    }
+
+    override var backingScaleFactor: CGFloat { scale }
+}
+
+/// A view hosted in an unshown window, drawn to bitmaps at `scale` pixels per point (2x by default, as a
+/// Retina display would). The window reports the same scale, so text is rasterized at the scale it's captured
+/// at whichever display is main; otherwise a 1x main display blurs plain `Text` in a 2x capture.
 @MainActor
 private final class Hosted {
     let host: NSHostingView<AnyView>
@@ -205,7 +220,7 @@ private final class Hosted {
         self.scale = scale
         size = CGSize(width: width, height: height ?? ceil(host.fittingSize.height))
         host.frame = CGRect(origin: .zero, size: size)
-        window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window = FixedScaleWindow(contentRect: host.frame, scale: CGFloat(scale))
         window.contentView = host
         spin(0.12)
     }
