@@ -48,7 +48,8 @@ public struct ScreenRecordingView: View {
         .onAppear { controller.setPreviewVisible(true) }
         .onDisappear { controller.setPreviewVisible(false) }
         .sheet(isPresented: Binding(get: { controller.phase == .deciding }, set: { _ in })) {
-            SaveDeleteSheet(controller: controller)
+            // A sheet is a window of its own, so it gets its own motion root.
+            SaveDeleteSheet(controller: controller).stMotionRoot(theme)
         }
     }
 }

@@ -1,8 +1,12 @@
 import SwiftUI
 import Observation
 
+/// Settings ▸ Appearance ▸ Reduce animations, as stored: off is `.full`, on is `.reduced`.
 public enum STMotionMode: String, Codable, Sendable, CaseIterable {
-    case full, reduced
+    /// sTools' full motion (spec 3.4).
+    case full
+    /// No motion at all: every change happens at once.
+    case reduced
 }
 
 /// The live appearance state every STDesign component reads from the environment.
@@ -20,6 +24,7 @@ public final class STTheme {
         set { storedTextScale = Self.clampedTextScale(newValue) }
     }
 
+    /// Settings ▸ Appearance ▸ Reduce animations.
     public var motionMode: STMotionMode
     public var soundsEnabled: Bool
 
@@ -29,7 +34,7 @@ public final class STTheme {
         set { storedSoundVolume = Self.clampedSoundVolume(newValue) }
     }
 
-    /// Mirrors the system "Reduce Motion" setting; the app target keeps it current.
+    /// Mirrors macOS's Reduce motion (Accessibility ▸ Display); the app target keeps it current.
     public var systemReduceMotion: Bool
     /// Mirrors the system "Increase Contrast" setting; the app target keeps it current.
     public var increaseContrast: Bool
@@ -63,6 +68,8 @@ public final class STTheme {
     public var inkTertiary: Color { increaseContrast ? STColor.ink : STColor.inkTertiary }
     public var stroke: Color { increaseContrast ? STColor.ink : STColor.stroke }
 
+    /// No motion at all (spec 3.4): Reduce animations is on, or macOS's Reduce motion is. Everything that moves reads
+    /// this, through `STMotion`, `stAnimation` and `stMotionRoot`.
     public var reduceMotion: Bool { motionMode == .reduced || systemReduceMotion }
 
     /// Default for views outside an app that injects a real theme. Must first be read on the main thread

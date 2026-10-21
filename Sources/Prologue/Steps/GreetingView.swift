@@ -3,8 +3,8 @@ import SwiftUI
 
 /// Step 1, the welcome ceremony (spec 4.2; about four seconds): pure black fades up to the app's near-black, the
 /// mark draws itself in fine gold lines and fills, the wordmark typewrites, a gilt rule draws beneath it, the line
-/// typewrites, a soft chime, and Begin. Any click or key completes it at once. With Reduce Motion each stage is a
-/// short crossfade.
+/// typewrites, a soft chime, and Begin. Any click or key completes it at once. While motion is reduced there is no
+/// ceremony: everything is in place from the first frame, the chime plays, and there's nothing for a key to finish.
 struct GreetingView: View {
     let model: PrologueModel
 
@@ -17,18 +17,29 @@ struct GreetingView: View {
     @Environment(\.stTheme) private var theme
     @Environment(\.stSoundPlayer) private var sound
 
-    @State private var blackout = 1.0
-    @State private var markOpacity = 1.0
-    @State private var lines = 0.0
-    @State private var fill = 0.0
-    @State private var typesWordmark = false
-    @State private var drawsRule = false
-    @State private var typesLine = false
-    @State private var showsBegin = false
+    @State private var blackout: Double
+    @State private var lines: Double
+    @State private var fill: Double
+    @State private var typesWordmark: Bool
+    @State private var drawsRule: Bool
+    @State private var typesLine: Bool
+    @State private var showsBegin: Bool
     @State private var ceremony: Task<Void, Never>?
 
     /// How long the full ceremony runs, Begin included.
     static let length: Duration = .milliseconds(4_100)
+
+    /// `settled` starts with everything in place, as it shows while motion is reduced.
+    init(model: PrologueModel, settled: Bool = false) {
+        self.model = model
+        _blackout = State(initialValue: settled ? 0 : 1)
+        _lines = State(initialValue: settled ? 1 : 0)
+        _fill = State(initialValue: settled ? 1 : 0)
+        _typesWordmark = State(initialValue: settled)
+        _drawsRule = State(initialValue: settled)
+        _typesLine = State(initialValue: settled)
+        _showsBegin = State(initialValue: settled)
+    }
 
     var body: some View {
         ZStack {
@@ -38,7 +49,6 @@ struct GreetingView: View {
                 // The app icon's gold, whatever the accent color is set to.
                 PrologueMark(lineProgress: lines, fillAmount: fill, lineColor: STColor.gold, fillColor: STColor.gold, lineWidth: 1.25)
                     .frame(width: 168, height: 128)
-                    .opacity(markOpacity)
                 TypewriterText(text: Copy.wordmark, isStarted: typesWordmark,
                                completionCount: model.animations.completionCount, fadeSpan: 12)
                     .font(STFont.greetingWordmark(72 * theme.textScale))
@@ -61,7 +71,7 @@ struct GreetingView: View {
                         Button(Copy.begin) { model.next() }
                             .buttonStyle(STButtonStyle(.primary))
                             .keyboardShortcut(.defaultAction)
-                            .transition(theme.reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 6)))
+                            .transition(theme.reduceMotion ? .identity : .opacity.combined(with: .offset(y: 6)))
                     }
                 }
                 .frame(height: 40)
@@ -79,10 +89,13 @@ struct GreetingView: View {
     }
 
     private func begin() {
-        model.animations.run(for: Self.length)
-        ceremony = Task { @MainActor in
-            if theme.reduceMotion { await playReduced() } else { await playFull() }
+        guard !theme.reduceMotion else {
+            settle()
+            sound.play(.chime)
+            return
         }
+        model.animations.run(for: Self.length)
+        ceremony = Task { @MainActor in await playFull() }
     }
 
     private func playFull() async {
@@ -102,28 +115,6 @@ struct GreetingView: View {
         withAnimation(STMotion.standard) { showsBegin = true }
     }
 
-    /// Reduce Motion: the same stages, each a short crossfade; nothing draws, rises or types.
-    private func playReduced() async {
-        var instant = Transaction()
-        instant.disablesAnimations = true
-        withTransaction(instant) {
-            markOpacity = 0
-            lines = 1
-            fill = 1
-        }
-        withAnimation(STMotion.reducedFade) { blackout = 0 }
-        guard await pause(0.3) else { return }
-        withAnimation(STMotion.reducedFade) { markOpacity = 1 }
-        guard await pause(0.4) else { return }
-        typesWordmark = true
-        withAnimation(STMotion.reducedFade) { drawsRule = true }
-        guard await pause(0.4) else { return }
-        typesLine = true
-        guard await pause(0.4) else { return }
-        sound.play(.chime)
-        withAnimation(STMotion.reducedFade) { showsBegin = true }
-    }
-
     /// Sleeps; false when the ceremony was completed or left meanwhile.
     private func pause(_ seconds: Double) async -> Bool {
         try? await Task.sleep(for: .milliseconds(Int(seconds * 1000)))
@@ -132,11 +123,13 @@ struct GreetingView: View {
 
     private func completeNow() {
         ceremony?.cancel()
-        var instant = Transaction()
-        instant.disablesAnimations = true
-        withTransaction(instant) {
+        settle()
+    }
+
+    /// Everything in its final place, at once.
+    private func settle() {
+        withTransaction(STMotion.instant) {
             blackout = 0
-            markOpacity = 1
             lines = 1
             fill = 1
             typesWordmark = true
