@@ -32,8 +32,8 @@ final class AppModel {
     @ObservationIgnored let controllers: [ToolID: any ToolController]
     /// Key Rebinder has no on/off switch, so it isn't one of `controllers`.
     @ObservationIgnored let keyRebinder: KeyRebinderController?
-    /// Sparkle; nil in tests and previews.
-    @ObservationIgnored let updater: AppUpdater?
+    /// Settings ▸ Updates and Check for Updates… (spec 6.3); its updater is Sparkle in the app, nil or a fake in tests.
+    let updateCenter: UpdateCenter
     @ObservationIgnored let loginItem: any LoginItemControlling
     @ObservationIgnored var wasAccessibilityGranted: Bool
     @ObservationIgnored var isPollingForTools = false
@@ -66,7 +66,7 @@ final class AppModel {
 
     /// Every tool starts off (spec 3.5). `controllers` holds the tools that exist so far.
     init(services: ToolServices, theme: STTheme, sound: STSoundPlayer, controllers: [ToolID: any ToolController],
-         keyRebinder: KeyRebinderController? = nil, updater: AppUpdater? = nil,
+         keyRebinder: KeyRebinderController? = nil, updater: (any AppUpdating)? = nil,
          hotkeyRegistrar: any HotkeyRegistering, hotkeyHUD: any HotkeyConfirmationPresenting,
          loginItem: any LoginItemControlling) {
         self.services = services
@@ -74,7 +74,7 @@ final class AppModel {
         self.sound = sound
         self.controllers = controllers
         self.keyRebinder = keyRebinder
-        self.updater = updater
+        updateCenter = UpdateCenter(updater: updater, notices: AlertUpdateNoticePresenter(theme: theme))
         self.hotkeyRegistrar = hotkeyRegistrar
         self.hotkeyHUD = hotkeyHUD
         self.loginItem = loginItem
@@ -85,7 +85,7 @@ final class AppModel {
         updates = services.settings.load(UpdateSettings.self)
         wasAccessibilityGranted = services.permissions.status(.accessibility) == .granted
         watchAccessibility()
-        updater?.apply(updates)
+        updateCenter.apply(updates)
         (controllers[.screenRecording] as? ScreenRecordingController)?.requestEnable = { [weak self] in
             guard let self else { return false }
             self.setTool(.screenRecording, on: true)
