@@ -53,7 +53,9 @@ public final class AXMinecraftSource: MinecraftWindowSource {
             return MinecraftWindowRules.isJavaExecutable(named: name)
         }
         syncObservers(for: javaApps)
-        guard AXIsProcessTrusted() else { return [] }
+        // Every app switch anywhere lands here; with no Java process there's no Minecraft, so skip the window list,
+        // which walks every window on the system.
+        guard !javaApps.isEmpty, AXIsProcessTrusted() else { return [] }
 
         let windowInfo = (CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]]) ?? []
         let entries = CGWindowMatcher.entries(from: windowInfo)
