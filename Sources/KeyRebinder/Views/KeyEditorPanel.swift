@@ -139,7 +139,8 @@ struct KeyEditorPanel: View {
     }
 
     /// What the rebind would do to sTools hotkeys, under Becomes: for the output `chosen`, or with nothing chosen,
-    /// for Remove Rebind when the key has a rebind to remove. Hotkeys never move with a rebind.
+    /// for Remove Rebind when the key has a rebind to remove (those name Remove Rebind, since they sit right under
+    /// what the key sends now). Hotkeys never move with a rebind.
     static func hotkeyCaptions(
         for key: KarabinerEvent, chosen: KarabinerEvent?, controller: KeyRebinderController, showsHotkeys: Bool
     ) -> [String] {

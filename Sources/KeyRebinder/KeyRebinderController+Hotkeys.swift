@@ -207,7 +207,10 @@ extension KeyRebinderController {
     /// What rebinding `key` to `output` (nil: Remove Rebind) would do to sTools hotkeys, for the captions under
     /// Becomes. Hotkeys never move: "Caps Lock will fire the sTools hotkey F20 (Crosshair)." when the new output
     /// carries hotkeys, and "Its hotkey F18 (Crosshair) stays on F18, and no key will send F18." when no drawn key
-    /// would send a hotkey's key any more. Worked out on the file in memory; nothing is written.
+    /// would send a hotkey's key any more. The panel shows Remove Rebind's before anything is chosen, right under
+    /// what the key sends now, so those say they are about Remove Rebind: "Remove Rebind would make A fire the sTools
+    /// hotkey A (Crosshair)." and "Remove Rebind would leave its hotkey F18 (Crosshair) on F18, and no key would send
+    /// F18." Worked out on the file in memory; nothing is written.
     public func rebindHotkeyNotes(for key: KarabinerEvent, becoming output: KarabinerEvent?) -> [String] {
         guard showsHotkeyLayer, hotkeysAreOn, layout != nil, let center = hotkeyCenter,
               let root = (pendingEdit?.preview ?? config)?.root, let profile = currentProfile else { return [] }
@@ -227,12 +230,16 @@ extension KeyRebinderController {
         let before = hotkeyTarget(for: key).keyCode
         let next = HotkeyTarget.of(key, bindings: after).keyCode
         guard before != next else { return [] }
+        let removes = output == nil
         var notes: [String] = []
         if let next {
             let gained = center.bindings.filter { $0.combo.keyCode == next }
             if !gained.isEmpty {
                 let list = HotkeyGameCheck.joined(gained.map(\.listing), last: "and")
-                notes.append("\(KeyNames.name(for: key)) will fire the sTools \(gained.count == 1 ? "hotkey" : "hotkeys") \(list).")
+                let hotkeys = "the sTools \(gained.count == 1 ? "hotkey" : "hotkeys") \(list)"
+                notes.append(removes
+                    ? "Remove Rebind would make \(KeyNames.name(for: key)) fire \(hotkeys)."
+                    : "\(KeyNames.name(for: key)) will fire \(hotkeys).")
             }
         }
         if let before {
@@ -240,9 +247,12 @@ extension KeyRebinderController {
             if !stranded.isEmpty, HotkeyKeys.sources(ofKeyCode: before, physicalKeys: physicalKeys, bindings: after).isEmpty {
                 let name = keyName(forKeyCode: before)
                 let list = HotkeyGameCheck.joined(stranded.map(\.listing), last: "and")
-                notes.append(stranded.count == 1
-                    ? "Its hotkey \(list) stays on \(name), and no key will send \(name)."
-                    : "Its hotkeys \(list) stay on \(name), and no key will send \(name).")
+                let hotkeys = "\(stranded.count == 1 ? "hotkey" : "hotkeys") \(list)"
+                if removes {
+                    notes.append("Remove Rebind would leave its \(hotkeys) on \(name), and no key would send \(name).")
+                } else {
+                    notes.append("Its \(hotkeys) \(stranded.count == 1 ? "stays" : "stay") on \(name), and no key will send \(name).")
+                }
             }
         }
         return notes

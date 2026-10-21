@@ -378,9 +378,9 @@ struct KeyPanelHotkeyTests {
             "Caps Lock will fire the sTools hotkey F20 (NBB Overlay).",
             "Its hotkey F18 (Crosshair) stays on F18, and no key will send F18.",
         ])
-        // Nothing chosen: what Remove Rebind would do.
+        // Nothing chosen: what Remove Rebind would do, worded as a possibility under "Sends F18".
         #expect(KeyEditorPanel.hotkeyCaptions(for: .key("caps_lock"), chosen: nil, controller: controller, showsHotkeys: true)
-            == ["Its hotkey F18 (Crosshair) stays on F18, and no key will send F18."])
+            == ["Remove Rebind would leave its hotkey F18 (Crosshair) on F18, and no key would send F18."])
         // A key with no rebind to remove says nothing until an output is chosen.
         #expect(KeyEditorPanel.hotkeyCaptions(for: .key("a"), chosen: nil, controller: controller, showsHotkeys: true).isEmpty)
         #expect(KeyEditorPanel.hotkeyCaptions(for: .key("caps_lock"), chosen: .key("f20"), controller: controller, showsHotkeys: false).isEmpty)
