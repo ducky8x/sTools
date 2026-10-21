@@ -18,6 +18,7 @@ public final class RecordingWriter: @unchecked Sendable {
     private let canvas: PixelSize
     private let freeSpace: any FreeSpaceProvider
     private let readinessOverride: (@Sendable () -> Bool)?
+    private let allowsHardwareEncoder: Bool
     private let continuation: AsyncStream<WriterEvent>.Continuation
     private let lock = NSLock()
 
@@ -37,16 +38,19 @@ public final class RecordingWriter: @unchecked Sendable {
     private var droppedAudioChunks = 0
     private var audioFormat: CMAudioFormatDescription?
 
-    /// `readinessOverride` lets tests simulate a stalled encoder input.
+    /// `readinessOverride` lets tests simulate a stalled encoder input; `allowsHardwareEncoder: false` limits them to
+    /// the software encoders (the H.264 one takes no constant quality, like Intel Macs' encoders).
     init(
         configuration: WriterConfiguration,
         freeSpace: any FreeSpaceProvider,
-        readinessOverride: (@Sendable () -> Bool)?
+        readinessOverride: (@Sendable () -> Bool)?,
+        allowsHardwareEncoder: Bool = true
     ) {
         self.configuration = configuration
         self.canvas = configuration.canvas.evenSized
         self.freeSpace = freeSpace
         self.readinessOverride = readinessOverride
+        self.allowsHardwareEncoder = allowsHardwareEncoder
         let (stream, continuation) = AsyncStream<WriterEvent>.makeStream(bufferingPolicy: .unbounded)
         self.events = stream
         self.continuation = continuation
@@ -256,7 +260,9 @@ public final class RecordingWriter: @unchecked Sendable {
         writer.movieFragmentInterval = Self.fragmentInterval
         writer.shouldOptimizeForNetworkUse = false
 
-        let video = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings())
+        let video = AVAssetWriterInput(
+            mediaType: .video,
+            outputSettings: Self.videoSettings(for: configuration, allowsHardwareEncoder: allowsHardwareEncoder))
         video.expectsMediaDataInRealTime = true
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(
             assetWriterInput: video,
@@ -290,8 +296,15 @@ public final class RecordingWriter: @unchecked Sendable {
         return Segment(index: index, url: url, writer: writer, video: video, adaptor: adaptor, audio: audio, start: start)
     }
 
-    private func videoSettings() -> [String: Any] {
+    /// The video input's settings. Manual quality is a constant quality only where the encoder takes one (Apple
+    /// silicon's do). Intel Macs' encoders don't, and AVAssetWriterInput throws an Objective-C exception for the
+    /// quality key there, which would end sTools, so on those the quality sets the bit rate instead.
+    static func videoSettings(for configuration: WriterConfiguration, allowsHardwareEncoder: Bool) -> [String: Any] {
+        let canvas = configuration.canvas.evenSized
         let codec: AVVideoCodecType = configuration.codec == .hevc ? .hevc : .h264
+        let encoderSpecification: [String: Any] = [
+            kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder as String: allowsHardwareEncoder,
+        ]
         var compression: [String: Any] = [
             AVVideoExpectedSourceFrameRateKey: configuration.frameRate,
             AVVideoMaxKeyFrameIntervalKey: configuration.frameRate * 2,
@@ -299,10 +312,16 @@ public final class RecordingWriter: @unchecked Sendable {
         ]
         switch configuration.quality {
         case .automatic:
-            compression[AVVideoAverageBitRateKey] = Self.automaticBitRate(
+            compression[AVVideoAverageBitRateKey] = automaticBitRate(
                 canvas: canvas, frameRate: configuration.frameRate, codec: configuration.codec)
         case .manual(let value):
-            compression[AVVideoQualityKey] = min(1, max(0, value))
+            let quality = min(1, max(0, value))
+            if encoderTakesConstantQuality(codec: configuration.codec, canvas: canvas, specification: encoderSpecification) {
+                compression[AVVideoQualityKey] = quality
+            } else {
+                compression[AVVideoAverageBitRateKey] = manualBitRate(
+                    quality: quality, canvas: canvas, frameRate: configuration.frameRate, codec: configuration.codec)
+            }
         }
         if configuration.codec == .h264 { compression[AVVideoProfileLevelKey] = AVVideoProfileLevelH264HighAutoLevel }
         return [
@@ -310,16 +329,36 @@ public final class RecordingWriter: @unchecked Sendable {
             AVVideoWidthKey: canvas.width,
             AVVideoHeightKey: canvas.height,
             AVVideoCompressionPropertiesKey: compression,
-            AVVideoEncoderSpecificationKey: [
-                kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder as String: true,
-            ],
+            AVVideoEncoderSpecificationKey: encoderSpecification,
         ]
+    }
+
+    /// Whether the encoder VideoToolbox picks for this codec, size and specification takes a constant quality
+    /// (`kVTCompressionPropertyKey_Quality`, what `AVVideoQualityKey` sets). False when it can't be told.
+    static func encoderTakesConstantQuality(codec: VideoCodec, canvas: PixelSize, specification: [String: Any]) -> Bool {
+        var properties: CFDictionary?
+        let status = VTCopySupportedPropertyDictionaryForEncoder(
+            width: Int32(canvas.width), height: Int32(canvas.height),
+            codecType: codec == .hevc ? kCMVideoCodecType_HEVC : kCMVideoCodecType_H264,
+            encoderSpecification: specification as CFDictionary, encoderIDOut: nil, supportedPropertiesOut: &properties)
+        guard status == noErr, let supported = properties as? [String: Any] else { return false }
+        return supported[kVTCompressionPropertyKey_Quality as String] != nil
     }
 
     /// Bits per pixel per frame: game footage needs more than talking-head video, HEVC needs about a third less.
     static func automaticBitRate(canvas: PixelSize, frameRate: Int, codec: VideoCodec) -> Int {
+        bitRate(canvas: canvas, frameRate: frameRate, codec: codec, scale: 1)
+    }
+
+    /// Manual quality as a bit rate, for encoders without a constant quality: 50% is the automatic rate and 100%
+    /// twice it.
+    static func manualBitRate(quality: Double, canvas: PixelSize, frameRate: Int, codec: VideoCodec) -> Int {
+        bitRate(canvas: canvas, frameRate: frameRate, codec: codec, scale: 2 * min(1, max(0, quality)))
+    }
+
+    private static func bitRate(canvas: PixelSize, frameRate: Int, codec: VideoCodec, scale: Double) -> Int {
         let bitsPerPixel = codec == .hevc ? 0.07 : 0.1
-        let rate = Double(canvas.width * canvas.height * frameRate) * bitsPerPixel
+        let rate = Double(canvas.width * canvas.height * frameRate) * bitsPerPixel * scale
         return min(150_000_000, max(500_000, Int(rate)))
     }
 
