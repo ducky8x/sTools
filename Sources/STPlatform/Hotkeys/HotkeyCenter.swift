@@ -7,6 +7,8 @@ public enum HotkeyEvent: Equatable, Sendable {
     case setTool(HotkeyTool, isOn: Bool)
     /// Start recording if idle, stop if recording.
     case toggleRecording
+    /// Start timer was pressed. Timer Overlay's press table decides what that does (spec 5.6.2).
+    case startTimer
 }
 
 /// Why a binding is not active.
@@ -72,7 +74,7 @@ public final class HotkeyCenter {
     /// - Parameters:
     ///   - toolStates: Reports which switchable tools are on right now. Read on every press.
     ///   - handler: Receives each press's events together, in order: one per tool change, then one for
-    ///     recording. One call per press, so the app can confirm the press once.
+    ///     recording, then one for Start timer. One call per press, so the app can confirm the press once.
     public init(store: SettingsStore,
                 registrar: any HotkeyRegistering,
                 toolStates: @escaping @MainActor () -> [HotkeyTool: Bool],
@@ -187,6 +189,7 @@ public final class HotkeyCenter {
         let outcome = HotkeyAction.resolve(binding.actions, toolStates: toolStates())
         var events = outcome.toolChanges.map { HotkeyEvent.setTool($0.tool, isOn: $0.isOn) }
         if outcome.togglesRecording { events.append(.toggleRecording) }
+        if outcome.startsTimer { events.append(.startTimer) }
         guard !events.isEmpty else { return }
         handler(events)
     }

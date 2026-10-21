@@ -84,6 +84,7 @@ private let ctrlOptV = HotkeyCombo(keyCode: 9, modifiers: [.control, .option])
 private let pad1 = HotkeyCombo(keyCode: 83, modifiers: [])
 private let bareC = HotkeyCombo(keyCode: 8, modifiers: [])
 private let f5 = HotkeyCombo(keyCode: 96, modifiers: [])
+private let f13 = HotkeyCombo(keyCode: 105, modifiers: [])
 
 @Suite("HotkeyCenter")
 @MainActor
@@ -287,6 +288,24 @@ struct HotkeyCenterTests {
         let id = h.center.add(combo: ctrlOptC, actions: [.toggle(.crosshair), .toggle(.nbbOverlay), .startStopRecording])
         h.registrar.press(id)
         #expect(h.presses == [[.setTool(.crosshair, isOn: true), .setTool(.nbbOverlay, isOn: true), .toggleRecording]])
+    }
+
+    @Test func startTimerComesLastInItsPress() async {
+        let h = await Harness()
+        h.center.isEnabled = true
+        let id = h.center.add(combo: f13, actions: [.startTimer, .startStopRecording, .toggle(.crosshair)])
+        h.registrar.press(id)
+        #expect(h.presses == [[.setTool(.crosshair, isOn: true), .toggleRecording, .startTimer]])
+    }
+
+    /// Timer Overlay has no toggle, so the tools' states don't change what Start timer sends.
+    @Test func startTimerAloneSendsOnlyStartTimer() async {
+        let h = await Harness()
+        h.center.isEnabled = true
+        h.tools = [.crosshair: true, .nbbOverlay: false]
+        let id = h.center.add(combo: f13, actions: [.startTimer])
+        h.registrar.press(id)
+        #expect(h.presses == [[.startTimer]])
     }
 
     @Test func pressWhileDisabledDoesNothing() async {

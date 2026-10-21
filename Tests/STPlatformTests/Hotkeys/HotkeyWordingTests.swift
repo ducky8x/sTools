@@ -26,6 +26,7 @@ struct HotkeyWordingTests {
         #expect(HotkeyAction.toggle(.crosshair).title == "Crosshair")
         #expect(HotkeyAction.toggle(.screenRecording).title == "Screen Recording")
         #expect(HotkeyAction.startStopRecording.title == "Start/stop recording")
+        #expect(HotkeyAction.startTimer.title == "Start timer")
     }
 
     /// Chips and summaries come from `allCases`, so every action, present or future, needs its own title.
@@ -41,12 +42,14 @@ struct HotkeyWordingTests {
         #expect(HotkeyWording.summary([.toggle(.crosshair), .toggle(.nbbOverlay)]) == "Crosshair + NBB Overlay")
         #expect(HotkeyWording.summary([.startStopRecording, .toggle(.crosshair)]) == "Start/stop recording + Crosshair")
         #expect(HotkeyWording.summary([.toggle(.windowBackdrop)]) == "Window Backdrop")
+        #expect(HotkeyWording.summary([.toggle(.crosshair), .startTimer]) == "Crosshair + Start timer")
         #expect(HotkeyWording.summary([]) == "")
     }
 
     @Test func spokenSummaryReadsLikeASentence() {
         #expect(HotkeyWording.spokenSummary([.toggle(.crosshair)]) == "Crosshair")
         #expect(HotkeyWording.spokenSummary([.toggle(.crosshair), .toggle(.nbbOverlay)]) == "Crosshair and NBB Overlay")
+        #expect(HotkeyWording.spokenSummary([.startTimer, .toggle(.crosshair)]) == "Start timer and Crosshair")
         #expect(HotkeyWording.spokenSummary([.toggle(.crosshair), .toggle(.nbbOverlay), .startStopRecording])
                 == "Crosshair, NBB Overlay and Start/stop recording")
         #expect(HotkeyWording.spokenSummary([]) == "")
