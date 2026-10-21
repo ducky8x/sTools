@@ -239,6 +239,21 @@ struct PrologueReducedMotionTests {
         #expect(full.animations.isRunning, "the control: under full motion the title types")
     }
 
+    /// Under full motion a click completes a step title's typing and its gilt rule at once (spec 4.1). Both were
+    /// already animating toward their final state, so completing them used to leave them arriving on their own.
+    /// Here the step plays in real time.
+    @Test func aClickCompletesTheTitleAndItsRuleAtOnce() async {
+        let box = StoreBox()
+        let model = PrologueModel(store: box.store, host: FakeHost(), startingAt: .crosshairTrial)
+        let hosted = show(model, theme: STTheme(), running: true)
+        let start = hosted.capture()
+        #expect(await waitUntil { !sameImage(hosted.capture(), start) }, "the control: the title is typing")
+        #expect(model.animations.completeAll(), "something was playing when the click came")
+        let completed = hosted.capture()
+        try? await Task.sleep(for: .seconds(1.5))
+        #expect(sameImage(completed, hosted.capture()), "nothing left arriving after the click")
+    }
+
     @Test(arguments: [true, false])
     func pagesTurnInPlace(forward: Bool) {
         let box = StoreBox()
