@@ -74,7 +74,8 @@ public struct KeyRebinderView: View {
             Task { await controller.refresh() }
         }
         .sheet(item: $ruleBeingEdited) { item in
-            RuleEditorSheet(controller: controller, index: item.index)
+            // A sheet is a window of its own, so it gets its own motion root.
+            RuleEditorSheet(controller: controller, index: item.index).stMotionRoot(theme)
         }
     }
 
