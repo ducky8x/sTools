@@ -343,6 +343,43 @@ struct KeyRebinderPressTests {
         #expect(controller.selectedKey == nil)
     }
 
+    /// With keyboard navigation on (Full Keyboard Access), Tab, Shift-Tab and Space move focus and press the focused
+    /// control, as everywhere in sTools, instead of selecting their keys; Test keys and Press… still take them.
+    @Test func keyboardNavigationKeepsTabShiftAndSpace() async throws {
+        let harness = try Harness()
+        defer { harness.remove() }
+        let controller = harness.controller
+        controller.chooseLayout(shape: .ansi, formFactor: .laptop)
+        func leaves(_ press: KeyPress, navigation: Bool = true) -> Bool {
+            KeyRebinderView.leavesToKeyboardNavigation(press, keyboardNavigation: navigation, controller: controller)
+        }
+        for code in ["tab", "spacebar", "left_shift", "right_shift"] {
+            let press = KeyPress.down(.key(code), isRepeat: false)
+            #expect(leaves(press))
+            #expect(leaves(.up(.key(code))))
+            #expect(!leaves(press, navigation: false))
+            // The page passes the press on as busy, so it isn't used and the window gets it.
+            #expect(!controller.handle(press, commandHeld: false, isBusy: leaves(press)))
+        }
+        #expect(controller.selectedKey == nil)
+        for code in ["a", "return_or_enter", "escape", "left_arrow", "left_control"] {
+            #expect(!leaves(.down(.key(code), isRepeat: false)))
+        }
+        let a = KeyPress.down(.key("a"), isRepeat: false)
+        #expect(controller.handle(a, commandHeld: false, isBusy: leaves(a)))
+        #expect(controller.selectedKey == .key("a"))
+        // Without keyboard navigation, pressing Tab selects it as before.
+        let tab = KeyPress.down(.key("tab"), isRepeat: false)
+        #expect(controller.handle(tab, commandHeld: false, isBusy: leaves(tab, navigation: false)))
+        #expect(controller.selectedKey == .key("tab"))
+
+        controller.isTesting = true
+        #expect(!leaves(tab))
+        controller.isTesting = false
+        controller.isCapturingOutput = true
+        #expect(!leaves(.down(.key("spacebar"), isRepeat: false)))
+    }
+
     @Test func theTesterSeesEverythingButOnlySwallowsPlainKeys() async throws {
         let harness = try Harness()
         defer { harness.remove() }
