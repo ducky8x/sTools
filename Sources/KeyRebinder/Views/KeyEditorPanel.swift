@@ -99,6 +99,7 @@ struct KeyEditorPanel: View {
                                 chosen = picked
                                 showsPicker = false
                             }
+                            .stMotionRoot(theme)
                         }
                 }
                 if KeyTable.shared.entry(for: key)?.isUnsafeSource == true {

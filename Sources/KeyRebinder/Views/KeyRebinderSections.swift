@@ -62,6 +62,8 @@ struct FnKeysSection: View {
                 }
             }
             .background(STColor.surface)
+            // A popover is a window of its own, so it gets its own motion root.
+            .stMotionRoot(theme)
         }
     }
 }

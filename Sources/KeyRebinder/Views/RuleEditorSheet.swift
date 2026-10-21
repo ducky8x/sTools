@@ -66,6 +66,7 @@ struct RuleEditorSheet: View {
                                 picking = nil
                                 Task { await controller.setRuleOutput(rule: index, manipulator: swap.manipulator, to: picked) }
                             }
+                            .stMotionRoot(theme)
                         }
                 }
             }
