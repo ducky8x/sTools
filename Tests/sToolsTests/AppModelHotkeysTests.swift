@@ -1,6 +1,28 @@
+import AppKit
+import STDesign
 import STPlatform
+import SwiftUI
 import Testing
 @testable import sTools
+
+/// Stands in for the Key Rebinder's advice.
+@MainActor
+private final class FakeKeyboardAdvisor: HotkeyAdvising {
+    var selectsKey = false
+    var placementText: String?
+    var cautions: [String] = []
+    private(set) var selected: [HotkeyCombo] = []
+
+    func notes(for combo: HotkeyCombo) -> [HotkeyNote] { cautions.map { HotkeyNote(tone: .caution, text: $0) } }
+    func placement(of combo: HotkeyCombo) -> HotkeyPlacement? { HotkeyPlacement(text: placementText, canShow: placementText != nil) }
+    func selectKey(for combo: HotkeyCombo) -> Bool {
+        selected.append(combo)
+        return selectsKey
+    }
+    func prepareAdvice() async {}
+}
+
+private let pad1 = HotkeyCombo(keyCode: 83, modifiers: [])
 
 @MainActor
 @Suite("AppModel hotkeys")
@@ -115,5 +137,107 @@ struct AppModelHotkeysTests {
         }
         fake.onPress?(id)
         #expect(!harness.model.isOn(.crosshair))
+    }
+
+    // MARK: Any key, and the pause
+
+    @Test func aBareKeyHotkeyRegistersAndToggles() throws {
+        let harness = Harness(accessibility: .granted)
+        let fake = try #require(harness.hotkeyRegistrar as? FakeHotkeyRegistrar)
+        harness.model.hotkeys.isEnabled = true
+        let id = harness.model.hotkeys.add(combo: pad1, actions: [.toggle(.crosshair)])
+        #expect(fake.registered == [id: pad1])
+        #expect(harness.model.hotkeys.status(of: id) == .registered)
+
+        fake.onPress?(id)
+        #expect(harness.model.isOn(.crosshair))
+    }
+
+    @Test func hotkeysPauseWhileSToolsIsInFront() throws {
+        let harness = Harness(accessibility: .granted)
+        let fake = try #require(harness.hotkeyRegistrar as? FakeHotkeyRegistrar)
+        harness.model.hotkeys.isEnabled = true
+        let id = harness.model.hotkeys.add(combo: pad1, actions: [.toggle(.crosshair)])
+
+        harness.model.hotkeys.appIsActive = true
+        #expect(fake.registered.isEmpty)
+        fake.onPress?(id)
+        #expect(!harness.model.isOn(.crosshair))
+
+        harness.model.hotkeys.appIsActive = false
+        #expect(fake.registered == [id: pad1])
+        fake.onPress?(id)
+        #expect(harness.model.isOn(.crosshair))
+    }
+
+    // MARK: Show on Keyboard
+
+    @Test func showOnKeyboardAsksTheAdvisor() {
+        let harness = Harness(accessibility: .granted)
+        let advisor = FakeKeyboardAdvisor()
+        harness.model.hotkeys.advisor = advisor
+
+        #expect(!harness.model.showHotkeyOnKeyboard(pad1))
+        #expect(advisor.selected == [pad1])
+        #expect(harness.model.route == .home)
+
+        advisor.selectsKey = true
+        #expect(harness.model.showHotkeyOnKeyboard(pad1))
+        #expect(harness.model.route == .tool(.keyRebinder))
+    }
+
+    @Test func showOnKeyboardWithoutTheKeyRebinderStaysPut() {
+        let harness = Harness(accessibility: .granted)
+        harness.model.navigate(to: .settings)
+        #expect(!harness.model.showHotkeyOnKeyboard(pad1))
+        #expect(harness.model.route == .settings)
+    }
+}
+
+@MainActor
+@Suite("Home hotkeys rendering")
+struct HomeHotkeysRenderTests {
+    private let size = CGSize(width: 640, height: 720)
+
+    private func render(_ harness: Harness, advancedIsOpen: Bool = false, editingID: UUID? = nil) -> NSBitmapImageRep {
+        renderBitmap(
+            VStack(alignment: .leading, spacing: 0) {
+                HotkeysSection(model: harness.model, advancedIsOpen: advancedIsOpen, editingID: editingID)
+            }
+            .padding(20)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(STColor.background)
+            .environment(\.stTheme, harness.model.theme)
+            .environment(\.stSoundPlayer, STSoundPlayer.silent),
+            size: size)
+    }
+
+    /// Bare keys, a duplicate, a placement with Show on Keyboard and a caution, then the same list with Advanced and
+    /// an editor open.
+    @Test func everyRowStateAndTheEditorRender() {
+        let harness = Harness(accessibility: .granted)
+        let advisor = FakeKeyboardAdvisor()
+        advisor.placementText = "On Caps Lock"
+        advisor.cautions = ["Minecraft uses F3 for Debug screen. While hotkeys are on, it never gets F3."]
+        harness.model.hotkeys.advisor = advisor
+        harness.model.hotkeys.isEnabled = true
+        let pad = harness.model.hotkeys.add(combo: pad1, actions: [.toggle(.crosshair), .toggle(.nbbOverlay)])
+        harness.model.hotkeys.add(combo: pad1, actions: [.startStopRecording])
+        harness.model.hotkeys.add(combo: HotkeyCombo(keyCode: 99, modifiers: []), actions: [.toggle(.windowBackdrop)])
+
+        let list = render(harness)
+        let open = render(harness, advancedIsOpen: true, editingID: pad)
+        #expect(distinctColors(in: list) > 20)
+        #expect(distinctColors(in: open) > 20)
+        #expect(list.representation(using: .png, properties: [:]) != open.representation(using: .png, properties: [:]))
+    }
+
+    @Test func thePauseCaptionFollowsTheSetting() {
+        let harness = Harness(accessibility: .granted)
+        harness.model.hotkeys.isEnabled = true
+        let paused = render(harness)
+        harness.model.hotkeys.pausesWhileSToolsIsActive = false
+        let live = render(harness)
+        #expect(paused.representation(using: .png, properties: [:]) != live.representation(using: .png, properties: [:]))
     }
 }
