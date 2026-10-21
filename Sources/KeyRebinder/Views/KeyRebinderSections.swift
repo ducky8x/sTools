@@ -35,7 +35,9 @@ struct FnKeysSection: View {
         return Button { picking = number } label: {
             VStack(alignment: .leading, spacing: 2) {
                 Text("F\(number)").stStyle(.label).foregroundStyle(STColor.ink)
-                Text(action).stStyle(.caption).foregroundStyle(theme.inkSecondary).lineLimit(2)
+                // Two lines kept for every action, so a one-line action's tile is as tall as its neighbors and
+                // the F labels line up across the grid.
+                Text(action).stStyle(.caption).foregroundStyle(theme.inkSecondary).lineLimit(2, reservesSpace: true)
             }
             .padding(8)
             .frame(maxWidth: .infinity, minHeight: 58, alignment: .topLeading)
