@@ -327,6 +327,24 @@ struct PrologueReducedMotionTests {
         #expect(finished.count == 1, "a later key doesn't finish it twice")
     }
 
+    @Test func typingDoneWhileReducedStaysWhenMotionReturns() {
+        let theme = STTheme(motionMode: .reduced)
+        let state = TypingState()
+        state.isStarted = true
+        let finished = Counter()
+        let hosted = Still(TypingProbe(state: state, finished: finished).environment(\.stTheme, theme),
+                           size: CGSize(width: 200, height: 40))
+        _ = hosted.capture()
+        theme.motionMode = .full
+        let after = hosted.capture()
+
+        let blankState = TypingState()
+        let blank = Still(TypingProbe(state: blankState, finished: Counter()).environment(\.stTheme, theme),
+                          size: CGSize(width: 200, height: 40)).capture()
+        #expect(!sameImage(after, blank), "the line is still there, typed in full")
+        #expect(finished.count == 1, "and it doesn't type again")
+    }
+
     @Test func typingStartedFromTheFirstFrameFinishesOnAppear() {
         let state = TypingState()
         state.isStarted = true
