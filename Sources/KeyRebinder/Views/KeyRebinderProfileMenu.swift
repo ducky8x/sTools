@@ -25,10 +25,9 @@ public struct KeyRebinderProfileMenu: View {
             Button("New Profile\u{2026}") { showsNew = true }
             Button("Manage Profiles\u{2026}") { showsManage = true }
         } label: {
-            Text(controller.currentProfile ?? "No profile").stStyle(.body).foregroundStyle(STColor.ink)
+            STMenuLabel(controller.currentProfile ?? "No profile")
         }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
+        .stMenuStyle()
         .disabled(!controller.canEdit || controller.isBusy)
         .accessibilityLabel("Karabiner profile: \(controller.currentProfile ?? "none")")
         .sheet(isPresented: $showsNew) { NewProfileSheet(controller: controller) }

@@ -199,10 +199,9 @@ struct ScopeMenu: View {
                 Button(device.displayName) { controller.setScope(device.identifiers) }
             }
         } label: {
-            Text("Scope: \(scopeName)").stStyle(.body).foregroundStyle(STColor.ink)
+            STMenuLabel("Scope: \(scopeName)")
         }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
+        .stMenuStyle()
         .accessibilityLabel("Scope: \(scopeName)")
     }
 

@@ -69,10 +69,13 @@ struct KeyCapView: View {
                         .foregroundStyle(theme.accent)
                 }
                 if let action = state.action, height >= unit * 0.9 {
+                    // Shrinks a little to fit the key, then ends in "…": cut off at the key's edge, a long action
+                    // ("Swap held items") read as a different word.
                     Text(action)
                         .font(STFont.label(scale: Double(unit * 0.19 / 12)))
                         .foregroundStyle(theme.inkTertiary)
-                        .fixedSize()
+                        .minimumScaleFactor(0.75)
+                        .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
