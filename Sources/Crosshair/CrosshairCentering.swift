@@ -4,6 +4,9 @@ import Foundation
 enum CrosshairCentering {
     /// Owner-tested: Minecraft draws its crosshair just left of and above the middle (at GUI scale 3 on
     /// 1920 x 1080 its center line covers columns 957-959 and rows 537-539), and the default covers it exactly.
+    /// By the same math it holds on a 2x display that looks like 1920 x 1080: Minecraft renders all of its
+    /// 3840 x 2160 pixels, so the line covers columns 1917-1919 and rows 1077-1079, and the default's offset
+    /// is in pixels there too.
     static let minecraftNote = "With the default settings, this crosshair sits exactly on Minecraft\u{2019}s own when Minecraft covers the menu bar and Dock (1920 \u{00D7} 1080, GUI scale 3)."
 
     /// Explains when the chosen width can't be split evenly across the display's middle. Nil when it sits

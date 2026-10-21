@@ -6,38 +6,12 @@ import UniformTypeIdentifiers
 @testable import Crosshair
 @testable import STPlatform
 
-@MainActor
-private func makeServices(tempDirectory: URL, instances: [MinecraftInstance] = []) -> ToolServices {
-    makeServices(tempDirectory: tempDirectory, source: StaticMinecraftWindowSource(instances: instances))
-}
-
-@MainActor
-private func makeServices(tempDirectory: URL, source: StaticMinecraftWindowSource) -> ToolServices {
-    let settings = SettingsStore(directory: tempDirectory)
-    let displays = DisplayDirectory()
-    let minecraft = MinecraftLocator(source: source)
-    let permissions = PermissionCenter(prober: NeverPromptingProber())
-    return ToolServices(settings: settings, displays: displays, minecraft: minecraft, permissions: permissions)
-}
-
-private struct NeverPromptingProber: PermissionProbing {
-    func status(for permission: Permission) -> PermissionStatus { .granted }
-    func request(_ permission: Permission) async -> PermissionStatus { .granted }
-}
-
-@MainActor
-private func tempDirectory() -> URL {
-    let url = FileManager.default.temporaryDirectory.appending(path: "sTools-crosshair-tests-\(UUID().uuidString)")
-    try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-    return url
-}
-
 @Suite("Crosshair controller", .serialized)
 struct CrosshairControllerTests {
     @MainActor
     @Test func loadsDefaultsWhenNothingIsStored() {
         let services = makeServices(tempDirectory: tempDirectory())
-        let controller = CrosshairController(services: services)
+        let controller = makeController(services)
         #expect(controller.settings == CrosshairSettings())
         #expect(controller.isEnabled == false)
     }
@@ -46,22 +20,24 @@ struct CrosshairControllerTests {
     @Test func changingSettingsPersistsAndReloads() async {
         let directory = tempDirectory()
         let services = makeServices(tempDirectory: directory)
-        let controller = CrosshairController(services: services)
+        let controller = makeController(services)
         controller.settings.fillHex = "#112233"
         controller.settings.size = 42
         await services.settings.flush()
 
-        let reloaded = CrosshairController(services: makeServices(tempDirectory: directory))
+        let reloaded = makeController(makeServices(tempDirectory: directory))
         #expect(reloaded.settings.fillHex == "#112233")
         #expect(reloaded.settings.size == 42)
     }
 
     @MainActor
     @Test func setEnabledIsIdempotentAndToggles() {
-        let controller = CrosshairController(services: makeServices(tempDirectory: tempDirectory()))
+        let controller = makeController(makeServices(tempDirectory: tempDirectory()))
         #expect(controller.isEnabled == false)
         controller.setEnabled(true)
         #expect(controller.isEnabled == true)
+        #expect(controller.isOverlayShown)
+        #expect(!controller.panel.isVisible, "tests never order the panel onto a screen")
         controller.setEnabled(true)
         #expect(controller.isEnabled == true)
         controller.setEnabled(false)
@@ -83,7 +59,7 @@ struct CrosshairControllerTests {
         let services = makeServices(tempDirectory: tempDirectory(), source: source)
         services.minecraft.start()
         defer { services.minecraft.stop() }
-        let controller = CrosshairController(services: services)
+        let controller = makeController(services)
         controller.settings.visibleOnlyWhileMinecraftFocused = true
         controller.setEnabled(true)
         defer { controller.setEnabled(false) }
@@ -103,7 +79,7 @@ struct CrosshairControllerTests {
     @Test func importingAnUnreadableFileReportsAnErrorAndKeepsTheShape() {
         let directory = tempDirectory()
         let services = makeServices(tempDirectory: directory)
-        let controller = CrosshairController(services: services)
+        let controller = makeController(services)
         let bogus = directory.appending(path: "not-an-image.txt")
         try? "hello".write(to: bogus, atomically: true, encoding: .utf8)
 
@@ -117,7 +93,7 @@ struct CrosshairControllerTests {
     @Test func importingARealImageSwitchesToImageShapeAndClearsTheError() {
         let directory = tempDirectory()
         let services = makeServices(tempDirectory: directory)
-        let controller = CrosshairController(services: services, imagesDirectory: directory.appending(path: "Images"))
+        let controller = makeController(services)
         let source = directory.appending(path: "source.png")
         writeOnePixelPNG(to: source)
 
