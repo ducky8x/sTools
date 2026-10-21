@@ -56,6 +56,19 @@ struct NBBOverlayControllerTests {
         #expect(reloaded.settings.width == 400)
     }
 
+    /// The page's preview shows only Ninjabrain Bot's live result: the intro's sample stays in the intro (spec 4,
+    /// step 12).
+    @MainActor
+    @Test func thePreviewNeverShowsTheIntrosSample() {
+        let controller = NBBOverlayController(services: makeServices(tempDirectory: tempDirectory()), connection: NBBConnection(source: FakeEventSource([])))
+        controller.sample = NBBEvents.Stronghold(
+            resultType: .triangulation,
+            predictions: [NBBEvents.Prediction(chunkX: -41, chunkZ: 108, certainty: 0.94, overworldDistance: 1580)],
+            eyeThrows: [], playerPosition: nil)
+        #expect(controller.previewContent == .hidden)
+        #expect(controller.previewMessages.isEmpty)
+    }
+
     @MainActor
     @Test func setEnabledIsIdempotentAndToggles() {
         let controller = NBBOverlayController(services: makeServices(tempDirectory: tempDirectory()), connection: NBBConnection(source: FakeEventSource([])))

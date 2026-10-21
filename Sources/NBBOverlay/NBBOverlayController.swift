@@ -52,6 +52,19 @@ public final class NBBOverlayController: ToolController {
     /// Whether the stronghold subscription is currently connected.
     public var isReachable: Bool { connection.isReachable }
 
+    /// What the overlay shows for Ninjabrain Bot's live result, for the page's preview. Never the intro's sample,
+    /// which is shown only in the intro's trial.
+    var previewContent: NBBOverlayContent {
+        NBBOverlayLayout.content(
+            stronghold: connection.stronghold, blind: connection.blind, divine: connection.divine,
+            boat: connection.boat, allAdvancements: connection.allAdvancements, maxPredictionRows: settings.maxPredictionRows)
+    }
+
+    /// Ninjabrain Bot's information messages as the overlay shows them, for the page's preview.
+    var previewMessages: [(severity: NBBEvents.MessageSeverity, text: String)] {
+        NBBOverlayLayout.plainTextMessages(from: connection.informationMessages?.informationMessages ?? [])
+    }
+
     /// Resets every setting to its shipped default.
     public func resetToDefault() {
         settings = NBBOverlaySettings.defaultValue
