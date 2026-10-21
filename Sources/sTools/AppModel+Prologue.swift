@@ -73,7 +73,7 @@ extension AppModel: PrologueHost {
             for tool in toolsToSwitchOff() { switchOff(tool) }
         }
         history = NavigationHistory(start: .home)
-        withAnimation(STMotion.resolve(STMotion.page, reduce: theme.reduceMotion)) {
+        STMotion.animate(STMotion.page, reduce: theme.reduceMotion) {
             prologue = nil
         }
     }

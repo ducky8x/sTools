@@ -216,7 +216,7 @@ public struct STSlider: View {
                     Text(valueText(value))
                         .font(figuresFont)
                         .foregroundStyle(STColor.ink)
-                        .contentTransition(theme.reduceMotion ? .opacity : .numericText(value: value))
+                        .contentTransition(theme.reduceMotion ? .identity : .numericText(value: value))
                         .stAnimation(STMotion.quick, value: value)
                 }
                 .frame(minWidth: 44)

@@ -196,7 +196,8 @@ struct STTypingText: View {
         self.font = font
         self.color = color
         self.reduceMotion = reduceMotion
-        _progress = State(initialValue: edit == nil ? 1 : 0)
+        // Settled from the first frame while motion is reduced, so a new glyph never blinks in.
+        _progress = State(initialValue: edit == nil || reduceMotion ? 1 : 0)
     }
 
     var body: some View {
@@ -215,7 +216,7 @@ struct STTypingText: View {
                 font: font,
                 color: color))
             .onAppear {
-                withAnimation(STMotion.resolve(STTypingMotion.settle, reduce: reduceMotion)) { progress = 1 }
+                STMotion.animate(STTypingMotion.settle, reduce: reduceMotion) { progress = 1 }
             }
     }
 
@@ -229,7 +230,8 @@ struct STTypingText: View {
 
 /// A borderless single-line field: `surface` fill, a `stroke` baseline that becomes an accent
 /// underline on focus. Typing animates (spec section 3.4): each new character settles in with a
-/// 2 pt rise, deleted characters shrink out, invalid input shakes once.
+/// 2 pt rise, deleted characters shrink out, invalid input shakes once. None of it moves while
+/// motion is reduced.
 ///
 /// The real `TextField` stays in charge of editing, caret, selection, paste, input methods and
 /// VoiceOver; its glyphs are made transparent and an overlay draws the same text so only the

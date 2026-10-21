@@ -1,7 +1,7 @@
 import STDesign
 import SwiftUI
 
-/// The page for the current route. Pages slide in and fade; with Reduce Motion they crossfade.
+/// The page for the current route. Pages slide in and fade; while motion is reduced they change in place.
 struct PageArea: View {
     let model: AppModel
     @Environment(\.stTheme) private var theme
@@ -19,7 +19,7 @@ struct PageArea: View {
 
     private var transition: AnyTransition {
         theme.reduceMotion
-            ? .opacity
+            ? .identity
             : .asymmetric(insertion: .offset(x: 28).combined(with: .opacity), removal: .opacity)
     }
 

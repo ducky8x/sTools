@@ -28,7 +28,8 @@ struct RecordingSourcesSection: View {
                     .buttonStyle(STButtonStyle(.secondary))
                     .disabled(controller.isLayoutLocked)
                     .popover(isPresented: $showsAdd, arrowEdge: .bottom) {
-                        AddSourcePopover(controller: controller) { showsAdd = false }
+                        // A popover is a window of its own, so it gets its own motion root.
+                        AddSourcePopover(controller: controller) { showsAdd = false }.stMotionRoot(theme)
                     }
             }
             Text("Minecraft and sTools\u{2019} overlays are always the bottom layer. Sources stack on top, front first.")

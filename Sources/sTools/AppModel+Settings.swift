@@ -58,8 +58,10 @@ extension AppModel {
 
     @discardableResult
     func importSettings(from url: URL) async throws -> SettingsBackup.ImportReport {
-        try await SettingsBackup(directory: settings.directory, store: settings)
+        let report = try await SettingsBackup(directory: settings.directory, store: settings)
             .importSettings(from: url, knownVersions: Self.knownSettingsVersions)
+        reloadAppearance()
+        return report
     }
 
     /// Wipes every settings document; the caller must relaunch sTools afterward (settings objects

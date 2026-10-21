@@ -49,6 +49,8 @@ final class AppModel {
     @ObservationIgnored var lastKarabinerRequirement: KarabinerRequirement?
     /// What the Prologue's trials have seen so far; fresh each time the introduction starts.
     @ObservationIgnored var trials = TrialSession()
+    /// Follows macOS's Reduce motion into the theme. Only the real app has one; tests set the theme themselves.
+    @ObservationIgnored var systemMotion: SystemMotionWatcher?
 
     /// Home ▸ Hotkeys (spec 6.1). Built lazily so its `toolStates`/`handler` closures can capture
     /// `self` — they only run on an actual key press, well after `init` returns.
@@ -106,6 +108,7 @@ final class AppModel {
         minecraft.start()
         _ = hotkeys // starts registering any saved hotkeys immediately, matching the other services.
         restoreToolsIfNeeded()
+        systemMotion = SystemMotionWatcher(theme: theme)
     }
 
     /// Closing the window mid-recording asks first (spec 5.4.4): keep recording in the background, stop and

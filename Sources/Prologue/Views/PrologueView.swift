@@ -3,7 +3,8 @@ import SwiftUI
 
 /// The whole introduction inside the main window: the progress line and the gold progress rule on top, the step
 /// as a page that slides (forward from the right, back from the left), and the controls along the bottom
-/// (spec 4.1). The greeting shows on its own, without chrome.
+/// (spec 4.1). The greeting shows on its own, without chrome. While motion is reduced pages change in place and
+/// every step shows its final state at once; reducing motion mid-step completes whatever was playing.
 public struct PrologueView: View {
     private let model: PrologueModel
 
@@ -45,6 +46,12 @@ public struct PrologueView: View {
         .animation(STMotion.resolve(.easeOut(duration: 0.2), reduce: theme.reduceMotion), value: flow.isConfirmingSkip)
         .background(AnimationCompleter(animations: model.animations))
         .onChange(of: flow.visit) { _, _ in sound.play(.page) }
+        .onChange(of: theme.reduceMotion) { _, reduced in
+            guard reduced else { return }
+            model.animations.completeAll()
+            // The Finale can outlast its title's gate, so finish it here too.
+            model.completeFinale()
+        }
     }
 
     private var pages: some View {
@@ -64,7 +71,7 @@ public struct PrologueView: View {
 
     @ViewBuilder private func page(for step: PrologueStep) -> some View {
         if step == .greeting {
-            GreetingView(model: model)
+            GreetingView(model: model, settled: theme.reduceMotion)
         } else if let permission = step.permission {
             PermissionStepView(model: model, permission: permission)
         } else if let companion = step.companion {
@@ -72,7 +79,7 @@ public struct PrologueView: View {
         } else if let trial = step.trial {
             TrialStepView(model: model, trial: trial)
         } else if step == .youreSet {
-            YoureSetView(model: model)
+            YoureSetView(model: model, settled: theme.reduceMotion)
         } else {
             OpenSToolsView(model: model)
         }

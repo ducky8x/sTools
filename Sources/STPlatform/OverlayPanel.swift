@@ -41,6 +41,9 @@ public final class OverlayPanel: NSPanel {
             defer: false
         )
         isReleasedWhenClosed = false
+        // Overlays appear and leave exactly when asked: AppKit never animates them in or out. Any fade is the
+        // overlay's own, and stops while motion is reduced.
+        animationBehavior = .none
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false

@@ -11,6 +11,7 @@ struct AppearanceSettings: SettingsDocument {
     var soundsEnabled = true
     /// 0...1.
     var soundVolume = 0.7
+    /// Reduce animations, stored under its older name: `.reduced` is on.
     var motionMode = STMotionMode.full
     /// 0.9...1.3.
     var textScale = 1.0
@@ -18,19 +19,26 @@ struct AppearanceSettings: SettingsDocument {
 
     init() {}
 
+    /// The Reduce animations switch.
+    var reducesAnimations: Bool {
+        get { motionMode == .reduced }
+        set { motionMode = newValue ? .reduced : .full }
+    }
+
     private enum CodingKeys: String, CodingKey {
         case soundsEnabled, soundVolume, motionMode, textScale, accentHex
     }
 
-    /// Every key is optional on disk, so a file from an older or hand-edited build still loads.
+    /// Every key is optional on disk, and one that's missing, null or of the wrong type falls back to its default
+    /// alone, so a file from an older or hand-edited build still loads with everything else it holds.
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let defaults = AppearanceSettings()
-        soundsEnabled = try container.decodeIfPresent(Bool.self, forKey: .soundsEnabled) ?? defaults.soundsEnabled
-        soundVolume = try container.decodeIfPresent(Double.self, forKey: .soundVolume) ?? defaults.soundVolume
-        motionMode = try container.decodeIfPresent(STMotionMode.self, forKey: .motionMode) ?? defaults.motionMode
-        textScale = try container.decodeIfPresent(Double.self, forKey: .textScale) ?? defaults.textScale
-        accentHex = try container.decodeIfPresent(String.self, forKey: .accentHex) ?? defaults.accentHex
+        soundsEnabled = container.lossy(Bool.self, .soundsEnabled) ?? defaults.soundsEnabled
+        soundVolume = container.lossy(Double.self, .soundVolume) ?? defaults.soundVolume
+        motionMode = container.lossy(STMotionMode.self, .motionMode) ?? defaults.motionMode
+        textScale = container.lossy(Double.self, .textScale) ?? defaults.textScale
+        accentHex = container.lossy(String.self, .accentHex) ?? defaults.accentHex
     }
 
     /// Pushes these values into the live theme.
@@ -51,6 +59,13 @@ struct AppearanceSettings: SettingsDocument {
         motionMode = theme.motionMode
         textScale = theme.textScale
         accentHex = theme.accentHex
+    }
+}
+
+extension KeyedDecodingContainer {
+    /// The decoded value, or nil when the key is missing, null or of the wrong type.
+    fileprivate func lossy<T: Decodable>(_ type: T.Type, _ key: Key) -> T? {
+        (try? decodeIfPresent(type, forKey: key)) ?? nil
     }
 }
 
