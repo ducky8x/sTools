@@ -23,6 +23,10 @@ public struct NBBOverlaySettingsView: View {
                 Text("Ninjabrain Bot \(version)").stStyle(.caption).foregroundStyle(STColor.inkSecondary)
             }
 
+            STPlate {
+                NBBPagePreview(controller: controller)
+            }
+
             VStack(alignment: .leading, spacing: 0) {
                 STSettingsRow("Move and resize by dragging") {
                     STSwitch(isOn: $controller.settings.placementModeEnabled, label: "Move and resize by dragging")
@@ -169,5 +173,43 @@ private struct STNumberField: View {
 
     private func commit() {
         if let parsed = Int(text) { value = parsed } else { text = String(value) }
+    }
+}
+
+/// The page's preview (spec 3.5: every tool page has one): the overlay as it shows over the game with Ninjabrain
+/// Bot's live result, shrunk to fit if it's wider than the plate, or a line saying where it will appear.
+private struct NBBPagePreview: View {
+    let controller: NBBOverlayController
+    @Environment(\.stTheme) private var theme
+
+    private var settings: NBBOverlaySettings {
+        var settings = controller.settings
+        settings.placementModeEnabled = false
+        return settings
+    }
+
+    private var overlaySize: CGSize {
+        CGSize(width: CGFloat(settings.width), height: CGFloat(settings.width) / settings.aspectRatio)
+    }
+
+    var body: some View {
+        let content = controller.previewContent
+        let messages = controller.previewMessages
+        if content == .hidden && messages.isEmpty {
+            Text("Ninjabrain Bot\u{2019}s result appears here as it will over the game, once it has one.")
+                .stStyle(.caption)
+                .foregroundStyle(theme.inkTertiary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity, minHeight: 96)
+                .padding(.horizontal, 16)
+        } else {
+            GeometryReader { proxy in
+                let scale = min(1, (proxy.size.width - 20) / overlaySize.width)
+                NBBOverlayView(content: content, messages: messages, settings: settings)
+                    .scaleEffect(scale)
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+            }
+            .frame(height: overlaySize.height * min(1, 600 / overlaySize.width) + 20)
+        }
     }
 }
