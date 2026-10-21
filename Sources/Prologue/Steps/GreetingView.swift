@@ -71,6 +71,8 @@ struct GreetingView: View {
                     .multilineTextAlignment(.center)
                     .padding(.top, 18)
                     .padding(.horizontal, 32)
+                // Begin keeps its identity when the ceremony settles, so a click that lands while it's arriving
+                // still presses it; one that isn't there yet arrives at once with the rest.
                 ZStack {
                     if showsBegin {
                         Button(Copy.begin) { model.next() }
@@ -79,7 +81,6 @@ struct GreetingView: View {
                             .transition(theme.reduceMotion ? .identity : .opacity.combined(with: .offset(y: 6)))
                     }
                 }
-                .id(settleCount)
                 .frame(height: 40)
                 .padding(.top, 34)
                 Spacer(minLength: 20)
