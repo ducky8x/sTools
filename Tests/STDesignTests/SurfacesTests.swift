@@ -810,7 +810,8 @@ struct STTextFieldInputTests {
             focused.spin()
             rep = focused.capture()
         }
-        #expect(isClose(pixel(unfocused, x: 20, y: y), hex: STPalette.stroke))
+        // `render` draws at 2x while the focused window takes its display's scale, so each is read at its own bottom row.
+        #expect(isClose(pixel(unfocused, x: 20, y: unfocused.pixelsHigh - 1), hex: STPalette.stroke))
         #expect(isClose(pixel(rep, x: 20, y: y), hex: STPalette.gold, tolerance: 12))
         #expect(isClose(pixel(rep, x: rep.pixelsWide - 20, y: y), hex: STPalette.gold, tolerance: 12))
     }
