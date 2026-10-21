@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 @testable import Crosshair
@@ -43,4 +44,96 @@ func tempDirectory() -> URL {
     let url = FileManager.default.temporaryDirectory.appending(path: "sTools-crosshair-tests-\(UUID().uuidString)")
     try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     return url
+}
+
+// MARK: - Rendering
+
+/// A bitmap as premultiplied RGBA bytes in device RGB, top row first.
+struct RGBABitmap {
+    let width: Int
+    let height: Int
+    var bytes: [UInt8]
+
+    /// A fully transparent bitmap.
+    init(width: Int, height: Int) {
+        self.width = width
+        self.height = height
+        bytes = [UInt8](repeating: 0, count: width * height * 4)
+    }
+
+    /// `image`'s pixels, read back without resampling or color matching.
+    init(_ image: CGImage) {
+        self.init(width: image.width, height: image.height)
+        let (width, height) = (self.width, self.height)
+        bytes.withUnsafeMutableBytes { buffer in
+            let context = CGContext(
+                data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+    }
+
+    /// The pixel's red, green, blue and alpha; transparent outside the bitmap.
+    subscript(x: Int, y: Int) -> [UInt8] {
+        guard x >= 0, y >= 0, x < width, y < height else { return [0, 0, 0, 0] }
+        let index = (y * width + x) * 4
+        return Array(bytes[index..<index + 4])
+    }
+
+    /// Whether every channel of the pixel is within `tolerance` of `color`.
+    func pixel(x: Int, y: Int, matches color: [UInt8], tolerance: Int = 0) -> Bool {
+        zip(self[x, y], color).allSatisfy { abs(Int($0) - Int($1)) <= tolerance }
+    }
+
+    /// `color` laid under the pixel, the way a translucent pixel shows over an opaque background.
+    func pixel(x: Int, y: Int, over color: [UInt8]) -> [UInt8] {
+        let top = self[x, y]
+        let cover = Int(top[3])
+        return (0..<4).map { UInt8(Int(top[$0]) + (Int(color[$0]) * (255 - cover) + 127) / 255) }
+    }
+
+    /// The pixels that aren't fully transparent.
+    var opaqueBounds: (minX: Int, minY: Int, maxX: Int, maxY: Int)? {
+        var bounds: (minX: Int, minY: Int, maxX: Int, maxY: Int)?
+        for y in 0..<height {
+            for x in 0..<width where self[x, y][3] > 0 {
+                bounds = (min(bounds?.minX ?? x, x), min(bounds?.minY ?? y, y), max(bounds?.maxX ?? x, x), max(bounds?.maxY ?? y, y))
+            }
+        }
+        return bounds
+    }
+}
+
+/// Draws `view` into a new bitmap at `scale` backing pixels per point, as a display of that scale shows
+/// it, without putting any window on screen.
+@MainActor
+func capture(_ view: NSView, scale: CGFloat) -> RGBABitmap {
+    view.layoutSubtreeIfNeeded()
+    let size = view.bounds.size
+    let rep = NSBitmapImageRep(
+        bitmapDataPlanes: nil, pixelsWide: Int((size.width * scale).rounded()), pixelsHigh: Int((size.height * scale).rounded()),
+        bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+        colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+    rep.size = size
+    view.cacheDisplay(in: view.bounds, to: rep)
+    return RGBABitmap(rep.cgImage!)
+}
+
+/// The real overlay: the controller's own panel, given `settings` and switched on with `displays`, its
+/// content drawn at the scale of the display it's placed on. The panel is never ordered in.
+@MainActor
+func renderOverlay(_ settings: CrosshairSettings, displays: [DisplayInfo], customImage: URL? = nil) -> (frame: CGRect, bitmap: RGBABitmap, previewImage: CGImage?) {
+    _ = NSApplication.shared
+    let controller = makeController(makeServices(tempDirectory: tempDirectory(), displays: displays))
+    if let customImage { controller.importImage(from: customImage) }
+    var settings = settings
+    settings.imageName = controller.settings.imageName
+    controller.settings = settings
+    controller.setEnabled(true)
+    defer { controller.setEnabled(false) }
+    let display = settings.displayChoice == .specific
+        ? displays.first { $0.id == settings.specificDisplayID }!
+        : displays.first(where: \.isMain)!
+    let frame = controller.panel.frame
+    return (frame, capture(controller.panel.contentView!, scale: display.backingScale), controller.previewImage)
 }

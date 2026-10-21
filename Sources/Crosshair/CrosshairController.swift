@@ -127,7 +127,9 @@ public final class CrosshairController: ToolController {
             displayFrame: display.frame, scale: display.backingScale,
             spriteSize: sprite.size, hotPixel: sprite.hot,
             offsetX: settings.offsetX, offsetY: settings.offsetY)
-        panel.setContent(CrosshairOverlayView(image: sprite.image, spriteOrigin: placement.spriteOrigin, canvasSize: placement.canvasSize))
+        panel.setContent(CrosshairOverlayView(
+            image: sprite.image, spriteOrigin: placement.spriteOrigin, canvasSize: placement.canvasSize,
+            scale: display.backingScale))
         if showsPanel {
             panel.show(frame: placement.windowFrame)
         } else {
