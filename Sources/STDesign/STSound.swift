@@ -5,6 +5,12 @@ import SwiftUI
 /// The UI sound set. Each case maps to a bundled `<rawValue>.wav` in `Resources/Sounds`.
 public enum STSound: String, CaseIterable, Sendable {
     case click, tick, stamp, page, chime, recordStart, recordStop
+
+    /// The bundled file, for code that plays a sound at its own volume instead of through `STSoundPlayer`,
+    /// such as Timer Overlay's cues before zero. Asking loads nothing.
+    public var resourceURL: URL? {
+        STResources.bundle.url(forResource: rawValue, withExtension: "wav", subdirectory: "Resources/Sounds")
+    }
 }
 
 /// Plays the bundled UI sounds, honoring the in-app sound settings and macOS's
@@ -58,9 +64,7 @@ public final class STSoundPlayer {
         STSoundPlayer(silentTheme: STTheme(soundsEnabled: false))
     }
 
-    nonisolated static func resourceURL(for sound: STSound) -> URL? {
-        STResources.bundle.url(forResource: sound.rawValue, withExtension: "wav", subdirectory: "Resources/Sounds")
-    }
+    nonisolated static func resourceURL(for sound: STSound) -> URL? { sound.resourceURL }
 
     func isPlaying(_ sound: STSound) -> Bool { players[sound]?.isPlaying ?? false }
 

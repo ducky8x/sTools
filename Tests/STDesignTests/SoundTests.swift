@@ -155,3 +155,14 @@ func shouldPlayRequiresAllThree(_ soundsEnabled: Bool, _ volume: Double, _ syste
     player.play(.click)
     #expect(player.loadedCount == 0, "sounds off: nothing to load")
 }
+
+/// Code that plays a UI sound at its own volume (Timer Overlay's cues) finds the same bundled file the player
+/// loads, without loading anything.
+@Test(arguments: STSound.allCases)
+func publicResourceURLIsTheBundledFile(_ sound: STSound) throws {
+    let url = try #require(sound.resourceURL)
+    #expect(url.lastPathComponent == "\(sound.rawValue).wav")
+    #expect(url.deletingLastPathComponent().lastPathComponent == "Sounds")
+    #expect(url == STSoundPlayer.resourceURL(for: sound))
+    #expect(FileManager.default.fileExists(atPath: url.path))
+}
