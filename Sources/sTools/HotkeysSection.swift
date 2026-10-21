@@ -242,8 +242,6 @@ enum HotkeyActionNaming {
     static func issueText(_ issue: HotkeyComboIssue) -> String {
         switch issue {
         case .unsupportedKey: "Unsupported key"
-        case .needsModifier: "Needs a modifier key"
-        case .needsCommandOrControl: "Needs ⌘ or ⌃"
         case .reserved(let name): "Reserved: \(name)"
         }
     }
