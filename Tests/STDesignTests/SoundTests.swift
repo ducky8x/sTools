@@ -147,3 +147,11 @@ func shouldPlayRequiresAllThree(_ soundsEnabled: Bool, _ volume: Double, _ syste
     STSoundPlayer.silent.play(.stamp)
     #expect(!STSoundPlayer.silent.isPlaying(.stamp))
 }
+
+/// Nothing loads until a sound is asked to play, and a sound that's off never loads at all.
+@MainActor @Test func soundsLoadOnlyWhenTheyFirstPlay() {
+    let player = STSoundPlayer(theme: STTheme(soundsEnabled: false), systemSoundsEnabled: { true })
+    #expect(player.loadedCount == 0)
+    player.play(.click)
+    #expect(player.loadedCount == 0, "sounds off: nothing to load")
+}
