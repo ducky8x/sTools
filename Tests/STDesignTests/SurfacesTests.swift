@@ -281,8 +281,13 @@ private func inkMass(_ rep: NSBitmapImageRep) -> Double {
     luminance(rep).flatMap { $0 }.filter { $0 > 0.15 }.reduce(0, +)
 }
 
-/// The pixel shift (within 3 px) that best lays `b` over `a`, and how well it fits.
+/// The pixel shift (within 3 px) that best lays `b` over `a`, and how well it fits. Renders of different sizes
+/// record an issue and fit nowhere, instead of reading past the smaller one and crashing the test run.
 private func bestShift(_ a: NSBitmapImageRep, _ b: NSBitmapImageRep) -> (dx: Int, dy: Int, error: Double, errorUnshifted: Double) {
+    guard a.pixelsWide == b.pixelsWide, a.pixelsHigh == b.pixelsHigh else {
+        Issue.record("Renders differ in size: \(a.pixelsWide)×\(a.pixelsHigh) and \(b.pixelsWide)×\(b.pixelsHigh) px")
+        return (0, 0, .infinity, .infinity)
+    }
     let la = luminance(a), lb = luminance(b)
     let margin = 4
     var best = (dx: 0, dy: 0, error: Double.infinity)
