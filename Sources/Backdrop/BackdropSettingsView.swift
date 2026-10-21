@@ -49,9 +49,8 @@ public struct BackdropSettingsView: View {
                             .init(.thisDisplay, "This display"), .init(.allDisplays, "All displays"),
                         ])
                     }
-                    STSettingsRow("Fill transition") {
-                        STSlider(value: $controller.settings.fillTransitionSeconds, in: 0...2, label: "Fill transition", valueText: { String(format: "%.1fs", $0) })
-                    }
+                    // "Fill transition" (spec 5.2) stays hidden until a fill change can crossfade: today the new fill
+                    // replaces the old at once. The stored value is kept for when it does.
                     STSettingsRow("Show only while Minecraft is focused") {
                         STSwitch(isOn: $controller.settings.hidesWhenMinecraftNotFocused, label: "Show only while Minecraft is focused")
                     }

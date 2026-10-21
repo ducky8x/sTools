@@ -30,6 +30,12 @@ struct StepTitle: View {
     var standfirst: String?
 
     @Environment(\.stTheme) private var theme
+    /// `completionCount` when the title appeared: a later value means a click or key completed it.
+    @State private var countAtAppear: Int?
+
+    private var isCompleted: Bool {
+        countAtAppear.map { $0 != model.animations.completionCount } ?? false
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -39,7 +45,9 @@ struct StepTitle: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
                 .accessibilityAddTraits(.isHeader)
-            STGiltRule()
+            // Completing swaps in a rule that's already drawn, so one still drawing doesn't finish on its own.
+            STGiltRule(animatesIn: !isCompleted)
+                .id(isCompleted)
                 .padding(.top, 6)
             if let standfirst {
                 Text(standfirst)
@@ -50,6 +58,7 @@ struct StepTitle: View {
             }
         }
         .onAppear {
+            if countAtAppear == nil { countAtAppear = model.animations.completionCount }
             // While motion is reduced the title is simply there: nothing for a key to complete.
             guard !theme.reduceMotion else { return }
             model.animations.run(for: TypewriterText.duration(of: title))

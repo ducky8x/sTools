@@ -508,6 +508,14 @@ struct ReduceAnimationsWindowTests {
         let hosted = window(reducedHarness())
         #expect(hosted.window.animationBehavior == .none)
     }
+
+    /// Found in the bug hunt: closing the window mid-recording asks first, and that alert popped in with AppKit's
+    /// alert animation whatever Reduce animations said. It's built here and never run, so nothing is shown.
+    @Test func theStillRecordingAlertAppearsWithoutAppKitsAnimation() {
+        #expect(reducedHarness().model.stillRecordingAlert().window.animationBehavior == .none)
+        #expect(Harness(theme: STTheme(systemReduceMotion: true)).model.stillRecordingAlert().window.animationBehavior == .none)
+        #expect(Harness().model.stillRecordingAlert().window.animationBehavior == .default, "the control: AppKit's own")
+    }
 }
 
 // MARK: - The hotkey confirmation

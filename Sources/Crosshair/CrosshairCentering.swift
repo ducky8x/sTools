@@ -9,6 +9,9 @@ enum CrosshairCentering {
     /// is in pixels there too.
     static let minecraftNote = "With the default settings, this crosshair sits exactly on Minecraft\u{2019}s own when Minecraft covers the menu bar and Dock (1920 \u{00D7} 1080, GUI scale 3)."
 
+    /// Spec 5.3: on a scaled resolution macOS resamples the whole screen, so nothing can be pixel-exact.
+    static let scaledModeNote = "This display uses a scaled resolution, so macOS resamples everything on it and the crosshair may look slightly soft. Its Default resolution in System Settings \u{25B8} Displays keeps it pixel-exact."
+
     /// Explains when the chosen width can't be split evenly across the display's middle. Nil when it sits
     /// exactly on the middle, when an offset moves it off the middle on purpose, or for an image (placed by
     /// its anchor).

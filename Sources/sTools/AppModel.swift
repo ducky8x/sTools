@@ -120,13 +120,7 @@ final class AppModel {
     /// window again.
     func mainWindowWillClose() {
         guard let recording = controller(for: .screenRecording, as: ScreenRecordingController.self), recording.isRecording else { return }
-        let alert = NSAlert()
-        alert.messageText = "Screen Recording is still recording."
-        alert.informativeText = "It can keep recording with the window closed. Open sTools from the Dock to stop it later."
-        alert.addButton(withTitle: "Keep Recording")
-        alert.addButton(withTitle: "Stop and Save")
-        alert.addButton(withTitle: "Cancel")
-        switch alert.runModal() {
+        switch stillRecordingAlert().runModal() {
         case .alertFirstButtonReturn:
             break
         case .alertSecondButtonReturn:
@@ -137,6 +131,21 @@ final class AppModel {
         default:
             DispatchQueue.main.async { [weak self] in self?.openMainWindow?() }
         }
+    }
+
+    /// The question asked when the window closes mid-recording: Keep Recording, Stop and Save, or Cancel. While
+    /// motion is reduced it appears without AppKit's alert animation, like the window it comes from (spec 3.4).
+    func stillRecordingAlert() -> NSAlert {
+        let alert = NSAlert()
+        alert.messageText = "Screen Recording is still recording."
+        alert.informativeText = "It can keep recording with the window closed. Open sTools from the Dock to stop it later."
+        alert.addButton(withTitle: "Keep Recording")
+        alert.addButton(withTitle: "Stop and Save")
+        alert.addButton(withTitle: "Cancel")
+        // Laid out now rather than just before it shows, so nothing redoes its window after this.
+        alert.layout()
+        alert.window.animationBehavior = WindowConfigurator.animationBehavior(reducesMotion: theme.reduceMotion)
+        return alert
     }
 
     /// The controller registered for `tool`, if it is of type `type`.
