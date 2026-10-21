@@ -69,6 +69,54 @@ struct AppearanceSettingsTests {
         #expect(decoded.soundVolume == 0.4)
         #expect(decoded.soundsEnabled)
         #expect(decoded.accentHex == STPalette.gold)
+        #expect(!decoded.reducesAnimations)
+    }
+
+    @Test(arguments: [#""motionMode": "sideways""#, #""motionMode": 1"#, #""motionMode": null"#, #""motionMode": true"#])
+    func aBadKeyFallsBackAloneAndKeepsTheRest(badKey: String) throws {
+        let json = ##"{"soundVolume": 0.4, "soundsEnabled": false, "accentHex": "#7DBF86", "textScale": 1.2, "##
+            + badKey + "}"
+        let decoded = try JSONDecoder().decode(AppearanceSettings.self, from: Data(json.utf8))
+        #expect(decoded.motionMode == .full)
+        #expect(decoded.soundVolume == 0.4)
+        #expect(!decoded.soundsEnabled)
+        #expect(decoded.accentHex == "#7DBF86")
+        #expect(decoded.textScale == 1.2)
+    }
+
+    @Test func everyKeyOfTheWrongTypeFallsBackToItsDefault() throws {
+        let json = #"{"soundVolume": "loud", "soundsEnabled": "yes", "accentHex": 7, "textScale": [], "motionMode": {}}"#
+        #expect(try JSONDecoder().decode(AppearanceSettings.self, from: Data(json.utf8)) == AppearanceSettings.defaultValue)
+    }
+
+    @Test func aFileThatChoseReducedMotionKeepsReduceAnimationsOn() throws {
+        let decoded = try JSONDecoder().decode(AppearanceSettings.self, from: Data(#"{"motionMode": "reduced"}"#.utf8))
+        #expect(decoded.reducesAnimations)
+    }
+
+    @Test func aBadFileOnDiskStillLoadsWhatItCan() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "sTools-appearance-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let file = #"{"version": 1, "value": {"motionMode": "reduced", "soundVolume": "loud", "textScale": 1.1}}"#
+        try Data(file.utf8).write(to: directory.appending(path: "appearance.json"))
+        let loaded = SettingsStore(directory: directory).load(AppearanceSettings.self)
+        #expect(loaded.reducesAnimations)
+        #expect(loaded.soundVolume == AppearanceSettings.defaultValue.soundVolume)
+        #expect(loaded.textScale == 1.1)
+        #expect(FileManager.default.fileExists(atPath: directory.appending(path: "appearance.json").path),
+                "not moved aside as corrupt")
+    }
+
+    @Test func theSwitchIsTheMotionMode() {
+        var settings = AppearanceSettings()
+        #expect(!settings.reducesAnimations)
+        settings.reducesAnimations = true
+        #expect(settings.motionMode == .reduced)
+        settings.reducesAnimations = false
+        #expect(settings.motionMode == .full)
+        settings.motionMode = .reduced
+        #expect(settings.reducesAnimations)
     }
 
     @Test func percentTextAndParseAgree() {
