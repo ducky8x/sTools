@@ -1,12 +1,20 @@
+import CoreGraphics
 import Foundation
 import Testing
 @testable import NBBOverlay
 @testable import STPlatform
 
+/// The tests' one display, its main, far outside every real display, so the overlay panel ordered in never shows on
+/// screen.
+private let offScreenDisplay = DisplayInfo(
+    id: 1, name: "Off screen", frame: CGRect(x: -9000, y: -9000, width: 1920, height: 1080),
+    bounds: CGRect(x: -9000, y: 9000, width: 1920, height: 1080), backingScale: 1,
+    pixelSize: CGSize(width: 1920, height: 1080), isMain: true)
+
 @MainActor
 private func makeServices(tempDirectory: URL, instances: [MinecraftInstance] = []) -> ToolServices {
     let settings = SettingsStore(directory: tempDirectory)
-    let displays = DisplayDirectory()
+    let displays = DisplayDirectory(screenProvider: { [offScreenDisplay] })
     let minecraft = MinecraftLocator(source: StaticMinecraftWindowSource(instances: instances))
     let permissions = PermissionCenter(prober: NeverPromptingProber())
     return ToolServices(settings: settings, displays: displays, minecraft: minecraft, permissions: permissions)

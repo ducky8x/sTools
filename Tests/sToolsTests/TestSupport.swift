@@ -4,7 +4,7 @@ import Crosshair
 import Foundation
 import NBBOverlay
 import STDesign
-import STPlatform
+@testable import STPlatform
 import Synchronization
 import Testing
 @testable import sTools
@@ -85,8 +85,15 @@ final class OpenedURLs {
     var urls: [URL] = []
 }
 
-/// An `AppModel` wired to a temporary settings directory, fake permissions and a static Minecraft source.
-/// The directory is removed when the harness goes away.
+/// The harness's one display, its main: display 1, where `fakeInstance()` puts Minecraft, but far outside every
+/// real display, so a real controller switched on draws its panel where nothing shows on screen.
+let harnessDisplay = DisplayInfo(
+    id: 1, name: "Off screen", frame: CGRect(x: -9000, y: -9000, width: 1920, height: 1080),
+    bounds: CGRect(x: -9000, y: 9000, width: 1920, height: 1080), backingScale: 1,
+    pixelSize: CGSize(width: 1920, height: 1080), isMain: true)
+
+/// An `AppModel` wired to a temporary settings directory, fake permissions, a static Minecraft source and
+/// `harnessDisplay`. The directory is removed when the harness goes away.
 @MainActor
 final class Harness {
     let model: AppModel
@@ -116,7 +123,7 @@ final class Harness {
         controllers = fakes
         let opened = opened
         let permissions = PermissionCenter(prober: prober, openURL: { opened.urls.append($0) })
-        let services = ToolServices(settings: store, displays: DisplayDirectory(),
+        let services = ToolServices(settings: store, displays: DisplayDirectory(screenProvider: { [harnessDisplay] }),
                                     minecraft: MinecraftLocator(source: source), permissions: permissions)
         let all: [ToolID: any ToolController] = usesRealControllers
             ? [.nbbOverlay: NBBOverlayController(services: services),
