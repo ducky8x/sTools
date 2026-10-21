@@ -290,7 +290,7 @@ grep -qx '@executable_path/../Frameworks' <<< "$RPATHS" ||
 while IFS= read -r rpath; do
     [[ "$rpath" == /* && "$rpath" != /usr/lib/swift ]] || continue
     # install_name_tool removes one copy per -delete_rpath, and a universal binary may list it in each slice.
-    while otool -l "$APP/Contents/MacOS/sTools" | grep -qF " path $rpath (offset"; do
+    while grep -qF " path $rpath (offset" <<< "$(otool -l "$APP/Contents/MacOS/sTools")"; do
         xcrun install_name_tool -delete_rpath "$rpath" "$APP/Contents/MacOS/sTools" 2>/dev/null ||
             fail "cannot remove an rpath into the build folder or the toolchain from the executable"
     done

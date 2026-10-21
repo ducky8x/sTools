@@ -231,8 +231,12 @@ attach() {
 }
 
 # Whether anything under the given paths carries com.apple.provenance.
+# The listing is read to the end: with pipefail, grep -q stopping at the first match can kill the listing with
+# SIGPIPE and make the whole test fail, so a volume with many files would look clean.
 has_provenance() {
-    find "$@" -print0 | xargs -0 xattr -s 2>/dev/null | grep -q 'com\.apple\.provenance'
+    local names
+    names="$(find "$@" -print0 | xargs -0 xattr -s 2>/dev/null | grep -F 'com.apple.provenance' || true)"
+    [[ -n "$names" ]]
 }
 
 # Removes com.apple.provenance from everything under the given paths, from a one-off launchd job: launchd starts it
