@@ -164,13 +164,19 @@ public struct STSlider: View {
         return copy
     }
 
+    /// The width of a slider in a settings row, steppers and readout included.
+    public static let rowWidth: CGFloat = 260
+
     public var body: some View {
         Group {
             if labelsVisibility == .hidden {
+                // In a settings row every slider is the same width, so the tracks line up down a page instead of
+                // stretching to whatever the row's label leaves over.
                 HStack(spacing: 12) {
                     track.frame(minWidth: 96)
                     steppers
                 }
+                .frame(maxWidth: Self.rowWidth)
             } else {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 4) {

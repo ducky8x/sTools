@@ -35,7 +35,9 @@ struct FnKeysSection: View {
         return Button { picking = number } label: {
             VStack(alignment: .leading, spacing: 2) {
                 Text("F\(number)").stStyle(.label).foregroundStyle(STColor.ink)
-                Text(action).stStyle(.caption).foregroundStyle(theme.inkSecondary).lineLimit(2)
+                // Two lines kept for every action, so a one-line action's tile is as tall as its neighbors and
+                // the F labels line up across the grid.
+                Text(action).stStyle(.caption).foregroundStyle(theme.inkSecondary).lineLimit(2, reservesSpace: true)
             }
             .padding(8)
             .frame(maxWidth: .infinity, minHeight: 58, alignment: .topLeading)
@@ -60,16 +62,22 @@ struct FnKeysSection: View {
                 }
             }
             .background(STColor.surface)
+            // A popover is a window of its own, so it gets its own motion root.
+            .stMotionRoot(theme)
         }
     }
 }
 
-/// The conflict & rule checker's findings (spec 5.5.4). Advisory only.
+/// The conflict & rule checker's findings (spec 5.5.4), then, when the page shows hotkeys, the hotkey findings.
+/// Advisory only.
 struct FindingsSection: View {
     let controller: KeyRebinderController
+    /// Whether the hotkey findings are listed. False in the Prologue's trial.
+    var showsHotkeyFindings = true
     @Environment(\.stTheme) private var theme
 
     var body: some View {
+        let findings = Self.findings(controller: controller, showsHotkeyFindings: showsHotkeyFindings)
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
                 SectionHeading("Checker")
@@ -78,17 +86,38 @@ struct FindingsSection: View {
                     .buttonStyle(STButtonStyle(.quiet))
                     .help("Hide the checker and its red dots. Turn it back on in the settings below.")
             }
-            Text(controller.minecraftKeybinds == nil
-                 ? "Advisory only: nothing is ever blocked. Without Minecraft\u{2019}s keybinds, every key counts as a game input."
-                 : "Advisory only: nothing is ever blocked. Speedrun-rule findings cover keys Minecraft uses.")
+            Text(Self.caption(
+                keybindsKnown: controller.minecraftKeybinds != nil,
+                hotkeyFindingsCanShow: Self.hotkeyFindingsCanShow(controller: controller, showsHotkeyFindings: showsHotkeyFindings)))
                 .stStyle(.caption).foregroundStyle(theme.inkTertiary)
-            if controller.derived.findings.isEmpty {
+                .fixedSize(horizontal: false, vertical: true)
+            if findings.isEmpty {
                 Text("No problems found.").stStyle(.body).foregroundStyle(theme.inkSecondary)
             }
-            ForEach(controller.derived.findings) { finding in
+            ForEach(findings) { finding in
                 FindingRow(finding: finding) { select(finding) }
             }
         }
+    }
+
+    /// The rule findings, then the hotkey findings when they're listed.
+    static func findings(controller: KeyRebinderController, showsHotkeyFindings: Bool) -> [CheckerFinding] {
+        controller.derived.findings + (showsHotkeyFindings ? controller.derived.hotkeyFindings : [])
+    }
+
+    /// Whether hotkey findings can show at all: they're listed, Show hotkeys is on and hotkeys are on.
+    static func hotkeyFindingsCanShow(controller: KeyRebinderController, showsHotkeyFindings: Bool) -> Bool {
+        showsHotkeyFindings && controller.showsHotkeyLayer && controller.hotkeysAreOn
+    }
+
+    /// Without Minecraft's keybinds, speedrun-rule findings count every key as a game input, and hotkey findings
+    /// (when they can show) check against Minecraft 1.16.1's default keys.
+    static func caption(keybindsKnown: Bool, hotkeyFindingsCanShow: Bool) -> String {
+        guard !keybindsKnown else {
+            return "Advisory only: nothing is ever blocked. Speedrun-rule findings cover keys Minecraft uses."
+        }
+        return "Advisory only: nothing is ever blocked. Without Minecraft\u{2019}s keybinds, speedrun-rule findings count every key as a game input"
+            + (hotkeyFindingsCanShow ? ", and hotkey findings use Minecraft\u{2019}s default keys." : ".")
     }
 
     private func select(_ finding: CheckerFinding) {

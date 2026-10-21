@@ -8,20 +8,39 @@ import Testing
 // The introduction under Reduce animations (spec 3.4, 4.1): every step shows its final state at once, the Finale
 // switches the tried tools off together, and nothing waits on an animation that doesn't play. Views are hosted with
 // no window, so nothing reaches a screen; there SwiftUI never advances an animation, so a render shows where any
-// animation would start. Each reduced case has a full-motion control that must look or behave differently.
+// animation would start. Each reduced case has a full-motion control that must look or behave differently. Where a
+// test needs an animation to be under way, the view goes in a window that's never shown, where animations run.
 
 // MARK: - Harness
+
+/// Never ordered in, so nothing reaches a screen, and never touches the frames saved in the defaults.
+private final class UnshownWindow: NSWindow {
+    override func setFrameAutosaveName(_ name: NSWindow.FrameAutosaveName) -> Bool { true }
+    override func setFrameUsingName(_ name: NSWindow.FrameAutosaveName) -> Bool { false }
+}
 
 @MainActor
 private final class Still {
     let host: NSHostingView<AnyView>
+    /// Only with `running`: there SwiftUI plays animations in real time, so a render shows how far one has got.
+    private var window: NSWindow?
 
-    init<V: View>(_ view: V, size: CGSize = CGSize(width: 760, height: 560)) {
+    init<V: View>(_ view: V, size: CGSize = CGSize(width: 760, height: 560), running: Bool = false) {
         _ = NSApplication.shared
         host = NSHostingView(rootView: AnyView(view))
         host.frame = CGRect(origin: .zero, size: size)
         host.appearance = NSAppearance(named: .darkAqua)
+        if running {
+            let window = UnshownWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            self.window = window
+        }
         settle()
+    }
+
+    isolated deinit {
+        window?.contentView = nil
     }
 
     /// Lets pending updates (onAppear changes, observation) through without letting time pass for motion.
@@ -76,11 +95,11 @@ private func countingSound(_ counter: Counter) -> STSoundPlayer {
 }
 
 @MainActor
-private func show(_ model: PrologueModel, theme: STTheme, sound: STSoundPlayer = .silent) -> Still {
+private func show(_ model: PrologueModel, theme: STTheme, sound: STSoundPlayer = .silent, running: Bool = false) -> Still {
     Still(PrologueView(model: model)
         .stMotionRoot(theme)
         .environment(\.stTheme, theme)
-        .environment(\.stSoundPlayer, sound))
+        .environment(\.stSoundPlayer, sound), running: running)
 }
 
 @MainActor @Observable
@@ -185,6 +204,28 @@ struct PrologueReducedMotionTests {
         #expect(!model.animations.isRunning)
     }
 
+    /// Found in the bug hunt: completing the ceremony set each value to where it was already animating, which doesn't
+    /// stop an animation on its way there, so the screen kept fading up and the mark kept drawing after motion was
+    /// reduced. Here the ceremony plays in real time.
+    @Test func reducingMotionMidCeremonyStopsWhatWasMoving() async {
+        let theme = STTheme()
+        let box = StoreBox()
+        let model = PrologueModel(store: box.store, host: FakeHost(), startingAt: .greeting)
+        let hosted = show(model, theme: theme, running: true)
+        let fadingUp = await waitUntil {
+            let corner = rgb(hosted.capture(), x: 4, y: 4)
+            return corner != [0, 0, 0] && corner != background
+        }
+        #expect(fadingUp, "the control: the screen is on its way up from black")
+
+        theme.systemReduceMotion = true
+        let completed = hosted.capture()
+        let settled = show(PrologueModel(store: box.store, host: FakeHost(), startingAt: .greeting),
+                           theme: STTheme(systemReduceMotion: true), running: true).capture()
+        #expect(rgb(completed, x: 4, y: 4) == background, "no black left over the screen")
+        #expect(sameImage(completed, settled), "everything in its final place at once")
+    }
+
     // MARK: Steps
 
     @Test func stepTitlesNeverArmTheGate() {
@@ -196,6 +237,21 @@ struct PrologueReducedMotionTests {
         let full = PrologueModel(store: box.store, host: FakeHost(), startingAt: .crosshairTrial)
         _ = show(full, theme: STTheme()).capture()
         #expect(full.animations.isRunning, "the control: under full motion the title types")
+    }
+
+    /// Under full motion a click completes a step title's typing and its gilt rule at once (spec 4.1). Both were
+    /// already animating toward their final state, so completing them used to leave them arriving on their own.
+    /// Here the step plays in real time.
+    @Test func aClickCompletesTheTitleAndItsRuleAtOnce() async {
+        let box = StoreBox()
+        let model = PrologueModel(store: box.store, host: FakeHost(), startingAt: .crosshairTrial)
+        let hosted = show(model, theme: STTheme(), running: true)
+        let start = hosted.capture()
+        #expect(await waitUntil { !sameImage(hosted.capture(), start) }, "the control: the title is typing")
+        #expect(model.animations.completeAll(), "something was playing when the click came")
+        let completed = hosted.capture()
+        try? await Task.sleep(for: .seconds(1.5))
+        #expect(sameImage(completed, hosted.capture()), "nothing left arriving after the click")
     }
 
     @Test(arguments: [true, false])
@@ -291,6 +347,27 @@ struct PrologueReducedMotionTests {
         _ = hosted.capture()
         #expect(host.switchedOff == [.nbbOverlay, .crosshair, .screenRecording])
         #expect(!model.isFinaleRunning)
+    }
+
+    /// Found in the bug hunt: once the title is in, the rule and the line beneath take 0.6 s to arrive, and reducing
+    /// motion then left them arriving. Here the step plays in real time.
+    @Test func reducingMotionMidFinaleBringsTheRuleAndLineInAtOnce() async {
+        let theme = STTheme()
+        let box = StoreBox()
+        let host = FakeHost()
+        host.toolsOn = [.crosshair]
+        let model = PrologueModel(store: box.store, host: host, startingAt: .youreSet,
+                                  finaleDelay: .seconds(60), finaleInterval: .seconds(60))
+        let hosted = show(model, theme: theme, running: true)
+        // The Finale starts as the title finishes typing, which is when the rule and the line set off.
+        #expect(await waitUntil { model.isFinaleRunning }, "the control: the title typed in under full motion")
+
+        theme.systemReduceMotion = true
+        let completed = hosted.capture()
+        let settled = show(PrologueModel(store: box.store, host: FakeHost(), startingAt: .youreSet),
+                           theme: STTheme(systemReduceMotion: true), running: true).capture()
+        #expect(sameImage(completed, settled), "the rule drawn and the line there at once")
+        #expect(host.switchedOff == [.crosshair])
     }
 
     @Test func runFinaleAllAtOnceLeavesNothingPending() {

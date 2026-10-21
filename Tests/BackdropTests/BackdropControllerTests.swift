@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -36,6 +37,60 @@ private func tempDirectory() -> URL {
 
 @Suite("Backdrop controller", .serialized)
 struct BackdropControllerTests {
+    // Every app switch re-orders the backdrop under Minecraft, but the full-screen fill is drawn only when it
+    // changes (spec 3.1). The panels are placed without ever being ordered onto a screen.
+    @MainActor
+    @Test func reorderingWithoutAChangeDoesNotDrawTheFillAgain() async {
+        let display = offScreenDisplay
+        let window = MinecraftWindow(windowNumber: 42, processID: 4242, title: "Minecraft* 1.16.1", frame: display.frame)
+        let minecraft = MinecraftInstance(window: window, launchDate: Date(timeIntervalSince1970: 1), isFrontmost: true, displayID: display.id)
+        let services = makeServices(tempDirectory: tempDirectory(), instances: [minecraft])
+        services.minecraft.refresh()
+        let controller = BackdropController(services: services, imagesDirectory: tempDirectory(), showsPanels: false)
+        controller.setEnabled(true)
+        defer { controller.setEnabled(false) }
+        #expect(controller.drawCount == 1)
+
+        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didActivateApplicationNotification, object: nil)
+        controller.reconcile()
+        #expect(controller.drawCount == 1)
+
+        controller.settings.fill.color = "#223344"
+        #expect(controller.drawCount == 2)
+        controller.settings.opacityPercent = 50
+        #expect(controller.drawCount == 3)
+    }
+
+    // A hidden panel keeps its full-screen layer, and a decoded image is tens of megabytes: switching off lets
+    // both go, and switching on builds them again.
+    @MainActor
+    @Test func switchingOffReleasesThePanelsAndTheirImages() {
+        let display = offScreenDisplay
+        let window = MinecraftWindow(windowNumber: 42, processID: 4242, title: "Minecraft* 1.16.1", frame: display.frame)
+        let minecraft = MinecraftInstance(window: window, launchDate: Date(timeIntervalSince1970: 1), isFrontmost: true, displayID: display.id)
+        let directory = tempDirectory()
+        let services = makeServices(tempDirectory: directory, instances: [minecraft])
+        services.minecraft.refresh()
+        let controller = BackdropController(services: services, imagesDirectory: directory.appending(path: "Images"), showsPanels: false)
+        let source = directory.appending(path: "source.png")
+        writeOnePixelPNG(to: source)
+        controller.importImage(from: source)
+        #expect(controller.settings.fill.kind == .image)
+
+        controller.setEnabled(true)
+        #expect(controller.panelCount == 1)
+        #expect(controller.loadedImageCount == 1)
+
+        controller.setEnabled(false)
+        #expect(controller.panelCount == 0)
+        #expect(controller.loadedImageCount == 0)
+
+        controller.setEnabled(true)
+        #expect(controller.panelCount == 1)
+        #expect(controller.image(for: controller.settings.fill) != nil)
+        controller.setEnabled(false)
+    }
+
     @MainActor
     @Test func loadsDefaultsWhenNothingIsStored() {
         let controller = BackdropController(services: makeServices(tempDirectory: tempDirectory()))

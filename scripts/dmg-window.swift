@@ -6,15 +6,18 @@
 //   swift scripts/dmg-window.swift ds-store <volumeRoot>
 //   swift scripts/dmg-window.swift dump <path/to/.DS_Store>
 //
-//   background  Writes background.png (1x, 72 dpi) and background@2x.png (2x, 144 dpi). scripts/build-dmg.sh
-//               joins them into one Retina-ready TIFF with `tiffutil -cathidpicheck`. --version prints the
+//   background  Writes background.png (1x, 72 dpi), background@2x.png (2x, 144 dpi) and background.tiff, which
+//               holds both so it is sharp on Retina displays and is what scripts/build-dmg.sh puts on the disk
+//               image. ImageIO writes it, with no tags naming the tool or the source files. --version prints the
 //               version on the background; --preview also writes a mock-up of the open window, with the
 //               app's and Applications' icons and labels drawn where Finder will put them.
 //   ds-store    Writes <volumeRoot>/.DS_Store: window size and chrome, icon view options, icon positions and
 //               the background picture, which must already be at <volumeRoot>/.background/background.tiff.
-//               Run it on the mounted, writable volume (at the mount point users will see, /Volumes/sTools):
-//               the background is referenced by an alias and a bookmark that record the volume and file IDs.
-//   dump        Prints the records of a .DS_Store file, for checking.
+//               Run it on the mounted, writable volume, wherever it is mounted: the background is referenced by an
+//               alias and a bookmark that record the volume as mounted at /Volumes/<volume name>, where users see
+//               it, plus the volume's identity and the file IDs, which find it wherever it is mounted.
+//   dump        Prints the records of a .DS_Store file, for checking: the background's alias and bookmark are
+//               resolved, and the alias is also checked field by field against the volume holding the file.
 //
 // Why write .DS_Store directly: the usual way is AppleScript telling Finder to arrange the window, which
 // needs the Automation permission and an on-screen Finder. The file format is documented by the open-source
@@ -213,6 +216,23 @@ func writePNG(_ image: CGImage, to url: URL, dpi: Double) throws {
     guard CGImageDestinationFinalize(destination) else { throw Failure("cannot write \(url.path)") }
 }
 
+/// One TIFF holding each image at its resolution (LZW-compressed), as `tiffutil -cathidpicheck` makes, but without
+/// its Software and ImageDescription tags (the tool's version and the source files' names).
+func writeTIFF(_ images: [(image: CGImage, dpi: Double)], to url: URL) throws {
+    guard let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.tiff.identifier as CFString,
+                                                            images.count, nil)
+    else { throw Failure("cannot write \(url.path)") }
+    for (image, dpi) in images {
+        let properties: [CFString: Any] = [
+            kCGImagePropertyDPIWidth: dpi,
+            kCGImagePropertyDPIHeight: dpi,
+            kCGImagePropertyTIFFDictionary: [kCGImagePropertyTIFFCompression: 5] as CFDictionary,  // LZW
+        ]
+        CGImageDestinationAddImage(destination, image, properties as CFDictionary)
+    }
+    guard CGImageDestinationFinalize(destination) else { throw Failure("cannot write \(url.path)") }
+}
+
 /// The background: wordmark, gilt rule and standfirst; a gold arrow from the app to Applications; and the
 /// one-time steps for opening an app that isn't notarized.
 func drawBackground(on canvas: Canvas, palette: [String: CGColor], version: String?) throws {
@@ -333,13 +353,19 @@ func drawPreviewItems(on canvas: Canvas) throws {
 func generateBackground(outputDirectory: URL, version: String?, preview: URL?) throws {
     let palette = try loadPalette()
     try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
+    var images: [(image: CGImage, dpi: Double)] = []
     for scale in [1, 2] {
         let canvas = try Canvas(size: Window.size, scale: CGFloat(scale))
         try drawBackground(on: canvas, palette: palette, version: version)
         let name = scale == 1 ? "background.png" : "background@2x.png"
-        try writePNG(try canvas.image(), to: outputDirectory.appendingPathComponent(name), dpi: 72 * Double(scale))
+        let image = try canvas.image()
+        try writePNG(image, to: outputDirectory.appendingPathComponent(name), dpi: 72 * Double(scale))
+        images.append((image, 72 * Double(scale)))
         print("wrote \(outputDirectory.appendingPathComponent(name).path)")
     }
+    let tiff = outputDirectory.appendingPathComponent(Window.backgroundFile)
+    try writeTIFF(images, to: tiff)
+    print("wrote \(tiff.path)")
     if let preview {
         let canvas = try Canvas(size: Window.size, scale: 2)
         try drawBackground(on: canvas, palette: palette, version: version)
@@ -584,27 +610,75 @@ enum DSStore {
 
 // MARK: - Alias record
 
+/// Where a file is: its volume, mounted now at `mountPoint` and recorded as mounted at `recordedMountPoint`
+/// (/Volumes/<volume name>, where users see it), and the file's path below the volume's root.
+struct VolumeFile {
+    let file: URL
+    let mountPoint: String
+    let recordedMountPoint: String
+    let relative: String
+    let volumeName: String
+    let volumeCreated: Date
+    let fileCreated: Date
+
+    init(_ file: URL) throws {
+        // As the file system spells it (/private/var/..., not /var/...), like the mount point below.
+        guard let resolved = realpath(file.path, nil) else { throw Failure("cannot find \(file.path)") }
+        let path = String(cString: resolved)
+        free(resolved)
+        var volumeStat = statfs()
+        guard statfs(path, &volumeStat) == 0 else { throw Failure("cannot find the volume of \(path)") }
+        let mountPoint = withUnsafePointer(to: &volumeStat.f_mntonname) {
+            $0.withMemoryRebound(to: CChar.self, capacity: Int(MAXPATHLEN)) { String(cString: $0) }
+        }
+        let volume = URL(fileURLWithPath: mountPoint, isDirectory: true)
+        let volumeValues = try volume.resourceValues(forKeys: [.volumeNameKey, .creationDateKey])
+        let fileValues = try file.resourceValues(forKeys: [.creationDateKey])
+        guard let volumeName = volumeValues.volumeName, let volumeCreated = volumeValues.creationDate,
+              let fileCreated = fileValues.creationDate else { throw Failure("cannot read the dates of \(path)") }
+        guard path.hasPrefix(mountPoint + "/") else { throw Failure("\(path) is not under \(mountPoint)") }
+        guard !volumeName.contains("/") else { throw Failure("the volume name \(volumeName) holds a slash") }
+        self.file = file
+        self.mountPoint = mountPoint
+        self.recordedMountPoint = "/Volumes/" + volumeName
+        self.relative = String(path.dropFirst(mountPoint.count + 1))
+        self.volumeName = volumeName
+        self.volumeCreated = volumeCreated
+        self.fileCreated = fileCreated
+    }
+
+    /// The inode (on HFS+, catalog node ID) of the volume's root and of each folder and file down to the file.
+    func ids() throws -> (root: UInt64, below: [UInt64]) {
+        var info = stat()
+        guard stat(mountPoint, &info) == 0 else { throw Failure("cannot stat \(mountPoint)") }
+        let root = UInt64(info.st_ino)
+        var below: [UInt64] = []
+        var walked = mountPoint
+        for component in relative.split(separator: "/") {
+            walked += "/" + component
+            guard stat(walked, &info) == 0 else { throw Failure("cannot stat \(walked)") }
+            below.append(UInt64(info.st_ino))
+        }
+        return (root, below)
+    }
+}
+
 /// A classic Mac OS alias record (version 2) for a file on a mounted volume, as Finder stores in
 /// `icvp.backgroundImageAlias`. Layout as written by Finder and documented by the mac_alias project: a
-/// 150-byte fixed part, then tagged fields, each padded to an even length, ending with tag -1.
+/// 150-byte fixed part, then tagged fields, each padded to an even length, ending with tag -1. It records the volume
+/// as mounted at /Volumes/<volume name>, not where it is mounted while the alias is written.
 func aliasRecord(for file: URL) throws -> Data {
+    let location = try VolumeFile(file)
     let path = file.path
     var fileStat = stat()
     var parentStat = stat()
     let parent = file.deletingLastPathComponent()
     guard stat(path, &fileStat) == 0, stat(parent.path, &parentStat) == 0 else { throw Failure("cannot stat \(path)") }
-    var volumeStat = statfs()
-    guard statfs(path, &volumeStat) == 0 else { throw Failure("cannot find the volume of \(path)") }
-    let mountPoint = withUnsafePointer(to: &volumeStat.f_mntonname) {
-        $0.withMemoryRebound(to: CChar.self, capacity: Int(MAXPATHLEN)) { String(cString: $0) }
-    }
-    let volume = URL(fileURLWithPath: mountPoint, isDirectory: true)
-    let volumeValues = try volume.resourceValues(forKeys: [.volumeNameKey, .creationDateKey])
-    let fileValues = try file.resourceValues(forKeys: [.creationDateKey])
-    guard let volumeName = volumeValues.volumeName, let volumeCreated = volumeValues.creationDate,
-          let fileCreated = fileValues.creationDate else { throw Failure("cannot read the dates of \(path)") }
-    guard path.hasPrefix(mountPoint + "/") else { throw Failure("\(path) is not under \(mountPoint)") }
-    let relative = String(path.dropFirst(mountPoint.count + 1))
+    let mountPoint = location.mountPoint
+    let volumeName = location.volumeName
+    let volumeCreated = location.volumeCreated
+    let fileCreated = location.fileCreated
+    let relative = location.relative
 
     // HFS+ dates count seconds from 1904; on HFS+ an inode number is the catalog node ID.
     func macSeconds(_ date: Date) -> Double { date.timeIntervalSince1970 + 2_082_844_800 }
@@ -667,7 +741,7 @@ func aliasRecord(for file: URL) throws -> Data {
     tag(14, utf16Payload(file.lastPathComponent))  // file name
     tag(15, utf16Payload(volumeName))  // volume name
     tag(18, Data(("/" + relative).utf8))  // path from the volume root
-    tag(19, Data(mountPoint.utf8))  // mount point
+    tag(19, Data(location.recordedMountPoint.utf8))  // mount point
     bytes.i16(-1)
     bytes.u16(0)
 
@@ -676,6 +750,92 @@ func aliasRecord(for file: URL) throws -> Data {
     data[4] = UInt8(length >> 8)
     data[5] = UInt8(length & 0xFF)
     return data
+}
+
+// MARK: - Bookmark
+
+/// A bookmark to a file on a mounted volume, as Finder stores in `pBBk`, written field by field.
+///
+/// The system's own `bookmarkData(...)` also records the Mac that made it: for a volume on a disk image, a second
+/// bookmark to the image file (its path, in the per-user temporary folder) and to the startup volume (its name,
+/// UUID, size and dates), and sandbox tokens naming those paths. This one keeps only what finds the file on its own
+/// volume: the path as mounted at /Volumes/<volume name> (folders above the volume get file ID 0), the file IDs on
+/// the volume, and the volume's name, UUID, size, dates and properties. With those, the bookmark resolves wherever
+/// the volume is mounted (checked by scripts/build-dmg.sh), by the volume's UUID.
+///
+/// Layout (little-endian), as the system writes it (version 0x10050000) and as documented by the mac_alias project:
+/// "book", the total length, the version and the header's length (64), zero up to 64 bytes; then the data: the
+/// table of contents' offset, items (length, type, value, padded to 4 bytes) and the table of contents (length,
+/// 0xFFFFFFFE, id 1, next 0, count, then key/offset/0 entries sorted by key). Offsets count from the data's start.
+func bookmarkRecord(for file: URL) throws -> Data {
+    let location = try VolumeFile(file)
+    let volume = URL(fileURLWithPath: location.mountPoint, isDirectory: true)
+    let values = try volume.resourceValues(forKeys: [.volumeUUIDStringKey, .volumeTotalCapacityKey])
+    guard let uuid = values.volumeUUIDString, let size = values.volumeTotalCapacity else {
+        throw Failure("cannot read the UUID and size of \(location.mountPoint)")
+    }
+    let ids = try location.ids()
+    let above = location.recordedMountPoint.split(separator: "/").map(String.init)
+    let path = above + location.relative.split(separator: "/").map(String.init)
+    let fileIDs = Array(repeating: UInt64(0), count: above.count - 1) + [ids.root] + ids.below
+
+    var data: [UInt8] = [0, 0, 0, 0]  // the table of contents' offset, filled in at the end
+    func u32(_ value: UInt32) { withUnsafeBytes(of: value.littleEndian) { data += $0 } }
+    func padded() { while data.count % 4 != 0 { data.append(0) } }
+    func item(_ type: UInt32, _ value: [UInt8]) -> UInt32 {
+        let offset = UInt32(data.count)
+        u32(UInt32(value.count))
+        u32(type)
+        data += value
+        padded()
+        return offset
+    }
+    func string(_ text: String) -> UInt32 { item(0x0101, Array(text.utf8)) }
+    func number(_ value: UInt64) -> UInt32 { item(0x0304, withUnsafeBytes(of: value.littleEndian) { Array($0) }) }
+    func date(_ value: Date) -> UInt32 {
+        item(0x0400, withUnsafeBytes(of: value.timeIntervalSinceReferenceDate.bitPattern.bigEndian) { Array($0) })
+    }
+    func flags(_ value: UInt64, known: UInt64) -> UInt32 {
+        item(0x0201, [value, known, 0].flatMap { flag in withUnsafeBytes(of: flag.littleEndian) { Array($0) } })
+    }
+    func array(_ offsets: [UInt32]) -> UInt32 {
+        item(0x0601, offsets.flatMap { offset in withUnsafeBytes(of: offset.littleEndian) { Array($0) } })
+    }
+
+    var contents: [(key: UInt32, offset: UInt32)] = []
+    contents.append((0x1004, array(path.map(string))))  // path
+    contents.append((0x1005, array(fileIDs.map(number))))  // file IDs along the path
+    contents.append((0x1010, flags(0x1, known: 0xF)))  // a regular file
+    contents.append((0x1040, date(location.fileCreated)))
+    contents.append((0x2002, string(location.recordedMountPoint)))  // volume path
+    contents.append((0x2005, item(0x0901, Array(("file://" + location.recordedMountPoint + "/").utf8))))  // volume URL
+    contents.append((0x2010, string(location.volumeName)))
+    contents.append((0x2011, string(uuid.uppercased())))
+    contents.append((0x2012, number(UInt64(size))))
+    contents.append((0x2013, date(location.volumeCreated)))
+    // Local, ejectable, removable, a disk image, with persistent file IDs; out of the properties the system records.
+    contents.append((0x2020, flags(0x1_0000_0261, known: 0x1_0000_13EF)))
+    contents.sort { $0.key < $1.key }
+
+    let tableOffset = UInt32(data.count)
+    u32(UInt32(12 + 12 * contents.count))
+    u32(0xFFFF_FFFE)
+    u32(1)
+    u32(0)
+    u32(UInt32(contents.count))
+    for entry in contents {
+        u32(entry.key)
+        u32(entry.offset)
+        u32(0)
+    }
+    withUnsafeBytes(of: tableOffset.littleEndian) { data.replaceSubrange(0..<4, with: $0) }
+
+    var header = Array("book".utf8)
+    for value: UInt32 in [UInt32(64 + data.count), 0x1005_0000, 64] {
+        withUnsafeBytes(of: value.littleEndian) { header += $0 }
+    }
+    header += [UInt8](repeating: 0, count: 64 - header.count)
+    return Data(header + data)
 }
 
 // MARK: - Finder layout
@@ -727,7 +887,7 @@ func layoutRecords(volume: URL) throws -> [DSRecord] {
         "backgroundColorBlue": Double(backgroundColor[2]),
         "backgroundImageAlias": try aliasRecord(for: background),
     ]
-    let bookmark = try background.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+    let bookmark = try bookmarkRecord(for: background)
 
     func position(_ point: CGPoint) -> Data {
         var bytes = Bytes()
@@ -767,9 +927,54 @@ func resolve(bookmark: Data) -> String {
     return url.path
 }
 
+/// Whether an alias record, as aliasRecord(for:) writes it, describes the background on the volume at `root` the way
+/// the Alias Manager identifies a file: by the volume's name and creation date, the IDs of the file and its folder,
+/// its name, its path on the volume and the volume's usual mount point. macOS resolves an alias into any volume of
+/// the same name mounted at /Volumes/<name>, so while another such volume is mounted, this is what tells a good
+/// alias from a bad one.
+func aliasCheck(_ alias: Data, root: URL) -> String {
+    let bytes = [UInt8](alias)
+    func u16(_ at: Int) -> Int { at + 2 <= bytes.count ? Int(bytes[at]) << 8 | Int(bytes[at + 1]) : -1 }
+    func u32(_ at: Int) -> UInt32? {
+        at + 4 <= bytes.count ? bytes[at..<(at + 4)].reduce(0) { $0 << 8 | UInt32($1) } : nil
+    }
+    func pascal(_ at: Int) -> String? {
+        guard at < bytes.count, at + 1 + Int(bytes[at]) <= bytes.count else { return nil }
+        return String(decoding: bytes[(at + 1)..<(at + 1 + Int(bytes[at]))], as: UTF8.self)
+    }
+    guard bytes.count >= 150, u16(6) == 2 else { return "is not a version 2 alias record" }
+    var tags: [Int: String] = [:]
+    var at = 150
+    while at + 4 <= bytes.count {
+        let tag = Int(Int16(truncatingIfNeeded: u16(at)))
+        let length = u16(at + 2)
+        if tag == -1 { break }
+        guard at + 4 + length <= bytes.count else { return "has a broken tag \(tag)" }
+        tags[tag] = String(decoding: bytes[(at + 4)..<(at + 4 + length)], as: UTF8.self)
+        at += 4 + length + length % 2
+    }
+    let background = root.appendingPathComponent(Window.backgroundFolder).appendingPathComponent(Window.backgroundFile)
+    var folderInfo = stat()
+    var fileInfo = stat()
+    guard let location = try? VolumeFile(background), stat(background.deletingLastPathComponent().path, &folderInfo) == 0,
+          stat(background.path, &fileInfo) == 0 else { return "cannot be checked: the volume has no background" }
+    var problems: [String] = []
+    if pascal(10) != location.volumeName.replacingOccurrences(of: ":", with: "/") { problems.append("volume name") }
+    if u32(38) != UInt32(location.volumeCreated.timeIntervalSince1970 + 2_082_844_800) {
+        problems.append("volume creation date")
+    }
+    if u32(46) != UInt32(truncatingIfNeeded: folderInfo.st_ino) { problems.append("folder ID") }
+    if pascal(50) != Window.backgroundFile { problems.append("file name") }
+    if u32(114) != UInt32(truncatingIfNeeded: fileInfo.st_ino) { problems.append("file ID") }
+    if tags[18] != "/" + location.relative { problems.append("path") }
+    if tags[19] != location.recordedMountPoint { problems.append("mount point") }
+    return problems.isEmpty ? "matches this volume" : "does not match this volume (\(problems.joined(separator: ", ")))"
+}
+
 /// One line per record. The background's bookmark (`pBBk`) and alias (`icvp`) are resolved, so a check run on
-/// a mounted DMG shows whether Finder will find the picture; resolved paths print as `-> <path>`.
-func describe(_ record: DSRecord) -> String {
+/// a mounted DMG shows whether Finder will find the picture; resolved paths print as `-> <path>`. The alias is also
+/// checked field by field against the volume at `root`, the folder holding the .DS_Store.
+func describe(_ record: DSRecord, root: URL) -> String {
     let value: String
     switch record.value {
     case .long(let number): value = "long \(number)"
@@ -790,6 +995,7 @@ func describe(_ record: DSRecord) -> String {
             if let alias = object["backgroundImageAlias"] as? Data {
                 let bookmark = (AliasReader() as AliasReading).bookmark(fromAlias: alias)
                 fields.insert("backgroundImageAlias -> " + (bookmark.map(resolve(bookmark:)) ?? "unreadable"), at: 0)
+                fields.insert("backgroundImageAlias " + aliasCheck(alias, root: root), at: 1)
             }
             value = fields.joined(separator: " ")
         } else if data.starts(with: Data("book".utf8)) {
@@ -840,8 +1046,9 @@ do {
         print("wrote \(destination.path) (\(file.count) bytes)")
     case "dump":
         guard arguments.count == 1 else { fail(usage) }
-        let records = try DSStore.decode(try Data(contentsOf: URL(fileURLWithPath: arguments[0])))
-        for record in records { print(describe(record)) }
+        let file = URL(fileURLWithPath: arguments[0])
+        let records = try DSStore.decode(try Data(contentsOf: file))
+        for record in records { print(describe(record, root: file.deletingLastPathComponent())) }
     case "-h", "--help":
         print(usage)
     default:

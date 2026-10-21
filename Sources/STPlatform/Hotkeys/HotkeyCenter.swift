@@ -15,7 +15,7 @@ public enum HotkeyConflict: Equatable, Sendable {
     case alreadyUsedByYou(UUID)
     /// The system refused the registration (another app or macOS owns the combination).
     case systemRefused
-    /// The combination itself cannot be a hotkey (unmodified letter, reserved by macOS, ...).
+    /// The combination itself cannot be a hotkey (a modifier key, a combination macOS keeps, ...).
     case invalidCombo(HotkeyComboIssue)
     /// The binding has no actions.
     case noActions
@@ -23,7 +23,8 @@ public enum HotkeyConflict: Equatable, Sendable {
 
 /// The state of one binding.
 public enum HotkeyStatus: Equatable, Sendable {
-    /// Registered with the system and listening.
+    /// Accepted by macOS, and live whenever sTools isn't in front. While hotkeys pause (sTools is the active app)
+    /// nothing is registered, but the status stays, so switching apps never changes it.
     case registered
     /// Fine, but the master switch is off so nothing is registered.
     case inactive
@@ -36,17 +37,36 @@ public enum HotkeyStatus: Equatable, Sendable {
 /// Rules: with the master switch off nothing is registered. Bindings are checked in list order; the first
 /// one to claim a combination keeps it and later duplicates are flagged `.alreadyUsedByYou` (and registered
 /// automatically if the first one goes away). A flagged binding stays in the list so the user can fix it.
+///
+/// Hotkeys pause while sTools is the active app (`isPaused`, Advanced setting on by default), so every key works
+/// in sTools itself: typing, recording a combination, testing keys. While paused nothing is registered and presses
+/// are ignored; a combination macOS hasn't accepted yet this run is still tried once (registered and released at
+/// once), so a refusal shows the moment a hotkey is added. When the pause ends everything registers for real.
 @MainActor
 @Observable
 public final class HotkeyCenter {
     public private(set) var settings: HotkeySettings
+    /// Assigned only when a status really changes, so app switches don't re-render the pages that show them.
     public private(set) var statuses: [UUID: HotkeyStatus] = [:]
+
+    /// Whether sTools is the active app. Only the app delegate sets it (and only it knows), so a center nobody
+    /// tells about activity (tests, previews) never pauses, and a pause can't outlast sTools being in front.
+    @ObservationIgnored public var appIsActive = false {
+        didSet { if appIsActive != oldValue { synchronize() } }
+    }
+
+    /// Advice from the Key Rebinder: Minecraft cautions, where a hotkey's key is, selecting it. Held weakly; nil
+    /// when there is no Key Rebinder.
+    @ObservationIgnored public weak var advisor: (any HotkeyAdvising)?
 
     @ObservationIgnored private let store: SettingsStore
     @ObservationIgnored private let registrar: any HotkeyRegistering
     @ObservationIgnored private let toolStates: @MainActor () -> [HotkeyTool: Bool]
     @ObservationIgnored private let handler: @MainActor ([HotkeyEvent]) -> Void
+    /// What is registered with the system right now. Empty while paused.
     @ObservationIgnored private var registered: [UUID: HotkeyCombo] = [:]
+    /// Combinations macOS accepted this run, so a pause tries each one only once. A refusal forgets it again.
+    @ObservationIgnored private var accepted: Set<HotkeyCombo> = []
     @ObservationIgnored private let log = STLog.logger("Hotkeys")
 
     /// - Parameters:
@@ -87,7 +107,40 @@ public final class HotkeyCenter {
         }
     }
 
+    /// Advanced: whether hotkeys pause while sTools is the active app. On by default. Off, hotkeys also fire in
+    /// sTools, which then can't record, test or type their keys.
+    public var pausesWhileSToolsIsActive: Bool {
+        get { settings.pausesWhileSToolsIsActive }
+        set {
+            guard newValue != settings.pausesWhileSToolsIsActive else { return }
+            settings.pausesWhileSToolsIsActive = newValue
+            commit()
+        }
+    }
+
+    /// Hotkeys are on but paused, because sTools is in front and the pause setting is on.
+    public var isPaused: Bool { settings.isEnabled && settings.pausesWhileSToolsIsActive && appIsActive }
+
+    /// While the master switch is on, the bindings that take their key from other apps: valid, the first owner of
+    /// their combination, with actions, and accepted by macOS (live, or paused while sTools is in front). A binding
+    /// macOS refused takes nothing, so it isn't here. Empty while the switch is off.
+    public var activeBindings: [HotkeyBinding] {
+        guard settings.isEnabled else { return [] }
+        return settings.bindings.filter { statuses[$0.id] == .registered }
+    }
+
     public func status(of id: UUID) -> HotkeyStatus? { statuses[id] }
+
+    /// Everything the editors say about `combo`, in order: the advisor's cautions, the typing note, the
+    /// advisor's other notes, then the fn note. None of them blocks saving.
+    public func notes(for combo: HotkeyCombo) -> [HotkeyNote] {
+        let advice = advisor?.notes(for: combo) ?? []
+        var notes = advice.filter { $0.tone == .caution }
+        if let typing = HotkeyWording.typingNote(for: combo) { notes.append(HotkeyNote(tone: .note, text: typing)) }
+        notes += advice.filter { $0.tone == .note }
+        if let fn = HotkeyWording.functionKeyNote(for: combo) { notes.append(HotkeyNote(tone: .note, text: fn)) }
+        return notes
+    }
 
     /// Adds a binding at the end of the list and returns its id. A problem shows up in `statuses`.
     @discardableResult
@@ -130,7 +183,7 @@ public final class HotkeyCenter {
     }
 
     private func handlePress(_ id: UUID) {
-        guard settings.isEnabled, let binding = settings.bindings.first(where: { $0.id == id }) else { return }
+        guard settings.isEnabled, !isPaused, let binding = settings.bindings.first(where: { $0.id == id }) else { return }
         let outcome = HotkeyAction.resolve(binding.actions, toolStates: toolStates())
         var events = outcome.toolChanges.map { HotkeyEvent.setTool($0.tool, isOn: $0.isOn) }
         if outcome.togglesRecording { events.append(.toggleRecording) }
@@ -139,7 +192,8 @@ public final class HotkeyCenter {
     }
 
     /// Brings registrations and statuses in line with the settings: unregisters what is no longer wanted,
-    /// registers what is new or changed, leaves unchanged registrations alone.
+    /// registers what is new or changed, leaves unchanged registrations alone. While paused it unregisters
+    /// everything and only tries combinations macOS hasn't accepted yet.
     private func synchronize() {
         var wanted: [UUID: HotkeyCombo] = [:]
         var newStatuses: [UUID: HotkeyStatus] = [:]
@@ -162,25 +216,47 @@ public final class HotkeyCenter {
             }
         }
 
-        for (id, combo) in registered where wanted[id] != combo {
+        let paused = isPaused
+        for (id, combo) in registered where paused || wanted[id] != combo {
             registrar.unregister(id: id)
             registered[id] = nil
         }
         for binding in settings.bindings {
             guard let combo = wanted[binding.id] else { continue }
-            if registered[binding.id] == combo {
+            if paused {
+                newStatuses[binding.id] = probe(combo, id: binding.id)
+            } else if registered[binding.id] == combo {
                 newStatuses[binding.id] = .registered
-                continue
-            }
-            do {
-                try registrar.register(combo, id: binding.id)
+            } else if register(combo, id: binding.id) {
                 registered[binding.id] = combo
                 newStatuses[binding.id] = .registered
-            } catch {
-                log.error("System refused \(combo.displayString, privacy: .public): \(String(describing: error), privacy: .public)")
+            } else {
                 newStatuses[binding.id] = .conflict(.systemRefused)
             }
         }
-        statuses = newStatuses
+        if newStatuses != statuses { statuses = newStatuses }
+    }
+
+    /// While paused: a combination macOS accepted before is fine; anything else is registered and released in
+    /// the same turn, so a refusal still shows at once.
+    private func probe(_ combo: HotkeyCombo, id: UUID) -> HotkeyStatus {
+        if accepted.contains(combo) { return .registered }
+        guard register(combo, id: id) else { return .conflict(.systemRefused) }
+        registrar.unregister(id: id)
+        return .registered
+    }
+
+    /// Registers with the system and remembers the answer: accepted combinations aren't tried again while paused,
+    /// and a refusal forgets an earlier acceptance.
+    private func register(_ combo: HotkeyCombo, id: UUID) -> Bool {
+        do {
+            try registrar.register(combo, id: id)
+            accepted.insert(combo)
+            return true
+        } catch {
+            log.error("System refused \(combo.displayString, privacy: .public): \(String(describing: error), privacy: .public)")
+            accepted.remove(combo)
+            return false
+        }
     }
 }

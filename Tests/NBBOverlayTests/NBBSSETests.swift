@@ -120,3 +120,9 @@ struct SSEParserTests {
         #expect(parser.feed(Array(": ping\n\n: ping\n\n".utf8)) == [])
     }
 }
+
+/// Ninjabrain Bot sends nothing between changes, so a stream must be allowed to stay quiet far longer than
+/// URLSession's default minute; otherwise each quiet minute drops it and the reconnect redraws the overlay.
+@Test func eventStreamsMayStayQuietForLongerThanAMinute() {
+    #expect(URLSessionEventSource.idleTimeout >= 60 * 60)
+}

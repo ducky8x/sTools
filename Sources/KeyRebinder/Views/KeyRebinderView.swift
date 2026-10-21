@@ -5,12 +5,28 @@ import SwiftUI
 /// Everything below the Key Rebinder's page header (spec 5.5).
 public struct KeyRebinderView: View {
     @Bindable private var controller: KeyRebinderController
+    private let showsHotkeys: Bool
+    private let openHotkeys: (() -> Void)?
     @State private var ruleBeingEdited: RuleSheetItem?
     @State private var monitor = KeyEventMonitor()
     @Environment(\.stTheme) private var theme
 
-    public init(controller: KeyRebinderController) {
+    /// - Parameters:
+    ///   - showsHotkeys: whether the page shows sTools hotkeys (spec 5.5.2, 5.5.3): rings on keys, the key panel's
+    ///     Hotkeys part, hotkey findings and their dots, the tester's hotkey sentence, Advanced ▸ Show hotkeys.
+    ///     False in the Prologue's trial.
+    ///   - openHotkeys: opens Home ▸ Hotkeys, from a key a rule drives; nil leaves that button out.
+    public init(controller: KeyRebinderController, showsHotkeys: Bool = true, openHotkeys: (() -> Void)? = nil) {
         self.controller = controller
+        self.showsHotkeys = showsHotkeys
+        self.openHotkeys = openHotkeys
+    }
+
+    /// The Checker section shows while the checker is on, with `karabiner.json` loaded or with hotkey findings to
+    /// list (those need no file).
+    static func showsFindings(controller: KeyRebinderController, showsHotkeys: Bool) -> Bool {
+        controller.settings.checkerEnabled
+            && (controller.config != nil || (showsHotkeys && !controller.derived.hotkeyFindings.isEmpty))
     }
 
     /// Everything but the keyboard keeps the app's usual reading width; the page around it is wider so the
@@ -21,13 +37,17 @@ public struct KeyRebinderView: View {
         VStack(alignment: .leading, spacing: 20) {
             strips.frame(maxWidth: Self.columnWidth, alignment: .leading)
             if let layout = controller.layout {
-                KeyboardPlate(controller: controller, layout: layout)
+                KeyboardPlate(controller: controller, layout: layout, showsHotkeys: showsHotkeys)
                 VStack(alignment: .leading, spacing: 20) {
                     if let key = controller.selectedKey {
-                        KeyEditorPanel(controller: controller, key: key) { ruleBeingEdited = RuleSheetItem(index: $0) }
+                        KeyEditorPanel(controller: controller, key: key, showsHotkeys: showsHotkeys, openHotkeys: openHotkeys) {
+                            ruleBeingEdited = RuleSheetItem(index: $0)
+                        }
+                    }
+                    if Self.showsFindings(controller: controller, showsHotkeys: showsHotkeys) {
+                        FindingsSection(controller: controller, showsHotkeyFindings: showsHotkeys)
                     }
                     if controller.config != nil {
-                        if controller.settings.checkerEnabled { FindingsSection(controller: controller) }
                         FnKeysSection(controller: controller)
                         ComplexRulesSection(controller: controller) { ruleBeingEdited = RuleSheetItem(index: $0) }
                     }
@@ -36,7 +56,8 @@ public struct KeyRebinderView: View {
             } else {
                 LayoutChooser(controller: controller).frame(maxWidth: Self.columnWidth, alignment: .leading)
             }
-            KeyRebinderSettingsSection(controller: controller).frame(maxWidth: Self.columnWidth, alignment: .leading)
+            KeyRebinderSettingsSection(controller: controller, showsHotkeys: showsHotkeys)
+                .frame(maxWidth: Self.columnWidth, alignment: .leading)
         }
         .task { await controller.refresh() }
         .onAppear {
@@ -53,7 +74,8 @@ public struct KeyRebinderView: View {
             Task { await controller.refresh() }
         }
         .sheet(item: $ruleBeingEdited) { item in
-            RuleEditorSheet(controller: controller, index: item.index)
+            // A sheet is a window of its own, so it gets its own motion root.
+            RuleEditorSheet(controller: controller, index: item.index).stMotionRoot(theme)
         }
     }
 
@@ -106,9 +128,23 @@ public struct KeyRebinderView: View {
 
     // MARK: Key presses
 
+    /// Keys keyboard navigation needs: Tab and Shift-Tab move focus, Space presses the focused control.
+    private static let navigationKeys: Set<KarabinerEvent> = [.key("tab"), .key("spacebar"), .key("left_shift"), .key("right_shift")]
+
+    /// Whether the page leaves `press` to keyboard navigation instead of selecting its key on the plate. With keyboard
+    /// navigation on (System Settings ▸ Keyboard ▸ Keyboard navigation, `NSApp.isFullKeyboardAccessEnabled`), Tab,
+    /// Shift-Tab and Space move focus and press buttons here as everywhere in sTools, so every control, the key
+    /// panel's Hotkeys part included, is reachable from the keyboard. Those keys are then selected by clicking them.
+    /// Test keys and Press… still take every key.
+    static func leavesToKeyboardNavigation(_ press: KeyPress, keyboardNavigation: Bool, controller: KeyRebinderController) -> Bool {
+        guard keyboardNavigation, !controller.isTesting, !controller.isCapturingOutput else { return false }
+        return navigationKeys.contains(KeyTable.shared.canonical(press.event))
+    }
+
     private func route(_ press: KeyPress, _ event: NSEvent) -> Bool {
         let window = event.window
         let isBusy = window?.firstResponder is NSText || window?.sheetParent != nil || window?.isMainWindow == false
+            || Self.leavesToKeyboardNavigation(press, keyboardNavigation: NSApp.isFullKeyboardAccessEnabled, controller: controller)
         let used = controller.handle(press, commandHeld: event.modifierFlags.contains(.command), isBusy: isBusy)
         // Caps Lock never reports a release, so the tester lets go of it shortly after.
         if controller.isTesting, case .down(let key, _) = press, event.type == .flagsChanged,

@@ -53,7 +53,8 @@ public struct STShortcut: Hashable, Sendable {
     }
 }
 
-/// Key names for the virtual key codes the recorder accepts.
+/// Key names for the virtual key codes the recorder accepts: every virtual key except the modifier keys, Caps Lock,
+/// fn and the system keys. STPlatform's `HotkeyCombo` carries the same names; the app's tests keep the two in step.
 enum STShortcutKeys {
     static let escape: UInt16 = 53
     static let delete: UInt16 = 51
@@ -62,7 +63,6 @@ enum STShortcutKeys {
     static let functionKeyCodes: [UInt16] = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111, 105, 107, 113, 106, 64, 79, 80, 90]
 
     static func name(for keyCode: UInt16) -> String? { names[keyCode] }
-    static func isFunctionKey(_ keyCode: UInt16) -> Bool { functionKeyCodes.contains(keyCode) }
 
     private static let names: [UInt16: String] = {
         var table: [UInt16: String] = [:]
@@ -72,13 +72,15 @@ enum STShortcutKeys {
             (15, "R"), (1, "S"), (17, "T"), (32, "U"), (9, "V"), (13, "W"), (7, "X"), (16, "Y"), (6, "Z"),
             (29, "0"), (18, "1"), (19, "2"), (20, "3"), (21, "4"), (23, "5"), (22, "6"), (26, "7"), (28, "8"), (25, "9"),
             (27, "-"), (24, "="), (33, "["), (30, "]"), (42, "\\"), (41, ";"), (39, "'"), (43, ","),
-            (47, "."), (44, "/"), (50, "`"),
+            (47, "."), (44, "/"), (50, "`"), (10, "§"), (93, "¥"), (94, "_"),
             (82, "Pad 0"), (83, "Pad 1"), (84, "Pad 2"), (85, "Pad 3"), (86, "Pad 4"), (87, "Pad 5"),
             (88, "Pad 6"), (89, "Pad 7"), (91, "Pad 8"), (92, "Pad 9"), (65, "Pad ."), (67, "Pad *"),
             (69, "Pad +"), (75, "Pad /"), (78, "Pad -"), (81, "Pad ="), (76, "Pad Enter"),
+            (71, "Pad Clear"), (95, "Pad ,"),
             (36, "↩"), (48, "⇥"), (49, "Space"), (51, "⌫"), (53, "⎋"), (117, "⌦"),
             (123, "←"), (124, "→"), (125, "↓"), (126, "↑"),
-            (115, "↖"), (119, "↘"), (116, "⇞"), (121, "⇟"), (114, "Help"),
+            (115, "↖"), (119, "↘"), (116, "⇞"), (121, "⇟"), (102, "英数"), (104, "かな"),
+            (114, "Help"), (110, "Menu"),
         ]
         for (code, name) in plain { table[code] = name }
         for (index, code) in functionKeyCodes.enumerated() { table[code] = "F\(index + 1)" }
@@ -97,17 +99,14 @@ enum STShortcutRecorderLogic {
         case reject(String)
     }
 
-    /// The recorder's own minimum: a known key, and at least one modifier unless it is F1 to F20.
-    /// Hosts pass a stricter `validate` to add their own rules.
+    /// The recorder's own minimum: a known key, with or without modifiers. Hosts pass their own `validate` to add
+    /// their rules (it replaces this one, so it must refuse unknown keys too).
     static func basicRejection(_ shortcut: STShortcut) -> String? {
-        guard STShortcutKeys.name(for: shortcut.keyCode) != nil else { return "That key can't be used" }
-        if shortcut.modifiers.isEmpty, !STShortcutKeys.isFunctionKey(shortcut.keyCode) {
-            return "Hold ⌃ ⌥ ⇧ or ⌘ too"
-        }
-        return nil
+        STShortcutKeys.name(for: shortcut.keyCode) == nil ? "That key can't be used" : nil
     }
 
-    /// Esc on its own cancels, Delete on its own clears; anything else is a shortcut to validate.
+    /// Esc on its own cancels, Delete or Forward Delete on its own clears; any other key, with or without
+    /// modifiers, is a shortcut to validate.
     static func outcome(keyCode: UInt16, modifiers: STShortcutModifiers,
                         validate: (STShortcut) -> String?) -> Outcome {
         if modifiers.isEmpty {
@@ -225,13 +224,14 @@ final class STShortcutKeyMonitor {
 // MARK: - View
 
 /// A shortcut field in the house text-field style: `surface` fill, a `stroke` baseline that turns to an
-/// accent underline while recording. Click it, or focus it and press Return, to record; then press the
-/// shortcut. Esc cancels, Delete clears. Key monitoring runs only while recording; a click anywhere else, or
-/// switching to another app, cancels. (Not SwiftUI focus: clicking the field itself makes macOS report a
-/// focus change mid-click, which used to cancel recording the moment it began.)
+/// accent underline while recording. Click it, or focus it and press Return, to record; then press a key,
+/// alone or with any of ⌃ ⌥ ⇧ ⌘. Any known key commits. Esc alone cancels, and Delete or Forward Delete alone
+/// clears, so those three can be recorded only with a modifier. Key monitoring runs only while recording; a
+/// click anywhere else, or switching to another app, cancels. (Not SwiftUI focus: clicking the field itself
+/// makes macOS report a focus change mid-click, which used to cancel recording the moment it began.)
 ///
 /// `validate` returns nil to accept a shortcut or a short reason to refuse it (shown in place of the
-/// prompt while recording continues). The default accepts any known key with a modifier, or F1 to F20 alone.
+/// prompt while recording continues). The default accepts any known key, with or without modifiers.
 public struct STShortcutRecorder: View {
     @Binding private var shortcut: STShortcut?
     private let label: String
@@ -282,7 +282,7 @@ public struct STShortcutRecorder: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(label)
             .accessibilityValue(accessibilityValue)
-            .accessibilityHint(model.isRecording ? "Press the new shortcut. Escape cancels, Delete clears." : "Activate to record a new shortcut.")
+            .accessibilityHint(model.isRecording ? "Press the new key or combination. Escape cancels, Delete clears." : "Activate to record a new shortcut.")
             .accessibilityAddTraits(.isButton)
             .accessibilityAction(.default, startRecording)
             .accessibilityAction(named: "Clear shortcut") { shortcut = nil }
@@ -295,7 +295,7 @@ public struct STShortcutRecorder: View {
             } else if !model.heldModifiers.isEmpty {
                 Text(model.heldModifiers.symbols).font(bodyFont).foregroundStyle(STColor.ink)
             } else {
-                Text("Press shortcut…").stStyle(.label).foregroundStyle(theme.inkTertiary)
+                Text("Press a key…").stStyle(.label).foregroundStyle(theme.inkTertiary)
             }
         } else if let shortcut {
             Text(shortcut.display).font(bodyFont).foregroundStyle(STColor.ink)

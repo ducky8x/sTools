@@ -61,13 +61,7 @@ struct SettingsPage: View {
             }
             .padding(.top, 14)
 
-            PageSectionTitle("Updates").padding(.top, 28).padding(.bottom, 4)
-            STSettingsRow("Check automatically") {
-                STSwitch(isOn: model.updatesBinding(\.checksAutomatically), label: "Check automatically")
-            }
-            STSettingsRow("Download and install automatically", showsRule: false) {
-                STSwitch(isOn: model.updatesBinding(\.installsAutomatically), label: "Download and install automatically")
-            }
+            UpdatesSection(model: model)
 
             PageSectionTitle("Data").padding(.top, 28).padding(.bottom, 4)
             STSettingsRow("Settings file") {
