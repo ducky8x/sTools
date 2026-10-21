@@ -93,6 +93,8 @@ final class AppUpdater: NSObject, AppUpdating, SPUUpdaterDelegate {
             return
         }
         guard pendingCheck == nil, !updater.sessionInProgress else {
+            // An update already in its window comes to the front; a check under way just finishes.
+            if pendingCheck == nil, updater.canCheckForUpdates { updater.checkForUpdates() }
             completion(.busy)
             return
         }
@@ -102,7 +104,7 @@ final class AppUpdater: NSObject, AppUpdating, SPUUpdaterDelegate {
     }
 
     func showUpdate() {
-        guard let updater, unavailableReason == nil, !updater.sessionInProgress else { return }
+        guard let updater, unavailableReason == nil, updater.canCheckForUpdates else { return }
         updater.checkForUpdates()
     }
 

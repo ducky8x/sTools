@@ -19,7 +19,9 @@ struct UpdatesSection: View {
             STSwitch(isOn: model.updatesBinding(\.checksAutomatically), label: "Automatically check for updates")
         }
         STSettingsRow("Automatically download and install updates") {
+            // Sparkle downloads by itself only on its own checks.
             STSwitch(isOn: model.updatesBinding(\.installsAutomatically), label: "Automatically download and install updates")
+                .disabled(!model.updates.checksAutomatically)
         }
         STSettingsRow("Check for updates", showsRule: false) {
             Button(center.phase == .checking ? "Checking\u{2026}" : "Check Now") { center.checkNow() }
