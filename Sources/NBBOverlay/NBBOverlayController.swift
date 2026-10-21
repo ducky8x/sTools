@@ -28,6 +28,17 @@ public final class NBBOverlayController: ToolController {
     @ObservationIgnored private var dragStartFrame: CGRect?
     @ObservationIgnored private var resizeStartFrame: CGRect?
     @ObservationIgnored private var currentDisplay: DisplayInfo?
+    /// How many times the overlay's content was built into the panel. For tests.
+    @ObservationIgnored private(set) var drawCount = 0
+    /// What the panel shows now, so a refresh that changes nothing it draws (Minecraft gaining or losing focus,
+    /// a stream reconnecting with the same values) leaves the content alone instead of building it again.
+    @ObservationIgnored private var drawn: DrawnOverlay?
+
+    private struct DrawnOverlay: Equatable {
+        var content: NBBOverlayContent
+        var messages: [String]
+        var settings: NBBOverlaySettings
+    }
 
     public init(services: ToolServices, connection: NBBConnection = NBBConnection()) {
         self.services = services
@@ -82,6 +93,9 @@ public final class NBBOverlayController: ToolController {
             for observer in observers { NotificationCenter.default.removeObserver(observer) }
             observers.removeAll()
             panel.hide()
+            // Off, the overlay's view tree goes too; switching on builds it again.
+            panel.contentView = nil
+            drawn = nil
         }
     }
 
@@ -194,12 +208,21 @@ public final class NBBOverlayController: ToolController {
         // override an AppKit window that's still set to ignore mouse events outright.
         panel.isMouseHandlingEnabled = settings.placementModeEnabled
 
-        panel.setContent(NBBOverlayView(
-            content: content, messages: messages, settings: settings,
-            onMoveChanged: { [weak self] in self?.placementMoveChanged($0) },
-            onMoveEnded: { [weak self] in self?.placementMoveEnded() },
-            onResizeChanged: { [weak self] in self?.placementResizeChanged($0) },
-            onResizeEnded: { [weak self] in self?.placementResizeEnded() }))
+        // The position only moves the panel, so it isn't part of what's drawn: a drag doesn't rebuild the content.
+        var drawnSettings = settings
+        drawnSettings.offsetX = 0
+        drawnSettings.offsetY = 0
+        let key = DrawnOverlay(content: content, messages: messages.map { "\($0.severity.rawValue)|\($0.text)" }, settings: drawnSettings)
+        if drawn != key {
+            panel.setContent(NBBOverlayView(
+                content: content, messages: messages, settings: settings,
+                onMoveChanged: { [weak self] in self?.placementMoveChanged($0) },
+                onMoveEnded: { [weak self] in self?.placementMoveEnded() },
+                onResizeChanged: { [weak self] in self?.placementResizeChanged($0) },
+                onResizeEnded: { [weak self] in self?.placementResizeEnded() }))
+            drawn = key
+            drawCount += 1
+        }
 
         let size = CGSize(width: CGFloat(settings.width), height: CGFloat(settings.width) / settings.aspectRatio)
         let origin = CGPoint(
