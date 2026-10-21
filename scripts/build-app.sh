@@ -22,7 +22,9 @@
 #
 # Signing safety: the only identity this script will ever sign with is the code-signing identity whose
 # common name is exactly "ducky8x". It is matched by exact name, never by substring, and signing uses its
-# SHA-1 hash, so other identities in the keychain can never be picked up.
+# SHA-1 hash, so other identities in the keychain can never be picked up. Everything inside the app that holds
+# code or is a bundle (resource bundles, embedded frameworks, XPC services, helper apps and tools, plug-ins) is
+# signed with it too, inside out, keeping each item's own entitlements and, for a loose tool, its identifier.
 
 set -euo pipefail
 
@@ -64,6 +66,34 @@ mask_home() {
 # The UUID and architecture of each slice of a Mach-O file or dSYM, one per line, sorted.
 macho_uuids() {
     xcrun dwarfdump --uuid "$1" | awk '{ print $2, $3 }' | sort
+}
+
+# Prints everything inside the app that is signed on its own, deepest first, one path per line: bundles (resource
+# bundles, frameworks, XPC services, helper apps, app extensions, plug-ins) and Mach-O files that are not a bundle's
+# main executable (a framework's helper tool, a dylib). A bundle's main executable is signed with its bundle, and
+# symbolic links are not followed, so a framework's Versions/Current links are not visited twice.
+list_nested_code() {
+    local path parent bundle executable
+    while IFS= read -r -d '' path; do
+        [[ "$path" != *$'\n'* ]] || fail "a file name in the app holds a line break: ${path#"$APP/"}"
+        if [[ -f "$path" ]]; then
+            [[ "$(file -b "$path")" == Mach-O* ]] || continue
+            parent="$(dirname "$path")"
+            if [[ "$(basename "$parent")" == MacOS && "$(basename "$(dirname "$parent")")" == Contents ]]; then
+                bundle="$(dirname "$(dirname "$parent")")"
+                executable="$(plutil -extract CFBundleExecutable raw -o - "$bundle/Contents/Info.plist" 2>/dev/null ||
+                    true)"
+                [[ "$executable" != "$(basename "$path")" ]] || continue
+            fi
+            if [[ "$(basename "$(dirname "$parent")")" == Versions && "$(dirname "$(dirname "$parent")")" == *.framework ]]; then
+                bundle="$(dirname "$(dirname "$parent")")"
+                [[ "$(basename "$bundle" .framework)" != "$(basename "$path")" ]] || continue
+            fi
+        fi
+        printf '%s\n' "$path"
+    done < <(find "$APP/Contents" -mindepth 1 \( -type d \( -name '*.app' -o -name '*.appex' -o -name '*.bundle' \
+        -o -name '*.framework' -o -name '*.plugin' -o -name '*.xpc' \) -o -type f \) -print0) |
+        awk -F/ '{ print NF "\t" $0 }' | sort -t "$(printf '\t')" -k1,1nr -k2 | cut -f2-
 }
 
 MODE=""
@@ -187,9 +217,11 @@ fi
 cd "$ROOT"
 
 APP_STARTED=0
+SIGN_WORK=""
 # A release build that fails at any step leaves no app behind: it could be signed and look finished.
 on_exit() {
     local status=$?
+    [[ -z "$SIGN_WORK" ]] || rm -rf "$SIGN_WORK"
     if [[ "$status" -ne 0 && "$MODE" == "release" && "$APP_STARTED" -eq 1 && -e "$APP" ]]; then
         rm -rf "$APP"
         echo "error: removed build/sTools.app: a release build that failed must not be shipped" >&2
@@ -274,6 +306,42 @@ fi
 cp "$ICON_BUILD/Assets.car" "$APP/Contents/Resources/Assets.car"
 cp "$ROOT/packaging/sTools.icns" "$APP/Contents/Resources/sTools.icns"
 
+# What is signed on its own, deepest first, and what its current signature says that re-signing must keep: its
+# entitlements and, for a loose tool its vendor signed, its identifier. Read now, because stripping can drop a
+# signature. Entitlements tied to the original signer's team or meant for debugging are not kept: under another
+# identity, without a provisioning profile, they would stop the item from launching or must not ship.
+readonly SIGNER_BOUND_ENTITLEMENTS="com.apple.application-identifier com.apple.developer.team-identifier
+    com.apple.security.get-task-allow get-task-allow"
+NESTED_LIST="$(list_nested_code)" || fail "cannot list the code inside the app"
+NESTED=()
+while IFS= read -r item; do
+    [[ -z "$item" ]] || NESTED+=("$item")
+done <<< "$NESTED_LIST"
+SIGN_WORK="$(mktemp -d -t sTools-sign)" || fail "cannot create a temporary folder for signing"
+if [[ "${#NESTED[@]}" -gt 0 ]]; then
+    for index in "${!NESTED[@]}"; do
+        item="${NESTED[$index]}"
+        entitlements="$SIGN_WORK/$index.entitlements"
+        codesign -d --entitlements - --xml "$item" > "$entitlements" 2>/dev/null || true
+        if [[ -s "$entitlements" ]]; then
+            plutil -lint -s "$entitlements" || fail "cannot read the entitlements of ${item#"$APP/"}"
+            for key in $SIGNER_BOUND_ENTITLEMENTS; do
+                # plutil reads dots as key path separators unless they are escaped.
+                plutil -remove "${key//./\\.}" "$entitlements" 2>/dev/null || true
+            done
+            # Nothing left: sign without an entitlements file.
+            [[ "$(plutil -p "$entitlements" | tr -d '[:space:]')" != "{}" ]] || : > "$entitlements"
+        fi
+        if [[ -f "$item" ]]; then
+            SIGNATURE="$(codesign -dv "$item" 2>&1 || true)"
+            # An ad hoc identifier is made up by the linker (name-hash); codesign makes a better one.
+            if [[ "$SIGNATURE" != *"Signature=adhoc"* ]]; then
+                sed -n 's/^Identifier=//p' <<< "$SIGNATURE" > "$SIGN_WORK/$index.identifier"
+            fi
+        fi
+    done
+fi
+
 if [[ "$MODE" == "release" ]]; then
     ARCHS="$(lipo -archs "$APP/Contents/MacOS/sTools")"
     for arch in arm64 x86_64; do
@@ -326,27 +394,48 @@ fi
 
 echo "==> Signing with $SIGN_DESCRIPTION"
 xattr -cr "$APP"
-SIGN_ARGS=(--force --sign "$SIGN_ID")
+SIGN_ARGS=(--force --sign "$SIGN_ID" --timestamp=none)
 if [[ -n "$KEYCHAIN" && "$SIGN_ID" != "-" ]]; then
     SIGN_ARGS+=(--keychain "$KEYCHAIN")
 fi
-# Inside out: resource bundles first, then the app with Hardened Runtime and entitlements.
-while IFS= read -r -d '' bundle; do
-    codesign "${SIGN_ARGS[@]}" --timestamp=none "$bundle"
-done < <(find "$APP/Contents/Resources" -maxdepth 1 -type d -name '*.bundle' -print0)
-codesign "${SIGN_ARGS[@]}" --timestamp=none --options runtime \
-    --entitlements "$ROOT/packaging/sTools.entitlements" "$APP"
+# Inside out: everything nested, deepest first (a framework's XPC services, helper app and tool before the
+# framework), with Hardened Runtime and its own entitlements; then the app with its entitlements.
+if [[ "${#NESTED[@]}" -gt 0 ]]; then
+    for index in "${!NESTED[@]}"; do
+        item="${NESTED[$index]}"
+        ITEM_ARGS=(--options runtime)
+        if [[ -s "$SIGN_WORK/$index.entitlements" ]]; then
+            ITEM_ARGS+=(--entitlements "$SIGN_WORK/$index.entitlements")
+        fi
+        if [[ -s "$SIGN_WORK/$index.identifier" ]]; then
+            ITEM_ARGS+=(--identifier "$(head -n 1 "$SIGN_WORK/$index.identifier")")
+        fi
+        codesign "${SIGN_ARGS[@]}" "${ITEM_ARGS[@]}" "$item"
+        echo "    signed ${item#"$APP/"}$( [[ -s "$SIGN_WORK/$index.entitlements" ]] && echo " (with its entitlements)")"
+    done
+fi
+codesign "${SIGN_ARGS[@]}" --options runtime --entitlements "$ROOT/packaging/sTools.entitlements" "$APP"
 
 echo "==> Verifying"
 codesign --verify --deep --strict --verbose=2 "$APP"
+# Signed by the expected identity, or ad hoc when that was asked for.
+check_signer() {
+    local info="$1" what="$2"
+    if [[ "$SIGN_ID" == "-" ]]; then
+        [[ "$info" == *"Signature=adhoc"* ]] || fail "expected an ad hoc signature on $what"
+    else
+        grep -qx "Authority=$IDENTITY_NAME" <<< "$info" || fail "$what was not signed by \"$IDENTITY_NAME\""
+    fi
+}
+if [[ "${#NESTED[@]}" -gt 0 ]]; then
+    for item in "${NESTED[@]}"; do
+        check_signer "$(codesign -dvv "$item" 2>&1)" "${item#"$APP/"}"
+    done
+    echo "    ${#NESTED[@]} nested item(s) signed by $SIGN_DESCRIPTION"
+fi
 SIGNATURE_INFO="$(codesign -dvv "$APP" 2>&1)"
 grep -E '^(Identifier|Format|CodeDirectory|Signature|Authority|TeamIdentifier)' <<< "$SIGNATURE_INFO" || true
-if [[ "$SIGN_ID" == "-" ]]; then
-    [[ "$SIGNATURE_INFO" == *"Signature=adhoc"* ]] || fail "expected an ad hoc signature"
-else
-    grep -qx "Authority=$IDENTITY_NAME" <<< "$SIGNATURE_INFO" ||
-        fail "the app was not signed by \"$IDENTITY_NAME\""
-fi
+check_signer "$SIGNATURE_INFO" "the app"
 grep -Eq '^CodeDirectory .*flags=0x[0-9a-f]+\([^)]*runtime' <<< "$SIGNATURE_INFO" ||
     fail "Hardened Runtime is not enabled"
 codesign -dr - "$APP" 2>&1 | grep -E '^(# )?designated'
