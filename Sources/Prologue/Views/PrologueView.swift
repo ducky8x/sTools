@@ -47,7 +47,10 @@ public struct PrologueView: View {
         .background(AnimationCompleter(animations: model.animations))
         .onChange(of: flow.visit) { _, _ in sound.play(.page) }
         .onChange(of: theme.reduceMotion) { _, reduced in
-            if reduced { model.animations.completeAll() }
+            guard reduced else { return }
+            model.animations.completeAll()
+            // The Finale can outlast its title's gate, so finish it here too.
+            model.completeFinale()
         }
     }
 

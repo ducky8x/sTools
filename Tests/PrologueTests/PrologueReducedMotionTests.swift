@@ -252,6 +252,31 @@ struct PrologueReducedMotionTests {
         #expect(!model.isFinaleRunning)
     }
 
+    /// Found in the bug hunt: the title's gate ends before a Finale of several tools does, so reducing motion after
+    /// it left the rest still going off one by one, with nothing to complete.
+    @Test func reducingMotionMidFinaleSwitchesTheRestOffAtOnce() async {
+        final class Time { var now = ContinuousClock.now }
+        let time = Time()
+        let theme = STTheme()
+        let box = StoreBox()
+        let host = FakeHost()
+        host.toolsOn = [.nbbOverlay, .crosshair, .screenRecording]
+        let model = PrologueModel(store: box.store, host: host, startingAt: .youreSet,
+                                  animations: PrologueAnimations(now: { time.now }),
+                                  finaleDelay: .zero, finaleInterval: .seconds(60))
+        let hosted = show(model, theme: theme)
+        _ = hosted.capture()
+        model.runFinale()
+        #expect(await waitUntil { host.switchedOff.count == 1 }, "the first goes off; the next waits a minute")
+        time.now = time.now.advanced(by: .seconds(30))
+        #expect(!model.animations.isRunning, "the title's gate is long over")
+
+        theme.systemReduceMotion = true
+        _ = hosted.capture()
+        #expect(host.switchedOff == [.nbbOverlay, .crosshair, .screenRecording])
+        #expect(!model.isFinaleRunning)
+    }
+
     @Test func runFinaleAllAtOnceLeavesNothingPending() {
         let box = StoreBox()
         let host = FakeHost()
