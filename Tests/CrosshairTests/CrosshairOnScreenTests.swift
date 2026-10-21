@@ -43,7 +43,7 @@ private func lineCrossing(in bitmap: RGBABitmap) -> PixelPoint? {
     var columns = [Int](repeating: 0, count: bitmap.width)
     var rows = [Int](repeating: 0, count: bitmap.height)
     for y in 0..<bitmap.height {
-        for x in 0..<bitmap.width where bitmap[x, y][3] == 255 {
+        for x in 0..<bitmap.width where bitmap[x, y].alpha == 255 {
             columns[x] += 1
             rows[y] += 1
         }
@@ -117,7 +117,7 @@ struct CrosshairOnScreenTests {
             for y in 0..<overlay.bitmap.height {
                 for x in 0..<overlay.bitmap.width {
                     let expected = spritePixels[x - left, y - top]
-                    if !overlay.bitmap.pixel(x: x, y: y, matches: expected) { wrong.append(PixelPoint(x: x, y: y)) }
+                    if !overlay.bitmap[x, y].matches(expected) { wrong.append(PixelPoint(x: x, y: y)) }
                 }
             }
             #expect(wrong.isEmpty, "\(settings.shape): \(wrong.count) pixels differ from the sprite, first \(wrong.prefix(3))")
@@ -166,9 +166,9 @@ struct CrosshairOnScreenTests {
         settings.thickness = 2
         let overlay = renderOverlay(settings, displays: [display.info])
         let panel = try #require(gridOrigin(of: overlay.frame, on: display))
-        let bounds = try #require(overlay.bitmap.opaqueBounds)
-        let columns = (0..<overlay.bitmap.width).filter { x in overlay.bitmap[x, bounds.minY][3] > 0 }.map { panel.x + $0 }
-        let rows = (0..<overlay.bitmap.height).filter { y in overlay.bitmap[bounds.minX, y][3] > 0 }.map { panel.y + $0 }
+        let bounds = try #require(overlay.bitmap.drawnBounds)
+        let columns = (0..<overlay.bitmap.width).filter { x in overlay.bitmap[x, bounds.minY].alpha > 0 }.map { panel.x + $0 }
+        let rows = (0..<overlay.bitmap.height).filter { y in overlay.bitmap[bounds.minX, y].alpha > 0 }.map { panel.y + $0 }
         #expect(columns == [display.center.x, display.center.x + 1])
         #expect(rows == [display.center.y, display.center.y + 1])
     }
@@ -185,20 +185,105 @@ struct CrosshairOnScreenTests {
     func theDrawnDefaultCoversMinecraftsCrosshairAtGUIScaleThree(display: DisplayCase) throws {
         let overlay = renderOverlay(.defaultValue, displays: [display.info])
         let panel = try #require(gridOrigin(of: overlay.frame, on: display))
-        let white: [UInt8] = [255, 255, 255, 255]
         var whiteColumns = Set<Int>(), whiteRows = Set<Int>()
         for y in 0..<overlay.bitmap.height {
-            for x in 0..<overlay.bitmap.width where overlay.bitmap.pixel(x: x, y: y, matches: white) {
+            for x in 0..<overlay.bitmap.width where overlay.bitmap[x, y] == .white {
                 whiteColumns.insert(x)
                 whiteRows.insert(y)
             }
         }
         // The vertical arm's columns, in the white fill's top row, and the horizontal arm's rows, in its left column.
         let top = try #require(whiteRows.min()), left = try #require(whiteColumns.min())
-        let columns = (0..<overlay.bitmap.width).filter { overlay.bitmap.pixel(x: $0, y: top, matches: white) }.map { panel.x + $0 }
-        let rows = (0..<overlay.bitmap.height).filter { overlay.bitmap.pixel(x: left, y: $0, matches: white) }.map { panel.y + $0 }
+        let columns = (0..<overlay.bitmap.width).filter { overlay.bitmap[$0, top] == .white }.map { panel.x + $0 }
+        let rows = (0..<overlay.bitmap.height).filter { overlay.bitmap[left, $0] == .white }.map { panel.y + $0 }
         let pixels = CrosshairGeometry.gridSize(frame: display.frame, scale: display.scale)
         #expect(columns == minecraftCenterLine(pixels: pixels.width))
         #expect(rows == minecraftCenterLine(pixels: pixels.height))
+    }
+
+    // MARK: - Preview
+
+    /// The preview's pixels, away from its rounded corners, that don't show the overlay's pixel for the same part
+    /// of the crosshair laid over the preview's background. The preview's mock display is 320 x 200 points, so
+    /// its center pixel is just left of and above its middle.
+    private func previewMismatches(
+        preview: RGBABitmap, overlay: (frame: CGRect, bitmap: RGBABitmap, previewImage: CGImage?), display: DisplayCase
+    ) throws -> [PixelPoint] {
+        let scale = Int(display.scale)
+        let panel = try #require(gridOrigin(of: overlay.frame, on: display))
+        let dx = display.center.x - panel.x - (160 * scale - 1)
+        let dy = display.center.y - panel.y - (100 * scale - 1)
+        let background = preview[12 * scale, 12 * scale]
+        #expect(background.alpha == 255, "the preview's background is opaque")
+        let corner = 8 * scale
+        var wrong = [PixelPoint]()
+        for y in corner..<preview.height - corner {
+            for x in corner..<preview.width - corner {
+                let expected = overlay.bitmap[x + dx, y + dy].over(background)
+                if preview[x, y] != expected { wrong.append(PixelPoint(x: x, y: y)) }
+            }
+        }
+        return wrong
+    }
+
+    // The preview shows the crosshair exactly as the overlay draws it: one sprite pixel on each backing pixel of
+    // the screen it's on, over its own background. Regression: on a 2x screen the preview drew each sprite
+    // pixel as a blurred 2 x 2 block.
+    @Test(arguments: [DisplayCase.fullHD, .fullHDAt2x])
+    func thePreviewShowsTheOverlaysOwnPixels(display: DisplayCase) throws {
+        for settings in sampleSettings {
+            let overlay = renderOverlay(settings, displays: [display.info])
+            let preview = renderPreview(settings, scale: display.scale)
+            let wrong = try previewMismatches(preview: preview, overlay: overlay, display: display)
+            #expect(wrong.isEmpty, "\(settings.shape): \(wrong.count) preview pixels differ from the overlay, first \(wrong.prefix(3))")
+        }
+    }
+
+    @Test(arguments: [DisplayCase.fullHD, .fullHDAt2x])
+    func thePreviewShowsAnImageCrosshairsOwnPixels(display: DisplayCase) throws {
+        let source = tempDirectory().appending(path: "crosshair.png")
+        writeTestImage(to: source)
+        var settings = CrosshairSettings.defaultValue
+        settings.shape = .image
+        settings.imageScalePercent = 300
+        settings.imageAnchor = .bottomRight
+        settings.opacityPercent = 80
+        settings.offsetX = 4
+        settings.offsetY = -2
+        let overlay = renderOverlay(settings, displays: [display.info], customImage: source)
+        let image = try #require(overlay.previewImage)
+        let preview = renderPreview(settings, customImage: image, scale: display.scale)
+        let wrong = try previewMismatches(preview: preview, overlay: overlay, display: display)
+        #expect(wrong.isEmpty, "\(wrong.count) preview pixels differ from the overlay, first \(wrong.prefix(3))")
+    }
+
+    // A crosshair too big for the preview is shrunk around its aim point to fit, whole, inside the box.
+    // Regression: one bigger than the box was cut off by its rounded corners.
+    @Test(arguments: [CGFloat(1), 2])
+    func aCrosshairTooBigForThePreviewIsShrunkToFitWhole(scale: CGFloat) throws {
+        // A 362-pixel sprite: taller than the box less its margins at 1x (168) and at 2x (336).
+        var settings = CrosshairSettings.defaultValue
+        settings.size = 170
+        settings.thickness = 6
+        settings.gap = 4
+        settings.offsetX = 0
+        settings.offsetY = 0
+        #expect(CrosshairRenderer.builtIn(settings: settings).size.height == 362)
+        let preview = renderPreview(settings, scale: scale)
+        let pixelsPerPoint = Int(scale)
+        let background = preview[12 * pixelsPerPoint, 12 * pixelsPerPoint]
+        var drawn: (minX: Int, minY: Int, maxX: Int, maxY: Int)?
+        for y in 0..<preview.height {
+            for x in 0..<preview.width where preview[x, y].alpha == 255 && !preview[x, y].matches(background, tolerance: 2) {
+                drawn = (min(drawn?.minX ?? x, x), min(drawn?.minY ?? y, y), max(drawn?.maxX ?? x, x), max(drawn?.maxY ?? y, y))
+            }
+        }
+        let bounds = try #require(drawn)
+        let margin = 16 * pixelsPerPoint - 1
+        #expect(bounds.minX >= margin && bounds.minY >= margin)
+        #expect(bounds.maxX < preview.width - margin && bounds.maxY < preview.height - margin)
+        #expect(bounds.maxY - bounds.minY > preview.height / 2, "still big enough to judge")
+        let center = (x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2)
+        #expect(abs(center.x - (160 * pixelsPerPoint - 1)) <= 2 && abs(center.y - (100 * pixelsPerPoint - 1)) <= 2)
     }
 }
