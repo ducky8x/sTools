@@ -39,10 +39,19 @@ struct ToolPage: View {
     }
 }
 
-/// A tool's own settings and plate: everything below its page header.
+/// A tool's own settings and plate: everything below its page header. In the Prologue's trial (`isTrial`) the Key
+/// Rebinder leaves sTools hotkeys out.
 struct ToolContent: View {
     let model: AppModel
     let tool: ToolID
+    var isTrial = false
+
+    /// The Key Rebinder's Open Hotkeys, on a key a rule drives: Home, where that key's hotkey is recorded by
+    /// pressing it. Nil in the trial.
+    var openHotkeys: (() -> Void)? {
+        guard !isTrial else { return nil }
+        return { [model] in model.navigate(to: .home) }
+    }
 
     var body: some View {
         switch tool {
@@ -60,7 +69,7 @@ struct ToolContent: View {
             }
         case .keyRebinder:
             if let keyRebinder = model.keyRebinder {
-                KeyRebinderView(controller: keyRebinder)
+                KeyRebinderView(controller: keyRebinder, showsHotkeys: !isTrial, openHotkeys: openHotkeys)
             } else {
                 LaterMilestonePlate(tool: tool)
             }
