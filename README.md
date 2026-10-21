@@ -2,7 +2,7 @@
 
 A Mac app for Minecraft: Java Edition speedrunners — six tools in one elegant, always-dark app.
 
-> **Status:** in development. Built so far: the app itself, Crosshair, Window Backdrop, NBB Overlay, hotkeys and settings, Key Rebinder, Screen Recording and the first-launch introduction. Still to come: Timer Overlay and the beta release. The first beta (0.1.0) goes to testers before any public release.
+> **Status:** in development. Built so far: the app itself, Crosshair, Window Backdrop, NBB Overlay, hotkeys and settings, Key Rebinder, Screen Recording and the first-launch introduction. Still to come: hotkeys without a modifier and on the Key Rebinder's keys, Timer Overlay and the beta release. The first beta (0.1.0) goes to testers before any public release.
 
 ## Tools
 
@@ -13,9 +13,9 @@ A Mac app for Minecraft: Java Edition speedrunners — six tools in one elegant,
 | 3 | **Crosshair** | Draws a customizable crosshair at the exact center of the screen, or your own image. |
 | 4 | **Timer Overlay** | One key starts a countdown that pops up over the game, rings an alarm and leaves by itself (planned for 0.1.0). |
 | 5 | **Screen Recording** | Records Minecraft and sTools' overlays, plus windows, displays, cameras, web pages, app audio and microphones arranged on one canvas. |
-| 6 | **Key Rebinder** | Shows your Karabiner-Elements rebinds and Minecraft keybinds on a drawn keyboard and mouse; edit, check against speedrun rules, test keys, manage profiles. |
+| 6 | **Key Rebinder** | Shows your Karabiner-Elements rebinds and Minecraft keybinds on a drawn keyboard and mouse; edit, check against speedrun rules, test keys, manage profiles, and put sTools hotkeys on keys. |
 
-Also: global hotkeys (off by default), a first-launch introduction that sets up permissions and lets you try every tool, settings for everything, and automatic updates.
+Also: global hotkeys (off by default; any key, with or without modifiers, set in Home or right on a key in the Key Rebinder), a first-launch introduction that sets up permissions and lets you try every tool, settings for everything, and automatic updates.
 
 ## Requirements (planned)
 
