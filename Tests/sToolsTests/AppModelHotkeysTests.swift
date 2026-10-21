@@ -246,6 +246,12 @@ struct HomeHotkeyRowTests {
         #expect(HotkeyBindingRow.details(for: binding, isEditing: false, hotkeys: hotkeys).isEmpty)
     }
 
+    /// Several rows can offer Show on Keyboard, so VoiceOver names the hotkey on each, as it does for Edit.
+    @Test func showOnKeyboardNamesItsHotkeyForVoiceOver() {
+        #expect(HotkeyBindingRow.showOnKeyboardLabel(for: HotkeyCombo(keyCode: 79, modifiers: .option)) == "Show Option F18 on keyboard")
+        #expect(HotkeyBindingRow.showOnKeyboardLabel(for: pad1) == "Show Keypad 1 on keyboard")
+    }
+
     /// Home ▸ Hotkeys loads the Key Rebinder's advice (karabiner.json and Minecraft's keybinds) when it appears with
     /// hotkeys on and when they are switched on; with hotkeys off it loads nothing.
     @Test func theSectionLoadsTheAdviceWhileHotkeysAreOn() async {

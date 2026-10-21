@@ -114,6 +114,11 @@ struct HotkeyBindingRow: View {
         var isEmpty: Bool { placement == nil && cautions.isEmpty }
     }
 
+    /// What VoiceOver calls Show on Keyboard: "Show Option F18 on keyboard", so rows don't all read the same.
+    static func showOnKeyboardLabel(for combo: HotkeyCombo) -> String {
+        "Show \(HotkeyWording.spokenName(for: combo)) on keyboard"
+    }
+
     /// The placement caption, Show on Keyboard and the cautions for `binding`. While the row is being edited, its
     /// editor shows every note for the combination being recorded, so the row leaves the cautions out.
     static func details(for binding: HotkeyBinding, isEditing: Bool, hotkeys: HotkeyCenter) -> Details {
@@ -136,6 +141,7 @@ struct HotkeyBindingRow: View {
                             if details.canShow {
                                 Button("Show on Keyboard") { model.showHotkeyOnKeyboard(binding.combo) }
                                     .buttonStyle(STButtonStyle(.quiet))
+                                    .accessibilityLabel(Self.showOnKeyboardLabel(for: binding.combo))
                             }
                         }
                     }
