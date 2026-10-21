@@ -87,19 +87,31 @@ final class HotkeyViewRig {
 
 // MARK: - Rendering
 
-/// Renders `view` offscreen at 1x in the dark appearance as PNG data: an `NSHostingView` drawn into a bitmap of a
-/// fixed scale, with no window, so nothing ever reaches a screen and the result doesn't depend on the display.
+/// `view` as the renders draw it: the house theme, no sounds, `size`, on the page's background.
 @MainActor
-private func png<V: View>(_ view: V, size: CGSize) -> Data {
-    let root = view
+private func rendered<V: View>(_ view: V, size: CGSize) -> some View {
+    view
         .environment(\.stTheme, STTheme())
         .environment(\.stSoundPlayer, STSoundPlayer.silent)
         .frame(width: size.width, height: size.height, alignment: .topLeading)
         .background(STColor.background)
+}
+
+/// An `NSHostingView` for `root`, in the dark appearance, with no window.
+@MainActor
+private func host<Root: View>(_ root: Root, size: CGSize) -> NSHostingView<Root> {
     let host = NSHostingView(rootView: root)
     host.frame = CGRect(origin: .zero, size: size)
     host.appearance = NSAppearance(named: .darkAqua)
+    return host
+}
+
+/// Draws `host` offscreen at 1x as PNG data: into a bitmap of a fixed scale, with no window, so nothing ever reaches
+/// a screen and the result doesn't depend on the display.
+@MainActor
+private func png(of host: NSView) -> Data {
     host.layoutSubtreeIfNeeded()
+    let size = host.bounds.size
     let rep = NSBitmapImageRep(
         bitmapDataPlanes: nil, pixelsWide: Int(size.width), pixelsHigh: Int(size.height),
         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
@@ -107,6 +119,12 @@ private func png<V: View>(_ view: V, size: CGSize) -> Data {
     rep.size = size
     host.cacheDisplay(in: host.bounds, to: rep)
     return rep.representation(using: .png, properties: [:]) ?? Data()
+}
+
+/// Renders `view` offscreen at 1x in the dark appearance as PNG data (`png(of:)`).
+@MainActor
+private func png<V: View>(_ view: V, size: CGSize) -> Data {
+    png(of: host(rendered(view, size: size), size: size))
 }
 
 // MARK: - Key caps
@@ -364,6 +382,29 @@ struct KeyPanelHotkeyRenderTests {
         let cantCarry = block(.key("left_shift"))
 
         #expect(Set([off, rows, rowsAndEditor, cantCarry]).count == 4)
+    }
+
+    /// The page keeps one key panel and changes its key; the panel gives the Hotkeys part a new identity per key, so
+    /// an open editor closes and nothing is saved.
+    @Test func selectingAnotherKeyClosesTheEditorUnsaved() async throws {
+        let rig = try HotkeyViewRig(config: HotkeyViewRig.profile([("caps_lock", "f18")]))
+        defer { rig.remove() }
+        await rig.prepare()
+        let size = CGSize(width: 680, height: 640)
+        func panel(_ key: KarabinerEvent, draft: HotkeyDraft? = nil) -> KeyEditorPanel {
+            KeyEditorPanel(controller: rig.controller, key: key, hotkeyDraft: draft, openRule: { _ in })
+        }
+        var draft = HotkeyDraft()
+        draft.does = [.toggle(.crosshair)]
+        let page = host(rendered(panel(.key("caps_lock"), draft: draft), size: size), size: size)
+        let editing = png(of: page)
+        #expect(editing != png(panel(.key("caps_lock")), size: size))
+
+        page.rootView = rendered(panel(.key("a")), size: size)
+        let switched = png(of: page)
+        #expect(switched == png(panel(.key("a")), size: size))
+        #expect(switched != png(panel(.key("a"), draft: draft), size: size))
+        #expect(rig.center.bindings.isEmpty)
     }
 }
 
