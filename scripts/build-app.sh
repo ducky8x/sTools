@@ -4,9 +4,11 @@
 # Usage: scripts/build-app.sh [debug|release] [--adhoc] [--keychain <path>]
 #
 #   debug       Host architecture only (fast). The default. Keeps its debug info; never ship it.
-#   release     Universal binary (arm64 + x86_64), for shipping. Its debug symbols go to a dSYM in
-#               build/dSYMs/sTools-<version>-<build>/ (kept for crash reports, never shipped) and are stripped
-#               from the app, and the build fails when anything in the app holds "/Users/" or the account name
+#   release     Universal binary (arm64 + x86_64), for shipping. Its debug symbols go to dSYMs in
+#               build/dSYMs/sTools-<version>-<build>-<UUIDs>/ (kept for crash reports, never shipped; the folder is
+#               named after the executable's UUIDs, so a rebuild never replaces the symbols of another binary) and
+#               are stripped from every binary in the app. The build fails, and build/sTools.app is removed, when a
+#               step fails or anything in the app holds a home-folder path, a name or a trace of this Mac
 #               (scripts/check-no-home-paths.sh).
 #   --adhoc     Debug only. When the "ducky8x" identity does not exist, sign ad hoc instead of failing.
 #   --keychain  Look for the identity in, and sign with, this keychain instead of the search list.
@@ -38,6 +40,25 @@ usage() {
 fail() {
     echo "error: $*" >&2
     exit 1
+}
+
+# Copies standard input to standard output with the home folder shortened to ~ and the account name, in any letter
+# case, hidden: for passing on what tools print about files in the home folder.
+mask_home() {
+    LC_ALL=C awk -v home="$HOME" -v account="$(id -un)" '
+        BEGIN { wanted = tolower(account); width = length(account) }
+        {
+            line = $0
+            while (length(home) > 1 && (at = index(line, home)) > 0) {
+                line = substr(line, 1, at - 1) "~" substr(line, at + length(home))
+            }
+            out = ""
+            while (width > 0 && (at = index(tolower(line), wanted)) > 0) {
+                out = out substr(line, 1, at - 1) "<account name>"
+                line = substr(line, at + width)
+            }
+            print out line
+        }'
 }
 
 # The UUID and architecture of each slice of a Mach-O file or dSYM, one per line, sorted.
@@ -165,6 +186,17 @@ fi
 
 cd "$ROOT"
 
+APP_STARTED=0
+# A release build that fails at any step leaves no app behind: it could be signed and look finished.
+on_exit() {
+    local status=$?
+    if [[ "$status" -ne 0 && "$MODE" == "release" && "$APP_STARTED" -eq 1 && -e "$APP" ]]; then
+        rm -rf "$APP"
+        echo "error: removed build/sTools.app: a release build that failed must not be shipped" >&2
+    fi
+}
+trap on_exit EXIT
+
 echo "==> Building ($MODE)"
 if [[ "$MODE" == "release" ]]; then
     # Swift Build, pinned: the native build system's Bundle.module accessor (STDesign and KeyRebinder fall back
@@ -179,6 +211,7 @@ BIN_PATH="$(swift build "${BUILD_FLAGS[@]}" --show-bin-path)"
 [[ -x "$BIN_PATH/sTools" ]] || fail "build did not produce $BIN_PATH/sTools"
 
 echo "==> Assembling $APP"
+APP_STARTED=1
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_PATH/sTools" "$APP/Contents/MacOS/sTools"
@@ -253,7 +286,12 @@ if [[ "$MODE" == "release" ]]; then
     # reports, then strip -S takes it out of every Mach-O in the app. Compiler prefix maps (-debug-prefix-map,
     # -file-prefix-map) are not used instead: the linker still records each object file's absolute path, they do
     # not reach string literals, and they miss any spelling of the path other than the one they are given.
-    DSYM_DIR="$ROOT/build/dSYMs/sTools-$VERSION-$BUILD_NUMBER"
+    # The folder is named after the executable's UUIDs: rebuilding the same version and build number makes a new
+    # folder unless the binary is the same, so the symbols of a binary that may have shipped are never replaced.
+    UUID_TAG="$(xcrun dwarfdump --uuid "$APP/Contents/MacOS/sTools" | awk '{ print $3, $2 }' | sort |
+        awk '{ printf "%s%s", (NR > 1 ? "-" : ""), substr($2, 1, 8) }')"
+    [[ "$UUID_TAG" =~ ^[0-9A-F]{8}(-[0-9A-F]{8})+$ ]] || fail "cannot read the executable's UUIDs"
+    DSYM_DIR="$ROOT/build/dSYMs/sTools-$VERSION-$BUILD_NUMBER-$UUID_TAG"
     echo "==> Saving the debug symbols to ${DSYM_DIR#"$ROOT/"} and stripping them from the app"
     rm -rf "$DSYM_DIR"
     mkdir -p "$DSYM_DIR"
@@ -265,7 +303,13 @@ if [[ "$MODE" == "release" ]]; then
         if xcrun nm -ap "$macho" | awk '$5 == "OSO" { found = 1 } END { exit !found }'; then
             dsym="$DSYM_DIR/$(basename "$macho").dSYM"
             [[ ! -e "$dsym" ]] || fail "two binaries in the app are named $(basename "$macho")"
-            xcrun dsymutil "$macho" -o "$dsym"
+            # A warning means part of the debug info was not found (an object file gone, say): the dSYM would
+            # match the binary's UUIDs and still leave crash reports without names.
+            if ! DSYMUTIL_LOG="$(xcrun dsymutil "$macho" -o "$dsym" 2>&1)" ||
+                grep -Eqi '(warning|error):' <<< "$DSYMUTIL_LOG"; then
+                mask_home <<< "$DSYMUTIL_LOG" >&2
+                fail "dsymutil could not save all of the debug symbols of ${macho#"$APP/"}"
+            fi
         fi
         xcrun strip -S "$macho"
         if [[ -n "$dsym" ]]; then
@@ -308,9 +352,9 @@ grep -Eq '^CodeDirectory .*flags=0x[0-9a-f]+\([^)]*runtime' <<< "$SIGNATURE_INFO
 codesign -dr - "$APP" 2>&1 | grep -E '^(# )?designated'
 
 if [[ "$MODE" == "release" ]]; then
-    echo "==> Checking the app for home-folder paths and the account name"
+    echo "==> Checking the app for home-folder paths, names and traces of this Mac"
     "$ROOT/scripts/check-no-home-paths.sh" "$APP" ||
-        fail "build/sTools.app must not ship: it holds \"/Users/\" or the account name (listed above)"
+        fail "build/sTools.app must not ship: it holds a home-folder path, a name or a trace of this Mac (listed above)"
 fi
 
 echo
