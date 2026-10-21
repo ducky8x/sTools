@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import STDesign
 import STPlatform
@@ -85,6 +86,22 @@ struct AppModelTests {
         harness.model.permissions.refresh()
         let turnedOff = await waitUntil { !harness.model.isOn(.windowBackdrop) }
         #expect(turnedOff)
+    }
+
+    @Test func runningToolsWatchOnlyAccessibilityAndOnlyNowAndThen() async {
+        let harness = Harness()
+        harness.model.setTool(.crosshair, on: true)
+        #expect(AppModel.toolPollingInterval >= .seconds(10))
+        let others = Permission.allCases.filter { $0 != .accessibility }
+        let before = others.map(harness.prober.readCount)
+        // sTools coming to the front rereads Accessibility at once, without waiting for the slow backstop.
+        harness.prober.set(.accessibility, .denied)
+        NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: nil)
+        let turnedOff = await waitUntil { !harness.model.isOn(.crosshair) }
+        #expect(turnedOff)
+        // The other permissions, each a round trip to the system, were never read for it.
+        #expect(others.map(harness.prober.readCount) == before)
+        #expect(!harness.model.isPollingForTools)
     }
 
     @Test func grantingAccessibilityRefreshesMinecraft() async {

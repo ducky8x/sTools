@@ -28,13 +28,20 @@ final class AppModel {
     var toolIsOn: [ToolID: Bool] = [:]
     /// The first-launch introduction while it runs (spec 4); nil once finished or skipped.
     var prologue: PrologueModel?
+    /// Whether the main window can be seen (open, not minimized, not covered by Minecraft or a locked screen). Pages
+    /// pause their polling and previews while it's false.
+    var isMainWindowVisible = true
+    /// False from the moment the main window closes until it's shown again. While closed (and no introduction is
+    /// running), the window holds no pages at all, so their views, layers and caches are given back.
+    var isMainWindowOpen = true
 
     @ObservationIgnored let controllers: [ToolID: any ToolController]
     /// Key Rebinder has no on/off switch, so it isn't one of `controllers`.
     @ObservationIgnored let keyRebinder: KeyRebinderController?
     @ObservationIgnored let loginItem: any LoginItemControlling
     @ObservationIgnored var wasAccessibilityGranted: Bool
-    @ObservationIgnored var isPollingForTools = false
+    /// Held while a tool that needs Accessibility runs, so a revoked grant turns it off (`updateToolPolling()`).
+    @ObservationIgnored var toolPolling: PermissionCenter.PollingToken?
     /// Set by the root view so the Dock icon can bring the window back after it was closed.
     @ObservationIgnored var openMainWindow: (() -> Void)?
     /// Tools already on when the introduction began; its end leaves them on.
