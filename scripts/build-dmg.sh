@@ -8,7 +8,7 @@
 #   --volume-icon  The DMG's volume icon (default packaging/sTools.icns; skipped when that file does not exist).
 #   --beta         Name the DMG as a beta: sTools-<version>-beta-macOS.dmg.
 #   --output       Where to write the DMG instead of ~/Projects/App Outputs/sTools-<version>[-beta]-macOS.dmg.
-#                  Never inside the repository: shared builds live in ~/Projects/App Outputs.
+#                  Never inside the repository or any of its worktrees: shared builds live in ~/Projects/App Outputs.
 #
 # Environment:
 #   DEVELOPER_DIR  Defaults to the Xcode beta when it is installed.
@@ -148,17 +148,61 @@ NAME="sTools-$VERSION$SUFFIX-macOS.dmg"
 OUTPUT="${OUTPUT:-$OUTPUTS/$NAME}"
 [[ "$OUTPUT" == *.dmg ]] || fail "--output must name a .dmg file"
 [[ "$OUTPUT" == /* ]] || OUTPUT="$(pwd -P)/$OUTPUT"
-# Checked before any folder is made for it, and again once symbolic links are resolved.
-inside_repository() {
-    case "$1" in
-        "$ROOT"/*) fail "the DMG must not be written inside the repository; shared builds go to ~/Projects/App Outputs" ;;
-    esac
+
+# The path a folder will have once it exists: its deepest existing folder with symbolic links and .. resolved, then
+# the rest, which must not hold . or .. (they could resolve differently once the folders are made).
+physical_path() {
+    local path="$1" rest="" name
+    while [[ ! -d "$path" ]]; do
+        name="$(basename "$path")"
+        [[ "$name" != "." && "$name" != ".." ]] || return 1
+        rest="/$name$rest"
+        path="$(dirname "$path")"
+    done
+    path="$(cd -P "$path" && pwd -P)" || return 1
+    path="${path%/}$rest"
+    printf '%s\n' "${path:-/}"
 }
-inside_repository "$OUTPUT"
-mkdir -p "$(dirname "$OUTPUT")"
-OUTPUT="$(cd "$(dirname "$OUTPUT")" && pwd -P)/$(basename "$OUTPUT")"
+
+lowercased() {
+    printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]'
+}
+
+# Every checkout of this repository, resolved: this one, the main one and every other worktree.
+repository_checkouts() {
+    local checkout
+    { printf '%s\n' "$ROOT"; git -C "$ROOT" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p'; } |
+        while IFS= read -r checkout; do
+            if [[ -d "$checkout" ]]; then
+                (cd -P "$checkout" && pwd -P) || true
+            fi
+        done
+}
+
+# Whether a resolved path is in a checkout of this repository, ignoring letter case as the disk does.
+inside_repository() {
+    local path checkout
+    path="$(lowercased "$1")"
+    while IFS= read -r checkout; do
+        [[ -n "$checkout" ]] || continue
+        case "$path/" in
+            "$(lowercased "$checkout")"/*) return 0 ;;
+        esac
+    done < <(repository_checkouts)
+    return 1
+}
+
+# Resolved and checked before any folder is made for it, and checked again once its folder exists.
+readonly REFUSED_OUTPUT="the DMG must not be written inside the repository or one of its worktrees; shared builds go to ~/Projects/App Outputs"
+OUTPUT_NAME="$(basename "$OUTPUT")"
+OUTPUT_FOLDER="$(physical_path "$(dirname "$OUTPUT")")" ||
+    fail "--output must not hold . or .. in the part of its path that does not exist yet"
+! inside_repository "${OUTPUT_FOLDER%/}/$OUTPUT_NAME" || fail "$REFUSED_OUTPUT"
+mkdir -p "$OUTPUT_FOLDER"
+OUTPUT_FOLDER="$(cd -P "$OUTPUT_FOLDER" && pwd -P)"
+OUTPUT="${OUTPUT_FOLDER%/}/$OUTPUT_NAME"
 readonly OUTPUT
-inside_repository "$OUTPUT"
+! inside_repository "$OUTPUT" || fail "$REFUSED_OUTPUT"
 [[ ! -d "$OUTPUT" ]] || fail "$(shown "$OUTPUT") is a folder"
 
 # The work folder: in $TMPDIR (by default the per-user temporary folder, /var/folders/...), outside the home
