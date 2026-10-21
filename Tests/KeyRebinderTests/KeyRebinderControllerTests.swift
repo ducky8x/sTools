@@ -774,6 +774,7 @@ struct KeyRebinderHotkeyTests {
         #expect(harness.runner.calls.isEmpty)
         controller.chooseLayout(shape: .ansi, formFactor: .laptop)
         #expect(controller.placement(of: HotkeyFixtures.combo("f13")) == HotkeyPlacement(text: "On Caps Lock", canShow: true))
+        #expect(controller.placement(of: HotkeyFixtures.combo("f20")) == HotkeyPlacement(text: "No key on your keyboard sends F20", canShow: false))
         #expect(controller.notes(for: HotkeyFixtures.combo("f13")).first?.text
             == "Minecraft uses F13 for Hotbar 1. While hotkeys are on, it never gets F13.")
     }

@@ -6,7 +6,8 @@ import STPlatform
 public enum HotkeyMark: Hashable, Sendable {
     /// Every hotkey on the key is registered (live, or paused while sTools is in front).
     case working
-    /// At least one isn't working: macOS refused it, it repeats another hotkey, it's reserved or it has no actions.
+    /// At least one isn't working: macOS refused it, another hotkey already uses its combination, macOS keeps the
+    /// combination, or it has no actions.
     case broken
 }
 

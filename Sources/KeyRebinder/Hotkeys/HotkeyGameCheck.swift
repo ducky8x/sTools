@@ -164,8 +164,8 @@ public enum HotkeyGameCheck {
         return text + "."
     }
 
-    /// The checker's sentence for `hotkey`, which takes what `caution` says: "The sTools hotkey F3 (Crosshair) keeps
-    /// F3 from Minecraft, which uses it for Debug screen."
+    /// The checker's sentence for `hotkey`, whose `caution` says what it takes: "The sTools hotkey F3 (Crosshair)
+    /// keeps F3 from Minecraft, which uses it for Debug screen."
     static func findingMessage(
         for hotkey: HotkeyBinding, caution: HotkeyGameCaution, minecraftKeybinds: [MinecraftKeybind]?, table: KeyTable = .shared
     ) -> String {
@@ -212,7 +212,8 @@ public enum HotkeyGameCheck {
         }
     }
 
-    /// The keyboard keys Minecraft binds, as uses. F1, F3 and Esc are fixed in every `options.txt`.
+    /// The keyboard keys Minecraft binds, as uses. F1, F3 and Esc, which the parser adds to every list, are the same
+    /// for everyone.
     private static func keybindUses(_ keybinds: [MinecraftKeybind], table: KeyTable) -> [Use] {
         let fixed: Set<MinecraftAction> = [.debugScreen, .hideHUD, .pauseMenu]
         return keybinds.compactMap { keybind in
