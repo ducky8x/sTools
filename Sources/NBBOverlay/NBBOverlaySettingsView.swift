@@ -36,8 +36,8 @@ public struct NBBOverlaySettingsView: View {
                 }
                 STSettingsRow("Position") {
                     HStack(spacing: 8) {
-                        STNumberField(value: offsetXBinding, label: "Horizontal offset")
-                        STNumberField(value: offsetYBinding, label: "Vertical offset")
+                        STNumberField(value: offsetXBinding, label: "Horizontal offset", axis: "X")
+                        STNumberField(value: offsetYBinding, label: "Vertical offset", axis: "Y")
                     }
                 }
                 STSettingsRow("Width") {
@@ -133,13 +133,25 @@ public struct NBBOverlaySettingsView: View {
 private struct STNumberField: View {
     @Binding var value: Int
     let label: String
+    /// The small-caps letter in front of the field, so it's clear which box is which.
+    let axis: String
     @State private var text = ""
     @Environment(\.stTheme) private var theme
 
     var body: some View {
+        HStack(spacing: 6) {
+            Text(axis)
+                .stStyle(.label)
+                .foregroundStyle(theme.inkSecondary)
+                .accessibilityHidden(true)
+            field
+        }
+    }
+
+    private var field: some View {
         TextField(label, text: $text)
             .textFieldStyle(.plain)
-            .font(.system(size: 13 * theme.textScale).monospacedDigit())
+            .font(STFont.figures(13 * theme.textScale))
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             .frame(width: 64)
