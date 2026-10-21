@@ -443,6 +443,19 @@ struct ReduceAnimationsWindowTests {
         #expect(sameImage(after, window(fresh).capture()))
     }
 
+    @Test func replayingTheIntroductionTakesOverAtOnce() {
+        let harness = reducedHarness()
+        let hosted = window(harness)
+        _ = hosted.capture()
+        harness.model.replayIntroduction()
+        let replayed = hosted.capture()
+
+        let fresh = reducedHarness()
+        fresh.model.beginPrologue(at: .greeting)
+        #expect(sameImage(replayed, window(fresh).capture()), "the sidebar is gone and the greeting complete")
+        #expect(harness.model.prologue?.animations.isRunning == false)
+    }
+
     /// The whole introduction in the real window, Continue on every step: every step is complete when it appears,
     /// so no key is ever spent completing something, the Finale switches the tried tools off with nothing pending,
     /// and it ends at Home.

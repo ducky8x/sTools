@@ -149,6 +149,22 @@ struct PrologueReducedMotionTests {
         #expect(plays.count == 1, "sounds aren't animations")
     }
 
+    @Test func goingBackToTheGreetingShowsItCompleteAgain() {
+        let box = StoreBox()
+        let plays = Counter()
+        let model = PrologueModel(store: box.store, host: FakeHost(), startingAt: .accessibility)
+        let hosted = show(model, theme: reduced, sound: countingSound(plays))
+        _ = hosted.capture()
+        model.back()
+        let back = hosted.capture()
+        #expect(model.step == .greeting)
+        #expect(rgb(back, x: 4, y: 4) == background)
+        #expect(!model.animations.isRunning)
+        let fresh = show(PrologueModel(store: box.store, host: FakeHost(), startingAt: .greeting), theme: reduced).capture()
+        #expect(sameImage(back, fresh))
+        #expect(plays.count == 2, "the page turn's sound, then the chime again")
+    }
+
     @Test func reducingMotionMidCeremonyCompletesIt() {
         let theme = STTheme()
         let box = StoreBox()
