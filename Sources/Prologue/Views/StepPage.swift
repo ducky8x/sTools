@@ -49,6 +49,10 @@ struct StepTitle: View {
                     .padding(.top, 10)
             }
         }
-        .onAppear { model.animations.run(for: TypewriterText.duration(of: title)) }
+        .onAppear {
+            // While motion is reduced the title is simply there: nothing for a key to complete.
+            guard !theme.reduceMotion else { return }
+            model.animations.run(for: TypewriterText.duration(of: title))
+        }
     }
 }

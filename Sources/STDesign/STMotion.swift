@@ -10,8 +10,6 @@ public enum STMotion {
     public static let quick: Animation = .spring(response: 0.26, dampingFraction: 0.82)
     public static let standard: Animation = .spring(response: 0.40, dampingFraction: 0.86)
     public static let page: Animation = .timingCurve(0.2, 0.8, 0.2, 1, duration: 0.50)
-    /// The old reduced-motion crossfade; only the Prologue still uses it, until it moves to no motion too.
-    public static let reducedFade: Animation = .easeInOut(duration: 0.2)
     public static let typeInterval: Duration = .milliseconds(18)
     public static let ceremony: Duration = .seconds(4)
     public static let staggerInterval: Duration = .milliseconds(35)
