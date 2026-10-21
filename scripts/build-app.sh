@@ -25,6 +25,9 @@
 # SHA-1 hash, so other identities in the keychain can never be picked up. Everything inside the app that holds
 # code or is a bundle (resource bundles, embedded frameworks, XPC services, helper apps and tools, plug-ins) is
 # signed with it too, inside out, keeping each item's own entitlements and, for a loose tool, its identifier.
+#
+# Output: everything printed, by the script and by the tools it runs, shows the home folder as ~ and never the
+# account name or the full name, so terminals and logs don't carry them either.
 
 set -euo pipefail
 
@@ -44,24 +47,56 @@ fail() {
     exit 1
 }
 
-# Copies standard input to standard output with the home folder shortened to ~ and the account name, in any letter
-# case, hidden: for passing on what tools print about files in the home folder.
+# A path as printed: the repository's own relative to it, the home folder as ~ (it holds the account name).
+shown() {
+    case "$1" in
+        "$ROOT"/*) printf '%s' "${1#"$ROOT/"}" ;;
+        "$HOME"/*) printf '~/%s' "${1#"$HOME/"}" ;;
+        *) printf '%s' "$1" ;;
+    esac
+}
+
+# Copies standard input to standard output, line by line, with the home folder shortened to ~ and the full name and
+# the account name hidden in any letter case. A name shorter than six letters is hidden only as a word of its own:
+# hidden inside longer words too, it would show which of their letters it is.
 mask_home() {
-    LC_ALL=C awk -v home="$HOME" -v account="$(id -un)" '
-        BEGIN { wanted = tolower(account); width = length(account) }
+    LC_ALL=C awk -v home="$HOME" -v account="$(id -un)" -v full="$(id -F 2>/dev/null || true)" '
+        function hide(line, value, placeholder,    out, at, size, before, after) {
+            size = length(value)
+            out = ""
+            while (size > 0 && (at = index(tolower(line), tolower(value))) > 0) {
+                before = at > 1 ? substr(line, at - 1, 1) : ""
+                after = substr(line, at + size, 1)
+                if (size >= 6 || (before !~ /[A-Za-z]/ && after !~ /[A-Za-z]/)) {
+                    out = out substr(line, 1, at - 1) placeholder
+                } else {
+                    out = out substr(line, 1, at + size - 1)
+                }
+                line = substr(line, at + size)
+            }
+            return out line
+        }
         {
             line = $0
             while (length(home) > 1 && (at = index(line, home)) > 0) {
                 line = substr(line, 1, at - 1) "~" substr(line, at + length(home))
             }
-            out = ""
-            while (width > 0 && (at = index(tolower(line), wanted)) > 0) {
-                out = out substr(line, 1, at - 1) "<account name>"
-                line = substr(line, at + width)
-            }
-            print out line
+            print hide(hide(line, full, "<full name>"), account, "<account name>")
+            fflush()
         }'
 }
+
+# Everything printed goes through mask_home: this script's own lines and what the tools it runs print (swift build's
+# diagnostics, codesign's "replacing existing signature" and "valid on disk" lines, ...), which name files in the
+# home folder. So the script runs itself once more with its output and its errors each passed through it; the
+# filters ignore Ctrl-C, so what the script prints while it cleans up still gets through.
+if [[ "${STOOLS_OUTPUT_MASKED:-}" != 1 ]]; then
+    export STOOLS_OUTPUT_MASKED=1
+    STATUS=0
+    { "$BASH" "${BASH_SOURCE[0]}" "$@" 2>&1 1>&3 3>&- | (trap '' INT; mask_home) >&2 3>&-; } 3>&1 |
+        (trap '' INT; mask_home) || STATUS=$?
+    exit "$STATUS"
+fi
 
 # The UUID and architecture of each slice of a Mach-O file or dSYM, one per line, sorted.
 macho_uuids() {
@@ -137,7 +172,7 @@ if [[ "$MODE" == "release" && "$ADHOC" -eq 1 ]]; then
     fail "release builds must be signed with the \"$IDENTITY_NAME\" identity; --adhoc is not allowed"
 fi
 if [[ -n "$KEYCHAIN" ]]; then
-    [[ -f "$KEYCHAIN" ]] || fail "keychain not found: $KEYCHAIN"
+    [[ -f "$KEYCHAIN" ]] || fail "keychain not found: $(shown "$KEYCHAIN")"
     # The script changes directory later, so a relative path must be made absolute now.
     KEYCHAIN="$(cd "$(dirname "$KEYCHAIN")" && pwd -P)/$(basename "$KEYCHAIN")"
 fi
@@ -240,9 +275,9 @@ else
 fi
 swift build "${BUILD_FLAGS[@]}"
 BIN_PATH="$(swift build "${BUILD_FLAGS[@]}" --show-bin-path)"
-[[ -x "$BIN_PATH/sTools" ]] || fail "build did not produce $BIN_PATH/sTools"
+[[ -x "$BIN_PATH/sTools" ]] || fail "build did not produce $(shown "$BIN_PATH/sTools")"
 
-echo "==> Assembling $APP"
+echo "==> Assembling $(shown "$APP")"
 APP_STARTED=1
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -453,8 +488,8 @@ if [[ "$MODE" == "release" ]]; then
 fi
 
 echo
-echo "Built $APP ($MODE, version $VERSION, build $BUILD_NUMBER)"
+echo "Built $(shown "$APP") ($MODE, version $VERSION, build $BUILD_NUMBER)"
 if [[ "$MODE" == "release" ]]; then
     echo "Debug symbols for its crash reports: ${DSYM_DIR#"$ROOT/"} (not shipped; keep them)"
 fi
-echo "Run it with: open \"$APP\""
+echo "Run it from the repository's folder with: open $(shown "$APP")"
