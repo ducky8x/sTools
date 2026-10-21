@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// A 1 pt accent line under a page title. It draws left to right over 0.6 s when it appears;
-/// with Reduce Motion, or `animatesIn == false`, it is simply there.
+/// while motion is reduced, or with `animatesIn == false`, it is simply there.
 public struct STGiltRule: View {
     private let animatesIn: Bool
 

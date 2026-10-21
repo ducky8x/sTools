@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// "Advanced" in small caps with a chevron; expands and collapses its content with `standard`.
+/// "Advanced" in small caps with a chevron; expands and collapses its content with `standard` (at once while motion
+/// is reduced).
 /// Built on `DisclosureGroup`, so it keeps the disclosure semantics of the system control.
 public struct STAdvancedDisclosure<Content: View>: View {
     @Binding private var isExpanded: Bool
@@ -37,7 +38,7 @@ private struct STDisclosureBody: View {
         VStack(alignment: .leading, spacing: 8) {
             Button {
                 sound.play(.click)
-                withAnimation(STMotion.resolve(STMotion.standard, reduce: theme.reduceMotion)) {
+                STMotion.animate(STMotion.standard, reduce: theme.reduceMotion) {
                     configuration.isExpanded.toggle()
                 }
             } label: {
