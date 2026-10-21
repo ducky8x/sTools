@@ -16,16 +16,22 @@
 #
 # No Finder scripting: the window layout is written straight into the volume's .DS_Store by
 # scripts/dmg-window.swift, so building needs no Automation permission and works without a logged-in Finder.
-# The read-write image is mounted at /Volumes/sTools (hidden from Finder) while the layout is written, because
-# the background is referenced by an alias and bookmark that record that volume. A volume already mounted
-# there is refused rather than worked around.
+# The images are mounted at private mount points in the work folder, hidden from Finder, so a disk image already
+# mounted at /Volumes/sTools does not get in the way. The background is referenced by an alias and a bookmark that
+# record the volume as mounted at /Volumes/sTools plus its identity, so Finder finds the picture wherever the volume
+# is mounted; the check at the end mounts the finished DMG elsewhere and resolves both (while another volume is
+# mounted at /Volumes/sTools, macOS resolves the alias into that one by name, so the alias is checked field by field).
 #
-# The bookmark also records where the disk image file was while it was written, so the image is made in a work
-# folder in the per-user temporary folder ($TMPDIR, /var/folders/.../T), outside the home folder: a path in the
-# home folder carries the account name, often a real name. Nothing in the DMG may hold "/Users/" or the account
-# name: scripts/check-no-home-paths.sh checks the staged files and the .DS_Store, then the whole uncompressed
-# image (file system records and free space included) before it is compressed, then every file of the finished
-# DMG and the DMG file itself; any finding fails the build.
+# Nothing in the DMG may carry a trace of the person or the Mac that built it (scripts/check-no-home-paths.sh):
+#   - The work folder is in the per-user temporary folder, outside the home folder, and removed on exit.
+#   - The bookmark is written field by field: the system's own also records the disk image file's path (in the
+#     per-user temporary folder), the startup volume's name, UUID, size and dates, and sandbox tokens.
+#   - macOS stamps com.apple.provenance, with an id for the app the build was started from, on every file a process
+#     started from a tracked app (a downloaded editor or terminal) makes, and only an untracked process can remove
+#     it: a one-off launchd job removes it from the volume, and from the DMG file, when it is there.
+#   - The check runs on the mounted volume before it is compressed (every file, name, link and extended
+#     attribute, .DS_Store included), on the whole uncompressed image (file system records and free space too),
+#     then on the finished DMG's files and on the DMG file itself. Any finding fails the build.
 #
 # The DMG itself is not signed: macOS checks the app's signature, not the disk image's.
 
@@ -36,7 +42,7 @@ readonly APP_NAME="sTools.app"
 readonly XCODE_BETA="/Applications/Xcode-beta.app/Contents/Developer"
 readonly IDENTITY_NAME="ducky8x"
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 readonly ROOT
 
 usage() {
@@ -46,6 +52,15 @@ usage() {
 fail() {
     echo "error: $*" >&2
     exit 1
+}
+
+# A path as printed: the repository's own relative to it, the home folder as ~ (it holds the account name).
+shown() {
+    case "$1" in
+        "$ROOT"/*) printf '%s' "${1#"$ROOT/"}" ;;
+        "$HOME"/*) printf '~/%s' "${1#"$HOME/"}" ;;
+        *) printf '%s' "$1" ;;
+    esac
 }
 
 APP="$ROOT/build/$APP_NAME"
@@ -82,43 +97,40 @@ if [[ -z "${DEVELOPER_DIR:-}" && -d "$XCODE_BETA" ]]; then
 fi
 
 # The app.
-[[ -d "$APP" ]] || fail "no app at $APP. Build it first with scripts/build-app.sh"
+[[ -d "$APP" ]] || fail "no app at $(shown "$APP"). Build it first with scripts/build-app.sh release"
 APP="$(cd "$APP" && pwd -P)"
 VERSION="$(plutil -extract CFBundleShortVersionString raw -o - "$APP/Contents/Info.plist" 2>/dev/null)" ||
-    fail "cannot read CFBundleShortVersionString from $APP/Contents/Info.plist"
+    fail "cannot read CFBundleShortVersionString from $(shown "$APP")/Contents/Info.plist"
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] ||
     fail "the app's version must look like 1.2.3 or 1.2.3-beta.1, got \"$VERSION\""
-codesign --verify --deep --strict "$APP" 2>/dev/null || fail "$APP has no valid code signature"
+codesign --verify --deep --strict "$APP" 2>/dev/null || fail "$(shown "$APP") has no valid code signature"
 SIGNATURE_INFO="$(codesign -dvv "$APP" 2>&1)"
 if ! grep -qx "Authority=$IDENTITY_NAME" <<< "$SIGNATURE_INFO"; then
-    echo "warning: $APP is not signed by \"$IDENTITY_NAME\"; testers would lose their permission grants" >&2
-    echo "warning: on every update. Release builds come from: scripts/build-app.sh release" >&2
+    echo "warning: $(shown "$APP") is not signed by \"$IDENTITY_NAME\"; testers would lose their permission" >&2
+    echo "warning: grants on every update. Release builds come from: scripts/build-app.sh release" >&2
 fi
 
 # The volume icon.
 if [[ -f "$VOLUME_ICON" ]]; then
-    [[ "$(head -c 4 "$VOLUME_ICON")" == "icns" ]] || fail "$VOLUME_ICON is not an .icns file"
+    [[ "$(head -c 4 "$VOLUME_ICON")" == "icns" ]] || fail "$(shown "$VOLUME_ICON") is not an .icns file"
 elif [[ "$VOLUME_ICON_GIVEN" -eq 1 ]]; then
-    fail "no volume icon at $VOLUME_ICON"
+    fail "no volume icon at $(shown "$VOLUME_ICON")"
 else
-    echo "note: no ${VOLUME_ICON#"$ROOT/"} yet; the DMG gets the standard disk image icon."
+    echo "note: no $(shown "$VOLUME_ICON") yet; the DMG gets the standard disk image icon."
     VOLUME_ICON=""
 fi
 
-readonly MOUNT_POINT="/Volumes/$VOLUME_NAME"
-[[ ! -e "$MOUNT_POINT" ]] ||
-    fail "$MOUNT_POINT is in use (another $VOLUME_NAME disk image is mounted?). Eject it and run again."
-
 readonly OUTPUT="$ROOT/build/sTools-$VERSION.dmg"
 mkdir -p "$ROOT/build"
-# In the per-user temporary folder, never in build/: the background's bookmark records the image's path (see
-# the top). mktemp -t takes the system's per-user folder (where $TMPDIR points by default) even when TMPDIR is
-# changed, and falls back to $TMPDIR and /tmp. pwd -P spells the path the way hdiutil and the bookmarks report
-# it (/private/var/..., not /var/...).
+
+# In the per-user temporary folder, never in build/ (in the home folder). mktemp -t takes the system's per-user
+# folder (where $TMPDIR points by default) even when TMPDIR is changed, and falls back to $TMPDIR and /tmp. pwd -P
+# spells the path the way hdiutil reports it (/private/var/..., not /var/...).
 WORK="$(mktemp -d -t sTools-dmg)" || fail "cannot create a work folder in the temporary folder"
 WORK="$(cd "$WORK" && pwd -P)"
 readonly WORK
 ATTACHED=""
+JOB_LABEL=""
 
 # Detaches a disk image, retrying while Spotlight or fseventsd still hold it, and forcing it at the end.
 detach() {
@@ -131,6 +143,9 @@ detach() {
 }
 
 cleanup() {
+    if [[ -n "$JOB_LABEL" ]]; then
+        launchctl remove "$JOB_LABEL" 2>/dev/null || true
+    fi
     if [[ -n "$ATTACHED" ]]; then
         detach "$ATTACHED" || echo "warning: could not detach $ATTACHED; eject it in Finder" >&2
     fi
@@ -145,39 +160,82 @@ if [[ "$WORK" == *"/Users/"* || "$WORK_LOWER" == *"$ACCOUNT_LOWER"* ]]; then
         "set TMPDIR to a folder outside it"
 fi
 
-# Attaches a disk image (extra hdiutil options follow the path) and sets ATTACHED and ATTACHED_MOUNT.
-# macOS 26 and later print a deprecation notice for these options; it is dropped, other messages are kept.
+# Attaches a disk image at a private mount point (extra hdiutil options follow) and sets ATTACHED. macOS 26 and
+# later print a deprecation notice for these options; it is dropped, other messages are kept.
 attach() {
-    local output device kind mount
-    if ! output="$(hdiutil attach "$@" -noautoopen -nobrowse 2>"$WORK/attach.log")"; then
+    local image="$1" mount_point="$2" output device kind mount found=""
+    shift 2
+    mkdir -p "$mount_point"
+    if ! output="$(hdiutil attach "$image" "$@" -mountpoint "$mount_point" -noautoopen -nobrowse \
+            2>"$WORK/attach.log")"; then
         cat "$WORK/attach.log" >&2
-        fail "hdiutil could not attach $1"
+        fail "hdiutil could not attach $(shown "$image")"
     fi
     grep -v 'is deprecated' "$WORK/attach.log" >&2 || true
-    ATTACHED_MOUNT=""
     while IFS=$'\t' read -r device kind mount; do
         device="${device%"${device##*[![:space:]]}"}"
         mount="${mount%"${mount##*[![:space:]]}"}"
         if [[ "$mount" == /* ]]; then
             ATTACHED="$device"
-            ATTACHED_MOUNT="$mount"
+            found="$mount"
         fi
     done <<< "$output"
-    [[ -n "$ATTACHED_MOUNT" ]] || fail "hdiutil attached $1 but reported no mount point:"$'\n'"$output"
+    [[ "$found" == "$mount_point" ]] ||
+        fail "hdiutil attached $(shown "$image") at ${found:-no mount point} instead of the work folder"
+}
+
+# Whether anything under the given paths carries com.apple.provenance.
+has_provenance() {
+    find "$@" -print0 | xargs -0 xattr -s 2>/dev/null | grep -q 'com\.apple\.provenance'
+}
+
+# Removes com.apple.provenance from everything under the given paths, from a one-off launchd job: launchd starts it
+# untracked, and only an untracked process can remove the attribute (a tracked one gets no error, but it stays).
+clear_provenance() {
+    local finished="$WORK/provenance.done" attempt
+    has_provenance "$@" || return 0
+    cat > "$WORK/clear-provenance.sh" <<'EOF'
+#!/bin/sh
+# $1: the file to write when done; then the paths to clear. An item without the attribute is not an error.
+finished="$1"
+shift
+/usr/bin/find "$@" -print0 | /usr/bin/xargs -0 /usr/bin/xattr -s -d com.apple.provenance 2>/dev/null
+echo done > "$finished"
+EOF
+    rm -f "$finished"
+    JOB_LABEL="com.ducky8x.sTools.build-dmg.clear-provenance.$$.$RANDOM"
+    launchctl submit -l "$JOB_LABEL" -o "$WORK/provenance.log" -e "$WORK/provenance.log" -- \
+        /bin/sh "$WORK/clear-provenance.sh" "$finished" "$@" ||
+        fail "could not start the launchd job that removes com.apple.provenance"
+    for attempt in $(seq 1 120); do
+        [[ -f "$finished" ]] && break
+        sleep 0.5
+    done
+    # launchctl submit jobs are kept alive: remove it now that it has run once.
+    launchctl remove "$JOB_LABEL" 2>/dev/null || true
+    JOB_LABEL=""
+    [[ -f "$finished" ]] || fail "the launchd job that removes com.apple.provenance did not finish"
+    ! has_provenance "$@" || fail "com.apple.provenance is still there after the launchd job removed it"
+    echo "    removed com.apple.provenance (macOS sets it on files made from tracked apps)"
+}
+
+# Copies standard input to standard output with the work folder's path (it holds this user's temporary-folder id)
+# shortened, as /private/var/... and as /var/..., and indented.
+indented() {
+    sed -e "s#$WORK/#(work folder)/#g" -e "s#${WORK#/private}/#(work folder)/#g" -e 's/^/    /'
 }
 
 echo "==> Compiling scripts/dmg-window.swift"
 swiftc -o "$WORK/dmg-window" "$ROOT/scripts/dmg-window.swift"
 
 echo "==> Drawing the background"
-"$WORK/dmg-window" background "$WORK/background" --version "$VERSION" | sed 's/^/    /'
+"$WORK/dmg-window" background "$WORK/background" --version "$VERSION" | indented
 mkdir -p "$WORK/stage/.background"
-tiffutil -cathidpicheck "$WORK/background/background.png" "$WORK/background/background@2x.png" \
-    -out "$WORK/stage/.background/background.tiff" 2>&1 | sed 's/^/    /'
-[[ -f "$WORK/stage/.background/background.tiff" ]] || fail "tiffutil did not write the background"
+cp "$WORK/background/background.tiff" "$WORK/stage/.background/background.tiff"
 
 echo "==> Staging $APP_NAME, the Applications link$( [[ -n "$VOLUME_ICON" ]] && echo " and the volume icon")"
-ditto "$APP" "$WORK/stage/$APP_NAME"
+# Without extended attributes: a signed app needs none, and they could carry anything.
+ditto --noextattr "$APP" "$WORK/stage/$APP_NAME"
 ln -s /Applications "$WORK/stage/Applications"
 if [[ -n "$VOLUME_ICON" ]]; then
     cp "$VOLUME_ICON" "$WORK/stage/.VolumeIcon.icns"
@@ -190,72 +248,91 @@ hdiutil create -quiet -srcfolder "$WORK/stage" -volname "$VOLUME_NAME" -fs HFS+ 
     -size "${SIZE_MB}m" "$WORK/rw.dmg"
 
 echo "==> Writing the Finder layout"
-attach "$WORK/rw.dmg" -readwrite -noverify
-[[ "$ATTACHED_MOUNT" == "$MOUNT_POINT" ]] ||
-    fail "the image mounted at $ATTACHED_MOUNT instead of $MOUNT_POINT"
-"$WORK/dmg-window" ds-store "$MOUNT_POINT" | sed 's/^/    /'
-chflags hidden "$MOUNT_POINT/.background"
+VOLUME="$WORK/volume/$VOLUME_NAME"
+attach "$WORK/rw.dmg" "$VOLUME" -readwrite -noverify
+"$WORK/dmg-window" ds-store "$VOLUME" | indented
+chflags hidden "$VOLUME/.background"
 if [[ -n "$VOLUME_ICON" ]]; then
     # The volume root's Finder info, with only the "has custom icon" flag (0x0400) set.
     xattr -wx com.apple.FinderInfo \
-        "0000000000000000040000000000000000000000000000000000000000000000" "$MOUNT_POINT"
-    chflags hidden "$MOUNT_POINT/.VolumeIcon.icns"
+        "0000000000000000040000000000000000000000000000000000000000000000" "$VOLUME"
+    chflags hidden "$VOLUME/.VolumeIcon.icns"
 fi
-rm -rf "$MOUNT_POINT/.fseventsd" "$MOUNT_POINT/.Spotlight-V100" "$MOUNT_POINT/.Trashes" 2>/dev/null || true
+rm -rf "$VOLUME/.fseventsd" "$VOLUME/.Spotlight-V100" "$VOLUME/.Trashes" 2>/dev/null || true
+clear_provenance "$VOLUME"
 
-echo "==> Checking for \"/Users/\" and the account name before compressing"
-# Everything that went onto the volume, file by file, so a finding names its file; then, once it is detached,
-# the whole image byte for byte: extended attributes, the file system's own records and its free space too.
-"$ROOT/scripts/check-no-home-paths.sh" "$WORK/stage" "$MOUNT_POINT/.DS_Store" ||
-    fail "the DMG would carry \"/Users/\" or the account name (listed above)." \
+echo "==> Checking the volume and then the whole image before compressing"
+# Everything on the volume, file by file, so a finding names its file; then, once it is detached, the whole image
+# byte for byte: the file system's own records, extended attributes and free space too.
+"$ROOT/scripts/check-no-home-paths.sh" --provenance "$VOLUME" ||
+    fail "the DMG would carry a home-folder path, a name or a trace of this Mac (listed above)." \
         "Package a release build (scripts/build-app.sh release): a debug build keeps its debug info"
 sync
 detach "$ATTACHED"
 ATTACHED=""
 "$ROOT/scripts/check-no-home-paths.sh" "$WORK/rw.dmg" ||
-    fail "the uncompressed image carries \"/Users/\" or the account name outside its files"
+    fail "the uncompressed image carries a home-folder path, a name or a trace of this Mac outside its files"
 
-echo "==> Compressing to ${OUTPUT#"$ROOT/"}"
+echo "==> Compressing to $(shown "$OUTPUT")"
 hdiutil convert -quiet "$WORK/rw.dmg" -format UDZO -imagekey zlib-level=9 -ov -o "$OUTPUT"
-hdiutil verify -quiet "$OUTPUT" || fail "hdiutil verify failed for $OUTPUT"
+hdiutil verify -quiet "$OUTPUT" || fail "hdiutil verify failed for $(shown "$OUTPUT")"
 
 echo "==> Checking the DMG's contents"
-# Named like the volume, so the check below reports paths as users see them (sTools/sTools.app/...).
-mkdir -p "$WORK/check/$VOLUME_NAME"
-attach "$OUTPUT" -readonly -mountpoint "$WORK/check/$VOLUME_NAME"
-CHECK="$ATTACHED_MOUNT"
+# Mounted somewhere other than /Volumes/sTools, as when another sTools volume is already mounted; named like the
+# volume, so the check below reports paths as users see them (sTools/sTools.app/...).
+CHECK="$WORK/check/$VOLUME_NAME"
+attach "$OUTPUT" "$CHECK" -readonly
 [[ -d "$CHECK/$APP_NAME" ]] || fail "the DMG has no $APP_NAME"
 codesign --verify --deep --strict "$CHECK/$APP_NAME" 2>/dev/null || fail "the app's signature broke in the DMG"
 [[ -L "$CHECK/Applications" && "$(readlink "$CHECK/Applications")" == "/Applications" ]] ||
     fail "the DMG has no Applications link"
 [[ -f "$CHECK/.background/background.tiff" ]] || fail "the DMG has no background"
-[[ "$(tiffutil -info "$CHECK/.background/background.tiff" 2>/dev/null | grep -c 'Image Width')" -eq 2 ]] ||
+BACKGROUND_INFO="$(tiffutil -info "$CHECK/.background/background.tiff" 2>/dev/null)"
+[[ "$(grep -c 'Image Width' <<< "$BACKGROUND_INFO")" -eq 2 ]] ||
     fail "the background TIFF should hold a 1x and a 2x image"
+! grep -Eq 'Software|Image Description' <<< "$BACKGROUND_INFO" ||
+    fail "the background TIFF names the tool or the files it was made with"
 LAYOUT="$("$WORK/dmg-window" dump "$CHECK/.DS_Store")" || fail "the DMG's .DS_Store does not read back"
 for record in $'.\tbwsp' $'.\ticvp' $'.\tpBBk' $'.\tvstl' "$APP_NAME"$'\tIloc' $'Applications\tIloc'; do
     grep -q "^$record"$'\t' <<< "$LAYOUT" || fail "the .DS_Store lacks the record \"${record//$'\t'/ }\""
 done
-# Mounted somewhere other than /Volumes/sTools, the background's alias and bookmark must still find it
-# (by the volume's identity), as Finder does when another "sTools" volume is already mounted.
+# The background's alias and bookmark record /Volumes/sTools: mounted here, they must still find it by the
+# volume's identity, as Finder does when another "sTools" volume is mounted. The bookmark does, by the volume's
+# UUID. macOS resolves the alias into any volume named "sTools" mounted at /Volumes/sTools, so while one is (an
+# earlier DMG, say), the alias's fields are what is checked.
 BACKGROUND_PATH="$CHECK/.background/background.tiff"
-grep -qF "backgroundImageAlias -> $BACKGROUND_PATH " <<< "$LAYOUT" ||
-    fail "the background's alias does not lead to the background"
 grep -qF "bookmark -> $BACKGROUND_PATH" <<< "$LAYOUT" || fail "the background's bookmark does not lead to the background"
+grep -qF "backgroundImageAlias matches this volume" <<< "$LAYOUT" ||
+    fail "the background's alias does not describe this volume's background"
+if ! grep -qF "backgroundImageAlias -> $BACKGROUND_PATH " <<< "$LAYOUT"; then
+    [[ -e "/Volumes/$VOLUME_NAME" ]] || fail "the background's alias does not lead to the background"
+    echo "note: another volume is mounted at /Volumes/$VOLUME_NAME, and macOS resolves the alias into it by name;"
+    echo "note: the alias was checked field by field against this volume instead (it matches)."
+fi
 if [[ -n "$VOLUME_ICON" ]]; then
     [[ -f "$CHECK/.VolumeIcon.icns" ]] || fail "the DMG has no volume icon"
 fi
-sed 's/^/    /' <<< "$LAYOUT" | cut -c1-160
-# What ships: every file of the finished DMG, .DS_Store included, and the DMG file itself (its block table and
-# trailer are not compressed).
-if ! "$ROOT/scripts/check-no-home-paths.sh" "$CHECK" "$OUTPUT"; then
+indented <<< "$LAYOUT" | cut -c1-160
+if ! "$ROOT/scripts/check-no-home-paths.sh" --provenance "$CHECK"; then
     detach "$ATTACHED"
     ATTACHED=""
     rm -f "$OUTPUT"
-    fail "the DMG carries \"/Users/\" or the account name (listed above); it was deleted"
+    fail "the DMG carries a home-folder path, a name or a trace of this Mac (listed above); it was deleted"
 fi
 detach "$ATTACHED"
 ATTACHED=""
 
+echo "==> Checking the DMG file"
+# Mounting and verifying leave extended attributes on the file (a checksum cache that names this Mac's volume);
+# they are not part of the image, but they travel with the file to some places.
+xattr -c "$OUTPUT"
+clear_provenance "$OUTPUT"
+# Its block table, trailer and every compressed block, unpacked.
+if ! "$ROOT/scripts/check-no-home-paths.sh" --provenance "$OUTPUT"; then
+    rm -f "$OUTPUT"
+    fail "the DMG file carries a home-folder path, a name or a trace of this Mac (listed above); it was deleted"
+fi
+
 echo
-echo "Built $OUTPUT ($(du -h "$OUTPUT" | cut -f1 | tr -d ' '), version $VERSION)"
+echo "Built $(shown "$OUTPUT") ($(du -h "$OUTPUT" | cut -f1 | tr -d ' '), version $VERSION)"
 echo "SHA-256 $(shasum -a 256 "$OUTPUT" | cut -d' ' -f1)"
