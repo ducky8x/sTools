@@ -147,12 +147,18 @@ SUFFIX=""
 NAME="sTools-$VERSION$SUFFIX-macOS.dmg"
 OUTPUT="${OUTPUT:-$OUTPUTS/$NAME}"
 [[ "$OUTPUT" == *.dmg ]] || fail "--output must name a .dmg file"
+[[ "$OUTPUT" == /* ]] || OUTPUT="$(pwd -P)/$OUTPUT"
+# Checked before any folder is made for it, and again once symbolic links are resolved.
+inside_repository() {
+    case "$1" in
+        "$ROOT"/*) fail "the DMG must not be written inside the repository; shared builds go to ~/Projects/App Outputs" ;;
+    esac
+}
+inside_repository "$OUTPUT"
 mkdir -p "$(dirname "$OUTPUT")"
 OUTPUT="$(cd "$(dirname "$OUTPUT")" && pwd -P)/$(basename "$OUTPUT")"
 readonly OUTPUT
-case "$OUTPUT" in
-    "$ROOT"/*) fail "the DMG must not be written inside the repository; shared builds go to ~/Projects/App Outputs" ;;
-esac
+inside_repository "$OUTPUT"
 [[ ! -d "$OUTPUT" ]] || fail "$(shown "$OUTPUT") is a folder"
 if [[ -e "$OUTPUT" ]]; then
     rm -f "$OUTPUT"
@@ -304,7 +310,8 @@ echo "==> Checking the volume and then the whole image before compressing"
 # byte for byte: the file system's own records, extended attributes and free space too.
 "$ROOT/scripts/check-no-home-paths.sh" --provenance "$VOLUME" ||
     fail "the DMG would carry a home-folder path, a name or a trace of this Mac (listed above)." \
-        "Package a release build (scripts/build-app.sh release): a debug build keeps its debug info"
+        "If it is in sTools.app, package a release build (scripts/build-app.sh release): a debug build keeps" \
+        "its debug info"
 sync
 detach "$ATTACHED"
 ATTACHED=""
