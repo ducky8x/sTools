@@ -224,3 +224,144 @@ struct KeyboardPlateHotkeyTests {
         #expect(shown != hidden)
     }
 }
+
+// MARK: - The key panel's Hotkeys part
+
+@MainActor
+@Suite("Key panel hotkeys", .serialized)
+struct KeyPanelHotkeyTests {
+    @Test func theBlockSaysHotkeysAreOffUntilTheyAreTurnedOn() async throws {
+        let rig = try HotkeyViewRig(config: HotkeyViewRig.profile([("caps_lock", "f13")]))
+        defer { rig.remove() }
+        await rig.prepare(hotkeysOn: false)
+        let controller = rig.controller
+        #expect(KeyHotkeysBlock.content(for: .key("caps_lock"), controller: controller) == .off)
+        #expect(KeyHotkeysBlock.content(for: .key("left_shift"), controller: controller) == .off)
+        controller.turnHotkeysOn()
+        #expect(KeyHotkeysBlock.content(for: .key("caps_lock"), controller: controller) == .carries(keyCode: 105))
+        #expect(KeyHotkeysBlock.content(for: .key("a"), controller: controller) == .carries(keyCode: 0))
+    }
+
+    @Test func aKeyThatCantCarryHotkeysSaysWhyAndOffersTheSpareKey() async throws {
+        let rig = try HotkeyViewRig(config: HotkeyViewRig.profile(
+            rules: [HotkeyFixtures.tapHoldRule("tab", held: "left_control", alone: "escape")]))
+        defer { rig.remove() }
+        await rig.prepare()
+        let controller = rig.controller
+        #expect(KeyHotkeysBlock.content(for: .key("caps_lock"), controller: controller) == .unavailable(
+            reason: "macOS can\u{2019}t use Caps Lock alone as a hotkey.", spare: .key("f20"), isRuleDriven: false))
+        #expect(KeyHotkeysBlock.content(for: .key("tab"), controller: controller) == .unavailable(
+            reason: "A rule drives Tab, so sTools can\u{2019}t tell which key apps get. Add its hotkey in Home by pressing the key.",
+            spare: nil, isRuleDriven: true))
+        #expect(KeyHotkeysBlock.content(for: .pointing("button1"), controller: controller) == .unavailable(
+            reason: "Left and right click can\u{2019}t be hotkeys.", spare: nil, isRuleDriven: false))
+    }
+
+    @Test func withoutKarabinerReadyKeysStillCarryHotkeysButUseF20IsHidden() async throws {
+        let rig = try HotkeyViewRig(config: nil, ready: false)
+        defer { rig.remove() }
+        await rig.prepare()
+        let controller = rig.controller
+        #expect(!controller.canEdit)
+        #expect(KeyHotkeysBlock.content(for: .key("f5"), controller: controller) == .carries(keyCode: 96))
+        #expect(KeyHotkeysBlock.content(for: .key("caps_lock"), controller: controller) == .unavailable(
+            reason: "macOS can\u{2019}t use Caps Lock alone as a hotkey.", spare: nil, isRuleDriven: false))
+    }
+
+    @Test func aNewDraftIsTheKeyAloneAndNeedsAnAction() async throws {
+        let rig = try HotkeyViewRig(config: nil)
+        defer { rig.remove() }
+        await rig.prepare()
+        var draft = HotkeyDraft()
+        #expect(draft.editing == nil)
+        #expect(draft.combo(on: 105) == HotkeyCombo(keyCode: 105, modifiers: []))
+        #expect(draft.problem(on: 105, in: rig.center) == nil)
+        #expect(!draft.canSave(on: 105, in: rig.center))
+        draft.does = [.toggle(.crosshair)]
+        #expect(draft.canSave(on: 105, in: rig.center))
+        draft.hold = [.shift, .option]
+        #expect(draft.combo(on: 105) == HotkeyCombo(keyCode: 105, modifiers: [.option, .shift]))
+    }
+
+    @Test func editingStartsFromTheHotkeysModifiersAndActions() {
+        let binding = HotkeyBinding(combo: HotkeyCombo(keyCode: 79, modifiers: [.control, .command]), actions: [.startStopRecording, .toggle(.nbbOverlay)])
+        let draft = HotkeyDraft(binding)
+        #expect(draft.editing == binding.id)
+        #expect(draft.hold == [.control, .command])
+        #expect(draft.modifiers == [.control, .command])
+        #expect(draft.does == [.startStopRecording, .toggle(.nbbOverlay)])
+    }
+
+    @Test func aDuplicateOrAReservedCombinationBlocksSaving() async throws {
+        let rig = try HotkeyViewRig(config: nil)
+        defer { rig.remove() }
+        await rig.prepare()
+        let f13 = await rig.add("f13")
+        var draft = HotkeyDraft()
+        draft.does = [.toggle(.nbbOverlay)]
+        #expect(draft.problem(on: 105, in: rig.center) == "Already used by another hotkey")
+        #expect(!draft.canSave(on: 105, in: rig.center))
+        // Editing the hotkey that owns the combination isn't a duplicate of itself.
+        draft.editing = f13
+        #expect(draft.problem(on: 105, in: rig.center) == nil)
+        #expect(draft.canSave(on: 105, in: rig.center))
+        var quit = HotkeyDraft()
+        quit.hold = [.command]
+        quit.does = [.toggle(.crosshair)]
+        #expect(quit.problem(on: 12, in: rig.center) == "Reserved: Quit")
+        #expect(!quit.canSave(on: 12, in: rig.center))
+    }
+
+    @Test func holdOffersTheFourModifiersInMacOSOrder() {
+        #expect(HotkeyDraft.holdChoices.map(\.title) == ["Control", "Option", "Shift", "Command"])
+        #expect(HotkeyDraft.holdChoices.map(\.value) == [.control, .option, .shift, .command])
+    }
+
+    @Test func thePanelListsHotkeyFindingsAndBecomesCaptionsOnlyWhenItShowsHotkeys() async throws {
+        let rig = try HotkeyViewRig(config: HotkeyViewRig.profile([("caps_lock", "f18")]))
+        defer { rig.remove() }
+        await rig.prepare()
+        await rig.add("f18")
+        await rig.add("f20", [], [.toggle(.nbbOverlay)])
+        await rig.add("f3")
+        let controller = rig.controller
+        #expect(KeyEditorPanel.findings(for: .key("f3"), controller: controller, showsHotkeys: true).map(\.kind) == [.hotkeyTakesGameKey])
+        #expect(KeyEditorPanel.findings(for: .key("f3"), controller: controller, showsHotkeys: false).isEmpty)
+
+        #expect(KeyEditorPanel.hotkeyCaptions(for: .key("caps_lock"), chosen: .key("f20"), controller: controller, showsHotkeys: true) == [
+            "Caps Lock will fire the sTools hotkey F20 (NBB Overlay).",
+            "Its hotkey F18 (Crosshair) stays on F18, and no key will send F18.",
+        ])
+        // Nothing chosen: what Remove Rebind would do.
+        #expect(KeyEditorPanel.hotkeyCaptions(for: .key("caps_lock"), chosen: nil, controller: controller, showsHotkeys: true)
+            == ["Its hotkey F18 (Crosshair) stays on F18, and no key will send F18."])
+        // A key with no rebind to remove says nothing until an output is chosen.
+        #expect(KeyEditorPanel.hotkeyCaptions(for: .key("a"), chosen: nil, controller: controller, showsHotkeys: true).isEmpty)
+        #expect(KeyEditorPanel.hotkeyCaptions(for: .key("caps_lock"), chosen: .key("f20"), controller: controller, showsHotkeys: false).isEmpty)
+    }
+}
+
+@MainActor
+@Suite("Key panel hotkeys rendering", .serialized)
+struct KeyPanelHotkeyRenderTests {
+    @Test func theBlocksOffRowsWithEditorAndCantCarryStatesRenderDistinctly() async throws {
+        let rig = try HotkeyViewRig(config: HotkeyViewRig.profile([("caps_lock", "f18")]))
+        defer { rig.remove() }
+        await rig.prepare(hotkeysOn: false)
+        func block(_ key: KarabinerEvent, draft: HotkeyDraft? = nil) -> Data {
+            png(KeyHotkeysBlock(controller: rig.controller, key: key, chosen: .constant(nil), openHotkeys: {}, draft: draft).padding(16),
+                size: CGSize(width: 600, height: 420))
+        }
+        let off = block(.key("caps_lock"))
+
+        rig.controller.turnHotkeysOn()
+        let id = await rig.add("f18", .option, [.toggle(.crosshair), .toggle(.nbbOverlay)])
+        await rig.add("f18")
+        let edited = try #require(rig.center.bindings.first { $0.id == id })
+        let rows = block(.key("caps_lock"))
+        let rowsAndEditor = block(.key("caps_lock"), draft: HotkeyDraft(edited))
+        let cantCarry = block(.key("left_shift"))
+
+        #expect(Set([off, rows, rowsAndEditor, cantCarry]).count == 4)
+    }
+}
