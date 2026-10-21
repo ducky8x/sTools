@@ -36,7 +36,9 @@ public final class BackdropController: ToolController {
     @ObservationIgnored private let imagesDirectory: URL
     @ObservationIgnored private let showsPanels: Bool
     @ObservationIgnored private var panels: [UInt32: OverlayPanel] = [:]
-    @ObservationIgnored private var images: [String: CGImage] = [:]
+    /// Imported images by name, loaded when first drawn or previewed and let go when the tool switches off. A
+    /// screen-sized image is tens of megabytes once decoded. A name that didn't load maps to nil.
+    @ObservationIgnored private var images: [String: CGImage?] = [:]
     @ObservationIgnored private var imageImportErrorsByDisplay: [UInt32: String] = [:]
     @ObservationIgnored private var mainImageImportError: String?
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
@@ -65,7 +67,6 @@ public final class BackdropController: ToolController {
         self.imagesDirectory = imagesDirectory
         self.showsPanels = showsPanels
         settings = services.settings.load(BackdropSettings.self)
-        loadImagesIfNeeded()
     }
 
     public func setEnabled(_ enabled: Bool) {
@@ -77,9 +78,13 @@ public final class BackdropController: ToolController {
         } else {
             for observer in observers { NotificationCenter.default.removeObserver(observer) }
             observers.removeAll()
-            hideAll()
+            releasePanels()
         }
     }
+
+    /// The panels (with their full-screen layers) and the images they drew, while the tool is on. For tests.
+    var panelCount: Int { panels.count }
+    var loadedImageCount: Int { images.count }
 
     /// The import error for the main (Minecraft display) fill's image, for the settings view.
     public var imageImportError: String? { mainImageImportError }
@@ -152,7 +157,8 @@ public final class BackdropController: ToolController {
     /// Image for a fill's `imageName`, loading and caching it on first use.
     func image(for fill: BackdropSettings.Fill) -> CGImage? {
         guard let name = fill.imageName else { return nil }
-        return images[name]
+        loadImageIfNeeded(name)
+        return images[name] ?? nil
     }
 
     // MARK: - Placement
@@ -254,13 +260,16 @@ public final class BackdropController: ToolController {
         return panel
     }
 
-    private func hideAll() {
-        for panel in panels.values { panel.hide() }
-    }
-
-    private func loadImagesIfNeeded() {
-        loadImageIfNeeded(settings.fill.imageName)
-        for displayFill in settings.displayFills { loadImageIfNeeded(displayFill.fill.imageName) }
+    /// Switching off closes the panels instead of only hiding them: a hidden panel would keep its full-screen layer
+    /// and image in memory for nothing. Switching on again builds them anew.
+    private func releasePanels() {
+        for panel in panels.values {
+            panel.hide()
+            panel.close()
+        }
+        panels.removeAll()
+        drawnFills.removeAll()
+        images.removeAll()
     }
 
     private func loadImageIfNeeded(_ name: String?) {

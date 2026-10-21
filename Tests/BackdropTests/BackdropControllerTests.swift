@@ -54,6 +54,37 @@ struct BackdropControllerTests {
         #expect(controller.drawCount == 3)
     }
 
+    // A hidden panel keeps its full-screen layer, and a decoded image is tens of megabytes: switching off lets
+    // both go, and switching on builds them again.
+    @MainActor
+    @Test func switchingOffReleasesThePanelsAndTheirImages() {
+        let displays = DisplayDirectory()
+        guard let display = displays.displays.first else { return }
+        let window = MinecraftWindow(windowNumber: 42, processID: 4242, title: "Minecraft* 1.16.1", frame: display.frame)
+        let minecraft = MinecraftInstance(window: window, launchDate: Date(timeIntervalSince1970: 1), isFrontmost: true, displayID: display.id)
+        let directory = tempDirectory()
+        let services = makeServices(tempDirectory: directory, instances: [minecraft])
+        services.minecraft.refresh()
+        let controller = BackdropController(services: services, imagesDirectory: directory.appending(path: "Images"), showsPanels: false)
+        let source = directory.appending(path: "source.png")
+        writeOnePixelPNG(to: source)
+        controller.importImage(from: source)
+        #expect(controller.settings.fill.kind == .image)
+
+        controller.setEnabled(true)
+        #expect(controller.panelCount == 1)
+        #expect(controller.loadedImageCount == 1)
+
+        controller.setEnabled(false)
+        #expect(controller.panelCount == 0)
+        #expect(controller.loadedImageCount == 0)
+
+        controller.setEnabled(true)
+        #expect(controller.panelCount == 1)
+        #expect(controller.image(for: controller.settings.fill) != nil)
+        controller.setEnabled(false)
+    }
+
     @MainActor
     @Test func loadsDefaultsWhenNothingIsStored() {
         let controller = BackdropController(services: makeServices(tempDirectory: tempDirectory()))
