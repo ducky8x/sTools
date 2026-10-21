@@ -160,10 +160,6 @@ OUTPUT="$(cd "$(dirname "$OUTPUT")" && pwd -P)/$(basename "$OUTPUT")"
 readonly OUTPUT
 inside_repository "$OUTPUT"
 [[ ! -d "$OUTPUT" ]] || fail "$(shown "$OUTPUT") is a folder"
-if [[ -e "$OUTPUT" ]]; then
-    rm -f "$OUTPUT"
-    echo "note: removed the earlier $(shown "$OUTPUT"); it is replaced only if this build passes every check"
-fi
 
 # The work folder: in $TMPDIR (by default the per-user temporary folder, /var/folders/...), outside the home
 # folder. Nothing records its path now, but a path in the home folder would carry the account name if something
@@ -202,6 +198,12 @@ ACCOUNT_LOWER="$(id -un | LC_ALL=C tr '[:upper:]' '[:lower:]')"
 if [[ "$WORK" == "$HOME_REAL"/* || "$WORK_LOWER" == /users/* || "$WORK_LOWER" == *"$ACCOUNT_LOWER"* ]]; then
     fail "\$TMPDIR is in the home folder; run with TMPDIR set to a folder outside it, for example" \
         "TMPDIR=/private/tmp scripts/build-dmg.sh"
+fi
+
+# An earlier DMG of the same name goes now, so a build that fails cannot leave it looking current.
+if [[ -e "$OUTPUT" ]]; then
+    rm -f "$OUTPUT"
+    echo "note: removed the earlier $(shown "$OUTPUT"); it is replaced only if this build passes every check"
 fi
 
 # Attaches a disk image at a private mount point (extra hdiutil options follow) and sets ATTACHED. macOS 26 and
@@ -375,8 +377,9 @@ clear_provenance "$BUILT"
     fail "the DMG file carries a home-folder path, a name or a trace of this Mac (listed above); it was not kept"
 
 mv -f "$BUILT" "$OUTPUT"
+# Moving the file from a tracked process stamps com.apple.provenance on it again (moving it to another volume also
+# copies it), so its attributes are cleared once more where it ends up.
 if [[ -n "$(xattr "$OUTPUT")" ]]; then
-    # Moved to another volume: copied, and the copy may carry new attributes.
     xattr -c "$OUTPUT"
     clear_provenance "$OUTPUT"
     [[ -z "$(xattr "$OUTPUT")" ]] || {
