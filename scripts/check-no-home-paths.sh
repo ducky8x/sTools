@@ -24,9 +24,9 @@
 #                 file made by a process started from an app it tracks (a downloaded editor or terminal), and only a
 #                 process it does not track can remove it (scripts/build-dmg.sh does, for the disk image).
 #
-# Each finding is printed with its path relative to the argument and a count; for a short name part, also the bytes
-# around it, with the name left out. Nothing looked for is ever printed: placeholders such as <account name> stand
-# in for it.
+# Each finding is printed with its path relative to the argument and a count; for a name looked for only as a word,
+# also the byte offsets where it was found (look with xxd -s <offset> <file>), never the bytes around it, which can
+# hold the rest of a name. Nothing looked for is ever printed: placeholders such as <account name> stand in for it.
 #
 # The check itself is scripts/check-no-home-paths.swift, compiled once per version of that file and of the compiler
 # into the per-user temporary folder.

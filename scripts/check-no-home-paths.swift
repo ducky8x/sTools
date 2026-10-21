@@ -5,8 +5,9 @@
 //
 // Usage: check-no-home-paths [--provenance] <file-or-folder>...
 //
-// Nothing it looks for is ever printed: a finding names a label ("the account name") and a count, and everything
-// printed has those values replaced by placeholders such as <account name>.
+// Nothing it looks for is ever printed: a finding names a label ("the account name"), a count and, for a short name,
+// the byte offsets where it was found, never the bytes around it; everything printed has those values replaced by
+// placeholders such as <account name>.
 //
 // Exit status: 0 when nothing was found, 1 when something was, 2 when the check could not run.
 
@@ -23,8 +24,18 @@ setvbuf(stdout, nil, _IOLBF, 0)
 /// Values that must never be printed, with what is printed instead; longest first once set up.
 var masks: [(value: String, placeholder: String)] = []
 
+/// `text` with every value in `masks` replaced, in any letter case. A value shorter than six characters is replaced
+/// only as a word of its own, as it is looked for: replaced inside longer words too, it would show which letters of
+/// an ordinary word it is.
 func masked(_ text: String) -> String {
-    masks.reduce(text) { $0.replacingOccurrences(of: $1.value, with: $1.placeholder, options: .caseInsensitive) }
+    masks.reduce(text) { text, mask in
+        guard mask.value.count < 6 else {
+            return text.replacingOccurrences(of: mask.value, with: mask.placeholder, options: .caseInsensitive)
+        }
+        let word = "(?<![A-Za-z])" + NSRegularExpression.escapedPattern(for: mask.value) + "(?![A-Za-z])"
+        return text.replacingOccurrences(of: word, with: NSRegularExpression.escapedTemplate(for: mask.placeholder),
+                                         options: [.regularExpression, .caseInsensitive])
+    }
 }
 
 func printError(_ line: String) {
@@ -411,16 +422,12 @@ func isTextLike(_ bytes: UnsafeRawBufferPointer) -> Bool {
     return nonNUL * 100 >= bytes.count * 45 && printable * 100 >= nonNUL * 85
 }
 
-/// A few bytes on either side of a hit, printable, with the hit itself left out.
-func context(_ bytes: UnsafeRawBufferPointer, at: Int, length: Int) -> String {
-    func render(_ range: Range<Int>) -> String {
-        range.map { index -> String in
-            let byte = bytes[index]
-            if (0x20...0x7E).contains(byte) && byte != 0x5C { return String(UnicodeScalar(byte)) }
-            return String(format: "\\x%02X", byte)
-        }.joined()
-    }
-    return "\"" + render(max(0, at - 16)..<at) + "<...>" + render((at + length)..<min(bytes.count, at + length + 16)) + "\""
+/// Where a short name was found: its byte offset and encoding, never the bytes around it. Those can hold the rest of
+/// a name (cut off at the edge of what is shown, or spelled out a letter at a time in UTF-16), so nothing of them is
+/// printed; `xxd -s <offset> <file>` shows the place to whoever runs the check.
+func location(at offset: Int, of form: Form, via: String?) -> String {
+    let encoding = form.unit == 1 ? "UTF-8" : form.bigEndian ? "UTF-16BE" : "UTF-16LE"
+    return "at byte \(offset) (\(encoding))" + (via.map { " of the unpacked \($0) data" } ?? "")
 }
 
 // MARK: - Decoding
@@ -575,7 +582,7 @@ func forEachHexRun(in bytes: UnsafeRawBufferPointer, _ body: ([UInt8]) throws ->
 struct Tally {
     var direct: [Int: Int] = [:]
     var encoded: [Int: [String: Int]] = [:]
-    var contexts: [Int: [String]] = [:]
+    var locations: [Int: [String]] = [:]
     var isEmpty: Bool { direct.isEmpty && encoded.isEmpty }
 
     mutating func add(_ needle: Int, _ count: Int, via: String?) {
@@ -624,9 +631,8 @@ final class Scanner {
                 for form in needle.forms {
                     let hits = positions(of: form, in: raw, word: true)
                     total += hits.count
-                    for at in hits.prefix(2) where tally.contexts[index, default: []].count < 3 {
-                        tally.contexts[index, default: []].append(context(raw, at: at, length: form.bytes.count)
-                            + (via.map { " in \($0) data" } ?? ""))
+                    for at in hits.prefix(2) where tally.locations[index, default: []].count < 3 {
+                        tally.locations[index, default: []].append(location(at: at, of: form, via: via))
                     }
                 }
             case .text:
@@ -818,7 +824,7 @@ var bytesRead = 0
 func report(_ place: String, _ tally: Tally, extra: [String] = []) {
     guard !tally.isEmpty || !extra.isEmpty else { return }
     var order: [String] = []
-    var totals: [String: (all: Int, encoded: [String: Int], contexts: [String])] = [:]
+    var totals: [String: (all: Int, encoded: [String: Int], locations: [String])] = [:]
     for (index, needle) in needles.enumerated() {
         let encoded = tally.encoded[index] ?? [:]
         let all = (tally.direct[index] ?? 0) + encoded.values.reduce(0, +)
@@ -826,7 +832,7 @@ func report(_ place: String, _ tally: Tally, extra: [String] = []) {
         if totals[needle.label] == nil { order.append(needle.label) }
         totals[needle.label, default: (0, [:], [])].all += all
         totals[needle.label]!.encoded.merge(encoded, uniquingKeysWith: +)
-        totals[needle.label]!.contexts += tally.contexts[index] ?? []
+        totals[needle.label]!.locations += tally.locations[index] ?? []
     }
     var parts = order.map { label -> String in
         let (all, encoded, _) = totals[label]!
@@ -840,7 +846,7 @@ func report(_ place: String, _ tally: Tally, extra: [String] = []) {
     parts += extra
     printError("    \(place): " + parts.joined(separator: ", "))
     for label in order {
-        for line in totals[label]!.contexts.prefix(3) { printError("        \(label) as a word: \(line)") }
+        for line in totals[label]!.locations.prefix(3) { printError("        \(label) as a word: \(line)") }
     }
     findings += 1
 }
