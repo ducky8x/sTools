@@ -199,6 +199,27 @@ done < <(find "$BIN_PATH" -maxdepth 1 -type d -name '*.bundle' -print0)
     fail "sTools_STDesign.bundle was not produced by the build"
 echo "    copied $BUNDLE_COUNT resource bundle(s)"
 
+# The build system names each resource bundle's identifier after the checkout folder ("<folder>.STDesign.resources"),
+# so the folder's name would ship and the app would differ by where it was built; it also records the build Mac's
+# macOS and Xcode versions. Each bundle gets a fixed identifier instead (it is also the bundle's code-signing
+# identifier; the code finds its bundles by name, never by identifier), and those keys go.
+while IFS= read -r -d '' bundle; do
+    name="$(basename "$bundle" .bundle)"
+    target="${name#sTools_}"
+    [[ "$target" =~ ^[A-Za-z0-9-]+$ ]] || fail "unexpected resource bundle name: $name.bundle"
+    plist="$bundle/Contents/Info.plist"
+    [[ -f "$plist" ]] || plist="$bundle/Info.plist"
+    [[ -f "$plist" ]] || fail "$name.bundle has no Info.plist"
+    plutil -replace CFBundleIdentifier -string "com.ducky8x.sTools.$target.resources" "$plist"
+    for key in $(plutil -p "$plist" | sed -n 's/^  "\([^"]*\)" =>.*/\1/p' | grep -E '^(DT|BuildMachine)' || true); do
+        plutil -remove "${key//./\\.}" "$plist"
+    done
+    if plutil -p "$plist" | grep -Eq '^  "(DT|BuildMachine)'; then
+        fail "$name.bundle's Info.plist still records the build Mac"
+    fi
+    echo "    $name.bundle: identifier com.ducky8x.sTools.$target.resources"
+done < <(find "$APP/Contents/Resources" -maxdepth 1 -type d -name '*.bundle' -print0)
+
 echo "==> Adding the app icon"
 # packaging/AppIcon.icon (an Icon Composer document) compiles to Assets.car, which macOS reads through
 # CFBundleIconName; packaging/sTools.icns is the flat fallback named by CFBundleIconFile. Both are made by
