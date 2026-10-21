@@ -4,6 +4,8 @@ import Foundation
 public enum SettingsLayout {
     /// Subfolder of the settings directory that holds user images referenced by settings.
     public static let imagesFolderName = "Images"
+    /// Subfolder that holds the owner's own sound files, Timer Overlay's alarm sounds, all directly inside it.
+    public static let soundsFolderName = "Sounds"
     /// Subfolder that receives timestamped copies of the settings before an import or a reset.
     public static let backupsFolderName = "Backups"
     /// File extension of an exported settings file.
@@ -23,6 +25,12 @@ public enum SettingsLayout {
         let parts = path.split(separator: "/", omittingEmptySubsequences: false)
         return parts.allSatisfy { !$0.isEmpty && $0 != "." && $0 != ".." }
     }
+
+    /// A file name directly inside the Sounds folder, checked like an image path but flat: one visible name
+    /// (not hidden), never a path, and short enough for the file system.
+    public static func isValidSoundFileName(_ name: String) -> Bool {
+        isValidImagePath(name) && !name.contains("/") && !name.hasPrefix(".") && name.utf8.count <= 255
+    }
 }
 
 /// File-system helpers over one settings directory.
@@ -30,6 +38,7 @@ struct SettingsFolder: Sendable {
     let url: URL
 
     var imagesURL: URL { url.appending(path: SettingsLayout.imagesFolderName, directoryHint: .isDirectory) }
+    var soundsURL: URL { url.appending(path: SettingsLayout.soundsFolderName, directoryHint: .isDirectory) }
 
     /// Everything in the directory except the Backups folder.
     func items() throws -> [URL] {
