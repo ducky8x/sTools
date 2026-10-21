@@ -343,6 +343,43 @@ struct KeyRebinderPressTests {
         #expect(controller.selectedKey == nil)
     }
 
+    /// With keyboard navigation on (Full Keyboard Access), Tab, Shift-Tab and Space move focus and press the focused
+    /// control, as everywhere in sTools, instead of selecting their keys; Test keys and Press… still take them.
+    @Test func keyboardNavigationKeepsTabShiftAndSpace() async throws {
+        let harness = try Harness()
+        defer { harness.remove() }
+        let controller = harness.controller
+        controller.chooseLayout(shape: .ansi, formFactor: .laptop)
+        func leaves(_ press: KeyPress, navigation: Bool = true) -> Bool {
+            KeyRebinderView.leavesToKeyboardNavigation(press, keyboardNavigation: navigation, controller: controller)
+        }
+        for code in ["tab", "spacebar", "left_shift", "right_shift"] {
+            let press = KeyPress.down(.key(code), isRepeat: false)
+            #expect(leaves(press))
+            #expect(leaves(.up(.key(code))))
+            #expect(!leaves(press, navigation: false))
+            // The page passes the press on as busy, so it isn't used and the window gets it.
+            #expect(!controller.handle(press, commandHeld: false, isBusy: leaves(press)))
+        }
+        #expect(controller.selectedKey == nil)
+        for code in ["a", "return_or_enter", "escape", "left_arrow", "left_control"] {
+            #expect(!leaves(.down(.key(code), isRepeat: false)))
+        }
+        let a = KeyPress.down(.key("a"), isRepeat: false)
+        #expect(controller.handle(a, commandHeld: false, isBusy: leaves(a)))
+        #expect(controller.selectedKey == .key("a"))
+        // Without keyboard navigation, pressing Tab selects it as before.
+        let tab = KeyPress.down(.key("tab"), isRepeat: false)
+        #expect(controller.handle(tab, commandHeld: false, isBusy: leaves(tab, navigation: false)))
+        #expect(controller.selectedKey == .key("tab"))
+
+        controller.isTesting = true
+        #expect(!leaves(tab))
+        controller.isTesting = false
+        controller.isCapturingOutput = true
+        #expect(!leaves(.down(.key("spacebar"), isRepeat: false)))
+    }
+
     @Test func theTesterSeesEverythingButOnlySwallowsPlainKeys() async throws {
         let harness = try Harness()
         defer { harness.remove() }
@@ -516,6 +553,11 @@ struct KeyRebinderHotkeyTests {
         defer { harness.remove() }
         let center = try #require(harness.center)
         let controller = harness.controller
+        // Minecraft binds no modifier key, so an accepted bare F18 hotkey always fires and the game never gets F18.
+        let options = harness.directory.appending(path: "options.txt")
+        try Data("key_key.hotbar.1:key.keyboard.f18\n".utf8).write(to: options)
+        controller.settings.customOptionsFilePath = options.path
+        #expect(controller.minecraftKeybinds != nil)
         harness.registrar.refused = [HotkeyFixtures.combo("f18"), HotkeyFixtures.combo("f3")]
         let f18 = center.add(combo: HotkeyFixtures.combo("f18"), actions: [.toggle(.crosshair)])
         center.add(combo: HotkeyFixtures.combo("f3"), actions: [.toggle(.crosshair)])
@@ -530,6 +572,12 @@ struct KeyRebinderHotkeyTests {
         center.update(f18, actions: [.toggle(.nbbOverlay)])
         #expect(await eventually { !controller.derived.findings.contains { $0.kind == .oneKeyOneInput } })
         #expect(controller.hotkeyMark(for: .key("caps_lock")) == .working)
+
+        // Once Minecraft sneaks on Shift, the hotkey doesn't fire while Shift is held, so the game gets F18 again.
+        try Data("key_key.sneak:key.keyboard.left.shift\nkey_key.hotbar.1:key.keyboard.f18\n".utf8).write(to: options)
+        controller.loadMinecraftKeybinds()
+        controller.recompute()
+        #expect(controller.derived.findings.contains { $0.kind == .oneKeyOneInput && $0.message.contains("both produce F18") })
     }
 
     @Test func hotkeyFindingsNeedNoKarabinerFile() async throws {
@@ -662,12 +710,26 @@ struct KeyRebinderHotkeyTests {
             "Caps Lock will fire the sTools hotkey F20 (NBB Overlay).",
             "Its hotkey F18 (Crosshair) stays on F18, and no key will send F18.",
         ])
-        // Remove Rebind.
-        #expect(controller.rebindHotkeyNotes(for: .key("caps_lock"), becoming: nil)
-            == ["Its hotkey F18 (Crosshair) stays on F18, and no key will send F18."])
         #expect(controller.rebindHotkeyNotes(for: .key("a"), becoming: .key("f20")) == ["A will fire the sTools hotkey F20 (NBB Overlay)."])
         #expect(controller.rebindHotkeyNotes(for: .key("caps_lock"), becoming: .key("f18")).isEmpty)
         #expect(controller.rebindHotkeyNotes(for: .key("b"), becoming: .key("c")).isEmpty)
+    }
+
+    /// With nothing chosen, the panel shows what Remove Rebind would do, right under "Sends F18": worded as what
+    /// would happen, never as what is.
+    @Test func removeRebindSaysWhatItWouldDo() async throws {
+        let harness = try await make(profileP([("caps_lock", "f18"), ("q", "w")]))
+        defer { harness.remove() }
+        let center = try #require(harness.center)
+        let controller = harness.controller
+        center.add(combo: HotkeyFixtures.combo("f18"), actions: [.toggle(.crosshair)])
+        center.add(combo: HotkeyFixtures.combo("q"), actions: [.toggle(.nbbOverlay)])
+        #expect(await eventually { !controller.hotkeys(on: .key("caps_lock")).isEmpty })
+        #expect(controller.rebindHotkeyNotes(for: .key("caps_lock"), becoming: nil)
+            == ["Remove Rebind would leave its hotkey F18 (Crosshair) on F18, and no key would send F18."])
+        #expect(controller.rebindHotkeyNotes(for: .key("q"), becoming: nil)
+            == ["Remove Rebind would make Q fire the sTools hotkey Q (NBB Overlay)."])
+        #expect(controller.rebindHotkeyNotes(for: .key("a"), becoming: nil).isEmpty)
     }
 
     @Test func aHotkeyAnotherKeyStillSendsIsNotStranded() async throws {
@@ -685,6 +747,8 @@ struct KeyRebinderHotkeyTests {
         alone.center?.add(combo: HotkeyFixtures.combo("f18"), actions: [.toggle(.crosshair)])
         alone.center?.add(combo: HotkeyFixtures.combo("f18", .shift), actions: [.toggle(.nbbOverlay)])
         #expect(alone.controller.rebindHotkeyNotes(for: .key("caps_lock"), becoming: nil)
+            == ["Remove Rebind would leave its hotkeys F18 (Crosshair) and \u{21E7}F18 (NBB Overlay) on F18, and no key would send F18."])
+        #expect(alone.controller.rebindHotkeyNotes(for: .key("caps_lock"), becoming: .key("f19"))
             == ["Its hotkeys F18 (Crosshair) and \u{21E7}F18 (NBB Overlay) stay on F18, and no key will send F18."])
     }
 

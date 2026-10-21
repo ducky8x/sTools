@@ -10,16 +10,24 @@ import Testing
 private final class FakeKeyboardAdvisor: HotkeyAdvising {
     var selectsKey = false
     var placementText: String?
+    /// Whether a drawn key sends the combination's key; by default, whenever there is a placement text.
+    var canShow: Bool?
     var cautions: [String] = []
+    var notes: [String] = []
     private(set) var selected: [HotkeyCombo] = []
+    private(set) var preparedCount = 0
 
-    func notes(for combo: HotkeyCombo) -> [HotkeyNote] { cautions.map { HotkeyNote(tone: .caution, text: $0) } }
-    func placement(of combo: HotkeyCombo) -> HotkeyPlacement? { HotkeyPlacement(text: placementText, canShow: placementText != nil) }
+    func notes(for combo: HotkeyCombo) -> [HotkeyNote] {
+        cautions.map { HotkeyNote(tone: .caution, text: $0) } + notes.map { HotkeyNote(tone: .note, text: $0) }
+    }
+    func placement(of combo: HotkeyCombo) -> HotkeyPlacement? {
+        HotkeyPlacement(text: placementText, canShow: canShow ?? (placementText != nil))
+    }
     func selectKey(for combo: HotkeyCombo) -> Bool {
         selected.append(combo)
         return selectsKey
     }
-    func prepareAdvice() async {}
+    func prepareAdvice() async { preparedCount += 1 }
 }
 
 private let pad1 = HotkeyCombo(keyCode: 83, modifiers: [])
@@ -194,6 +202,82 @@ struct AppModelHotkeysTests {
     }
 }
 
+/// What a Home row says below its first line comes from the Key Rebinder's advice (spec 6.1).
+@MainActor
+@Suite("Home hotkey rows")
+struct HomeHotkeyRowTests {
+    @Test func withoutTheKeyRebinderARowSaysNothingMore() throws {
+        let harness = Harness(accessibility: .granted)
+        let id = harness.model.hotkeys.add(combo: pad1, actions: [.toggle(.crosshair)])
+        let binding = try #require(harness.model.hotkeys.bindings.first { $0.id == id })
+        // Pad 1 alone gets the typing note, which only the editor shows.
+        #expect(!harness.model.hotkeys.notes(for: pad1).isEmpty)
+        #expect(HotkeyBindingRow.details(for: binding, isEditing: false, hotkeys: harness.model.hotkeys) == .init())
+    }
+
+    @Test func aRowShowsThePlacementShowOnKeyboardAndTheCautionsOnly() throws {
+        let harness = Harness(accessibility: .granted)
+        let advisor = FakeKeyboardAdvisor()
+        defer { withExtendedLifetime(advisor) {} }
+        let hotkeys = harness.model.hotkeys
+        hotkeys.advisor = advisor
+        advisor.placementText = "On Caps Lock"
+        advisor.cautions = ["Minecraft uses F3 for Debug screen. While hotkeys are on, it never gets F3."]
+        advisor.notes = ["F3 doesn\u{2019}t fire while you hold Shift (Sneak)."]
+        let id = hotkeys.add(combo: HotkeyCombo(keyCode: 99, modifiers: []), actions: [.toggle(.crosshair)])
+        let binding = try #require(hotkeys.bindings.first { $0.id == id })
+
+        let caution = HotkeyNote(tone: .caution, text: "Minecraft uses F3 for Debug screen. While hotkeys are on, it never gets F3.")
+        #expect(HotkeyBindingRow.details(for: binding, isEditing: false, hotkeys: hotkeys)
+            == .init(placement: "On Caps Lock", canShow: true, cautions: [caution]))
+        // While the row is edited, its editor shows every note, so the row leaves the cautions out.
+        #expect(HotkeyBindingRow.details(for: binding, isEditing: true, hotkeys: hotkeys)
+            == .init(placement: "On Caps Lock", canShow: true))
+
+        // No drawn key sends it: the caption, without Show on Keyboard.
+        advisor.placementText = "No key on your keyboard sends F3"
+        advisor.canShow = false
+        #expect(HotkeyBindingRow.details(for: binding, isEditing: false, hotkeys: hotkeys)
+            == .init(placement: "No key on your keyboard sends F3", canShow: false, cautions: [caution]))
+        // The key simply sends itself: nothing to say about where it is.
+        advisor.placementText = nil
+        advisor.canShow = true
+        advisor.cautions = []
+        #expect(HotkeyBindingRow.details(for: binding, isEditing: false, hotkeys: hotkeys).isEmpty)
+    }
+
+    /// Several rows can offer Show on Keyboard, so VoiceOver names the hotkey on each, as it does for Edit.
+    @Test func showOnKeyboardNamesItsHotkeyForVoiceOver() {
+        #expect(HotkeyBindingRow.showOnKeyboardLabel(for: HotkeyCombo(keyCode: 79, modifiers: .option)) == "Show Option F18 on keyboard")
+        #expect(HotkeyBindingRow.showOnKeyboardLabel(for: pad1) == "Show Keypad 1 on keyboard")
+    }
+
+    /// Home ▸ Hotkeys loads the Key Rebinder's advice (karabiner.json and Minecraft's keybinds) when it appears with
+    /// hotkeys on and when they are switched on; with hotkeys off it loads nothing.
+    @Test func theSectionLoadsTheAdviceWhileHotkeysAreOn() async {
+        let harness = Harness(accessibility: .granted)
+        let advisor = FakeKeyboardAdvisor()
+        defer { withExtendedLifetime(advisor) {} }
+        harness.model.hotkeys.advisor = advisor
+        let size = CGSize(width: 640, height: 720)
+        let host = NSHostingView(rootView: VStack(alignment: .leading, spacing: 0) { HotkeysSection(model: harness.model) }
+            .frame(width: size.width, height: size.height, alignment: .topLeading)
+            .environment(\.stTheme, harness.model.theme)
+            .environment(\.stSoundPlayer, STSoundPlayer.silent))
+        host.frame = CGRect(origin: .zero, size: size)
+        host.layoutSubtreeIfNeeded()
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(advisor.preparedCount == 0)
+
+        harness.model.hotkeys.isEnabled = true
+        #expect(await waitUntil {
+            host.layoutSubtreeIfNeeded()
+            return advisor.preparedCount == 1
+        })
+        withExtendedLifetime(host) {}
+    }
+}
+
 @MainActor
 @Suite("Home hotkeys rendering")
 struct HomeHotkeysRenderTests {
@@ -230,6 +314,24 @@ struct HomeHotkeysRenderTests {
         #expect(distinctColors(in: list) > 20)
         #expect(distinctColors(in: open) > 20)
         #expect(list.representation(using: .png, properties: [:]) != open.representation(using: .png, properties: [:]))
+    }
+
+    /// The placement caption with Show on Keyboard, then a caution, each draw under the row.
+    @Test func theKeyRebindersAdviceDrawsUnderARow() {
+        let harness = Harness(accessibility: .granted)
+        let advisor = FakeKeyboardAdvisor()
+        defer { withExtendedLifetime(advisor) {} }
+        harness.model.hotkeys.isEnabled = true
+        harness.model.hotkeys.add(combo: HotkeyCombo(keyCode: 99, modifiers: []), actions: [.toggle(.windowBackdrop)])
+        func png() -> Data? { render(harness).representation(using: .png, properties: [:]) }
+        let plain = png()
+        harness.model.hotkeys.advisor = advisor
+        #expect(png() == plain)
+        advisor.placementText = "On Caps Lock"
+        let placed = png()
+        advisor.cautions = ["Minecraft uses F3 for Debug screen. While hotkeys are on, it never gets F3."]
+        let cautioned = png()
+        #expect(Set([plain, placed, cautioned]).count == 3)
     }
 
     @Test func thePauseCaptionFollowsTheSetting() {

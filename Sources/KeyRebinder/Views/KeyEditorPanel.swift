@@ -55,9 +55,10 @@ struct KeyEditorPanel: View {
             if showsHotkeys && controller.showsHotkeyLayer {
                 Rectangle().fill(STColor.rule).frame(height: 1).accessibilityHidden(true)
                 Text("Hotkeys").stStyle(.label).foregroundStyle(theme.inkSecondary).accessibilityAddTraits(.isHeader)
-                // A new identity per key: selecting another key closes the editor unsaved.
+                // A new identity per key and per key code it sends: selecting another key, or a change to what this
+                // key sends, closes the editor unsaved.
                 KeyHotkeysBlock(controller: controller, key: key, chosen: $chosen, openHotkeys: openHotkeys, draft: hotkeyDraft)
-                    .id(key)
+                    .id(KeyHotkeysBlock.identity(of: key, controller: controller))
             }
         }
         .padding(18)
@@ -138,7 +139,8 @@ struct KeyEditorPanel: View {
     }
 
     /// What the rebind would do to sTools hotkeys, under Becomes: for the output `chosen`, or with nothing chosen,
-    /// for Remove Rebind when the key has a rebind to remove. Hotkeys never move with a rebind.
+    /// for Remove Rebind when the key has a rebind to remove (those name Remove Rebind, since they sit right under
+    /// what the key sends now). Hotkeys never move with a rebind.
     static func hotkeyCaptions(
         for key: KarabinerEvent, chosen: KarabinerEvent?, controller: KeyRebinderController, showsHotkeys: Bool
     ) -> [String] {

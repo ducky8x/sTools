@@ -127,9 +127,23 @@ public struct KeyRebinderView: View {
 
     // MARK: Key presses
 
+    /// Keys keyboard navigation needs: Tab and Shift-Tab move focus, Space presses the focused control.
+    private static let navigationKeys: Set<KarabinerEvent> = [.key("tab"), .key("spacebar"), .key("left_shift"), .key("right_shift")]
+
+    /// Whether the page leaves `press` to keyboard navigation instead of selecting its key on the plate. With keyboard
+    /// navigation on (System Settings ▸ Keyboard ▸ Keyboard navigation, `NSApp.isFullKeyboardAccessEnabled`), Tab,
+    /// Shift-Tab and Space move focus and press buttons here as everywhere in sTools, so every control, the key
+    /// panel's Hotkeys part included, is reachable from the keyboard. Those keys are then selected by clicking them.
+    /// Test keys and Press… still take every key.
+    static func leavesToKeyboardNavigation(_ press: KeyPress, keyboardNavigation: Bool, controller: KeyRebinderController) -> Bool {
+        guard keyboardNavigation, !controller.isTesting, !controller.isCapturingOutput else { return false }
+        return navigationKeys.contains(KeyTable.shared.canonical(press.event))
+    }
+
     private func route(_ press: KeyPress, _ event: NSEvent) -> Bool {
         let window = event.window
         let isBusy = window?.firstResponder is NSText || window?.sheetParent != nil || window?.isMainWindow == false
+            || Self.leavesToKeyboardNavigation(press, keyboardNavigation: NSApp.isFullKeyboardAccessEnabled, controller: controller)
         let used = controller.handle(press, commandHeld: event.modifierFlags.contains(.command), isBusy: isBusy)
         // Caps Lock never reports a release, so the tester lets go of it shortly after.
         if controller.isTesting, case .down(let key, _) = press, event.type == .flagsChanged,

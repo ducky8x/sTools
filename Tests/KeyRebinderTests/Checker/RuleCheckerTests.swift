@@ -275,14 +275,29 @@ key_key.forward:key.keyboard.w
         #expect(!ruleFindings.contains { $0.kind == .hotkeyTakesGameKey })
     }
 
+    /// Minecraft binds no modifier key here, so nothing keeps a bare F18 hotkey from firing: the game never gets F18.
     @Test func aBareHotkeyOnASharedOutputSkipsOneKeyOneInput() {
         let shared = [TestConfig.pair("caps_lock", "f18"), TestConfig.pair("right_option", "f18")]
-        let message = "Caps Lock and Right Option both produce F18; each game input may have only one key."
-        #expect(of(.oneKeyOneInput, findings(simple: shared)).map(\.message) == [message])
-        #expect(of(.oneKeyOneInput, findings(simple: shared, hotkeys: [HotkeyFixtures.hotkey("f18")])).isEmpty)
+        let keybinds = "key_key.hotbar.1:key.keyboard.f18"
+        let message = "Caps Lock and Right Option both produce F18 (Hotbar 1 in Minecraft); each game input may have only one key."
+        #expect(of(.oneKeyOneInput, findings(simple: shared, keybinds: keybinds)).map(\.message) == [message])
+        #expect(of(.oneKeyOneInput, findings(simple: shared, keybinds: keybinds, hotkeys: [HotkeyFixtures.hotkey("f18")])).isEmpty)
         let withModifiers = HotkeyFixtures.hotkey("f18", [.control, .option])
-        #expect(of(.oneKeyOneInput, findings(simple: shared, hotkeys: [withModifiers])).map(\.message) == [message])
+        #expect(of(.oneKeyOneInput, findings(simple: shared, keybinds: keybinds, hotkeys: [withModifiers])).map(\.message) == [message])
         let actionless = HotkeyFixtures.hotkey("f18", [], [])
-        #expect(of(.oneKeyOneInput, findings(simple: shared, hotkeys: [actionless])).map(\.message) == [message])
+        #expect(of(.oneKeyOneInput, findings(simple: shared, keybinds: keybinds, hotkeys: [actionless])).map(\.message) == [message])
+    }
+
+    /// A hotkey fires only with exactly its modifiers, so while Shift (Sneak) or Control (Sprint) is held a bare F18
+    /// hotkey doesn't, and both keys reach Minecraft as F18 again: the finding stays.
+    @Test func aBareHotkeyDoesNotSkipOneKeyOneInputWhileMinecraftBindsAModifier() {
+        let shared = [TestConfig.pair("caps_lock", "f18"), TestConfig.pair("right_option", "f18")]
+        let bare = [HotkeyFixtures.hotkey("f18")]
+        let sneaks = "key_key.sneak:key.keyboard.left.shift\nkey_key.hotbar.1:key.keyboard.f18"
+        #expect(of(.oneKeyOneInput, findings(simple: shared, keybinds: sneaks, hotkeys: bare)).map(\.message)
+            == ["Caps Lock and Right Option both produce F18 (Hotbar 1 in Minecraft); each game input may have only one key."])
+        // Without keybinds, Minecraft 1.16.1's defaults bind Shift and Control.
+        #expect(of(.oneKeyOneInput, findings(simple: shared, hotkeys: bare)).map(\.message)
+            == ["Caps Lock and Right Option both produce F18; each game input may have only one key."])
     }
 }
