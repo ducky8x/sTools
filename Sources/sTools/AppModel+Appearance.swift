@@ -12,6 +12,13 @@ extension AppModel {
         settings.save(appearance)
     }
 
+    /// Reads `appearance.json` again and shows it at once: after an import, Reduce animations and the rest of
+    /// Appearance apply without a relaunch, and a later change can't write the old values back over the file.
+    func reloadAppearance() {
+        settings.load(AppearanceSettings.self).apply(to: theme)
+        appearance = AppearanceSettings(theme: theme)
+    }
+
     func appearanceBinding<Value>(_ keyPath: WritableKeyPath<AppearanceSettings, Value>) -> Binding<Value> {
         Binding(get: { self.appearance[keyPath: keyPath] },
                 set: { value in self.updateAppearance { $0[keyPath: keyPath] = value } })

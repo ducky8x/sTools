@@ -49,6 +49,13 @@ struct SettingsPage: View {
                          valueText: PercentFormat.text, parse: PercentFormat.parse)
                     .frame(width: 260)
             }
+            STSettingsRow("Reduce animations", showsRule: false) {
+                STSwitch(isOn: model.appearanceBinding(\.reducesAnimations), label: "Reduce animations")
+            }
+            Text(Self.reduceAnimationsNote(systemReducesMotion: model.theme.systemReduceMotion))
+                .stStyle(.caption)
+                .foregroundStyle(model.theme.inkSecondary)
+                .fixedSize(horizontal: false, vertical: true)
             STAdvancedDisclosure(isExpanded: $appearanceAdvancedIsOpen) {
                 appearanceAdvancedRows
             }
@@ -114,11 +121,14 @@ struct SettingsPage: View {
         }
     }
 
+    /// The line under Reduce animations: macOS's Reduce motion turns it on too, whatever the switch says.
+    static func reduceAnimationsNote(systemReducesMotion: Bool) -> String {
+        systemReducesMotion
+            ? "Animations are off for now: Reduce motion is on in macOS\u{2019}s Accessibility settings."
+            : "Turns off every animation. macOS\u{2019}s Reduce motion (Accessibility settings) turns them off too."
+    }
+
     @ViewBuilder private var appearanceAdvancedRows: some View {
-        STSettingsRow("Motion") {
-            STSegmented(selection: model.appearanceBinding(\.motionMode),
-                        options: [STSegmentedOption(.full, "Full"), STSegmentedOption(.reduced, "Reduced")])
-        }
         STSettingsRow("Text size") {
             STSlider(value: model.percentBinding(\.textScale), in: 90...130, step: 5, label: "Text size",
                      valueText: PercentFormat.text, parse: PercentFormat.parse)

@@ -3,7 +3,8 @@ import SwiftUI
 
 /// The typewriter reveal (spec 3.4 `type`): characters arrive 18 ms apart, each settling in with a short fade and
 /// a 2 pt rise. The full text is laid out from the start, so nothing reflows as it types. A bump of
-/// `completionCount` shows everything at once; with Reduce Motion the whole text crossfades in instead.
+/// `completionCount` shows everything at once. While motion is reduced the text is simply there from the moment it
+/// starts, and `onFinished` runs right then: nothing waits on an animation that doesn't play.
 struct TypewriterText: View {
     let text: String
     /// Typing starts when this becomes true (immediately, if it already is).
@@ -30,7 +31,8 @@ struct TypewriterText: View {
     var body: some View {
         Group {
             if theme.reduceMotion {
-                Text(text).opacity(progress > 0 ? 1 : 0)
+                // Read from `isStarted` too, so it shows on the first frame it's started on, not a frame later.
+                Text(text).opacity(isStarted || hasStarted ? 1 : 0)
             } else {
                 Text(text).textRenderer(TypewriterRenderer(progress: progress, fadeSpan: fadeSpan))
             }
@@ -50,16 +52,17 @@ struct TypewriterText: View {
             return
         }
         hasStarted = true
-        let animation = theme.reduceMotion ? STMotion.reducedFade : .linear(duration: target * 0.018)
-        withAnimation(animation) { progress = target } completion: { finish() }
+        STMotion.animate(.linear(duration: target * 0.018), reduce: theme.reduceMotion) {
+            progress = target
+        } completion: {
+            finish()
+        }
     }
 
     private func finishNow() {
         guard hasStarted || isStarted, !hasFinished else { return }
         hasStarted = true
-        var instant = Transaction()
-        instant.disablesAnimations = true
-        withTransaction(instant) { progress = target }
+        withTransaction(STMotion.instant) { progress = target }
         finish()
     }
 

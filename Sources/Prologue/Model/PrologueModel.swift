@@ -213,11 +213,16 @@ public final class PrologueModel {
 
     // MARK: Finale
 
-    /// Switches off, one by one, every tool switched on since the Prologue began (spec 4.2, step 14; D9).
-    public func runFinale() {
+    /// Switches off every tool switched on since the Prologue began (spec 4.2, step 14; D9): one by one, or all at
+    /// once when `inTurn` is false (while motion is reduced there's nothing to watch go off in turn).
+    public func runFinale(inTurn: Bool = true) {
         guard finaleTask == nil, let host else { return }
         finalePending = host.toolsToSwitchOff()
         guard !finalePending.isEmpty else { return }
+        guard inTurn else {
+            while switchOffNext() {}
+            return
+        }
         let (delay, interval) = (finaleDelay, finaleInterval)
         finaleTask = Task { [weak self] in
             try? await Task.sleep(for: delay)
