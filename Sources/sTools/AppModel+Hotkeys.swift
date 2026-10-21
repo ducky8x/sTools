@@ -58,7 +58,7 @@ extension AppModel {
             // Switching on (when needed) goes through `requestEnable`, which keeps rule R10.
             recording.toggleRecording()
             return effect
-        case .startTimer:
+        case .startTimer, .startTimerReleased:
             // Timer Overlay isn't in the app yet, so its key does nothing for now.
             return nil
         }

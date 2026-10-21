@@ -9,6 +9,9 @@ public enum HotkeyEvent: Equatable, Sendable {
     case toggleRecording
     /// Start timer was pressed. Timer Overlay's press table decides what that does (spec 5.6.2).
     case startTimer
+    /// The key of a press that sent `startTimer` is up again, for the timer's hold-to-cancel (spec 5.6.7). When
+    /// that hotkey is unregistered while its key is down, `HotkeyCenter` sends it itself.
+    case startTimerReleased
 }
 
 /// Why a binding is not active.
@@ -44,6 +47,13 @@ public enum HotkeyStatus: Equatable, Sendable {
 /// in sTools itself: typing, recording a combination, testing keys. While paused nothing is registered and presses
 /// are ignored; a combination macOS hasn't accepted yet this run is still tried once (registered and released at
 /// once), so a refusal shows the moment a hotkey is added. When the pause ends everything registers for real.
+///
+/// Presses count only for a binding registered right now, so a press macOS delivered just before an unregistration
+/// is ignored. With a registrar that reports releases, the center also keeps which keys are down: a press that sent
+/// Start timer gets `.startTimerReleased` when its key comes up, and a release whose press didn't count is ignored,
+/// so releases are ignored while paused, as presses are. When a binding whose key is down is unregistered (a pause,
+/// the master switch, an edit or removal), macOS can't report that release any more, so the center sends it itself
+/// and forgets the key.
 @MainActor
 @Observable
 public final class HotkeyCenter {
@@ -69,12 +79,17 @@ public final class HotkeyCenter {
     @ObservationIgnored private var registered: [UUID: HotkeyCombo] = [:]
     /// Combinations macOS accepted this run, so a pause tries each one only once. A refusal forgets it again.
     @ObservationIgnored private var accepted: Set<HotkeyCombo> = []
+    /// The registered bindings whose key is down: pressed, and not released or unregistered since. Each says
+    /// whether its press sent Start timer, so its release sends `.startTimerReleased`. Always empty with a
+    /// registrar that doesn't report releases.
+    @ObservationIgnored private var keysDown: [UUID: Bool] = [:]
     @ObservationIgnored private let log = STLog.logger("Hotkeys")
 
     /// - Parameters:
     ///   - toolStates: Reports which switchable tools are on right now. Read on every press.
     ///   - handler: Receives each press's events together, in order: one per tool change, then one for
     ///     recording, then one for Start timer. One call per press, so the app can confirm the press once.
+    ///     A release that ends a Start-timer press comes in a call of its own, `[.startTimerReleased]`.
     public init(store: SettingsStore,
                 registrar: any HotkeyRegistering,
                 toolStates: @escaping @MainActor () -> [HotkeyTool: Bool],
@@ -85,6 +100,7 @@ public final class HotkeyCenter {
         self.handler = handler
         self.settings = store.load(HotkeySettings.self)
         registrar.onPress = { [weak self] id in self?.handlePress(id) }
+        registrar.onRelease = { [weak self] id in self?.handleRelease(id) }
         synchronize()
     }
 
@@ -184,8 +200,15 @@ public final class HotkeyCenter {
         synchronize()
     }
 
+    /// Whether the registrar reports releases. One that keeps the protocol's default `onRelease` reads nil: with it,
+    /// no key is ever marked down.
+    private var reportsReleases: Bool { registrar.onRelease != nil }
+
+    /// A press counts only for a binding registered right now: nothing is while hotkeys are off or paused, and a
+    /// press macOS delivered just before an unregistration is stale.
     private func handlePress(_ id: UUID) {
-        guard settings.isEnabled, !isPaused, let binding = settings.bindings.first(where: { $0.id == id }) else { return }
+        guard registered[id] != nil, let binding = settings.bindings.first(where: { $0.id == id }) else { return }
+        if reportsReleases { keysDown[id] = binding.actions.contains(.startTimer) }
         let outcome = HotkeyAction.resolve(binding.actions, toolStates: toolStates())
         var events = outcome.toolChanges.map { HotkeyEvent.setTool($0.tool, isOn: $0.isOn) }
         if outcome.togglesRecording { events.append(.toggleRecording) }
@@ -194,9 +217,17 @@ public final class HotkeyCenter {
         handler(events)
     }
 
+    /// A release counts only for a key whose press counted, and sends an event only when that press sent Start
+    /// timer.
+    private func handleRelease(_ id: UUID) {
+        guard keysDown.removeValue(forKey: id) == true else { return }
+        handler([.startTimerReleased])
+    }
+
     /// Brings registrations and statuses in line with the settings: unregisters what is no longer wanted,
     /// registers what is new or changed, leaves unchanged registrations alone. While paused it unregisters
-    /// everything and only tries combinations macOS hasn't accepted yet.
+    /// everything and only tries combinations macOS hasn't accepted yet. An unregistered key that was down gets its
+    /// release from here, once everything else is up to date.
     private func synchronize() {
         var wanted: [UUID: HotkeyCombo] = [:]
         var newStatuses: [UUID: HotkeyStatus] = [:]
@@ -220,9 +251,12 @@ public final class HotkeyCenter {
         }
 
         let paused = isPaused
+        var timerReleases = 0
         for (id, combo) in registered where paused || wanted[id] != combo {
             registrar.unregister(id: id)
             registered[id] = nil
+            // macOS can't report this key's release any more.
+            if keysDown.removeValue(forKey: id) == true { timerReleases += 1 }
         }
         for binding in settings.bindings {
             guard let combo = wanted[binding.id] else { continue }
@@ -238,6 +272,7 @@ public final class HotkeyCenter {
             }
         }
         if newStatuses != statuses { statuses = newStatuses }
+        for _ in 0..<timerReleases { handler([.startTimerReleased]) }
     }
 
     /// While paused: a combination macOS accepted before is fine; anything else is registered and released in

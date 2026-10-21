@@ -4,10 +4,12 @@ import Synchronization
 import Testing
 @testable import STPlatform
 
-/// Records what the center asks for. Never touches the system.
+/// Records what the center asks for, and reports presses and releases like the Carbon registrar. Never touches the
+/// system.
 @MainActor
 private final class FakeRegistrar: HotkeyRegistering {
     var onPress: (@MainActor (UUID) -> Void)?
+    var onRelease: (@MainActor (UUID) -> Void)?
     private(set) var active: [UUID: HotkeyCombo] = [:]
     private(set) var log: [String] = []
     var refused: Set<HotkeyCombo> = []
@@ -26,7 +28,26 @@ private final class FakeRegistrar: HotkeyRegistering {
         log.append("unregister \(combo.displayString)")
     }
 
+    /// The key goes down.
     func press(_ id: UUID) { onPress?(id) }
+    /// The key comes back up.
+    func release(_ id: UUID) { onRelease?(id) }
+    /// A press and its release.
+    func tap(_ id: UUID) {
+        press(id)
+        release(id)
+    }
+}
+
+/// A registrar that doesn't report releases, like the fakes in the app's and the Key Rebinder's tests: it keeps the
+/// protocol's default `onRelease`.
+@MainActor
+private final class PressOnlyRegistrar: HotkeyRegistering {
+    var onPress: (@MainActor (UUID) -> Void)?
+    private(set) var active: [UUID: HotkeyCombo] = [:]
+
+    func register(_ combo: HotkeyCombo, id: UUID) throws { active[id] = combo }
+    func unregister(id: UUID) { active[id] = nil }
 }
 
 @MainActor
@@ -324,6 +345,168 @@ struct HotkeyCenterTests {
         h.center.remove(id)
         h.registrar.press(id)
         #expect(h.events.isEmpty)
+    }
+
+    /// A press counts only for a hotkey registered right now. One macOS delivered just before its hotkey was
+    /// unregistered (a duplicate, a refusal, an edit) is stale: it isn't acted on, and its release isn't awaited.
+    @Test func aPressForAHotkeyThatIsNotRegisteredIsIgnored() async {
+        let h = await Harness()
+        h.registrar.refused = [ctrlOptV]
+        h.center.isEnabled = true
+        let owner = h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
+        let duplicate = h.center.add(combo: pad1, actions: [.startTimer])
+        let refused = h.center.add(combo: ctrlOptV, actions: [.startTimer])
+        h.registrar.tap(duplicate)
+        h.registrar.tap(refused)
+        #expect(h.presses.isEmpty)
+
+        // Once the duplicate owns Pad 1, its presses count.
+        h.center.remove(owner)
+        h.registrar.tap(duplicate)
+        #expect(h.presses == [[.startTimer], [.startTimerReleased]])
+    }
+
+    // MARK: Releases
+
+    /// The timer's hold-to-cancel needs the release (spec 5.6.7). It arrives as its own handler call.
+    @Test func releasingAStartTimerKeySendsStartTimerReleased() async {
+        let h = await Harness()
+        h.center.isEnabled = true
+        let id = h.center.add(combo: f13, actions: [.toggle(.crosshair), .startTimer])
+        h.registrar.press(id)
+        h.registrar.release(id)
+        #expect(h.presses == [[.setTool(.crosshair, isOn: true), .startTimer], [.startTimerReleased]])
+    }
+
+    @Test func onlyAStartTimerPressGetsAReleaseEvent() async {
+        let h = await Harness()
+        h.center.isEnabled = true
+        let id = h.center.add(combo: pad1, actions: [.toggle(.crosshair), .startStopRecording])
+        h.registrar.tap(id)
+        #expect(h.presses == [[.setTool(.crosshair, isOn: true), .toggleRecording]])
+    }
+
+    /// A release without its press (never pressed, released already, an unknown id) sends nothing.
+    @Test func aReleaseCountsOnlyAfterItsPress() async {
+        let h = await Harness()
+        h.center.isEnabled = true
+        let id = h.center.add(combo: f13, actions: [.startTimer])
+        h.registrar.release(id)
+        h.registrar.release(UUID())
+        #expect(h.presses.isEmpty)
+
+        h.registrar.press(id)
+        h.registrar.release(id)
+        h.registrar.release(id)
+        #expect(h.presses == [[.startTimer], [.startTimerReleased]])
+    }
+
+    /// Editing only the actions leaves the registration alone (with the pause off, that can happen while the key is
+    /// down), and the release goes with what its press sent.
+    @Test func aReleaseFollowsWhatItsPressSent() async {
+        let h = await Harness()
+        h.center.isEnabled = true
+        let timer = h.center.add(combo: f13, actions: [.startTimer])
+        h.registrar.press(timer)
+        h.center.update(timer, actions: [.toggle(.crosshair)])
+        h.registrar.release(timer)
+        #expect(h.presses == [[.startTimer], [.startTimerReleased]])
+
+        let other = h.center.add(combo: pad1, actions: [.toggle(.nbbOverlay)])
+        h.registrar.press(other)
+        h.center.update(other, actions: [.toggle(.nbbOverlay), .startTimer])
+        h.registrar.release(other)
+        #expect(h.presses == [[.startTimer], [.startTimerReleased], [.setTool(.nbbOverlay, isOn: true)]])
+    }
+
+    /// Releases are ignored while hotkeys pause, as presses are. A press macOS delivered just before the pause never
+    /// counted, so its release doesn't either, even once the pause is over.
+    @Test func aReleaseWhilePausedDoesNothing() async {
+        let h = await Harness()
+        h.center.isEnabled = true
+        let id = h.center.add(combo: f13, actions: [.startTimer])
+        h.center.appIsActive = true
+        h.registrar.press(id)
+        h.registrar.release(id)
+        h.registrar.press(id)
+        h.center.appIsActive = false
+        h.registrar.release(id)
+        #expect(h.presses.isEmpty)
+    }
+
+    /// Once its hotkey is unregistered, macOS can't report a key's release, so the center sends it itself: the timer
+    /// never waits for a release that can't come. A late release from macOS changes nothing.
+    @Test func pausingWhileAKeyIsDownSendsItsRelease() async {
+        let h = await Harness()
+        h.center.isEnabled = true
+        let id = h.center.add(combo: f13, actions: [.startTimer])
+        h.registrar.press(id)
+        h.center.appIsActive = true
+        #expect(h.presses == [[.startTimer], [.startTimerReleased]])
+        #expect(h.registrar.active.isEmpty)
+
+        h.registrar.release(id)
+        h.center.appIsActive = false
+        h.registrar.release(id)
+        #expect(h.presses == [[.startTimer], [.startTimerReleased]])
+    }
+
+    @Test func turningHotkeysOffWhileAKeyIsDownSendsItsRelease() async {
+        let h = await Harness()
+        h.center.isEnabled = true
+        let id = h.center.add(combo: f13, actions: [.startTimer])
+        h.registrar.press(id)
+        h.center.isEnabled = false
+        #expect(h.presses == [[.startTimer], [.startTimerReleased]])
+
+        h.registrar.release(id)
+        #expect(h.presses == [[.startTimer], [.startTimerReleased]])
+    }
+
+    @Test func editingOrRemovingAHotkeyWhileItsKeyIsDownSendsItsRelease() async {
+        let h = await Harness()
+        h.center.isEnabled = true
+        let edited = h.center.add(combo: f13, actions: [.startTimer])
+        let emptied = h.center.add(combo: f5, actions: [.startTimer])
+        let removed = h.center.add(combo: pad1, actions: [.startTimer])
+        for id in [edited, emptied, removed] { h.registrar.press(id) }
+        h.presses.removeAll()
+
+        h.center.update(edited, combo: ctrlOptC)
+        #expect(h.presses == [[.startTimerReleased]])
+        h.center.update(emptied, actions: [])
+        #expect(h.presses == [[.startTimerReleased], [.startTimerReleased]])
+        h.center.remove(removed)
+        #expect(h.presses == [[.startTimerReleased], [.startTimerReleased], [.startTimerReleased]])
+
+        for id in [edited, emptied, removed] { h.registrar.release(id) }
+        #expect(h.presses.count == 3)
+    }
+
+    @Test func unregisteringAKeyDownWithoutStartTimerSendsNothing() async {
+        let h = await Harness()
+        h.center.isEnabled = true
+        let id = h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
+        h.registrar.press(id)
+        h.center.appIsActive = true
+        h.center.isEnabled = false
+        #expect(h.presses == [[.setTool(.crosshair, isOn: true)]])
+    }
+
+    /// A registrar that doesn't report releases keeps the protocol's default `onRelease`, which never calls back and
+    /// reads nil. The center then marks no key down, so it never sends a release on the registrar's behalf.
+    @Test func aRegistrarWithoutReleasesGetsNoReleaseSent() async {
+        let h = await Harness()
+        let registrar = PressOnlyRegistrar()
+        let center = HotkeyCenter(store: h.store, registrar: registrar, toolStates: { [:] },
+                                  handler: { [unowned h] in h.presses.append($0) })
+        #expect(registrar.onRelease == nil)
+        center.isEnabled = true
+        let id = center.add(combo: f13, actions: [.startTimer])
+        registrar.onPress?(id)
+        center.appIsActive = true
+        center.isEnabled = false
+        #expect(h.presses == [[.startTimer]])
     }
 
     // MARK: Persistence
