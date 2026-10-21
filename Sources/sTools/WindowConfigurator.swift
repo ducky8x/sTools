@@ -12,9 +12,10 @@ struct WindowConfigurator: NSViewRepresentable {
     var reducesMotion = false
     /// Called as the window starts to close (it can't be stopped by then; see `AppModel.mainWindowWillClose`).
     var onWillClose: (@MainActor () -> Void)?
-    /// Called with whether the window can be seen whenever that changes: closing, minimizing, being covered by
-    /// other windows or a locked screen, and coming back.
-    var onVisibilityChange: (@MainActor (Bool) -> Void)?
+    /// Called whenever the window's state may have changed: closing, minimizing, being covered by other windows or a
+    /// locked screen, and coming back. `isOrderedIn`: the window is open (shown, whether or not it can be seen);
+    /// `canBeSeen`: some of it is actually visible.
+    var onVisibilityChange: (@MainActor (_ isOrderedIn: Bool, _ canBeSeen: Bool) -> Void)?
 
     /// Whether any of `window` can be seen: ordered in, and not minimized or wholly covered.
     static func isVisible(_ window: NSWindow) -> Bool {
@@ -40,39 +41,44 @@ struct WindowConfigurator: NSViewRepresentable {
 
     private final class ConfiguringView: NSView {
         var onWillClose: (@MainActor () -> Void)?
-        var onVisibilityChange: (@MainActor (Bool) -> Void)?
+        var onVisibilityChange: (@MainActor (Bool, Bool) -> Void)?
         var reducesMotion = false {
             didSet { applyAnimationBehavior() }
         }
         private var closeObserver: NSObjectProtocol?
-        private var occlusionObserver: NSObjectProtocol?
+        private var stateObservers: [NSObjectProtocol] = []
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             if let closeObserver { NotificationCenter.default.removeObserver(closeObserver) }
-            if let occlusionObserver { NotificationCenter.default.removeObserver(occlusionObserver) }
+            for observer in stateObservers { NotificationCenter.default.removeObserver(observer) }
             closeObserver = nil
-            occlusionObserver = nil
+            stateObservers = []
             guard let window else { return }
             closeObserver = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
                     self?.onWillClose?()
-                    self?.onVisibilityChange?(false)
+                    self?.onVisibilityChange?(false, false)
                 }
             }
-            occlusionObserver = NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    guard let self, let window = self.window else { return }
-                    self.onVisibilityChange?(WindowConfigurator.isVisible(window))
-                }
+            for name in [NSWindow.didChangeOcclusionStateNotification, NSWindow.didBecomeKeyNotification,
+                         NSWindow.didDeminiaturizeNotification] {
+                stateObservers.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.reportState() }
+                })
             }
-            onVisibilityChange?(WindowConfigurator.isVisible(window))
+            reportState()
             window.minSize = WindowConfigurator.minimumSize
             window.backgroundColor = NSColor(Color(hex: STPalette.background))
             window.appearance = NSAppearance(named: .darkAqua)
             applyAnimationBehavior()
             window.setFrameUsingName(WindowConfigurator.frameAutosaveName)
             window.setFrameAutosaveName(WindowConfigurator.frameAutosaveName)
+        }
+
+        private func reportState() {
+            guard let window else { return }
+            onVisibilityChange?(window.isVisible, WindowConfigurator.isVisible(window))
         }
 
         private func applyAnimationBehavior() {

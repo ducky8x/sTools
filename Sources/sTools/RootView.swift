@@ -36,9 +36,11 @@ struct RootView: View {
                                            model.isMainWindowOpen = false
                                            model.mainWindowWillClose()
                                        },
-                                       onVisibilityChange: { visible in
-                                           if model.isMainWindowVisible != visible { model.isMainWindowVisible = visible }
-                                           if visible && !model.isMainWindowOpen { model.isMainWindowOpen = true }
+                                       onVisibilityChange: { isOrderedIn, canBeSeen in
+                                           if model.isMainWindowVisible != canBeSeen { model.isMainWindowVisible = canBeSeen }
+                                           // Only closing marks the window closed; any sign of it being shown again
+                                           // rebuilds its pages.
+                                           if isOrderedIn && !model.isMainWindowOpen { model.isMainWindowOpen = true }
                                        }))
         .stMotionRoot(model.theme)
         .environment(\.stTheme, model.theme)
@@ -46,7 +48,12 @@ struct RootView: View {
         .environment(\.stSoundPlayer, model.sound)
         .preferredColorScheme(.dark)
         .onChange(of: contrast, initial: true) { _, value in model.theme.increaseContrast = value == .increased }
-        .onAppear { model.openMainWindow = { openWindow(id: "main") } }
+        .onAppear {
+            model.openMainWindow = {
+                model.isMainWindowOpen = true
+                openWindow(id: "main")
+            }
+        }
     }
 
     private var content: some View {

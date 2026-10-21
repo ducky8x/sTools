@@ -93,4 +93,16 @@ struct WindowVisibilityTests {
         #expect(await waitUntil { harness.model.permissions.isPolling })
         _ = host
     }
+
+    @Test func openingTheWindowFromTheDockMarksItOpenAtOnce() {
+        let harness = Harness()
+        let host = NSHostingView(rootView: RootView(model: harness.model))
+        host.frame = CGRect(x: 0, y: 0, width: 760, height: 560)
+        host.layoutSubtreeIfNeeded()
+        harness.model.isMainWindowOpen = false
+        // No window scene exists in tests, so this only checks the flag; the window itself reopens in the app.
+        harness.model.openMainWindow?()
+        #expect(harness.model.isMainWindowOpen)
+        _ = host
+    }
 }
