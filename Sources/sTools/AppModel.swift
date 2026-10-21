@@ -99,6 +99,8 @@ final class AppModel {
             return self.isOn(.screenRecording)
         }
         if PrologueModel.isNeeded(in: services.settings) { beginPrologue() }
+        // The Key Rebinder shows, edits and advises on the hotkey list; without one, the list isn't built here.
+        keyRebinder?.connect(hotkeys: hotkeys)
     }
 
     /// The production wiring: real services, the live Accessibility source and the tool controllers.

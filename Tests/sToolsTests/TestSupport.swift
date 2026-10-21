@@ -2,6 +2,7 @@ import Backdrop
 import CoreGraphics
 import Crosshair
 import Foundation
+import KeyRebinder
 import NBBOverlay
 import STDesign
 @testable import STPlatform
@@ -84,6 +85,13 @@ final class FakeController: ToolController {
     }
 }
 
+/// Runs nothing: every `karabiner_cli` command fails to start, as if Karabiner-Elements weren't installed.
+struct FailingCommandRunner: CommandRunner {
+    func run(_ executable: URL, _ args: [String]) async throws -> CommandResult {
+        throw CommandRunnerError.launchFailed("Tests never run karabiner_cli.")
+    }
+}
+
 /// URLs the permission center asked the system to open.
 @MainActor
 final class OpenedURLs {
@@ -110,13 +118,19 @@ final class Harness {
     let opened = OpenedURLs()
     let hotkeyRegistrar: any HotkeyRegistering
     let hotkeyHUD = FakeHotkeyHUD()
+    /// The Key Rebinder's `karabiner.json` (with `withKeyRebinder`), in the harness's folder. Its folder exists;
+    /// the file doesn't until a test writes it.
+    let karabinerConfigURL: URL
 
-    /// `prologueCompleted: false` launches as a first launch, with the introduction showing.
+    /// `prologueCompleted: false` launches as a first launch, with the introduction showing. `withKeyRebinder`
+    /// adds a Key Rebinder over the harness's folder, connected like the app's: Karabiner-Elements reads as not
+    /// installed and `karabiner_cli` never runs, so nothing touches `~/.config/karabiner`.
     init(accessibility: PermissionStatus = .granted, instances: [MinecraftInstance] = [],
          theme: STTheme = STTheme(), usesRealControllers: Bool = false, hotkeyRegistrar: any HotkeyRegistering = FakeHotkeyRegistrar(),
-         prologueCompleted: Bool = true) {
+         prologueCompleted: Bool = true, withKeyRebinder: Bool = false) {
         self.hotkeyRegistrar = hotkeyRegistrar
         directory = FileManager.default.temporaryDirectory.appending(path: "sTools-app-\(UUID().uuidString)")
+        karabinerConfigURL = directory.appending(path: "karabiner", directoryHint: .isDirectory).appending(path: "karabiner.json")
         prober = FakeProber(accessibility: accessibility)
         source = StaticMinecraftWindowSource(instances: instances)
         store = SettingsStore(directory: directory, debounce: .milliseconds(10))
@@ -135,8 +149,17 @@ final class Harness {
                .windowBackdrop: BackdropController(services: services),
                .crosshair: CrosshairController(services: services)]
             : fakes.mapValues { $0 as any ToolController }
-        model = AppModel(services: services, theme: theme, sound: .silent, controllers: all, hotkeyRegistrar: hotkeyRegistrar,
-                         hotkeyHUD: hotkeyHUD, loginItem: FakeLoginItem())
+        var keyRebinder: KeyRebinderController?
+        if withKeyRebinder {
+            try? FileManager.default.createDirectory(at: karabinerConfigURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            keyRebinder = KeyRebinderController(
+                services: services, configURL: karabinerConfigURL,
+                backupsDirectory: directory.appending(path: "Karabiner Backups", directoryHint: .isDirectory),
+                cli: KarabinerCLI(runner: FailingCommandRunner(), cliURL: directory.appending(path: "no-karabiner_cli")),
+                probes: KarabinerProbes(appBundleExists: { false }, cliVersion: { nil }, configReadable: { false }))
+        }
+        model = AppModel(services: services, theme: theme, sound: .silent, controllers: all, keyRebinder: keyRebinder,
+                         hotkeyRegistrar: hotkeyRegistrar, hotkeyHUD: hotkeyHUD, loginItem: FakeLoginItem())
         model.pingNinjabrainBot = { false }
         model.evaluateKarabiner = { .notInstalled }
     }

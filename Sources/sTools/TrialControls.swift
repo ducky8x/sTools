@@ -6,7 +6,7 @@ import STDesign
 import SwiftUI
 
 /// A tool's real controls inside its trial: its switch (or, for the Key Rebinder, its profile menu), the
-/// Accessibility strip when it's missing, then the same settings as its page.
+/// Accessibility strip when it's missing, then the same settings as its page, without sTools hotkeys.
 struct TrialToolControls: View {
     let model: AppModel
     let tool: ToolID
@@ -35,7 +35,7 @@ struct TrialToolControls: View {
                 }
                 .padding(.top, 12)
             }
-            ToolContent(model: model, tool: tool)
+            ToolContent(model: model, tool: tool, isTrial: true)
                 .padding(.top, 18)
         }
         .pollsPermissions(model.permissions, showing: tool.permissionsShown, when: tool.requiresAccessibility)

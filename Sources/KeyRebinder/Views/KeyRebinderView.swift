@@ -5,12 +5,28 @@ import SwiftUI
 /// Everything below the Key Rebinder's page header (spec 5.5).
 public struct KeyRebinderView: View {
     @Bindable private var controller: KeyRebinderController
+    private let showsHotkeys: Bool
+    private let openHotkeys: (() -> Void)?
     @State private var ruleBeingEdited: RuleSheetItem?
     @State private var monitor = KeyEventMonitor()
     @Environment(\.stTheme) private var theme
 
-    public init(controller: KeyRebinderController) {
+    /// - Parameters:
+    ///   - showsHotkeys: whether the page shows sTools hotkeys (spec 5.5.2, 5.5.3): rings on keys, the key panel's
+    ///     Hotkeys part, hotkey findings and their dots, the tester's hotkey sentence, Advanced ▸ Show hotkeys.
+    ///     False in the Prologue's trial.
+    ///   - openHotkeys: opens Home ▸ Hotkeys, from a key a rule drives; nil leaves that button out.
+    public init(controller: KeyRebinderController, showsHotkeys: Bool = true, openHotkeys: (() -> Void)? = nil) {
         self.controller = controller
+        self.showsHotkeys = showsHotkeys
+        self.openHotkeys = openHotkeys
+    }
+
+    /// The Checker section shows while the checker is on, with `karabiner.json` loaded or with hotkey findings to
+    /// list (those need no file).
+    static func showsFindings(controller: KeyRebinderController, showsHotkeys: Bool) -> Bool {
+        controller.settings.checkerEnabled
+            && (controller.config != nil || (showsHotkeys && !controller.derived.hotkeyFindings.isEmpty))
     }
 
     /// Everything but the keyboard keeps the app's usual reading width; the page around it is wider so the
@@ -21,13 +37,17 @@ public struct KeyRebinderView: View {
         VStack(alignment: .leading, spacing: 20) {
             strips.frame(maxWidth: Self.columnWidth, alignment: .leading)
             if let layout = controller.layout {
-                KeyboardPlate(controller: controller, layout: layout)
+                KeyboardPlate(controller: controller, layout: layout, showsHotkeys: showsHotkeys)
                 VStack(alignment: .leading, spacing: 20) {
                     if let key = controller.selectedKey {
-                        KeyEditorPanel(controller: controller, key: key) { ruleBeingEdited = RuleSheetItem(index: $0) }
+                        KeyEditorPanel(controller: controller, key: key, showsHotkeys: showsHotkeys, openHotkeys: openHotkeys) {
+                            ruleBeingEdited = RuleSheetItem(index: $0)
+                        }
+                    }
+                    if Self.showsFindings(controller: controller, showsHotkeys: showsHotkeys) {
+                        FindingsSection(controller: controller, showsHotkeyFindings: showsHotkeys)
                     }
                     if controller.config != nil {
-                        if controller.settings.checkerEnabled { FindingsSection(controller: controller) }
                         FnKeysSection(controller: controller)
                         ComplexRulesSection(controller: controller) { ruleBeingEdited = RuleSheetItem(index: $0) }
                     }
@@ -36,7 +56,8 @@ public struct KeyRebinderView: View {
             } else {
                 LayoutChooser(controller: controller).frame(maxWidth: Self.columnWidth, alignment: .leading)
             }
-            KeyRebinderSettingsSection(controller: controller).frame(maxWidth: Self.columnWidth, alignment: .leading)
+            KeyRebinderSettingsSection(controller: controller, showsHotkeys: showsHotkeys)
+                .frame(maxWidth: Self.columnWidth, alignment: .leading)
         }
         .task { await controller.refresh() }
         .onAppear {
