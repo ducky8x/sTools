@@ -101,27 +101,45 @@ struct HotkeyBindingRow: View {
     let onToggleEdit: () -> Void
     @Environment(\.stTheme) private var theme
 
+    /// What a row says below its first line, from the Key Rebinder's advice.
+    struct Details: Equatable {
+        /// "On Caps Lock", "No key on your keyboard sends F20"; nil when the key simply sends itself, or without
+        /// the Key Rebinder.
+        var placement: String?
+        /// Whether Show on Keyboard is offered: the caption names a drawn key that sends the hotkey's key.
+        var canShow = false
+        /// What Minecraft loses to the hotkey.
+        var cautions: [HotkeyNote] = []
+
+        var isEmpty: Bool { placement == nil && cautions.isEmpty }
+    }
+
+    /// The placement caption, Show on Keyboard and the cautions for `binding`. While the row is being edited, its
+    /// editor shows every note for the combination being recorded, so the row leaves the cautions out.
+    static func details(for binding: HotkeyBinding, isEditing: Bool, hotkeys: HotkeyCenter) -> Details {
+        let placement = hotkeys.advisor?.placement(of: binding.combo)
+        let cautions = isEditing ? [] : hotkeys.notes(for: binding.combo).filter { $0.tone == .caution }
+        return Details(placement: placement?.text, canShow: placement?.text != nil && placement?.canShow == true, cautions: cautions)
+    }
+
     var body: some View {
-        let placement = model.hotkeys.advisor?.placement(of: binding.combo)
-        // While editing, the editor shows every note for the combination being recorded.
-        let cautions = isEditing ? [] : model.hotkeys.notes(for: binding.combo).filter { $0.tone == .caution }
-        let hasDetails = placement?.text != nil || !cautions.isEmpty
+        let details = Self.details(for: binding, isEditing: isEditing, hotkeys: model.hotkeys)
         VStack(alignment: .leading, spacing: 0) {
             summaryLine
                 .padding(.top, 12)
-                .padding(.bottom, hasDetails ? 6 : 12)
-            if hasDetails {
+                .padding(.bottom, details.isEmpty ? 12 : 6)
+            if !details.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
-                    if let text = placement?.text {
+                    if let text = details.placement {
                         HStack(spacing: 12) {
                             HotkeysCaption(text)
-                            if placement?.canShow == true {
+                            if details.canShow {
                                 Button("Show on Keyboard") { model.showHotkeyOnKeyboard(binding.combo) }
                                     .buttonStyle(STButtonStyle(.quiet))
                             }
                         }
                     }
-                    ForEach(Array(cautions.enumerated()), id: \.offset) { _, caution in
+                    ForEach(Array(details.cautions.enumerated()), id: \.offset) { _, caution in
                         STNoteLine(caution)
                     }
                 }
