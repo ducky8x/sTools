@@ -6,8 +6,9 @@
 //   swift scripts/dmg-window.swift ds-store <volumeRoot>
 //   swift scripts/dmg-window.swift dump <path/to/.DS_Store>
 //
-//   background  Writes background.png (1x, 72 dpi) and background@2x.png (2x, 144 dpi). scripts/build-dmg.sh
-//               joins them into one Retina-ready TIFF with `tiffutil -cathidpicheck`. --version prints the
+//   background  Writes background.png (1x, 72 dpi), background@2x.png (2x, 144 dpi) and background.tiff, which
+//               holds both so it is sharp on Retina displays and is what scripts/build-dmg.sh puts on the disk
+//               image. ImageIO writes it, with no tags naming the tool or the source files. --version prints the
 //               version on the background; --preview also writes a mock-up of the open window, with the
 //               app's and Applications' icons and labels drawn where Finder will put them.
 //   ds-store    Writes <volumeRoot>/.DS_Store: window size and chrome, icon view options, icon positions and
@@ -215,6 +216,23 @@ func writePNG(_ image: CGImage, to url: URL, dpi: Double) throws {
     guard CGImageDestinationFinalize(destination) else { throw Failure("cannot write \(url.path)") }
 }
 
+/// One TIFF holding each image at its resolution (LZW-compressed), as `tiffutil -cathidpicheck` makes, but without
+/// its Software and ImageDescription tags (the tool's version and the source files' names).
+func writeTIFF(_ images: [(image: CGImage, dpi: Double)], to url: URL) throws {
+    guard let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.tiff.identifier as CFString,
+                                                            images.count, nil)
+    else { throw Failure("cannot write \(url.path)") }
+    for (image, dpi) in images {
+        let properties: [CFString: Any] = [
+            kCGImagePropertyDPIWidth: dpi,
+            kCGImagePropertyDPIHeight: dpi,
+            kCGImagePropertyTIFFDictionary: [kCGImagePropertyTIFFCompression: 5] as CFDictionary,  // LZW
+        ]
+        CGImageDestinationAddImage(destination, image, properties as CFDictionary)
+    }
+    guard CGImageDestinationFinalize(destination) else { throw Failure("cannot write \(url.path)") }
+}
+
 /// The background: wordmark, gilt rule and standfirst; a gold arrow from the app to Applications; and the
 /// one-time steps for opening an app that isn't notarized.
 func drawBackground(on canvas: Canvas, palette: [String: CGColor], version: String?) throws {
@@ -335,13 +353,19 @@ func drawPreviewItems(on canvas: Canvas) throws {
 func generateBackground(outputDirectory: URL, version: String?, preview: URL?) throws {
     let palette = try loadPalette()
     try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
+    var images: [(image: CGImage, dpi: Double)] = []
     for scale in [1, 2] {
         let canvas = try Canvas(size: Window.size, scale: CGFloat(scale))
         try drawBackground(on: canvas, palette: palette, version: version)
         let name = scale == 1 ? "background.png" : "background@2x.png"
-        try writePNG(try canvas.image(), to: outputDirectory.appendingPathComponent(name), dpi: 72 * Double(scale))
+        let image = try canvas.image()
+        try writePNG(image, to: outputDirectory.appendingPathComponent(name), dpi: 72 * Double(scale))
+        images.append((image, 72 * Double(scale)))
         print("wrote \(outputDirectory.appendingPathComponent(name).path)")
     }
+    let tiff = outputDirectory.appendingPathComponent(Window.backgroundFile)
+    try writeTIFF(images, to: tiff)
+    print("wrote \(tiff.path)")
     if let preview {
         let canvas = try Canvas(size: Window.size, scale: 2)
         try drawBackground(on: canvas, palette: palette, version: version)
