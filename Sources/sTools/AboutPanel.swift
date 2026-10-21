@@ -1,13 +1,14 @@
 import AppKit
 
-/// sTools ▸ About sTools: the standard About window with this copy's version and build, and the third-party
-/// notices (spec 8).
+/// sTools ▸ About sTools: the standard About window with this copy's version and build, sTools' license and the
+/// third-party notices (spec 8, README).
 @MainActor
 enum AboutPanel {
-    /// The notices under the icon: Sparkle (MIT) and DM Serif Display (SIL Open Font License).
+    /// The notices under the icon.
     static let creditsText = """
-        Updates by Sparkle, \u{00A9} the Sparkle Project contributors, used under the MIT License.
-        DM Serif Display, \u{00A9} the DM Serif Display Project Authors, used under the SIL Open Font License 1.1.
+        sTools is released under the MIT License.
+        Updates by Sparkle, under the MIT License. The fonts Bodoni Moda, Source Serif 4 and DM Serif Display, \
+        under the SIL Open Font License 1.1.
         """
 
     /// What the window shows; the standard panel writes them as "Version 0.1.0 (build 68)".
