@@ -111,6 +111,27 @@ struct CrosshairGeometryTests {
         }
     }
 
+    // AppKit floors a window's origin to whole points, even on a 2x display. A display with an odd pixel count
+    // at 2x has an edge on a half point, so the canvas reaches back to the whole point before the sprite
+    // rather than to a multiple of two pixels from that edge.
+    @Test(arguments: [CGRect(x: 0, y: 0, width: 1365.5, height: 767.5), CGRect(x: -1365.5, y: -767.5, width: 1365.5, height: 767.5)])
+    func aDisplayEdgeOnAHalfPointStillGetsAPanelOnWholePoints(frame: CGRect) {
+        for offset in [(0, 0), (-1, -1), (1, 2)] {
+            let sprite = PixelSize(width: 17, height: 17)
+            let placement = place(frame: frame, scale: 2, sprite: sprite, offset: offset)
+            #expect(placement.targetPixel == PixelPoint(x: 1365 + offset.0, y: 767 + offset.1))
+            #expect(placement.windowFrame.integral == placement.windowFrame)
+            let windowLeftPx = Int(((placement.windowFrame.minX - frame.minX) * 2).rounded())
+            let windowTopPx = Int(((frame.maxY - placement.windowFrame.maxY) * 2).rounded())
+            #expect(windowLeftPx + placement.spriteOrigin.x + 8 == placement.targetPixel.x)
+            #expect(windowTopPx + placement.spriteOrigin.y + 8 == placement.targetPixel.y)
+            #expect(placement.spriteOrigin.x >= 0 && placement.spriteOrigin.x < 2)
+            #expect(placement.spriteOrigin.y >= 0 && placement.spriteOrigin.y < 2)
+            #expect(placement.canvasSize.width >= placement.spriteOrigin.x + sprite.width)
+            #expect(placement.canvasSize.height >= placement.spriteOrigin.y + sprite.height)
+        }
+    }
+
     @Test func positiveOffsetsMoveRightAndDown() {
         let base = place()
         let moved = place(offset: (5, 7))

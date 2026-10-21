@@ -19,12 +19,15 @@ struct DisplayCase: Sendable, CustomTestStringConvertible {
     static let oddAt1x = DisplayCase(frame: CGRect(x: 0, y: 0, width: 1365, height: 767), scale: 1, center: PixelPoint(x: 682, y: 383))
     /// 3840 x 2160 pixels that look like 1920 x 1080.
     static let fullHDAt2x = DisplayCase(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080), scale: 2, center: PixelPoint(x: 1919, y: 1079))
+    /// 2731 x 1535 pixels. Real displays are whole points, so a 2x one is always even; this checks the math
+    /// for an edge on a half point.
+    static let oddAt2x = DisplayCase(frame: CGRect(x: 0, y: 0, width: 1365.5, height: 767.5), scale: 2, center: PixelPoint(x: 1365, y: 767))
     /// Down and to the left of the main display, as a MacBook beside a monitor: 2294 x 1490 pixels.
     static let builtInAt2x = DisplayCase(frame: CGRect(x: -1147, y: -607, width: 1147, height: 745), scale: 2, center: PixelPoint(x: 1146, y: 744))
     /// To the right of the main display, and higher.
     static let rightAt1x = DisplayCase(frame: CGRect(x: 1920, y: 200, width: 2560, height: 1440), scale: 1, center: PixelPoint(x: 1279, y: 719))
 
-    static let all = [fullHD, oddAt1x, fullHDAt2x, builtInAt2x, rightAt1x]
+    static let all = [fullHD, oddAt1x, fullHDAt2x, oddAt2x, builtInAt2x, rightAt1x]
 }
 
 /// The panel's top-left pixel on its display's pixel grid. Nil when the panel isn't on that grid.
@@ -126,12 +129,10 @@ struct CrosshairOnScreenTests {
         var settings = thinPlus
         (settings.offsetX, settings.offsetY) = offset
         let overlay = renderOverlay(settings, displays: [display.info])
-        // The panel sits on the display's pixel grid, on whole points when the display does, and covers
-        // exactly the bitmap it draws.
+        // The panel sits on whole points (AppKit floors anything else) on the display's pixel grid, and
+        // covers exactly the bitmap it draws.
         let panel = try #require(gridOrigin(of: overlay.frame, on: display))
-        if display.frame.integral == display.frame {
-            #expect(overlay.frame.integral == overlay.frame)
-        }
+        #expect(overlay.frame.integral == overlay.frame)
         #expect(display.frame.contains(overlay.frame))
         #expect(overlay.frame.width * display.scale == CGFloat(overlay.bitmap.width))
         #expect(overlay.frame.height * display.scale == CGFloat(overlay.bitmap.height))
