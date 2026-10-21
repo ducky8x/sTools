@@ -1,14 +1,19 @@
 #!/bin/bash
-# Builds the styled DMG build/sTools-<version>.dmg from build/sTools.app.
+# Builds the styled DMG from build/sTools.app, into ~/Projects/App Outputs.
 #
-# Usage: scripts/build-dmg.sh [--app <path>] [--volume-icon <file.icns>]
+# Usage: scripts/build-dmg.sh [--app <path>] [--volume-icon <file.icns>] [--beta] [--output <file.dmg>]
 #
-#   --app          The app to package (default build/sTools.app; run scripts/build-app.sh first).
+#   --app          The app to package (default build/sTools.app; build it with scripts/build-app.sh release).
 #                  Its CFBundleShortVersionString names the DMG.
 #   --volume-icon  The DMG's volume icon (default packaging/sTools.icns; skipped when that file does not exist).
+#   --beta         Name the DMG as a beta: sTools-<version>-beta-macOS.dmg.
+#   --output       Where to write the DMG instead of ~/Projects/App Outputs/sTools-<version>[-beta]-macOS.dmg.
+#                  Never inside the repository: shared builds live in ~/Projects/App Outputs.
 #
 # Environment:
 #   DEVELOPER_DIR  Defaults to the Xcode beta when it is installed.
+#   TMPDIR         Where the work folder goes (default: the per-user temporary folder). Must be outside the home
+#                  folder.
 #
 # The window: a dark background drawn by scripts/dmg-window.swift (wordmark, a gold arrow from sTools to
 # Applications, and the one-time Open Anyway steps), at 1x and 2x in one TIFF so it is sharp on Retina
@@ -23,7 +28,7 @@
 # mounted at /Volumes/sTools, macOS resolves the alias into that one by name, so the alias is checked field by field).
 #
 # Nothing in the DMG may carry a trace of the person or the Mac that built it (scripts/check-no-home-paths.sh):
-#   - The work folder is in the per-user temporary folder, outside the home folder, and removed on exit.
+#   - The work folder is made with mktemp -d in $TMPDIR, outside the home folder, and removed on exit.
 #   - The bookmark is written field by field: the system's own also records the disk image file's path (in the
 #     per-user temporary folder), the startup volume's name, UUID, size and dates, and sandbox tokens.
 #   - macOS stamps com.apple.provenance, with an id for the app the build was started from, on every file a process
@@ -32,6 +37,8 @@
 #   - The check runs on the mounted volume before it is compressed (every file, name, link and extended
 #     attribute, .DS_Store included), on the whole uncompressed image (file system records and free space too),
 #     then on the finished DMG's files and on the DMG file itself. Any finding fails the build.
+# The DMG is built in the work folder and moved to its place only when every check has passed; an earlier DMG of
+# the same name is removed first, so a failed build never leaves an older one looking current.
 #
 # The DMG itself is not signed: macOS checks the app's signature, not the disk image's.
 
@@ -41,6 +48,7 @@ readonly VOLUME_NAME="sTools"
 readonly APP_NAME="sTools.app"
 readonly XCODE_BETA="/Applications/Xcode-beta.app/Contents/Developer"
 readonly IDENTITY_NAME="ducky8x"
+readonly OUTPUTS="$HOME/Projects/App Outputs"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 readonly ROOT
@@ -66,6 +74,8 @@ shown() {
 APP="$ROOT/build/$APP_NAME"
 VOLUME_ICON="$ROOT/packaging/sTools.icns"
 VOLUME_ICON_GIVEN=0
+BETA=0
+OUTPUT=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -78,6 +88,14 @@ while [[ $# -gt 0 ]]; do
             [[ $# -ge 2 ]] || fail "--volume-icon needs a path"
             VOLUME_ICON="$2"
             VOLUME_ICON_GIVEN=1
+            shift
+            ;;
+        --beta)
+            BETA=1
+            ;;
+        --output)
+            [[ $# -ge 2 ]] || fail "--output needs a path"
+            OUTPUT="$2"
             shift
             ;;
         -h|--help)
@@ -120,13 +138,32 @@ else
     VOLUME_ICON=""
 fi
 
-readonly OUTPUT="$ROOT/build/sTools-$VERSION.dmg"
-mkdir -p "$ROOT/build"
+# Where the DMG goes: ~/Projects/App Outputs, named <App>-<version>[-beta]-macOS.dmg, never inside the repository.
+if [[ "$BETA" -eq 1 && "$VERSION" == *-* ]]; then
+    fail "--beta names a plain version as a beta; the app's version \"$VERSION\" already has a suffix"
+fi
+SUFFIX=""
+[[ "$BETA" -eq 0 ]] || SUFFIX="-beta"
+NAME="sTools-$VERSION$SUFFIX-macOS.dmg"
+OUTPUT="${OUTPUT:-$OUTPUTS/$NAME}"
+[[ "$OUTPUT" == *.dmg ]] || fail "--output must name a .dmg file"
+mkdir -p "$(dirname "$OUTPUT")"
+OUTPUT="$(cd "$(dirname "$OUTPUT")" && pwd -P)/$(basename "$OUTPUT")"
+readonly OUTPUT
+case "$OUTPUT" in
+    "$ROOT"/*) fail "the DMG must not be written inside the repository; shared builds go to ~/Projects/App Outputs" ;;
+esac
+[[ ! -d "$OUTPUT" ]] || fail "$(shown "$OUTPUT") is a folder"
+if [[ -e "$OUTPUT" ]]; then
+    rm -f "$OUTPUT"
+    echo "note: removed the earlier $(shown "$OUTPUT"); it is replaced only if this build passes every check"
+fi
 
-# In the per-user temporary folder, never in build/ (in the home folder). mktemp -t takes the system's per-user
-# folder (where $TMPDIR points by default) even when TMPDIR is changed, and falls back to $TMPDIR and /tmp. pwd -P
-# spells the path the way hdiutil reports it (/private/var/..., not /var/...).
-WORK="$(mktemp -d -t sTools-dmg)" || fail "cannot create a work folder in the temporary folder"
+# The work folder: in $TMPDIR (by default the per-user temporary folder, /var/folders/...), outside the home
+# folder. Nothing records its path now, but a path in the home folder would carry the account name if something
+# did; the checks below would catch that, and this keeps it from happening.
+TEMP_ROOT="${TMPDIR:-$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null || echo /tmp)}"
+WORK="$(mktemp -d "${TEMP_ROOT%/}/sTools-dmg.XXXXXX")" || fail "cannot create a work folder in \$TMPDIR"
 WORK="$(cd "$WORK" && pwd -P)"
 readonly WORK
 ATTACHED=""
@@ -153,11 +190,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
+HOME_REAL="$(cd "$HOME" && pwd -P)"
 WORK_LOWER="$(printf '%s' "$WORK" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
 ACCOUNT_LOWER="$(id -un | LC_ALL=C tr '[:upper:]' '[:lower:]')"
-if [[ "$WORK" == *"/Users/"* || "$WORK_LOWER" == *"$ACCOUNT_LOWER"* ]]; then
-    fail "the temporary folder is in the home folder, and the DMG would record its path;" \
-        "set TMPDIR to a folder outside it"
+if [[ "$WORK" == "$HOME_REAL"/* || "$WORK_LOWER" == /users/* || "$WORK_LOWER" == *"$ACCOUNT_LOWER"* ]]; then
+    fail "\$TMPDIR is in the home folder; run with TMPDIR set to a folder outside it, for example" \
+        "TMPDIR=/private/tmp scripts/build-dmg.sh"
 fi
 
 # Attaches a disk image at a private mount point (extra hdiutil options follow) and sets ATTACHED. macOS 26 and
@@ -273,15 +311,17 @@ ATTACHED=""
 "$ROOT/scripts/check-no-home-paths.sh" "$WORK/rw.dmg" ||
     fail "the uncompressed image carries a home-folder path, a name or a trace of this Mac outside its files"
 
-echo "==> Compressing to $(shown "$OUTPUT")"
-hdiutil convert -quiet "$WORK/rw.dmg" -format UDZO -imagekey zlib-level=9 -ov -o "$OUTPUT"
-hdiutil verify -quiet "$OUTPUT" || fail "hdiutil verify failed for $(shown "$OUTPUT")"
+echo "==> Compressing"
+mkdir -p "$WORK/out"
+BUILT="$WORK/out/$NAME"
+hdiutil convert -quiet "$WORK/rw.dmg" -format UDZO -imagekey zlib-level=9 -o "$BUILT"
+hdiutil verify -quiet "$BUILT" || fail "hdiutil verify failed for the compressed image"
 
 echo "==> Checking the DMG's contents"
 # Mounted somewhere other than /Volumes/sTools, as when another sTools volume is already mounted; named like the
 # volume, so the check below reports paths as users see them (sTools/sTools.app/...).
 CHECK="$WORK/check/$VOLUME_NAME"
-attach "$OUTPUT" "$CHECK" -readonly
+attach "$BUILT" "$CHECK" -readonly
 [[ -d "$CHECK/$APP_NAME" ]] || fail "the DMG has no $APP_NAME"
 codesign --verify --deep --strict "$CHECK/$APP_NAME" 2>/dev/null || fail "the app's signature broke in the DMG"
 [[ -L "$CHECK/Applications" && "$(readlink "$CHECK/Applications")" == "/Applications" ]] ||
@@ -313,24 +353,29 @@ if [[ -n "$VOLUME_ICON" ]]; then
     [[ -f "$CHECK/.VolumeIcon.icns" ]] || fail "the DMG has no volume icon"
 fi
 indented <<< "$LAYOUT" | cut -c1-160
-if ! "$ROOT/scripts/check-no-home-paths.sh" --provenance "$CHECK"; then
-    detach "$ATTACHED"
-    ATTACHED=""
-    rm -f "$OUTPUT"
-    fail "the DMG carries a home-folder path, a name or a trace of this Mac (listed above); it was deleted"
-fi
+"$ROOT/scripts/check-no-home-paths.sh" --provenance "$CHECK" ||
+    fail "the DMG carries a home-folder path, a name or a trace of this Mac (listed above); it was not kept"
 detach "$ATTACHED"
 ATTACHED=""
 
 echo "==> Checking the DMG file"
 # Mounting and verifying leave extended attributes on the file (a checksum cache that names this Mac's volume);
 # they are not part of the image, but they travel with the file to some places.
-xattr -c "$OUTPUT"
-clear_provenance "$OUTPUT"
+xattr -c "$BUILT"
+clear_provenance "$BUILT"
 # Its block table, trailer and every compressed block, unpacked.
-if ! "$ROOT/scripts/check-no-home-paths.sh" --provenance "$OUTPUT"; then
-    rm -f "$OUTPUT"
-    fail "the DMG file carries a home-folder path, a name or a trace of this Mac (listed above); it was deleted"
+"$ROOT/scripts/check-no-home-paths.sh" --provenance "$BUILT" ||
+    fail "the DMG file carries a home-folder path, a name or a trace of this Mac (listed above); it was not kept"
+
+mv -f "$BUILT" "$OUTPUT"
+if [[ -n "$(xattr "$OUTPUT")" ]]; then
+    # Moved to another volume: copied, and the copy may carry new attributes.
+    xattr -c "$OUTPUT"
+    clear_provenance "$OUTPUT"
+    [[ -z "$(xattr "$OUTPUT")" ]] || {
+        rm -f "$OUTPUT"
+        fail "$(shown "$OUTPUT") kept extended attributes after they were removed; it was deleted"
+    }
 fi
 
 echo
