@@ -72,6 +72,24 @@ struct KeyHotkeysBlock: View {
         return hotkeys.contains { $0.id == id } ? .row(id) : nil
     }
 
+    /// What the Hotkeys part lets you do now.
+    struct Controls: Equatable {
+        /// Rows' Edit, Add Hotkey…, the Hold and Does chips, and Delete.
+        var edits: Bool
+        /// Save Hotkey, which also needs an action and no problem.
+        var saves: Bool
+        /// Cancel, which closes the editor unsaved.
+        var cancels: Bool
+    }
+
+    /// What the Hotkeys part lets you do with `draft` on `keyCode`. While a `karabiner.json` change waits for Save
+    /// This or Discard, what the key sends may still change, so editing waits and only Cancel works.
+    static func controls(for draft: HotkeyDraft?, on keyCode: UInt16, controller: KeyRebinderController) -> Controls {
+        let edits = controller.pendingEdit == nil
+        let valid = draft.flatMap { draft in controller.hotkeyCenter.map { draft.canSave(on: keyCode, in: $0) } } ?? false
+        return Controls(edits: edits, saves: edits && valid, cancels: true)
+    }
+
     /// The block's identity in the panel: the key and the key code its hotkeys listen for. Selecting another key, or a
     /// change to what this key sends (its rebind saved or removed, `karabiner.json` changed elsewhere, a change waiting
     /// for Save This), gives the block a new identity, so an open editor closes unsaved.
@@ -113,7 +131,7 @@ struct KeyHotkeysBlock: View {
     @ViewBuilder private func hotkeys(on keyCode: UInt16) -> some View {
         let hotkeys = controller.hotkeys(on: key)
         let place = Self.editorPlace(for: draft, among: hotkeys)
-        let isWaiting = controller.pendingEdit != nil
+        let controls = Self.controls(for: draft, on: keyCode, controller: controller)
         VStack(alignment: .leading, spacing: 0) {
             if let note = controller.hotkeySourceNote(for: key) {
                 Text(note)
@@ -126,7 +144,7 @@ struct KeyHotkeysBlock: View {
                 if place == .row(hotkey.id) {
                     editor(on: keyCode, existing: hotkey).padding(.vertical, 10)
                 } else {
-                    row(hotkey).disabled(isWaiting)
+                    row(hotkey).disabled(!controls.edits)
                 }
             }
             if place == .add {
@@ -134,7 +152,7 @@ struct KeyHotkeysBlock: View {
             } else {
                 Button("Add Hotkey\u{2026}") { draft = HotkeyDraft() }
                     .buttonStyle(STButtonStyle(.secondary))
-                    .disabled(isWaiting)
+                    .disabled(!controls.edits)
                     .padding(.top, 10)
             }
         }
@@ -185,7 +203,7 @@ struct KeyHotkeysBlock: View {
         let center = controller.hotkeyCenter
         let problem = center.flatMap { draft.problem(on: keyCode, in: $0) }
         let notes = center?.notes(for: combo) ?? []
-        let isWaiting = controller.pendingEdit != nil
+        let controls = Self.controls(for: draft, on: keyCode, controller: controller)
         return VStack(alignment: .leading, spacing: 10) {
             Text(combo.displayString)
                 .stStyle(.body)
@@ -199,7 +217,7 @@ struct KeyHotkeysBlock: View {
                     STChips(selection: doesSelection, options: HotkeyAction.allCases.map { STSegmentedOption($0, $0.title) }, label: "Does")
                 }
             }
-            .disabled(isWaiting)
+            .disabled(!controls.edits)
             if let problem {
                 Text(problem).stStyle(.caption).foregroundStyle(STColor.danger)
             }
@@ -213,17 +231,19 @@ struct KeyHotkeysBlock: View {
             HStack(spacing: 14) {
                 Button("Save Hotkey") { save() }
                     .buttonStyle(STButtonStyle(.secondary))
-                    .disabled(isWaiting || center.map { !draft.canSave(on: keyCode, in: $0) } ?? true)
+                    .disabled(!controls.saves)
                 if let existing {
                     Button("Delete") {
                         controller.deleteHotkey(existing.id)
                         self.draft = nil
                     }
                     .buttonStyle(STButtonStyle(.quiet))
-                    .disabled(isWaiting)
+                    .disabled(!controls.edits)
                     .accessibilityLabel("Delete \(HotkeyWording.spokenName(for: existing.combo))")
                 }
-                Button("Cancel") { self.draft = nil }.buttonStyle(STButtonStyle(.quiet))
+                Button("Cancel") { self.draft = nil }
+                    .buttonStyle(STButtonStyle(.quiet))
+                    .disabled(!controls.cancels)
             }
         }
     }

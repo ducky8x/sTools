@@ -358,6 +358,37 @@ struct KeyPanelHotkeyTests {
         #expect(KeyHotkeysBlock.identity(of: .key("caps_lock"), controller: controller) != before)
     }
 
+    /// While a karabiner.json change waits for Save This or Discard, what the key sends may still change: rows' Edit,
+    /// Add Hotkey…, the chips, Save Hotkey and Delete wait, and Cancel still closes the editor.
+    @Test func whileAChangeWaitsOnlyCancelWorks() async throws {
+        let rig = try HotkeyViewRig(config: HotkeyViewRig.profile([("caps_lock", "f18")]))
+        defer { rig.remove() }
+        await rig.prepare()
+        let id = await rig.add("f18", .option)
+        let draft = HotkeyDraft(try #require(rig.center.bindings.first { $0.id == id }))
+        let controller = rig.controller
+        #expect(KeyHotkeysBlock.controls(for: draft, on: 79, controller: controller) == .init(edits: true, saves: true, cancels: true))
+        #expect(KeyHotkeysBlock.controls(for: HotkeyDraft(), on: 79, controller: controller) == .init(edits: true, saves: false, cancels: true))
+        let size = CGSize(width: 600, height: 520)
+        func block(_ draft: HotkeyDraft?) -> Data {
+            png(KeyHotkeysBlock(controller: controller, key: .key("caps_lock"), chosen: .constant(nil), openHotkeys: nil, draft: draft)
+                .padding(16), size: size)
+        }
+        let rows = block(nil)
+        let editor = block(draft)
+
+        // karabiner.json changes elsewhere, then a rebind waits for Save This or Discard.
+        let outside = try RebindEditor.setRebind(
+            in: JSONValue.parse(data: Data(contentsOf: rig.configURL)), profile: "P", from: .key("q"), to: .key("w"))
+        try Data(outside.serialized().utf8).write(to: rig.configURL)
+        await controller.setRebind(.key("e"), to: .key("r"))
+        #expect(controller.pendingEdit != nil)
+        #expect(KeyHotkeysBlock.controls(for: draft, on: 79, controller: controller) == .init(edits: false, saves: false, cancels: true))
+        #expect(KeyHotkeysBlock.controls(for: nil, on: 79, controller: controller) == .init(edits: false, saves: false, cancels: true))
+        #expect(block(nil) != rows)
+        #expect(block(draft) != editor)
+    }
+
     @Test func holdOffersTheFourModifiersInMacOSOrder() {
         #expect(HotkeyDraft.holdChoices.map(\.title) == ["Control", "Option", "Shift", "Command"])
         #expect(HotkeyDraft.holdChoices.map(\.value) == [.control, .option, .shift, .command])
