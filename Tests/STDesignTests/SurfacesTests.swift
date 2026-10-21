@@ -248,9 +248,18 @@ private final class Hosted {
 }
 
 @MainActor
-private func render<V: View>(_ view: V, width: CGFloat, height: CGFloat? = nil) -> NSBitmapImageRep {
-    Hosted(view, width: width, height: height).capture()
+private func render<V: View>(_ view: V, width: CGFloat, height: CGFloat? = nil, scale: Int = 2) -> NSBitmapImageRep {
+    Hosted(view, width: width, height: height, scale: scale).capture()
 }
+
+/// The text rendering tests run at both: a standard display and a Retina one.
+private let renderScales = [1, 2]
+
+// Bars on pixel sums are set for a 2x render. Ink covers an area, so its bar shrinks with the pixel count (a
+// quarter at 1x); two renders of the same glyphs differ along the glyph edges, so that bar shrinks with the
+// edges' length (half at 1x).
+private func inkBar(_ at2x: Double, scale: Int) -> Double { at2x * Double(scale * scale) / 4 }
+private func edgeBar(_ at2x: Double, scale: Int) -> Double { at2x * Double(scale) / 2 }
 
 private func pixel(_ rep: NSBitmapImageRep, x: Int, y: Int) -> (r: Int, g: Int, b: Int) {
     guard let data = rep.bitmapData else { return (0, 0, 0) }
@@ -306,39 +315,41 @@ struct STTextFieldRenderingTests {
 
     private let sample = "Wolverine gypsy 01"
 
-    private func fieldRep(points: Double, revealed: Bool, text: String? = nil) -> NSBitmapImageRep {
+    private func fieldRep(points: Double, revealed: Bool, text: String? = nil, scale: Int) -> NSBitmapImageRep {
         let t = text ?? sample
         return render(
             STTextField("Name", text: .constant(t))
                 .environment(\.stTheme, theme(scale: points / 14))
                 .environment(\.stRevealsNativeText, revealed)
                 .background(STColor.background),
-            width: 260)
+            width: 260, scale: scale)
     }
 
-    @Test(arguments: [12.0, 12.6, 13.0, 14.0, 15.0, 16.0, 17.0, 18.2])
-    func overlayTextLandsOnTheRealFieldsGlyphs(points: Double) {
-        let native = fieldRep(points: points, revealed: true)
-        let overlay = fieldRep(points: points, revealed: false)
+    @Test(arguments: [12.0, 12.6, 13.0, 14.0, 15.0, 16.0, 17.0, 18.2], renderScales)
+    func overlayTextLandsOnTheRealFieldsGlyphs(points: Double, scale: Int) {
+        let native = fieldRep(points: points, revealed: true, scale: scale)
+        let overlay = fieldRep(points: points, revealed: false, scale: scale)
         #expect(native.pixelsWide == overlay.pixelsWide && native.pixelsHigh == overlay.pixelsHigh)
-        #expect(inkMass(native) > 100)
+        #expect(inkMass(native) > inkBar(100, scale: scale))
         let shift = bestShift(native, overlay)
-        // At 2x one pixel is half a point; the acceptance bar is half a point.
-        #expect(shift.dx == 0 && shift.dy == 0, "size \(points): best shift \(shift.dx),\(shift.dy) px")
-        #expect(shift.errorUnshifted < 60, "size \(points): residual \(shift.errorUnshifted)")
+        // Not one pixel off: at 2x that's half a point, at 1x (where layout snaps to whole points) a point.
+        #expect(shift.dx == 0 && shift.dy == 0, "size \(points) at \(scale)x: best shift \(shift.dx),\(shift.dy) px")
+        #expect(shift.errorUnshifted < edgeBar(60, scale: scale), "size \(points) at \(scale)x: residual \(shift.errorUnshifted)")
     }
 
-    @Test func overlayHidesTheFieldsOwnGlyphs() {
-        let overlay = fieldRep(points: 14, revealed: false)
-        let empty = fieldRep(points: 14, revealed: false, text: "")
-        #expect(inkMass(overlay) > inkMass(empty) + 100)
+    @Test(arguments: renderScales)
+    func overlayHidesTheFieldsOwnGlyphs(scale: Int) {
+        let overlay = fieldRep(points: 14, revealed: false, scale: scale)
+        let empty = fieldRep(points: 14, revealed: false, text: "", scale: scale)
+        #expect(inkMass(overlay) > inkMass(empty) + inkBar(100, scale: scale))
     }
 
-    @Test func placeholderShowsWhenEmpty() {
-        let empty = fieldRep(points: 14, revealed: false, text: "")
+    @Test(arguments: renderScales)
+    func placeholderShowsWhenEmpty(scale: Int) {
+        let empty = fieldRep(points: 14, revealed: false, text: "", scale: scale)
         let baselineOnly = render(
-            Color.clear.frame(height: 1).background(STColor.surface).background(STColor.background), width: 260, height: 1)
-        #expect(inkMass(empty) > inkMass(baselineOnly) + 20)
+            Color.clear.frame(height: 1).background(STColor.surface).background(STColor.background), width: 260, height: 1, scale: scale)
+        #expect(inkMass(empty) > inkMass(baselineOnly) + inkBar(20, scale: scale))
     }
 }
 
@@ -356,7 +367,7 @@ struct STTypingRendererTests {
     private let font = STFont.text(14)
 
     private func rendered(_ text: String, progress: Double, inserted: Range<Int>? = nil, removed: String = "", anchor: Int = 0,
-                          rise: CGFloat = 2, shrinks: Bool = true) -> NSBitmapImageRep {
+                          rise: CGFloat = 2, shrinks: Bool = true, scale: Int) -> NSBitmapImageRep {
         render(
             Text(text).font(font).foregroundStyle(STColor.ink).fixedSize()
                 .textRenderer(STTypingRenderer(progress: progress, inserted: inserted, removedText: removed, removalAnchor: anchor,
@@ -364,79 +375,88 @@ struct STTypingRendererTests {
                 .padding(12)
                 .frame(width: 160, alignment: .leading)
                 .background(STColor.background),
-            width: 160)
+            width: 160, scale: scale)
     }
 
-    private func plain(_ text: String) -> NSBitmapImageRep {
+    private func plain(_ text: String, scale: Int) -> NSBitmapImageRep {
         render(Text(text).font(font).foregroundStyle(STColor.ink).fixedSize().padding(12)
-                .frame(width: 160, alignment: .leading).background(STColor.background), width: 160)
+                .frame(width: 160, alignment: .leading).background(STColor.background), width: 160, scale: scale)
     }
 
-    @Test func finishedAnimationLooksLikePlainText() {
-        let done = rendered("Steve", progress: 1, inserted: 4..<5)
-        let reference = plain("Steve")
+    @Test(arguments: renderScales)
+    func finishedAnimationLooksLikePlainText(scale: Int) {
+        let done = rendered("Steve", progress: 1, inserted: 4..<5, scale: scale)
+        let reference = plain("Steve", scale: scale)
         let shift = bestShift(reference, done)
-        #expect(shift.errorUnshifted < 1)
+        #expect(shift.errorUnshifted < edgeBar(1, scale: scale))
     }
 
-    @Test func newestGlyphIsInvisibleAtTheStart() {
-        let start = rendered("Steve", progress: 0, inserted: 4..<5)
-        let without = plain("Stev")
-        let full = plain("Steve")
-        #expect(inkMass(start) < inkMass(full) - 3)
-        #expect(abs(inkMass(start) - inkMass(without)) < 2)
+    @Test(arguments: renderScales)
+    func newestGlyphIsInvisibleAtTheStart(scale: Int) {
+        let start = rendered("Steve", progress: 0, inserted: 4..<5, scale: scale)
+        let without = plain("Stev", scale: scale)
+        let full = plain("Steve", scale: scale)
+        #expect(inkMass(start) < inkMass(full) - inkBar(3, scale: scale))
+        #expect(abs(inkMass(start) - inkMass(without)) < edgeBar(2, scale: scale))
     }
 
-    @Test func newestGlyphIsPartlyThereHalfway() {
-        let start = inkMass(rendered("Steve", progress: 0, inserted: 4..<5))
-        let half = inkMass(rendered("Steve", progress: 0.5, inserted: 4..<5))
-        let end = inkMass(rendered("Steve", progress: 1, inserted: 4..<5))
+    @Test(arguments: renderScales)
+    func newestGlyphIsPartlyThereHalfway(scale: Int) {
+        let start = inkMass(rendered("Steve", progress: 0, inserted: 4..<5, scale: scale))
+        let half = inkMass(rendered("Steve", progress: 0.5, inserted: 4..<5, scale: scale))
+        let end = inkMass(rendered("Steve", progress: 1, inserted: 4..<5, scale: scale))
         #expect(start < half && half < end)
     }
 
-    @Test func glyphsRiseFromBelow() {
-        let reference = plain("Steve")
-        let early = rendered("Steve", progress: 0.01, inserted: 0..<5, rise: 8)
-        let late = rendered("Steve", progress: 0.99, inserted: 0..<5, rise: 8)
+    @Test(arguments: renderScales)
+    func glyphsRiseFromBelow(scale: Int) {
+        let reference = plain("Steve", scale: scale)
+        let early = rendered("Steve", progress: 0.01, inserted: 0..<5, rise: 8, scale: scale)
+        let late = rendered("Steve", progress: 0.99, inserted: 0..<5, rise: 8, scale: scale)
         // Nearly opaque and almost in place at the end; clearly offset at the start.
         #expect(bestShift(reference, late).errorUnshifted < bestShift(reference, early).errorUnshifted)
     }
 
-    @Test func untouchedGlyphsStayPut() {
-        let start = rendered("Steve", progress: 0, inserted: 4..<5)
-        let without = plain("Stev")
-        #expect(bestShift(without, start).errorUnshifted < 1)
+    @Test(arguments: renderScales)
+    func untouchedGlyphsStayPut(scale: Int) {
+        let start = rendered("Steve", progress: 0, inserted: 4..<5, scale: scale)
+        let without = plain("Stev", scale: scale)
+        #expect(bestShift(without, start).errorUnshifted < edgeBar(1, scale: scale))
     }
 
-    @Test func reducedMotionFadesWithoutMoving() {
-        let faded = rendered("Steve", progress: 0.5, inserted: 4..<5, rise: 0, shrinks: false)
-        let slid = rendered("Steve", progress: 0.5, inserted: 4..<5, rise: 8)
-        let reference = plain("Steve")
+    @Test(arguments: renderScales)
+    func reducedMotionFadesWithoutMoving(scale: Int) {
+        let faded = rendered("Steve", progress: 0.5, inserted: 4..<5, rise: 0, shrinks: false, scale: scale)
+        let slid = rendered("Steve", progress: 0.5, inserted: 4..<5, rise: 8, scale: scale)
+        let reference = plain("Steve", scale: scale)
         #expect(inkMass(faded) < inkMass(reference))
         #expect(bestShift(reference, faded).dy == 0)
         #expect(bestShift(reference, slid).errorUnshifted > bestShift(reference, faded).errorUnshifted)
     }
 
-    @Test func deletedGlyphShrinksOutAtTheEndOfTheText() {
-        let remaining = plain("Stev")
-        let leaving = rendered("Stev", progress: 0.2, removed: "e", anchor: 4)
-        let gone = rendered("Stev", progress: 1, removed: "e", anchor: 4)
-        #expect(inkMass(leaving) > inkMass(remaining) + 2)
-        #expect(bestShift(remaining, gone).errorUnshifted < 1)
+    @Test(arguments: renderScales)
+    func deletedGlyphShrinksOutAtTheEndOfTheText(scale: Int) {
+        let remaining = plain("Stev", scale: scale)
+        let leaving = rendered("Stev", progress: 0.2, removed: "e", anchor: 4, scale: scale)
+        let gone = rendered("Stev", progress: 1, removed: "e", anchor: 4, scale: scale)
+        #expect(inkMass(leaving) > inkMass(remaining) + inkBar(2, scale: scale))
+        #expect(bestShift(remaining, gone).errorUnshifted < edgeBar(1, scale: scale))
     }
 
-    @Test func deletedGlyphInTheMiddleAppearsAtItsAnchor() {
-        let remaining = plain("Stve")
-        let leaving = rendered("Stve", progress: 0.2, removed: "e", anchor: 2)
-        #expect(inkMass(leaving) > inkMass(remaining) + 2)
+    @Test(arguments: renderScales)
+    func deletedGlyphInTheMiddleAppearsAtItsAnchor(scale: Int) {
+        let remaining = plain("Stve", scale: scale)
+        let leaving = rendered("Stve", progress: 0.2, removed: "e", anchor: 2, scale: scale)
+        #expect(inkMass(leaving) > inkMass(remaining) + inkBar(2, scale: scale))
     }
 
-    @Test func emojiGlyphsAnimateAsOne() {
+    @Test(arguments: renderScales)
+    func emojiGlyphsAnimateAsOne(scale: Int) {
         let family = "👨‍👩‍👧"
         let text = "a" + family
-        let start = rendered(text, progress: 0, inserted: 1..<(1 + family.utf16.count))
-        let onlyA = plain("a")
-        #expect(inkMass(start) < inkMass(onlyA) + 2)
+        let start = rendered(text, progress: 0, inserted: 1..<(1 + family.utf16.count), scale: scale)
+        let onlyA = plain("a", scale: scale)
+        #expect(inkMass(start) < inkMass(onlyA) + edgeBar(2, scale: scale))
     }
 }
 
