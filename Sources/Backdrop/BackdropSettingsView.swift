@@ -17,6 +17,7 @@ public struct BackdropSettingsView: View {
         VStack(alignment: .leading, spacing: 20) {
             STPlate {
                 BackdropFillView(fill: controller.settings.fill, image: controller.image(for: controller.settings.fill))
+                    .overlay { MinecraftWindowSketch() }
                     .frame(height: 140)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     .padding(10)
@@ -121,5 +122,30 @@ private struct BackdropOtherDisplayRow: View {
         Binding(
             get: { controller.settings.fill(for: display.id) },
             set: { controller.setDisplayFill($0, for: display.id) })
+    }
+}
+
+/// A stand-in for the Minecraft window in the preview, so the fill reads as the stage around the game rather
+/// than a plain swatch.
+private struct MinecraftWindowSketch: View {
+    @Environment(\.stTheme) private var theme
+
+    var body: some View {
+        GeometryReader { proxy in
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(STColor.surface)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(theme.stroke, lineWidth: 1)
+                }
+                .overlay {
+                    Text("Minecraft")
+                        .stStyle(.label)
+                        .foregroundStyle(STColor.inkTertiary)
+                }
+                .frame(width: proxy.size.width * 0.42, height: proxy.size.height * 0.64)
+                .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
