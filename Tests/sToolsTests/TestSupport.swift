@@ -2,9 +2,10 @@ import Backdrop
 import CoreGraphics
 import Crosshair
 import Foundation
+import KeyRebinder
 import NBBOverlay
 import STDesign
-import STPlatform
+@testable import STPlatform
 import Synchronization
 import Testing
 @testable import sTools
@@ -13,6 +14,7 @@ import Testing
 final class FakeProber: PermissionProbing {
     private let statuses = Mutex<[Permission: PermissionStatus]>([:])
     private let requests = Mutex<[Permission]>([])
+    private let reads = Mutex<[Permission: Int]>([:])
 
     init(accessibility: PermissionStatus = .granted) {
         statuses.withLock { $0[.accessibility] = accessibility }
@@ -24,8 +26,12 @@ final class FakeProber: PermissionProbing {
         statuses.withLock { $0[permission] = status }
     }
 
+    /// How many times `permission` was read.
+    func readCount(_ permission: Permission) -> Int { reads.withLock { $0[permission] ?? 0 } }
+
     func status(for permission: Permission) -> PermissionStatus {
-        statuses.withLock { $0[permission] ?? .denied }
+        reads.withLock { $0[permission, default: 0] += 1 }
+        return statuses.withLock { $0[permission] ?? .denied }
     }
 
     func request(_ permission: Permission) async -> PermissionStatus {
@@ -79,14 +85,28 @@ final class FakeController: ToolController {
     }
 }
 
+/// Runs nothing: every `karabiner_cli` command fails to start, as if Karabiner-Elements weren't installed.
+struct FailingCommandRunner: CommandRunner {
+    func run(_ executable: URL, _ args: [String]) async throws -> CommandResult {
+        throw CommandRunnerError.launchFailed("Tests never run karabiner_cli.")
+    }
+}
+
 /// URLs the permission center asked the system to open.
 @MainActor
 final class OpenedURLs {
     var urls: [URL] = []
 }
 
-/// An `AppModel` wired to a temporary settings directory, fake permissions and a static Minecraft source.
-/// The directory is removed when the harness goes away.
+/// The harness's one display, its main: display 1, where `fakeInstance()` puts Minecraft, but far outside every
+/// real display, so a real controller switched on draws its panel where nothing shows on screen.
+let harnessDisplay = DisplayInfo(
+    id: 1, name: "Off screen", frame: CGRect(x: -9000, y: -9000, width: 1920, height: 1080),
+    bounds: CGRect(x: -9000, y: 9000, width: 1920, height: 1080), backingScale: 1,
+    pixelSize: CGSize(width: 1920, height: 1080), isMain: true)
+
+/// An `AppModel` wired to a temporary settings directory, fake permissions, a static Minecraft source and
+/// `harnessDisplay`. The directory is removed when the harness goes away.
 @MainActor
 final class Harness {
     let model: AppModel
@@ -98,13 +118,19 @@ final class Harness {
     let opened = OpenedURLs()
     let hotkeyRegistrar: any HotkeyRegistering
     let hotkeyHUD = FakeHotkeyHUD()
+    /// The Key Rebinder's `karabiner.json` (with `withKeyRebinder`), in the harness's folder. Its folder exists;
+    /// the file doesn't until a test writes it.
+    let karabinerConfigURL: URL
 
-    /// `prologueCompleted: false` launches as a first launch, with the introduction showing.
+    /// `prologueCompleted: false` launches as a first launch, with the introduction showing. `withKeyRebinder`
+    /// adds a Key Rebinder over the harness's folder, connected like the app's: Karabiner-Elements reads as not
+    /// installed and `karabiner_cli` never runs, so nothing touches `~/.config/karabiner`.
     init(accessibility: PermissionStatus = .granted, instances: [MinecraftInstance] = [],
          theme: STTheme = STTheme(), usesRealControllers: Bool = false, hotkeyRegistrar: any HotkeyRegistering = FakeHotkeyRegistrar(),
-         prologueCompleted: Bool = true) {
+         prologueCompleted: Bool = true, withKeyRebinder: Bool = false) {
         self.hotkeyRegistrar = hotkeyRegistrar
         directory = FileManager.default.temporaryDirectory.appending(path: "sTools-app-\(UUID().uuidString)")
+        karabinerConfigURL = directory.appending(path: "karabiner", directoryHint: .isDirectory).appending(path: "karabiner.json")
         prober = FakeProber(accessibility: accessibility)
         source = StaticMinecraftWindowSource(instances: instances)
         store = SettingsStore(directory: directory, debounce: .milliseconds(10))
@@ -116,15 +142,24 @@ final class Harness {
         controllers = fakes
         let opened = opened
         let permissions = PermissionCenter(prober: prober, openURL: { opened.urls.append($0) })
-        let services = ToolServices(settings: store, displays: DisplayDirectory(),
+        let services = ToolServices(settings: store, displays: DisplayDirectory(screenProvider: { [harnessDisplay] }),
                                     minecraft: MinecraftLocator(source: source), permissions: permissions)
         let all: [ToolID: any ToolController] = usesRealControllers
             ? [.nbbOverlay: NBBOverlayController(services: services),
                .windowBackdrop: BackdropController(services: services),
                .crosshair: CrosshairController(services: services)]
             : fakes.mapValues { $0 as any ToolController }
-        model = AppModel(services: services, theme: theme, sound: .silent, controllers: all, hotkeyRegistrar: hotkeyRegistrar,
-                         hotkeyHUD: hotkeyHUD, loginItem: FakeLoginItem())
+        var keyRebinder: KeyRebinderController?
+        if withKeyRebinder {
+            try? FileManager.default.createDirectory(at: karabinerConfigURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            keyRebinder = KeyRebinderController(
+                services: services, configURL: karabinerConfigURL,
+                backupsDirectory: directory.appending(path: "Karabiner Backups", directoryHint: .isDirectory),
+                cli: KarabinerCLI(runner: FailingCommandRunner(), cliURL: directory.appending(path: "no-karabiner_cli")),
+                probes: KarabinerProbes(appBundleExists: { false }, cliVersion: { nil }, configReadable: { false }))
+        }
+        model = AppModel(services: services, theme: theme, sound: .silent, controllers: all, keyRebinder: keyRebinder,
+                         hotkeyRegistrar: hotkeyRegistrar, hotkeyHUD: hotkeyHUD, loginItem: FakeLoginItem())
         model.pingNinjabrainBot = { false }
         model.evaluateKarabiner = { .notInstalled }
     }

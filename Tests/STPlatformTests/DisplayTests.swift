@@ -7,10 +7,11 @@ import Testing
 @testable import STPlatform
 
 /// False in sessions without an attached display (for example a bare CI runner), where
-/// window-server tests cannot run.
+/// window-server tests cannot run. Counts sleeping displays, which the active list leaves out:
+/// the window server still takes windows while they sleep.
 let hasWindowServerDisplay: Bool = {
     var count: UInt32 = 0
-    return CGGetActiveDisplayList(0, nil, &count) == .success && count > 0
+    return CGGetOnlineDisplayList(0, nil, &count) == .success && count > 0
 }()
 
 /// Builds a display from Core Graphics bounds, deriving the AppKit frame from the primary height.

@@ -11,6 +11,7 @@ import Testing
         #expect(settings.customOptionsFilePath == nil)
         #expect(settings.checkerEnabled && settings.checkerIncludesSpeedrunRules)
         #expect(settings.showsHoverArcs)
+        #expect(settings.showsHotkeys)
         #expect(settings.backupsKept == 20)
         #expect(KeyRebinderSettings.name == "keyRebinder")
     }
@@ -36,5 +37,17 @@ import Testing
         #expect(decoded.backupsKept == 1)
         #expect(decoded.showsHoverArcs)
         #expect(decoded.customOptionsFilePath == nil)
+    }
+
+    @Test func showHotkeysRoundTripsAndFallsBackToOn() throws {
+        var settings = KeyRebinderSettings.defaultValue
+        settings.showsHotkeys = false
+        let decoded = try JSONDecoder().decode(KeyRebinderSettings.self, from: JSONEncoder().encode(settings))
+        #expect(!decoded.showsHotkeys)
+        #expect(decoded == settings)
+        let wrongType = try JSONDecoder().decode(KeyRebinderSettings.self, from: Data(#"{"showsHotkeys": "yes"}"#.utf8))
+        #expect(wrongType.showsHotkeys)
+        let missing = try JSONDecoder().decode(KeyRebinderSettings.self, from: Data("{}".utf8))
+        #expect(missing.showsHotkeys)
     }
 }

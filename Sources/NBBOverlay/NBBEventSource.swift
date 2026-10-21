@@ -15,10 +15,16 @@ public enum NBBConnectionError: Error, Equatable {
 
 /// The real event source: an SSE `GET` over `URLSession.bytes(for:)`.
 public struct URLSessionEventSource: NBBEventSource {
+    /// How long a stream may go without a byte before URLSession gives up on it. Ninjabrain Bot sends nothing between
+    /// changes, so the default 60 s dropped every stream once a minute during a quiet stretch of a run, and each
+    /// reconnect re-sent its whole state and redrew the overlay. A stopped Ninjabrain Bot closes its sockets, so
+    /// waiting long here never hides a real disconnect on localhost.
+    static let idleTimeout: TimeInterval = 24 * 60 * 60
+
     public init() {}
 
     public func connect(to url: URL) async throws -> AsyncThrowingStream<UInt8, Error> {
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: url, timeoutInterval: Self.idleTimeout)
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         let (bytes, response) = try await URLSession.shared.bytes(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {

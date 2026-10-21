@@ -22,7 +22,6 @@ public final class STSoundPlayer {
                 systemSoundsEnabled: @escaping @MainActor () -> Bool = STSoundPlayer.systemUISoundsEnabled) {
         self.theme = theme
         self.systemSoundsEnabled = systemSoundsEnabled
-        preload()
     }
 
     private init(silentTheme: STTheme) {
@@ -36,10 +35,7 @@ public final class STSoundPlayer {
         guard Self.shouldPlay(soundsEnabled: theme.soundsEnabled,
                               volume: theme.soundVolume,
                               systemEnabled: systemSoundsEnabled()) else { return }
-        guard let player = players[sound] else {
-            logger.error("No loaded player for sound \(sound.rawValue, privacy: .public)")
-            return
-        }
+        guard let player = player(for: sound) else { return }
         player.volume = Float(min(theme.soundVolume, 1))
         player.currentTime = 0
         player.play()
@@ -68,19 +64,24 @@ public final class STSoundPlayer {
 
     func isPlaying(_ sound: STSound) -> Bool { players[sound]?.isPlaying ?? false }
 
-    private func preload() {
-        for sound in STSound.allCases {
-            guard let url = Self.resourceURL(for: sound) else {
-                logger.error("Missing sound resource \(sound.rawValue, privacy: .public).wav")
-                continue
-            }
-            do {
-                let player = try AVAudioPlayer(contentsOf: url)
-                player.prepareToPlay()
-                players[sound] = player
-            } catch {
-                logger.error("Could not load \(sound.rawValue, privacy: .public).wav: \(error.localizedDescription, privacy: .public)")
-            }
+    /// How many sounds have been loaded. For tests.
+    var loadedCount: Int { players.count }
+
+    /// Loads a sound the first time it plays. Loading all of them up front kept an audio queue open for each
+    /// for the whole session, sounds that might never play; a sound loads in well under a frame.
+    private func player(for sound: STSound) -> AVAudioPlayer? {
+        if let player = players[sound] { return player }
+        guard let url = Self.resourceURL(for: sound) else {
+            logger.error("Missing sound resource \(sound.rawValue, privacy: .public).wav")
+            return nil
+        }
+        do {
+            let player = try AVAudioPlayer(contentsOf: url)
+            players[sound] = player
+            return player
+        } catch {
+            logger.error("Could not load \(sound.rawValue, privacy: .public).wav: \(error.localizedDescription, privacy: .public)")
+            return nil
         }
     }
 }

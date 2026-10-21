@@ -28,6 +28,20 @@ public final class CrosshairController: ToolController {
     /// How many times the overlay's visibility and place were worked out, and whether it's up. For tests.
     @ObservationIgnored private(set) var placementCount = 0
     @ObservationIgnored private(set) var isOverlayShown = false
+    /// How many times the crosshair was drawn into the panel. For tests.
+    @ObservationIgnored private(set) var drawCount = 0
+    /// What the panel shows now and where, so a refresh that changes neither (Minecraft gaining or losing focus,
+    /// another app's window moving) leaves the overlay's content alone instead of drawing it again.
+    @ObservationIgnored private var drawn: (key: DrawnCrosshair, frame: CGRect)?
+    /// Counts custom image loads, so a new image always draws again.
+    @ObservationIgnored private var imageGeneration = 0
+
+    private struct DrawnCrosshair: Equatable {
+        var settings: CrosshairSettings
+        var displayFrame: CGRect
+        var scale: CGFloat
+        var imageGeneration: Int
+    }
 
     /// `imagesDirectory` defaults to `~/Library/Application Support/sTools/Images`; pass a temp
     /// directory in tests.
@@ -122,18 +136,28 @@ public final class CrosshairController: ToolController {
             hidePanel()
             return
         }
-        let sprite = currentSprite()
-        let placement = CrosshairGeometry.placement(
-            displayFrame: display.frame, scale: display.backingScale,
-            spriteSize: sprite.size, hotPixel: sprite.hot,
-            offsetX: settings.offsetX, offsetY: settings.offsetY)
-        panel.setContent(CrosshairOverlayView(
-            image: sprite.image, spriteOrigin: placement.spriteOrigin, canvasSize: placement.canvasSize,
-            scale: display.backingScale))
-        if showsPanel {
-            panel.show(frame: placement.windowFrame)
+        let key = DrawnCrosshair(settings: settings, displayFrame: display.frame, scale: display.backingScale,
+                                 imageGeneration: imageGeneration)
+        let frame: CGRect
+        if let drawn, drawn.key == key {
+            frame = drawn.frame
         } else {
-            panel.moveTo(frame: placement.windowFrame)
+            let sprite = currentSprite()
+            let placement = CrosshairGeometry.placement(
+                displayFrame: display.frame, scale: display.backingScale,
+                spriteSize: sprite.size, hotPixel: sprite.hot,
+                offsetX: settings.offsetX, offsetY: settings.offsetY)
+            panel.setContent(CrosshairOverlayView(
+                image: sprite.image, spriteOrigin: placement.spriteOrigin, canvasSize: placement.canvasSize,
+                scale: display.backingScale))
+            frame = placement.windowFrame
+            drawn = (key, frame)
+            drawCount += 1
+        }
+        if showsPanel {
+            panel.show(frame: frame)
+        } else {
+            panel.moveTo(frame: frame)
         }
         isOverlayShown = true
     }
@@ -154,6 +178,9 @@ public final class CrosshairController: ToolController {
     var displayPixelSize: PixelSize? {
         targetDisplay().map { CrosshairGeometry.gridSize(frame: $0.frame, scale: $0.backingScale) }
     }
+
+    /// Whether macOS resamples the crosshair's display (a scaled resolution), where nothing can be pixel-exact.
+    var isOnScaledDisplay: Bool { targetDisplay()?.isScaledMode ?? false }
 
     private func targetDisplay() -> DisplayInfo? {
         switch settings.displayChoice {
@@ -178,5 +205,6 @@ public final class CrosshairController: ToolController {
     private func loadCustomImage(named name: String) {
         let url = imagesDirectory.appending(path: (name as NSString).lastPathComponent)
         customImage = CrosshairImageImport.loadImage(at: url)
+        imageGeneration += 1
     }
 }

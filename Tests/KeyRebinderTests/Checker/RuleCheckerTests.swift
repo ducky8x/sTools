@@ -1,10 +1,11 @@
 import Testing
 @testable import KeyRebinder
+import STPlatform
 
 private let physicalKeys = KeyboardLayout(shape: .ansi, formFactor: .laptop).keys.map(\.event) + MouseLayout.buttons.map(\.event)
 
 private func findings(
-    simple: [String] = [], rules: [String] = [], keybinds: String? = nil, speedrun: Bool = true
+    simple: [String] = [], rules: [String] = [], keybinds: String? = nil, speedrun: Bool = true, hotkeys: [HotkeyBinding] = []
 ) -> [CheckerFinding] {
     let config = TestConfig.profile(
         simple: simple.isEmpty ? nil : "[\(simple.joined(separator: ", "))]",
@@ -12,7 +13,8 @@ private func findings(
     let context = RuleChecker.Context(
         physicalKeys: physicalKeys,
         minecraftKeybinds: keybinds.map { MinecraftKeybinds.parse(optionsText: $0) },
-        includesSpeedrunRules: speedrun)
+        includesSpeedrunRules: speedrun,
+        hotkeys: hotkeys)
     return RuleChecker.findings(in: config, profile: "P", context: context)
 }
 
@@ -208,5 +210,94 @@ key_key.forward:key.keyboard.w
             """)
         #expect(of(.noMacros, findings(rules: [rule], keybinds: defaultBinds)).isEmpty)
         #expect(of(.noMacros, findings(rules: [rule])).count == 1)
+    }
+}
+
+@Suite struct HotkeyFindingTests {
+    private func hotkeyFindings(
+        _ hotkeys: [HotkeyBinding], _ pairs: [(String, String)] = [], keybinds: String? = defaultBinds
+    ) -> [CheckerFinding] {
+        RuleChecker.hotkeyFindings(
+            physicalKeys: physicalKeys, bindings: HotkeyFixtures.bindings(pairs), hotkeys: hotkeys,
+            minecraftKeybinds: keybinds.map { MinecraftKeybinds.parse(optionsText: $0) })
+    }
+
+    @Test func aBareF3HotkeyTakesTheDebugScreen() throws {
+        let result = hotkeyFindings([HotkeyFixtures.hotkey("f3")])
+        let finding = try #require(result.first)
+        #expect(result.count == 1)
+        #expect(finding.kind == .hotkeyTakesGameKey)
+        #expect(finding.keys == [.key("f3")])
+        #expect(finding.message == "The sTools hotkey F3 (Crosshair) keeps F3 from Minecraft, which uses it for Debug screen.")
+    }
+
+    @Test func theFindingMarksTheKeysThatSendTheHotkeysKey() {
+        let result = hotkeyFindings(
+            [HotkeyFixtures.hotkey("f13")], [("caps_lock", "f13")], keybinds: "key_key.hotbar.1:key.keyboard.f13")
+        #expect(result.map(\.keys) == [[.key("caps_lock")]])
+    }
+
+    @Test func withoutADrawnSourceTheFindingPointsAtTheKeyItself() {
+        let result = hotkeyFindings([HotkeyFixtures.hotkey("f13")], keybinds: "key_key.hotbar.1:key.keyboard.f13")
+        #expect(result.map(\.keys) == [[.key("f13")]])
+    }
+
+    @Test func modifiersMinecraftDoesNotBindKeepAKeyFree() {
+        let hotkey = HotkeyFixtures.hotkey("keypad_1", [.control, .option])
+        #expect(hotkeyFindings([hotkey], keybinds: "key_key.hotbar.1:key.keyboard.keypad.1").isEmpty)
+        #expect(hotkeyFindings([HotkeyFixtures.hotkey("keypad_1")], keybinds: "key_key.hotbar.1:key.keyboard.keypad.1").count == 1)
+    }
+
+    @Test func withoutKeybindsMinecraftsDefaultKeysAreUsed() {
+        let result = hotkeyFindings([HotkeyFixtures.hotkey("q")], keybinds: nil)
+        #expect(result.first?.message.contains("Drop item by default") == true)
+        #expect(hotkeyFindings([HotkeyFixtures.hotkey("f13")], keybinds: nil).isEmpty)
+    }
+
+    @Test func invalidDuplicateAndActionlessHotkeysAreIgnored() {
+        // Each of these would take a game key if it could be a hotkey.
+        let keybinds = defaultBinds + "\nkey_key.jump:key.keyboard.space\nkey_key.sneak:key.keyboard.left.shift"
+        let modifierKey = HotkeyBinding(combo: HotkeyCombo(keyCode: 56, modifiers: []), actions: [.toggle(.crosshair)])
+        let reserved = HotkeyFixtures.hotkey("spacebar", .control)
+        let actionless = HotkeyFixtures.hotkey("f3", [], [])
+        let first = HotkeyFixtures.hotkey("f3", [], [.toggle(.nbbOverlay)])
+        let duplicate = HotkeyFixtures.hotkey("f3", [], [.startStopRecording])
+        let result = hotkeyFindings([modifierKey, reserved, actionless, first, duplicate], keybinds: keybinds)
+        #expect(result.map(\.message) == ["The sTools hotkey F3 (NBB Overlay) keeps F3 from Minecraft, which uses it for Debug screen."])
+        #expect(hotkeyFindings([HotkeyFixtures.hotkey("spacebar", .shift)], keybinds: keybinds).count == 1)
+    }
+
+    @Test func theFindingCitesNoRuleAndStaysApartFromRuleFindings() {
+        #expect(CheckerFinding.Kind.hotkeyTakesGameKey.rule == nil)
+        #expect(CheckerFinding.Kind.hotkeyTakesGameKey.title == "Hotkey takes a game key")
+        let ruleFindings = findings(simple: [TestConfig.pair("a", "b"), TestConfig.pair("a", "c")], speedrun: false,
+                                    hotkeys: [HotkeyFixtures.hotkey("f3")])
+        #expect(!ruleFindings.contains { $0.kind == .hotkeyTakesGameKey })
+    }
+
+    /// Minecraft binds no modifier key here, so nothing keeps a bare F18 hotkey from firing: the game never gets F18.
+    @Test func aBareHotkeyOnASharedOutputSkipsOneKeyOneInput() {
+        let shared = [TestConfig.pair("caps_lock", "f18"), TestConfig.pair("right_option", "f18")]
+        let keybinds = "key_key.hotbar.1:key.keyboard.f18"
+        let message = "Caps Lock and Right Option both produce F18 (Hotbar 1 in Minecraft); each game input may have only one key."
+        #expect(of(.oneKeyOneInput, findings(simple: shared, keybinds: keybinds)).map(\.message) == [message])
+        #expect(of(.oneKeyOneInput, findings(simple: shared, keybinds: keybinds, hotkeys: [HotkeyFixtures.hotkey("f18")])).isEmpty)
+        let withModifiers = HotkeyFixtures.hotkey("f18", [.control, .option])
+        #expect(of(.oneKeyOneInput, findings(simple: shared, keybinds: keybinds, hotkeys: [withModifiers])).map(\.message) == [message])
+        let actionless = HotkeyFixtures.hotkey("f18", [], [])
+        #expect(of(.oneKeyOneInput, findings(simple: shared, keybinds: keybinds, hotkeys: [actionless])).map(\.message) == [message])
+    }
+
+    /// A hotkey fires only with exactly its modifiers, so while Shift (Sneak) or Control (Sprint) is held a bare F18
+    /// hotkey doesn't, and both keys reach Minecraft as F18 again: the finding stays.
+    @Test func aBareHotkeyDoesNotSkipOneKeyOneInputWhileMinecraftBindsAModifier() {
+        let shared = [TestConfig.pair("caps_lock", "f18"), TestConfig.pair("right_option", "f18")]
+        let bare = [HotkeyFixtures.hotkey("f18")]
+        let sneaks = "key_key.sneak:key.keyboard.left.shift\nkey_key.hotbar.1:key.keyboard.f18"
+        #expect(of(.oneKeyOneInput, findings(simple: shared, keybinds: sneaks, hotkeys: bare)).map(\.message)
+            == ["Caps Lock and Right Option both produce F18 (Hotbar 1 in Minecraft); each game input may have only one key."])
+        // Without keybinds, Minecraft 1.16.1's defaults bind Shift and Control.
+        #expect(of(.oneKeyOneInput, findings(simple: shared, hotkeys: bare)).map(\.message)
+            == ["Caps Lock and Right Option both produce F18; each game input may have only one key."])
     }
 }

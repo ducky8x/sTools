@@ -28,6 +28,15 @@ public final class KeyRebinderController {
         public var flaggedKeys: Set<KarabinerEvent> = []
         /// Minecraft's actions per key the game receives.
         public var minecraftActions: [KarabinerEvent: [String]] = [:]
+        /// The sTools hotkeys each physical key fires (under its primary name), in list order. Empty unless the
+        /// hotkey layer shows (`showsHotkeyLayer`), hotkeys are on and a keyboard is chosen.
+        public var hotkeysByKey: [KarabinerEvent: [HotkeyBinding]] = [:]
+        /// Hotkeys no drawn key or button sends, in list order.
+        public var unplacedHotkeys: [HotkeyBinding] = []
+        /// "Hotkey takes a game key" findings, kept apart from the rule findings so the trial can leave them out.
+        public var hotkeyFindings: [CheckerFinding] = []
+        /// Keys a hotkey finding points at, under every name.
+        public var hotkeyFlaggedKeys: Set<KarabinerEvent> = []
     }
 
     public var settings: KeyRebinderSettings {
@@ -61,6 +70,10 @@ public final class KeyRebinderController {
     public private(set) var derived = Derived()
 
     public var selectedKey: KarabinerEvent?
+
+    /// The app's hotkey list, once `connect(hotkeys:)` has run. The Key Rebinder shows and edits it on the keys
+    /// (spec 5.5.2, 5.5.3) and advises on it (`HotkeyAdvising`).
+    public internal(set) var hotkeyCenter: HotkeyCenter?
 
     // Live key tester (spec 5.5.5).
     public var isTesting = false {
@@ -134,8 +147,17 @@ public final class KeyRebinderController {
         return derived.findings.filter { !aliases.isDisjoint(with: $0.keys) }
     }
 
-    private func recompute() {
+    /// Hotkey findings that point at `key`.
+    public func hotkeyFindings(for key: KarabinerEvent) -> [CheckerFinding] {
+        let aliases = Set(KeyTable.shared.aliases(of: key))
+        return derived.hotkeyFindings.filter { !aliases.isDisjoint(with: $0.keys) }
+    }
+
+    /// Works out `derived` again. Internal so the hotkey extension can run it when the hotkey list changes.
+    func recompute() {
         var next = Derived()
+        // The hotkeys macOS accepted, while hotkeys are on: they consume their keys.
+        let activeHotkeys = hotkeysAreOn ? hotkeyCenter?.activeBindings ?? [] : []
         // While an edit waits for confirmation, the plate shows the file as it would be after saving.
         if let config = pendingEdit?.preview ?? config, let profile = currentProfile {
             let scope = settings.scope
@@ -146,7 +168,7 @@ public final class KeyRebinderController {
             if settings.checkerEnabled {
                 let context = RuleChecker.Context(
                     physicalKeys: physicalKeys, minecraftKeybinds: minecraftKeybinds,
-                    includesSpeedrunRules: settings.checkerIncludesSpeedrunRules)
+                    includesSpeedrunRules: settings.checkerIncludesSpeedrunRules, hotkeys: activeHotkeys)
                 next.findings = RuleChecker.findings(in: config.root, profile: profile, scope: scope, context: context)
                 next.flaggedKeys = Set(next.findings.flatMap(\.keys).flatMap(KeyTable.shared.aliases(of:)))
             }
@@ -154,6 +176,17 @@ public final class KeyRebinderController {
         for keybind in minecraftKeybinds ?? [] {
             guard let event = keybind.event else { continue }
             next.minecraftActions[KeyTable.shared.canonical(event), default: []].append(keybind.display)
+        }
+        // Hotkeys on keys work with or without karabiner.json: without one, every key sends itself.
+        if showsHotkeyLayer, hotkeysAreOn, layout != nil, let center = hotkeyCenter {
+            let index = HotkeyKeys.index(center.bindings, physicalKeys: physicalKeys, bindings: next.bindings)
+            next.hotkeysByKey = index.byKey
+            next.unplacedHotkeys = index.unplaced
+            if settings.checkerEnabled {
+                next.hotkeyFindings = RuleChecker.hotkeyFindings(
+                    physicalKeys: physicalKeys, bindings: next.bindings, hotkeys: activeHotkeys, minecraftKeybinds: minecraftKeybinds)
+                next.hotkeyFlaggedKeys = Set(next.hotkeyFindings.flatMap(\.keys).flatMap(KeyTable.shared.aliases(of:)))
+            }
         }
         derived = next
     }
@@ -498,7 +531,11 @@ public final class KeyRebinderController {
     public func testerPressed(_ event: KarabinerEvent) {
         guard isTesting else { return }
         litKeys.insert(event)
-        lastTrace = KeyTester.trace(event, physicalKeys: physicalKeys, bindings: derived.bindings, minecraftKeybinds: minecraftKeybinds)
+        // Hotkeys pause while sTools is in front, which is why their keys can arrive here at all.
+        let hotkeys = showsHotkeyLayer && hotkeysAreOn ? hotkeyCenter?.activeBindings ?? [] : []
+        lastTrace = KeyTester.trace(
+            event, physicalKeys: physicalKeys, bindings: derived.bindings, minecraftKeybinds: minecraftKeybinds,
+            hotkeys: hotkeys, hotkeysPaused: hotkeyCenter?.isPaused ?? false)
     }
 
     public func testerReleased(_ event: KarabinerEvent) {

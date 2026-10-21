@@ -1,13 +1,19 @@
 import STDesign
 import SwiftUI
 
-/// The Go menu, plus Settings in the app menu in place of the standard (unused) settings command.
+/// The Go menu, plus About, Check for Updates and Settings in the app menu (Settings in place of the standard,
+/// unused settings command).
 struct GoCommands: Commands {
     let model: AppModel
 
     var body: some Commands {
         CommandGroup(replacing: .appSettings) {
             item(.settings, title: "Settings\u{2026}")
+        }
+        CommandGroup(replacing: .appInfo) {
+            Button("About sTools") { AboutPanel.show(version: model.updateCenter.version) }
+            Button("Check for Updates\u{2026}") { model.updateCenter.checkNow(from: .menu) }
+                .disabled(!model.updateCenter.canCheck)
         }
         CommandMenu("Go") {
             ForEach(GoCommand.menu, id: \.self) { command in

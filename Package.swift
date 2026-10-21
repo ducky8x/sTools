@@ -7,6 +7,9 @@ let package = Package(
     name: "sTools",
     platforms: [.macOS(.v15)],
     products: [.executable(name: "sTools", targets: ["sTools"])],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", .upToNextMajor(from: "2.6.0")),
+    ],
     targets: [
         .target(name: "STDesign", resources: [.copy("Resources")]),
         .target(name: "STPlatform"),
@@ -16,10 +19,16 @@ let package = Package(
                 resources: name == "KeyRebinder" ? [.copy("Resources")] : [])
     }
     + [
-        .executableTarget(name: "sTools", dependencies: ["STDesign", "STPlatform"] + tools.map { .byName(name: $0) }),
+        .executableTarget(
+            name: "sTools",
+            dependencies: ["STDesign", "STPlatform", .product(name: "Sparkle", package: "Sparkle")] + tools.map { .byName(name: $0) },
+            // Sparkle.framework is embedded in the app's Contents/Frameworks by scripts/build-app.sh.
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]),
         .testTarget(name: "STDesignTests", dependencies: ["STDesign"]),
         .testTarget(name: "STPlatformTests", dependencies: ["STPlatform"]),
-        .testTarget(name: "sToolsTests", dependencies: ["sTools"]),
+        // The test bundle finds Sparkle.framework next to it in the build folder.
+        .testTarget(name: "sToolsTests", dependencies: ["sTools"],
+                    linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@loader_path/../../.."])]),
     ]
     + tools.map { name in
         .testTarget(name: "\(name)Tests", dependencies: [.byName(name: name), "STDesign", "STPlatform"])

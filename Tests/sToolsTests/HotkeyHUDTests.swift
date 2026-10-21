@@ -5,9 +5,10 @@ import STPlatform
 import Testing
 @testable import sTools
 
+/// Counts sleeping displays, which the active list leaves out: the window server still takes windows while they sleep.
 private let hasDisplay: Bool = {
     var count: UInt32 = 0
-    return CGGetActiveDisplayList(0, nil, &count) == .success && count > 0
+    return CGGetOnlineDisplayList(0, nil, &count) == .success && count > 0
 }()
 
 /// A display far outside every real one, so ordering the panel in never shows anything on screen.

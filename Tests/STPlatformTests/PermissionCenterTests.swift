@@ -12,6 +12,7 @@ private final class FakeProber: PermissionProbing {
     private struct State {
         var statuses: [Permission: PermissionStatus]
         var statusCalls = 0
+        var callsByPermission: [Permission: Int] = [:]
         var requested: [Permission] = []
         var requestResult: PermissionStatus?
         var statusAfterRequest: PermissionStatus?
@@ -25,6 +26,7 @@ private final class FakeProber: PermissionProbing {
     }
 
     var statusCalls: Int { state.withLock { $0.statusCalls } }
+    func calls(for permission: Permission) -> Int { state.withLock { $0.callsByPermission[permission] ?? 0 } }
     var requested: [Permission] { state.withLock { $0.requested } }
 
     func set(_ permission: Permission, _ status: PermissionStatus) {
@@ -43,6 +45,7 @@ private final class FakeProber: PermissionProbing {
     func status(for permission: Permission) -> PermissionStatus {
         state.withLock {
             $0.statusCalls += 1
+            $0.callsByPermission[permission, default: 0] += 1
             return $0.statuses[permission] ?? .unknown
         }
     }
@@ -75,9 +78,10 @@ private func eventually(
 @MainActor
 private func makeCenter(
     _ prober: FakeProber,
-    opened: OpenedURLs = OpenedURLs()
+    opened: OpenedURLs = OpenedURLs(),
+    systemNotifications: NotificationCenter = NotificationCenter()
 ) -> PermissionCenter {
-    PermissionCenter(prober: prober, openURL: { opened.urls.append($0) })
+    PermissionCenter(prober: prober, openURL: { opened.urls.append($0) }, systemNotifications: systemNotifications)
 }
 
 @MainActor
@@ -283,6 +287,133 @@ private final class OpenedURLs {
     center.beginPolling(interval: .seconds(60))
     defer { center.endPolling() }
     #expect(center.status(.camera) == .granted)
+}
+
+// MARK: - Polling only what's asked for
+
+@MainActor
+@Test func aPollReadsOnlyThePermissionsItAskedFor() async {
+    let prober = FakeProber(.denied)
+    let center = makeCenter(prober)
+    let token = center.beginPolling([.accessibility], interval: .milliseconds(5))
+    let before = prober.calls(for: .accessibility)
+    #expect(await eventually { prober.calls(for: .accessibility) > before + 3 })
+    center.endPolling(token)
+    // Only the start-up read touched the others.
+    for permission in Permission.allCases where permission != .accessibility {
+        #expect(prober.calls(for: permission) == 1, "\(permission)")
+    }
+    #expect(!center.isPolling)
+}
+
+@MainActor
+@Test func refreshingSomePermissionsKeepsTheOthers() {
+    let prober = FakeProber(.denied)
+    let center = makeCenter(prober)
+    prober.set(.camera, .granted)
+    prober.set(.accessibility, .granted)
+    center.refresh([.accessibility])
+    #expect(center.status(.accessibility) == .granted)
+    #expect(center.status(.camera) == .denied)
+    #expect(center.statuses.count == Permission.allCases.count)
+}
+
+@MainActor
+@Test func pollsShareOneTimerAtTheShortestInterval() async {
+    let prober = FakeProber(.denied)
+    let center = makeCenter(prober)
+    let slow = center.beginPolling([.accessibility], interval: .seconds(60))
+    let fast = center.beginPolling([.camera], interval: .milliseconds(5))
+    prober.set(.accessibility, .granted)
+    prober.set(.camera, .granted)
+    // The fast poll's timer reads both polls' permissions.
+    #expect(await eventually { center.status(.accessibility) == .granted && center.status(.camera) == .granted })
+    #expect(prober.calls(for: .microphone) == 1)
+
+    center.endPolling(fast)
+    #expect(center.isPolling)
+    let afterFast = prober.calls(for: .camera)
+    try? await Task.sleep(for: .milliseconds(60))
+    // Back on the slow poll alone: nothing more within its minute, and never the camera again.
+    #expect(prober.calls(for: .camera) == afterFast)
+    center.endPolling(slow)
+    #expect(!center.isPolling)
+}
+
+@MainActor
+@Test func endingOnePollLeavesTheOthersRunning() async {
+    let prober = FakeProber(.denied)
+    let center = makeCenter(prober)
+    let first = center.beginPolling([.accessibility], interval: .milliseconds(5))
+    let second = center.beginPolling([.accessibility], interval: .milliseconds(5))
+    center.endPolling(first)
+    center.endPolling(first)
+    prober.set(.accessibility, .granted)
+    #expect(await eventually { center.status(.accessibility) == .granted })
+    center.endPolling(second)
+    let afterEnd = prober.statusCalls
+    try? await Task.sleep(for: .milliseconds(60))
+    #expect(prober.statusCalls == afterEnd)
+}
+
+@MainActor
+@Test func theOlderEndPollingNeverEndsAPollThatWasHandedAToken() async {
+    let prober = FakeProber(.denied)
+    let center = makeCenter(prober)
+    let token = center.beginPolling([.accessibility], interval: .milliseconds(5))
+    center.endPolling()
+    #expect(center.isPolling)
+    prober.set(.accessibility, .granted)
+    #expect(await eventually { center.status(.accessibility) == .granted })
+    center.endPolling(token)
+    #expect(!center.isPolling)
+}
+
+@MainActor
+@Test func theSystemsAccessibilityNoticeRefreshesAtOnce() async {
+    let prober = FakeProber(.granted)
+    let notices = NotificationCenter()
+    let center = makeCenter(prober, systemNotifications: notices)
+    let token = center.beginPolling([.accessibility], interval: .seconds(60))
+    prober.set(.accessibility, .denied)
+    notices.post(name: PermissionCenter.accessibilityChangedNotification, object: nil)
+    #expect(center.status(.accessibility) == .denied)
+    center.endPolling(token)
+}
+
+@MainActor
+@Test func theAccessibilityNoticeIsIgnoredWithoutAPollThatNeedsIt() {
+    let prober = FakeProber(.granted)
+    let notices = NotificationCenter()
+    let center = makeCenter(prober, systemNotifications: notices)
+    prober.set(.accessibility, .denied)
+    notices.post(name: PermissionCenter.accessibilityChangedNotification, object: nil)
+    #expect(center.status(.accessibility) == .granted)
+
+    let token = center.beginPolling([.camera], interval: .seconds(60))
+    notices.post(name: PermissionCenter.accessibilityChangedNotification, object: nil)
+    #expect(center.status(.accessibility) == .granted)
+    center.endPolling(token)
+
+    let accessibility = center.beginPolling([.accessibility], interval: .seconds(60))
+    center.endPolling(accessibility)
+    prober.set(.accessibility, .granted)
+    notices.post(name: PermissionCenter.accessibilityChangedNotification, object: nil)
+    // The poll began with a fresh read (denied), and the notice after it ended changed nothing.
+    #expect(center.status(.accessibility) == .denied)
+}
+
+@MainActor
+@Test func becomingActiveRefreshesOnlyWhatIsPolled() async {
+    let prober = FakeProber(.denied)
+    let center = makeCenter(prober)
+    let token = center.beginPolling([.accessibility], interval: .seconds(60))
+    let microphoneCalls = prober.calls(for: .microphone)
+    prober.set(.accessibility, .granted)
+    NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: nil)
+    #expect(await eventually { center.status(.accessibility) == .granted })
+    #expect(prober.calls(for: .microphone) == microphoneCalls)
+    center.endPolling(token)
 }
 
 // MARK: - Requests

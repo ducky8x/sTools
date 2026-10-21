@@ -1,14 +1,12 @@
 import Foundation
 
-/// Why a key combination cannot be used as a global hotkey.
+/// Why a key combination cannot be used as a global hotkey. Any key sTools knows works, alone or with any mix
+/// of ⌃ ⌥ ⇧ ⌘; only keys macOS can't register and combinations macOS keeps are refused. Everything else a
+/// combination may do (take a typing key, a Minecraft key) is a note, never a refusal.
 public enum HotkeyComboIssue: Hashable, Sendable {
-    /// The key is not one sTools knows (modifier keys, media keys, or a code outside the table).
+    /// The key is not one sTools knows: a modifier key, Caps Lock, fn, a media or system key, or any other code
+    /// outside the table.
     case unsupportedKey
-    /// No modifier at all on a key that is not F1 to F20.
-    case needsModifier
-    /// Only Shift and/or Option: those are how people type and move through text, so a hotkey on them
-    /// would break typing in every app.
-    case needsCommandOrControl
     /// macOS (or nearly every app) already owns this combination. The text names what it does.
     case reserved(String)
 }
@@ -26,6 +24,17 @@ public struct HotkeyCombo: Codable, Hashable, Sendable {
         public static let option = Modifiers(rawValue: 1 << 11)
         public static let control = Modifiers(rawValue: 1 << 12)
         public static let all: Modifiers = [.command, .shift, .option, .control]
+    }
+
+    /// What a key is for, which decides the notes the hotkey editors show.
+    public enum KeyKind: Hashable, Sendable {
+        /// Letters, digits, punctuation, Space, Return, Tab, Delete, Forward Delete, Esc, the arrows, Home, End,
+        /// Page Up, Page Down, every keypad key, 英数 and かな: keys people type and edit with.
+        case typing
+        /// F1 to F20.
+        case function
+        /// Help and Menu.
+        case other
     }
 
     public let keyCode: UInt16
@@ -52,28 +61,52 @@ public struct HotkeyCombo: Codable, Hashable, Sendable {
 
     // MARK: Display
 
-    /// macOS style: modifiers in the order ⌃⌥⇧⌘, then the key. "⌃⌥C", "⇧F5", "⌘Space".
+    /// macOS style: modifiers in the order ⌃⌥⇧⌘, then the key. "⌃⌥C", "⇧F5", "⌘Space", "Pad 1".
     public var displayString: String {
         var text = ""
         if modifiers.contains(.control) { text += "⌃" }
         if modifiers.contains(.option) { text += "⌥" }
         if modifiers.contains(.shift) { text += "⇧" }
         if modifiers.contains(.command) { text += "⌘" }
-        return text + (Self.keys[keyCode]?.name ?? "Key \(keyCode)")
+        return text + keyName
     }
+
+    /// The key alone, without its modifiers: "C", "F5", "Pad 1", "↩". A code outside the table reads "Key 999".
+    public var keyName: String { Self.keys[keyCode]?.name ?? "Key \(keyCode)" }
+
+    /// The key alone as VoiceOver should say it, symbols spelled out: "Keypad 1", "Delete", "Left Arrow".
+    public var spokenKeyName: String { Self.keys[keyCode]?.spokenName ?? "Key \(keyCode)" }
+
+    // MARK: Key facts
+
+    /// The key's kind, or nil for a key sTools doesn't know.
+    public var keyKind: KeyKind? { Self.keys[keyCode]?.kind }
+
+    /// Whether the key is one of F1 to F20.
+    public var isFunctionKey: Bool { keyKind == .function }
+
+    /// 1 to 20 for F1 to F20, nil for every other key.
+    public var functionKeyNumber: Int? { Self.functionKeyCodes.firstIndex(of: keyCode).map { $0 + 1 } }
+
+    /// Neither ⌘ nor ⌃ is held: the key alone, or with ⇧ and ⌥ only.
+    public var lacksCommandAndControl: Bool { modifiers.isDisjoint(with: [.command, .control]) }
+
+    /// A typing or editing key without ⌘ or ⌃: while the hotkey is registered, no other app gets that key.
+    public var interferesWithTyping: Bool { keyKind == .typing && lacksCommandAndControl }
+
+    /// Every key code that can carry a hotkey, in ascending order: each virtual key in Karabiner-Elements' table
+    /// except the modifier keys, Caps Lock and fn (54–63), Dashboard (130), Launchpad (131) and Mission Control
+    /// (160). F21–F24 have no virtual key.
+    public static let supportedKeyCodes: [UInt16] = keys.keys.sorted()
+
+    public static func isSupported(keyCode: UInt16) -> Bool { keys[keyCode] != nil }
 
     // MARK: Validation
 
-    /// Whether the key is one of F1 to F20.
-    public var isFunctionKey: Bool { Self.keys[keyCode]?.isFunction ?? false }
-
-    /// The first reason this combination cannot be a hotkey, or nil when it can.
+    /// The reason this combination cannot be a hotkey, or nil when it can. Modifiers never matter, except in
+    /// the exact combinations macOS keeps.
     public var issue: HotkeyComboIssue? {
-        guard Self.keys[keyCode] != nil else { return .unsupportedKey }
-        if !isFunctionKey {
-            if modifiers.isEmpty { return .needsModifier }
-            if modifiers.isDisjoint(with: [.command, .control]) { return .needsCommandOrControl }
-        }
+        guard Self.isSupported(keyCode: keyCode) else { return .unsupportedKey }
         if let reason = Self.reservedReason[self] { return .reserved(reason) }
         return nil
     }
@@ -84,11 +117,21 @@ public struct HotkeyCombo: Codable, Hashable, Sendable {
 
     private struct Key {
         let name: String
-        var isFunction = false
+        let spokenName: String
+        let kind: KeyKind
     }
 
+    private static let functionKeyCodes: [UInt16] = [
+        122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111, 105, 107, 113, 106, 64, 79, 80, 90,
+    ]
+
+    /// Name, spoken name and kind for each supported virtual key code. STDesign's `STShortcutKeys` carries the
+    /// same names; a test keeps the two in step.
     private static let keys: [UInt16: Key] = {
         var table: [UInt16: Key] = [:]
+        func add(_ entries: [(UInt16, String, String)], as kind: KeyKind) {
+            for (code, name, spoken) in entries { table[code] = Key(name: name, spokenName: spoken, kind: kind) }
+        }
         let letters: [(UInt16, String)] = [
             (0, "A"), (11, "B"), (8, "C"), (2, "D"), (14, "E"), (3, "F"), (5, "G"), (4, "H"), (34, "I"),
             (38, "J"), (40, "K"), (37, "L"), (46, "M"), (45, "N"), (31, "O"), (35, "P"), (12, "Q"),
@@ -97,23 +140,29 @@ public struct HotkeyCombo: Codable, Hashable, Sendable {
         let digits: [(UInt16, String)] = [
             (29, "0"), (18, "1"), (19, "2"), (20, "3"), (21, "4"), (23, "5"), (22, "6"), (26, "7"), (28, "8"), (25, "9"),
         ]
-        let punctuation: [(UInt16, String)] = [
-            (27, "-"), (24, "="), (33, "["), (30, "]"), (42, "\\"), (41, ";"), (39, "'"), (43, ","),
-            (47, "."), (44, "/"), (50, "`"),
-        ]
-        let keypad: [(UInt16, String)] = [
-            (82, "Pad 0"), (83, "Pad 1"), (84, "Pad 2"), (85, "Pad 3"), (86, "Pad 4"), (87, "Pad 5"),
-            (88, "Pad 6"), (89, "Pad 7"), (91, "Pad 8"), (92, "Pad 9"), (65, "Pad ."), (67, "Pad *"),
-            (69, "Pad +"), (75, "Pad /"), (78, "Pad -"), (81, "Pad ="), (76, "Pad Enter"),
-        ]
-        let editing: [(UInt16, String)] = [
-            (36, "↩"), (48, "⇥"), (49, "Space"), (51, "⌫"), (53, "⎋"), (117, "⌦"),
-            (123, "←"), (124, "→"), (125, "↓"), (126, "↑"),
-            (115, "↖"), (119, "↘"), (116, "⇞"), (121, "⇟"), (114, "Help"),
-        ]
-        for (code, name) in letters + digits + punctuation + keypad + editing { table[code] = Key(name: name) }
-        let functionCodes: [UInt16] = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111, 105, 107, 113, 106, 64, 79, 80, 90]
-        for (index, code) in functionCodes.enumerated() { table[code] = Key(name: "F\(index + 1)", isFunction: true) }
+        add((letters + digits).map { ($0.0, $0.1, $0.1) }, as: .typing)
+        add([
+            (27, "-", "Hyphen"), (24, "=", "Equals"), (33, "[", "Left Bracket"), (30, "]", "Right Bracket"),
+            (42, "\\", "Backslash"), (41, ";", "Semicolon"), (39, "'", "Quote"), (43, ",", "Comma"),
+            (47, ".", "Period"), (44, "/", "Slash"), (50, "`", "Grave Accent"),
+            (10, "§", "Section"), (93, "¥", "Yen"), (94, "_", "Underscore"),
+        ], as: .typing)
+        add([
+            (82, "Pad 0", "Keypad 0"), (83, "Pad 1", "Keypad 1"), (84, "Pad 2", "Keypad 2"), (85, "Pad 3", "Keypad 3"),
+            (86, "Pad 4", "Keypad 4"), (87, "Pad 5", "Keypad 5"), (88, "Pad 6", "Keypad 6"), (89, "Pad 7", "Keypad 7"),
+            (91, "Pad 8", "Keypad 8"), (92, "Pad 9", "Keypad 9"), (65, "Pad .", "Keypad Period"),
+            (67, "Pad *", "Keypad Asterisk"), (69, "Pad +", "Keypad Plus"), (75, "Pad /", "Keypad Slash"),
+            (78, "Pad -", "Keypad Minus"), (81, "Pad =", "Keypad Equals"), (76, "Pad Enter", "Keypad Enter"),
+            (71, "Pad Clear", "Keypad Clear"), (95, "Pad ,", "Keypad Comma"),
+        ], as: .typing)
+        add([
+            (36, "↩", "Return"), (48, "⇥", "Tab"), (49, "Space", "Space"), (51, "⌫", "Delete"), (53, "⎋", "Escape"),
+            (117, "⌦", "Forward Delete"), (123, "←", "Left Arrow"), (124, "→", "Right Arrow"),
+            (125, "↓", "Down Arrow"), (126, "↑", "Up Arrow"), (115, "↖", "Home"), (119, "↘", "End"),
+            (116, "⇞", "Page Up"), (121, "⇟", "Page Down"), (102, "英数", "Eisu"), (104, "かな", "Kana"),
+        ], as: .typing)
+        add(functionKeyCodes.enumerated().map { ($0.element, "F\($0.offset + 1)", "F\($0.offset + 1)") }, as: .function)
+        add([(114, "Help", "Help"), (110, "Menu", "Menu")], as: .other)
         return table
     }()
 

@@ -15,6 +15,9 @@ struct KeyCapState: Equatable {
     var isLit = false
     /// A physical key that produces the lit event.
     var isSource = false
+    /// The sTools hotkeys the key fires: a gold ring, or a slashed red one when one of them isn't working. Nil
+    /// draws none.
+    var hotkey: HotkeyMark?
 }
 
 /// One key or mouse button, drawn from its frames in board points.
@@ -66,10 +69,13 @@ struct KeyCapView: View {
                         .foregroundStyle(theme.accent)
                 }
                 if let action = state.action, height >= unit * 0.9 {
+                    // Shrinks a little to fit the key, then ends in "…": cut off at the key's edge, a long action
+                    // ("Swap held items") read as a different word.
                     Text(action)
                         .font(STFont.label(scale: Double(unit * 0.19 / 12)))
                         .foregroundStyle(theme.inkTertiary)
-                        .fixedSize()
+                        .minimumScaleFactor(0.75)
+                        .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
@@ -78,11 +84,15 @@ struct KeyCapView: View {
         .minimumScaleFactor(0.5)
     }
 
-    /// Badges on the key's top-right corner, clear of the legend.
+    /// Badges on the key's top-right corner, clear of the legend: ◆, the hotkey ring, then the red dot. The key's
+    /// accessibility label says what they mean.
     @ViewBuilder private var marks: some View {
         HStack(spacing: unit * 0.04) {
             if state.isRuleDriven {
                 Text("\u{25C6}").font(.system(size: unit * 0.18)).foregroundStyle(theme.accent)
+            }
+            if let hotkey = state.hotkey {
+                HotkeyRing(mark: hotkey, diameter: unit * 0.18)
             }
             if state.isFlagged {
                 Circle().fill(STColor.danger).frame(width: unit * 0.14, height: unit * 0.14)
@@ -90,10 +100,42 @@ struct KeyCapView: View {
         }
         .padding(.horizontal, unit * 0.05)
         .background(STColor.surface, in: Capsule())
-        .opacity(state.isRuleDriven || state.isFlagged ? 1 : 0)
+        .opacity(state.isRuleDriven || state.hotkey != nil || state.isFlagged ? 1 : 0)
         .offset(x: unit * 0.06, y: -unit * 0.1)
         .frame(width: parts.first?.width ?? 0, alignment: .topTrailing)
         .accessibilityHidden(true)
+    }
+}
+
+/// The mark of a key that fires sTools hotkeys: a gold ring, or a red ring struck through when one of its hotkeys
+/// isn't working, so the two differ by shape and not only by color.
+struct HotkeyRing: View {
+    let mark: HotkeyMark
+    let diameter: CGFloat
+
+    @Environment(\.stTheme) private var theme
+
+    var body: some View {
+        let lineWidth = max(1, diameter * 0.17)
+        let color = mark == .working ? theme.accent : STColor.danger
+        ZStack {
+            Circle().inset(by: lineWidth / 2).stroke(color, lineWidth: lineWidth)
+            if mark == .broken {
+                RingSlash().stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+            }
+        }
+        .frame(width: diameter, height: diameter)
+    }
+}
+
+/// A diagonal through a circle, top left to bottom right.
+private struct RingSlash: Shape {
+    func path(in rect: CGRect) -> Path {
+        let reach = min(rect.width, rect.height) / 2 * 0.7071
+        var path = Path()
+        path.move(to: CGPoint(x: rect.midX - reach, y: rect.midY - reach))
+        path.addLine(to: CGPoint(x: rect.midX + reach, y: rect.midY + reach))
+        return path
     }
 }
 

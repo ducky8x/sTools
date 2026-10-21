@@ -29,6 +29,7 @@ struct SidebarToolRow: View {
                 STSwitch(isOn: model.switchBinding(tool), label: tool.title)
                     .disabled(!model.canSwitch(tool))
                     .padding(.trailing, 4)
+                    .padding(.top, switchTop)
             }
         }
         .modifier(SidebarHover(isSelected: isSelected))
@@ -36,6 +37,19 @@ struct SidebarToolRow: View {
             if isSelected { SelectionMarker().matchedGeometryEffect(id: "marker", in: namespace) }
         }
     }
+
+    /// Centers the switch on the name rather than on the row's top: the label's top padding, plus half of what the
+    /// name's line has over the switch at larger text sizes, less a lift because the name's capitals sit above
+    /// the middle of their line.
+    private var switchTop: CGFloat {
+        let line = STTextStyle.sidebarName.metrics.scaled(by: theme.textScale).lineHeight
+        return Self.labelTopPadding + max(0, (line - Self.switchHeight) / 2) - Self.opticalLift
+    }
+
+    private static let labelTopPadding: CGFloat = 7
+    /// STSwitch's track height.
+    private static let switchHeight: CGFloat = 22
+    private static let opticalLift: CGFloat = 2
 
     private var label: some View {
         VStack(alignment: .leading, spacing: 1) {
@@ -58,7 +72,7 @@ struct SidebarToolRow: View {
                 .padding(.leading, 22 * theme.textScale)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 7)
+        .padding(.vertical, Self.labelTopPadding)
         .padding(.leading, 16)
         .contentShape(Rectangle())
     }
