@@ -20,6 +20,12 @@
 #   BUILD_NUMBER  CFBundleVersion (default: the number of commits on HEAD, or 1 outside a git checkout)
 #   DEVELOPER_DIR Defaults to the Xcode beta when it is installed.
 #
+# Updates (spec 6.3): Sparkle.framework, which the build produces from the SwiftPM dependency, goes into
+# Contents/Frameworks without its headers, and the executable finds it through @executable_path/../Frameworks; rpaths
+# into the build folder are removed. SUPublicEDKey in Info.plist is filled from packaging/sparkle-public-key.txt
+# (written by scripts/make-update-key.sh). Without that file a release build fails and a debug build leaves the key
+# out, so it explains in Settings that it can't check for updates.
+#
 # Signing safety: the only identity this script will ever sign with is the code-signing identity whose
 # common name is exactly "ducky8x". It is matched by exact name, never by substring, and signing uses its
 # SHA-1 hash, so other identities in the keychain can never be picked up. Everything inside the app that holds
@@ -154,6 +160,20 @@ fi
     fail "VERSION must look like 1.2.3 or 1.2.3-beta.1, got \"$VERSION\""
 [[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]] || fail "BUILD_NUMBER must be a whole number, got \"$BUILD_NUMBER\""
 
+# Sparkle's public EdDSA key: base64 of 32 bytes, on the file's first line.
+readonly UPDATE_KEY_FILE="$ROOT/packaging/sparkle-public-key.txt"
+UPDATE_KEY=""
+if [[ -f "$UPDATE_KEY_FILE" ]]; then
+    UPDATE_KEY="$(head -n 1 "$UPDATE_KEY_FILE" | tr -d '[:space:]')"
+    [[ "$UPDATE_KEY" =~ ^[A-Za-z0-9+/]{43}=$ && "$(printf '%s' "$UPDATE_KEY" | base64 -D 2>/dev/null | wc -c | tr -d ' ')" == 32 ]] ||
+        fail "packaging/sparkle-public-key.txt does not hold a Sparkle public key (base64 of 32 bytes)"
+elif [[ "$MODE" == "release" ]]; then
+    fail "packaging/sparkle-public-key.txt is missing; run scripts/make-update-key.sh once to create the update key"
+else
+    echo "warning: packaging/sparkle-public-key.txt is missing, so this build can't check for updates;" >&2
+    echo "warning: run scripts/make-update-key.sh once to create the update key." >&2
+fi
+
 # Prints the SHA-1 hash of the "ducky8x" identity. Prints nothing when it does not exist; fails when the
 # identity exists but cannot be used (expired, ambiguous, ...).
 find_identity_hash() {
@@ -248,8 +268,40 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_PATH/sTools" "$APP/Contents/MacOS/sTools"
 
-sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD_NUMBER/" \
+# Sparkle.framework, as SwiftPM unpacked it, without what only compiling against it needs (Xcode leaves the same
+# out). It is signed again with everything else nested in the app, below.
+[[ -d "$BIN_PATH/Sparkle.framework" ]] || fail "the build did not produce Sparkle.framework"
+mkdir -p "$APP/Contents/Frameworks"
+ditto "$BIN_PATH/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
+SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
+rm -rf "$SPARKLE/Headers" "$SPARKLE/PrivateHeaders" "$SPARKLE/Modules" \
+    "$SPARKLE/Versions/B/Headers" "$SPARKLE/Versions/B/PrivateHeaders" "$SPARKLE/Versions/B/Modules"
+for item in Sparkle Autoupdate Updater.app XPCServices/Downloader.xpc XPCServices/Installer.xpc; do
+    [[ -e "$SPARKLE/Versions/B/$item" ]] || fail "Sparkle.framework lacks $item"
+done
+echo "    embedded Sparkle $(plutil -extract CFBundleShortVersionString raw "$SPARKLE/Versions/B/Resources/Info.plist")"
+
+# The executable finds Sparkle through @executable_path/../Frameworks (Package.swift). The build also gives it
+# rpaths into the build folder and the toolchain, which name this Mac's folders and are no use elsewhere.
+RPATHS="$(otool -l "$APP/Contents/MacOS/sTools" | awk '$1 == "cmd" { cmd = $2 } cmd == "LC_RPATH" && $1 == "path" { print $2 }' |
+    sort -u)"
+grep -qx '@executable_path/../Frameworks' <<< "$RPATHS" ||
+    fail "the executable has no @executable_path/../Frameworks rpath, so it would not find Sparkle.framework"
+while IFS= read -r rpath; do
+    [[ "$rpath" == /* && "$rpath" != /usr/lib/swift ]] || continue
+    # install_name_tool removes one copy per -delete_rpath, and a universal binary may list it in each slice.
+    while otool -l "$APP/Contents/MacOS/sTools" | grep -qF " path $rpath (offset"; do
+        xcrun install_name_tool -delete_rpath "$rpath" "$APP/Contents/MacOS/sTools" 2>/dev/null ||
+            fail "cannot remove an rpath into the build folder or the toolchain from the executable"
+    done
+    echo "    removed the rpath $(sed "s#^$HOME/#~/#" <<< "$rpath" | mask_home)"
+done <<< "$RPATHS"
+
+sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD_NUMBER/" -e "s#__EDKEY__#$UPDATE_KEY#" \
     "$ROOT/packaging/Info.plist" > "$APP/Contents/Info.plist"
+if [[ -z "$UPDATE_KEY" ]]; then
+    plutil -remove SUPublicEDKey "$APP/Contents/Info.plist"
+fi
 if grep -q '__[A-Z]*__' "$APP/Contents/Info.plist"; then
     fail "Info.plist still contains an unfilled placeholder"
 fi
