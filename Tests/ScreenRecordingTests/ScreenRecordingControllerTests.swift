@@ -155,6 +155,25 @@ private final class ListingGate {
     }
 }
 
+/// The displays a test's own `DisplayDirectory` lists; the test changes them and refreshes the directory.
+@MainActor
+private final class ScreenList {
+    var displays: [DisplayInfo]
+
+    init(_ displays: [DisplayInfo]) { self.displays = displays }
+
+    /// One display, off screen, at `scale`: nothing is ever ordered onto it.
+    static func one(scale: CGFloat = 1) -> ScreenList {
+        ScreenList([offScreenDisplay(scale: scale)])
+    }
+
+    static func offScreenDisplay(scale: CGFloat) -> DisplayInfo {
+        DisplayInfo(id: 9000, name: "Off screen", frame: CGRect(x: -9000, y: -9000, width: 1920, height: 1080),
+                    bounds: CGRect(x: -9000, y: 9000, width: 1920, height: 1080), backingScale: scale,
+                    pixelSize: CGSize(width: 1920 * scale, height: 1080 * scale), isMain: true)
+    }
+}
+
 @MainActor
 private struct Harness {
     let directory: URL
@@ -164,7 +183,11 @@ private struct Harness {
     let presenter = FakeDecisionPresenter()
     let controller: ScreenRecordingController
     let source: StaticMinecraftWindowSource
+    let locator: MinecraftLocator
     let listings = ListingCount()
+    /// The displays the harness's own directory lists, when the test gave it some (`screens`).
+    let screens: ScreenList?
+    let displays: DisplayDirectory
 
     /// `sourcesTake`: how long Minecraft's capture takes to start when the tool switches on, as ScreenCaptureKit's can
     /// on real hardware. `listingTakes`: how long Add Source's listing takes, and `listing` what it finds.
@@ -173,16 +196,18 @@ private struct Harness {
     /// the test to open it, canceled or not.
     init(minecraft: Bool = true, sourcesTake: Duration? = nil, listingTakes: Duration? = nil,
          listing: AvailableSources = AvailableSources(), permissions: any PermissionProbing = Granted(),
-         listingGate: ListingGate? = nil, baseStartGate: StartGate? = nil) {
+         listingGate: ListingGate? = nil, baseStartGate: StartGate? = nil, screens: ScreenList? = nil) {
         directory = FileManager.default.temporaryDirectory.appending(path: "stools-recording-\(UUID().uuidString)", directoryHint: .isDirectory)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let window = MinecraftWindow(windowNumber: 42, processID: 4242, title: "Minecraft* 1.16.1", frame: CGRect(x: 0, y: 0, width: 800, height: 600))
         source = StaticMinecraftWindowSource(instances: minecraft ? [MinecraftInstance(window: window, launchDate: Date(timeIntervalSince1970: 1))] : [])
-        let locator = MinecraftLocator(source: source)
+        locator = MinecraftLocator(source: source)
         locator.refresh()
+        self.screens = screens
+        displays = screens.map { list in DisplayDirectory(screenProvider: { list.displays }) } ?? DisplayDirectory()
         let services = ToolServices(
             settings: SettingsStore(directory: directory.appending(path: "settings", directoryHint: .isDirectory)),
-            displays: DisplayDirectory(), minecraft: locator, permissions: PermissionCenter(prober: permissions))
+            displays: displays, minecraft: locator, permissions: PermissionCenter(prober: permissions))
         let factory = factory
         factory.baseStartTakes = sourcesTake
         factory.otherSourcesStartTake = sourcesTake
@@ -236,9 +261,17 @@ private struct Harness {
         }
     }
 
+    /// Minecraft's window as the locator sees it now: `window` in process `process`, as when its window is made again
+    /// (the same process) or the game is relaunched (a new one).
+    func moveMinecraft(toWindow window: UInt32, process: Int32 = 4242) {
+        let moved = MinecraftWindow(windowNumber: window, processID: process, title: "Minecraft* 1.16.1", frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+        source.instances = [MinecraftInstance(window: moved, launchDate: Date(timeIntervalSince1970: 1))]
+        locator.refresh()
+    }
+
     /// One still frame from Minecraft's (fake) window.
-    func pushFrame() {
-        factory.bases[42]?.push(.frame(VideoFrame(pixelBuffer: WriterFixture.makeFrame(index: 1, size: PixelSize(width: 320, height: 180)), hostTime: HostMediaClock().now())))
+    func pushFrame(window: UInt32 = 42) {
+        factory.bases[window]?.push(.frame(VideoFrame(pixelBuffer: WriterFixture.makeFrame(index: 1, size: PixelSize(width: 320, height: 180)), hostTime: HostMediaClock().now())))
     }
 
     /// Waits (bounded, generously: arming and starting can take seconds while the whole suite runs) for `condition`,
@@ -1570,5 +1603,151 @@ struct ScreenRecordingArmingTests {
         try await Task.sleep(for: .milliseconds(200))
         #expect(harness.factory.baseCount == 0)
         #expect(!harness.factory.anyRunning)
+    }
+}
+
+/// What changed while the tool was busy (spec 5.4.4, round 6): Minecraft's window made again, Minecraft relaunched, a
+/// capture setting, or a display's backing scale.
+enum BusyChange: CaseIterable, Sendable {
+    case minecraftWindow, minecraftProcess, setting, display
+}
+
+/// How the Save/Delete question was answered.
+enum Answer: CaseIterable, Sendable {
+    case save, delete
+}
+
+/// A change seen while a start, a recording, its finishing or the Save/Delete question had the tool's phase is
+/// remembered, and applied as soon as the phase returns to idle, before a press can start: the next recording uses the
+/// current Minecraft window, displays and capture settings, never the sources armed before the change.
+@Suite("Screen Recording's changes while busy", .serialized) @MainActor
+struct ScreenRecordingBusyChangeTests {
+    private func makeHarness(for change: BusyChange) -> Harness {
+        change == .display ? Harness(screens: .one()) : Harness()
+    }
+
+    /// Makes `change` happen now; returns the window Minecraft's capture follows afterwards.
+    private func apply(_ change: BusyChange, to harness: Harness) -> UInt32 {
+        switch change {
+        case .minecraftWindow:
+            harness.moveMinecraft(toWindow: 77)
+            return 77
+        case .minecraftProcess:
+            harness.moveMinecraft(toWindow: 77, process: 4343)
+            return 77
+        case .setting:
+            harness.controller.options.showCursor.toggle()
+            return 42
+        case .display:
+            harness.screens?.displays = [ScreenList.offScreenDisplay(scale: 2)]
+            harness.displays.refresh()
+            return 42
+        }
+    }
+
+    private func answer(_ answer: Answer, _ harness: Harness) async {
+        switch answer {
+        case .save: await harness.controller.save(name: nil)
+        case .delete: harness.controller.delete()
+        }
+    }
+
+    /// The probe: the tool switched back on while the question waits, Minecraft's window changes (42 to 77), the
+    /// question is answered and the key pressed. The recording captures the current window (or the changed display or
+    /// setting), and the capture armed before the change no longer runs.
+    @Test(arguments: BusyChange.allCases, Answer.allCases)
+    func switchedOnDuringTheQuestionTheNextRecordingUsesWhatChanged(change: BusyChange, answer: Answer) async throws {
+        let harness = makeHarness(for: change)
+        defer { harness.remove() }
+        await harness.recordByKey()
+        #expect(harness.controller.phase == .deciding)
+        harness.controller.setEnabled(true)
+        #expect(await harness.waitUntil { harness.factory.baseCount == 2 && harness.factory.bases[42]?.isRunning == true })
+        let armedBefore = try #require(harness.factory.bases[42])
+        try await Task.sleep(for: .milliseconds(100))
+
+        let window = apply(change, to: harness)
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(harness.controller.phase == .deciding)
+        await self.answer(answer, harness)
+        #expect(harness.controller.phase == .idle)
+        #expect(harness.controller.isEnabled)
+
+        // The press right after the answer already waits for the current sources, never the old ones.
+        let press = harness.controller.toggleRecording()
+        #expect(press == .starting(waitsForSources: true))
+        #expect(await harness.waitUntil { harness.factory.baseCount == 3 })
+        #expect(await harness.waitUntil { harness.factory.bases[window]?.isRunning == true })
+        harness.pushFrame(window: window)
+        #expect(await harness.waitUntil { harness.controller.phase == .recording })
+        let current = try #require(harness.factory.bases[window])
+        #expect(current !== armedBefore)
+        #expect(current.isRunning)
+        #expect(!armedBefore.isRunning, "the capture armed before the change was replaced")
+        #expect(harness.controller.toggleRecording() == .stopped)
+        #expect(await harness.waitUntil { harness.controller.phase == .deciding })
+        harness.controller.delete()
+        #expect(await harness.waitUntil { !harness.factory.anyRunning })
+    }
+
+    /// Nothing changed while the question waited: answering it keeps the sources the switch started, so the press
+    /// writes at once.
+    @Test(arguments: Answer.allCases)
+    func withNothingChangedTheAnswerKeepsTheSources(answer: Answer) async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        await harness.recordByKey()
+        harness.controller.setEnabled(true)
+        #expect(await harness.waitUntil { harness.factory.baseCount == 2 && harness.factory.bases[42]?.isRunning == true })
+        try await Task.sleep(for: .milliseconds(150))
+        await self.answer(answer, harness)
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(harness.factory.baseCount == 2)
+        harness.pushFrame()
+        #expect(harness.controller.toggleRecording() == .starting(waitsForSources: false))
+        #expect(await harness.waitUntil { harness.controller.phase == .recording })
+        #expect(harness.controller.toggleRecording() == .stopped)
+        #expect(await harness.waitUntil { harness.controller.phase == .deciding })
+        harness.controller.delete()
+        #expect(await harness.waitUntil { !harness.factory.anyRunning })
+    }
+
+    /// Armed and idle, Minecraft making its window again under a new number in the same process re-arms at once: the
+    /// picture is captured by window, so the old capture would show nothing.
+    @Test func aWindowMadeAgainInTheSameProcessRearmsWhileIdle() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        await harness.arm()
+        #expect(await harness.waitUntil { harness.factory.bases[42]?.isRunning == true })
+        let armedBefore = try #require(harness.factory.bases[42])
+        harness.moveMinecraft(toWindow: 77)
+        #expect(await harness.waitUntil { harness.factory.bases[77]?.isRunning == true })
+        #expect(await harness.waitUntil { !armedBefore.isRunning })
+        #expect(harness.factory.baseCount == 2)
+        harness.controller.setEnabled(false)
+        #expect(await harness.waitUntil { !harness.factory.anyRunning })
+    }
+
+    /// The Prologue's 5-second test keeps its sources and stays on: a change made while it records is applied once it
+    /// has saved, so the next recording uses it.
+    @Test(arguments: BusyChange.allCases)
+    func aChangeDuringTheTestRecordingIsAppliedOnceItsSaved(change: BusyChange) async throws {
+        let harness = makeHarness(for: change)
+        defer { harness.remove() }
+        await harness.arm()
+        #expect(await harness.waitUntil { harness.factory.bases[42]?.isRunning == true })
+        let armedBefore = try #require(harness.factory.bases[42])
+        try await Task.sleep(for: .milliseconds(100))
+        harness.pushFrame()
+        let recorded = Task { await harness.controller.recordTest(for: .milliseconds(400)) }
+        #expect(await harness.waitUntil { harness.controller.phase == .recording })
+        let window = apply(change, to: harness)
+        #expect(await recorded.value)
+        #expect(harness.controller.phase == .idle)
+        #expect(harness.controller.isEnabled)
+        #expect(await harness.waitUntil { harness.factory.baseCount == 2 && harness.factory.bases[window]?.isRunning == true })
+        #expect(await harness.waitUntil { !armedBefore.isRunning })
+        harness.controller.setEnabled(false)
+        #expect(await harness.waitUntil { !harness.factory.anyRunning })
     }
 }

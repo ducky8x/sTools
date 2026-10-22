@@ -147,7 +147,10 @@ public final class ScreenRecordingController: ToolController {
     @ObservationIgnored var minecraftFrameWait: Duration = .milliseconds(500)
     public private(set) var phase = Phase.idle {
         didSet {
-            guard phase != oldValue, !phaseWaiters.isEmpty else { return }
+            guard phase != oldValue else { return }
+            // Back to idle: what changed while busy is applied before anything waiting here, or a press, can start.
+            if phase == .idle { applyChangesSeenWhileBusy() }
+            guard !phaseWaiters.isEmpty else { return }
             let waiters = phaseWaiters
             phaseWaiters = []
             for waiter in waiters { waiter.resume() }
@@ -179,6 +182,7 @@ public final class ScreenRecordingController: ToolController {
         didSet {
             guard options != oldValue else { return }
             services.settings.save(options)
+            // While busy, the capture signature no longer matches the rig's, which the return to idle applies.
             if isEnabled, phase == .idle, captureAffecting(options) != captureAffecting(oldValue) { rearm() }
             if isEnabled, options.outputSize != oldValue.outputSize || options.codec != oldValue.codec { warmUp() }
         }
@@ -217,7 +221,12 @@ public final class ScreenRecordingController: ToolController {
     @ObservationIgnored private var readoutTask: Task<Void, Never>?
     @ObservationIgnored private var previewTask: Task<Void, Never>?
     @ObservationIgnored private var previewCompositor: Compositor?
-    @ObservationIgnored private var armedMinecraftID: Int32?
+    /// The Minecraft window the rig captures (`MinecraftTarget`), nil without one.
+    @ObservationIgnored private var armedMinecraft: MinecraftTarget?
+    /// The displays changed while a start, a recording, its finishing or the Save/Delete question had the phase. A
+    /// display's resolution or backing scale isn't part of `captureSignature` (a source on another display changes
+    /// size with it), so the change is remembered until the phase is idle again and the sources restart then.
+    @ObservationIgnored private var displaysChangedWhileBusy = false
     @ObservationIgnored private var recordingDisplaySize: PixelSize?
     @ObservationIgnored private var screenObserver: NSObjectProtocol?
     @ObservationIgnored private var previewIsVisible = false
@@ -332,6 +341,16 @@ public final class ScreenRecordingController: ToolController {
         arm(restarting: true)
     }
 
+    /// The phase is idle again after a start, a recording, its finishing or the Save/Delete question: whatever changed
+    /// meanwhile is applied now, before a press can start (a press then waits for the restart). The sources restart
+    /// when the displays changed, or when the rig was built for anything else than what would be built now
+    /// (`captureSignature`: Minecraft's window, the capture settings, the sources, the canvas). A tool switched back on
+    /// during the question armed with what was current then, and a change after that is caught here too.
+    private func applyChangesSeenWhileBusy() {
+        guard isEnabled, rig != nil else { return }
+        if displaysChangedWhileBusy || rigSignature != captureSignature { rearm() }
+    }
+
     /// The latest arming's sources run (their starts, Minecraft's capture included, have finished) and nothing is
     /// restarting them, so a start can write at once, without waiting.
     private var sourcesAreReady: Bool { rig != nil && readyArming == armCount }
@@ -399,7 +418,9 @@ public final class ScreenRecordingController: ToolController {
         var video: [SourceKey: any VideoCapture] = [:]
         var audio: [AudioTrackID: any AudioCapture] = [:]
         let minecraft = services.minecraft.active
-        armedMinecraftID = minecraft?.id
+        armedMinecraft = minecraft.map(MinecraftTarget.init)
+        // This rig starts at the displays' current sizes.
+        displaysChangedWhileBusy = false
         if let minecraft, let base = factory.base(minecraftWindowID: minecraft.window.windowNumber, showsCursor: options.showCursor) {
             video[.base] = base
             if layout.includesMinecraftAudio, let sound = factory.minecraftAudio(processID: minecraft.window.processID) {
@@ -476,14 +497,30 @@ public final class ScreenRecordingController: ToolController {
         return old
     }
 
-    /// Re-arms when Minecraft opens or quits, unless recording (a recording continues without it).
+    /// Which Minecraft window a rig captures: its process (for its sound) and its window (for its picture). A window
+    /// made again under a new number, in the same process, is another capture.
+    private struct MinecraftTarget: Equatable {
+        let processID: Int32
+        let windowNumber: UInt32
+
+        init(_ instance: MinecraftInstance) {
+            processID = instance.window.processID
+            windowNumber = instance.window.windowNumber
+        }
+    }
+
+    /// The Minecraft window a rig built now would capture.
+    private var currentMinecraft: MinecraftTarget? { services.minecraft.active.map(MinecraftTarget.init) }
+
+    /// Re-arms when Minecraft opens, quits or makes its window again, while idle. While busy (a recording continues
+    /// without it), the rig's signature no longer matches, which the return to idle applies.
     private func watchMinecraft() {
         withObservationTracking {
-            _ = services.minecraft.active?.id
+            _ = services.minecraft.active
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                if self.isEnabled, self.phase == .idle, self.services.minecraft.active?.id != self.armedMinecraftID { self.rearm() }
+                if self.isEnabled, self.phase == .idle, self.currentMinecraft != self.armedMinecraft { self.rearm() }
                 self.watchMinecraft()
             }
         }
@@ -499,7 +536,11 @@ public final class ScreenRecordingController: ToolController {
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                if self.isEnabled, self.phase == .idle, self.rig != nil { self.rearm() }
+                if self.phase != .idle {
+                    self.displaysChangedWhileBusy = true
+                } else if self.isEnabled, self.rig != nil {
+                    self.rearm()
+                }
                 self.watchDisplays()
             }
         }
@@ -1124,7 +1165,7 @@ public final class ScreenRecordingController: ToolController {
     /// What a rig built now would capture: the capture settings, the sources, Minecraft's window and the canvas. A rig
     /// built for anything else is out of date.
     private var captureSignature: String {
-        let minecraft = services.minecraft.active.map { "\($0.id)" } ?? "none"
+        let minecraft = currentMinecraft.map { "\($0.processID):\($0.windowNumber)" } ?? "none"
         return [captureAffecting(options), Self.sourceSet(layout).joined(separator: ","), minecraft, "\(canvas)"]
             .joined(separator: "|")
     }
