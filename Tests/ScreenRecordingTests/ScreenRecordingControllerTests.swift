@@ -17,7 +17,7 @@ private final class FakeFactory: CaptureFactory {
         return capture
     }
 
-    func video(for source: VideoSource, showsCursor: Bool) -> (any VideoCapture)? {
+    func video(for source: VideoSource, canvas: PixelSize, showsCursor: Bool) -> (any VideoCapture)? {
         let capture = FakeVideoCapture()
         videos[source.id] = capture
         return capture
@@ -93,7 +93,7 @@ struct ScreenRecordingControllerTests {
         defer { harness.remove() }
         let micID = UUID()
         harness.controller.updateLayout {
-            $0.add(VideoSource(kind: .camera(CameraReference(uniqueID: "cam", name: "Cam")), frame: PixelRect(x: 0, y: 0, width: 50, height: 50)))
+            $0.add(VideoSource(kind: .camera(CameraReference(uniqueID: "cam", name: "Cam")), frame: PixelRect(x: 0, y: 0, width: 50, height: 50), on: PixelSize(width: 320, height: 180)))
             $0.add(AudioSource(id: micID, kind: .microphone(uniqueID: "mic"), name: "Mic"))
         }
         await harness.arm()
@@ -192,7 +192,7 @@ struct ScreenRecordingControllerTests {
         defer { harness.remove() }
         let id = UUID()
         harness.controller.updateLayout {
-            $0.add(VideoSource(id: id, kind: .window(WindowReference(windowID: 9, appName: "Discord", title: "Call")), frame: PixelRect(x: 0, y: 0, width: 50, height: 50)))
+            $0.add(VideoSource(id: id, kind: .window(WindowReference(windowID: 9, appName: "Discord", title: "Call")), frame: PixelRect(x: 0, y: 0, width: 50, height: 50), on: PixelSize(width: 320, height: 180)))
         }
         await harness.arm()
         harness.factory.videos[id]?.push(.ended("gone"))

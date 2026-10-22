@@ -82,7 +82,17 @@ public final class ScreenRecordingController: ToolController {
         layout = services.settings.load(RecordingLayout.self)
         self.makeFactory = makeFactory ?? { SystemCaptureFactory(frameRate: $0) }
         self.loadAvailable = loadAvailable ?? { await AvailableSources.load(excludingProcessIDs: $0) }
+        convertLegacyLayout()
         watchMinecraft()
+        watchDisplays()
+    }
+
+    /// A layout saved by version 1 holds canvas pixels; it's turned into fractions of the canvas once, here, and
+    /// saved, so it never converts again.
+    private func convertLegacyLayout() {
+        guard layout.holdsLegacyPixels else { return }
+        layout.convertLegacyPixels(canvas: canvas)
+        services.settings.save(layout)
     }
 
     public var isRecording: Bool { phase == .recording }
@@ -90,7 +100,8 @@ public final class ScreenRecordingController: ToolController {
 
     // MARK: Canvas
 
-    /// Minecraft's display at its backing-pixel size, which is what the base layer is captured at.
+    /// Minecraft's display at its backing-pixel size, which is what the base layer is captured at. It changes with
+    /// the display's resolution and backing scale; the layout is saved as fractions of the canvas, so it doesn't.
     public var minecraftDisplaySize: PixelSize {
         let display = services.minecraft.active?.displayID.flatMap { id in services.displays.displays.first { $0.id == id } }
             ?? services.displays.main
@@ -160,7 +171,7 @@ public final class ScreenRecordingController: ToolController {
                     if let index = layout.videoSources.firstIndex(where: { $0.id == source.id }) { layout.videoSources[index].kind = .window(found) }
                 }
             }
-            if let capture = factory.video(for: source, showsCursor: options.showCursor) { video[.source(source.id)] = capture }
+            if let capture = factory.video(for: source, canvas: canvas, showsCursor: options.showCursor) { video[.source(source.id)] = capture }
         }
         for source in layout.audioSources {
             if let capture = factory.audio(for: source) { audio[.source(source.id)] = capture }
@@ -193,6 +204,22 @@ public final class ScreenRecordingController: ToolController {
                 guard let self else { return }
                 if self.isEnabled, self.phase == .idle, self.services.minecraft.active?.id != self.armedMinecraftID { self.rearm() }
                 self.watchMinecraft()
+            }
+        }
+    }
+
+    /// A display changing resolution or backing scale changes the pixel size its windows and its whole picture are
+    /// captured at, while running streams keep the size they started with. Re-arming while idle starts them again at
+    /// the new size, so each source's content keeps filling the frame it's fitted into. (While recording, Minecraft's
+    /// display changing stops the recording, spec 5.4.6.)
+    private func watchDisplays() {
+        withObservationTracking {
+            _ = services.displays.displays
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if self.isEnabled, self.phase == .idle, self.rig != nil { self.rearm() }
+                self.watchDisplays()
             }
         }
     }
@@ -486,7 +513,7 @@ public final class ScreenRecordingController: ToolController {
         guard !isLayoutLocked else { return }
         var next = layout
         edit(&next)
-        next.sanitize(canvas: canvas)
+        next.sanitize()
         guard next != layout else { return }
         let sourcesChanged = Self.sourceSet(next) != Self.sourceSet(layout)
         layout = next
@@ -495,7 +522,8 @@ public final class ScreenRecordingController: ToolController {
     }
 
     public func addVideo(_ kind: VideoSourceKind, contentSize: PixelSize) {
-        updateLayout { $0.add(VideoSource(kind: kind, frame: LayoutMath.defaultFrame(forContent: contentSize, canvas: canvas))) }
+        let canvas = canvas
+        updateLayout { $0.add(VideoSource(kind: kind, frame: LayoutMath.defaultFrame(forContent: contentSize, canvas: canvas), on: canvas)) }
     }
 
     public func addBrowserSource(url: String) {

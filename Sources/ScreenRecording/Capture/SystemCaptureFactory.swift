@@ -16,7 +16,7 @@ public struct SystemCaptureFactory: CaptureFactory {
         ScreenCapture(target: .base(minecraftWindowID: minecraftWindowID), showsCursor: showsCursor, frameRate: frameRate)
     }
 
-    public func video(for source: VideoSource, showsCursor: Bool) -> (any VideoCapture)? {
+    public func video(for source: VideoSource, canvas: PixelSize, showsCursor: Bool) -> (any VideoCapture)? {
         switch source.kind {
         case .window(let reference):
             ScreenCapture(target: .window(reference.windowID), showsCursor: showsCursor, frameRate: frameRate)
@@ -26,7 +26,8 @@ public struct SystemCaptureFactory: CaptureFactory {
             CameraCapture(uniqueID: reference.uniqueID)
         case .browser(let address):
             URL(string: address).map {
-                BrowserCapture(url: $0, pixelSize: PixelSize(width: Int(source.frame.width), height: Int(source.frame.height)), frameRate: frameRate)
+                let frame = source.pixelFrame(on: canvas)
+                return BrowserCapture(url: $0, pixelSize: PixelSize(width: Int(frame.width), height: Int(frame.height)), frameRate: frameRate)
             }
         }
     }

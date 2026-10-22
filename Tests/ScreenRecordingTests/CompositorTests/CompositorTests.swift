@@ -63,23 +63,24 @@ private func frame(_ buffer: CVPixelBuffer, content: PixelRect? = nil) -> VideoF
     @Test func sourcesAreCroppedFittedAndScaledToTheOutput() {
         var layout = RecordingLayout()
         let id = UUID()
-        layout.add(VideoSource(id: id, kind: .browser(url: "x"), frame: PixelRect(x: 960, y: 540, width: 480, height: 540),
+        layout.add(VideoSource(id: id, kind: .browser(url: "x"), frame: PixelRect(x: 960, y: 540, width: 480, height: 540), on: canvas,
                                crop: CropInsets(left: 0.5), cornerRadius: 20, border: SourceBorder(width: 4)))
         let plan = CompositionPlan.make(layout: layout, canvas: canvas, output: PixelSize(width: 960, height: 540),
                                         frames: [.source(id): .init(bufferSize: PixelSize(width: 800, height: 900), contentRect: PixelRect(x: 0, y: 0, width: 800, height: 600))])
         let layer = plan.layers[0]
         #expect(layer.sourceRect == PixelRect(x: 400, y: 0, width: 400, height: 600))
-        // 400×600 fitted into 480×540 is 360×540, centered; then halved for the output.
+        // The frame halved for the output is 240×270; 400×600 fitted into it is 180×270, centered.
+        #expect(layer.frame == PixelRect(x: 480, y: 270, width: 240, height: 270))
         #expect(layer.destination == PixelRect(x: 510, y: 270, width: 180, height: 270))
-        #expect(layer.cornerRadius == 10 && layer.borderWidth == 2)
+        #expect(abs(layer.cornerRadius - 10) < 1e-9 && abs(layer.borderWidth - 2) < 1e-9)
     }
 
     @Test func missingAndInvisibleSourcesAreLeftOut() {
         var layout = RecordingLayout()
-        let shown = VideoSource(kind: .browser(url: "a"), frame: PixelRect(x: 0, y: 0, width: 100, height: 100))
-        var hidden = VideoSource(kind: .browser(url: "b"), frame: PixelRect(x: 0, y: 0, width: 100, height: 100))
+        let shown = VideoSource(kind: .browser(url: "a"), frame: PixelRect(x: 0, y: 0, width: 100, height: 100), on: canvas)
+        var hidden = VideoSource(kind: .browser(url: "b"), frame: PixelRect(x: 0, y: 0, width: 100, height: 100), on: canvas)
         hidden.opacity = 0
-        let absent = VideoSource(kind: .browser(url: "c"), frame: PixelRect(x: 0, y: 0, width: 100, height: 100))
+        let absent = VideoSource(kind: .browser(url: "c"), frame: PixelRect(x: 0, y: 0, width: 100, height: 100), on: canvas)
         layout.add(shown); layout.add(hidden); layout.add(absent)
         let size = CompositionPlan.FrameGeometry(bufferSize: PixelSize(width: 10, height: 10))
         let plan = CompositionPlan.make(layout: layout, canvas: canvas, output: canvas,
@@ -93,7 +94,7 @@ private func frame(_ buffer: CVPixelBuffer, content: PixelRect? = nil) -> VideoF
         let compositor = try Compositor(outputSize: PixelSize(width: 200, height: 100))
         var layout = RecordingLayout()
         let id = UUID()
-        layout.add(VideoSource(id: id, kind: .browser(url: "x"), frame: PixelRect(x: 100, y: 50, width: 100, height: 50)))
+        layout.add(VideoSource(id: id, kind: .browser(url: "x"), frame: PixelRect(x: 100, y: 50, width: 100, height: 50), on: PixelSize(width: 200, height: 100)))
         let frames = [SourceKey.base: frame(solid(200, 100, 255, 0, 0)), .source(id): frame(solid(40, 20, 0, 255, 0))]
         let plan = CompositionPlan.make(layout: layout, canvas: PixelSize(width: 200, height: 100), output: compositor.outputSize,
                                         frames: frames.mapValues(CompositionPlan.FrameGeometry.init))
@@ -108,7 +109,7 @@ private func frame(_ buffer: CVPixelBuffer, content: PixelRect? = nil) -> VideoF
         let compositor = try Compositor(outputSize: PixelSize(width: 100, height: 100))
         var layout = RecordingLayout()
         let id = UUID()
-        layout.add(VideoSource(id: id, kind: .browser(url: "x"), frame: PixelRect(x: 0, y: 0, width: 100, height: 100), crop: CropInsets(left: 0.5)))
+        layout.add(VideoSource(id: id, kind: .browser(url: "x"), frame: PixelRect(x: 0, y: 0, width: 100, height: 100), on: PixelSize(width: 100, height: 100), crop: CropInsets(left: 0.5)))
         // Left half blue, right half yellow.
         let split = makeBuffer(100, 50) { x, _ in x < 50 ? (0, 0, 255) : (255, 255, 0) }
         let frames = [SourceKey.source(id): frame(split)]
@@ -123,7 +124,7 @@ private func frame(_ buffer: CVPixelBuffer, content: PixelRect? = nil) -> VideoF
         let compositor = try Compositor(outputSize: PixelSize(width: 100, height: 100))
         var layout = RecordingLayout()
         let id = UUID()
-        layout.add(VideoSource(id: id, kind: .browser(url: "x"), frame: PixelRect(x: 0, y: 0, width: 100, height: 100), opacity: 0.5))
+        layout.add(VideoSource(id: id, kind: .browser(url: "x"), frame: PixelRect(x: 0, y: 0, width: 100, height: 100), on: PixelSize(width: 100, height: 100), opacity: 0.5))
         let frames = [SourceKey.base: frame(solid(100, 100, 255, 0, 0)), .source(id): frame(solid(100, 100, 0, 255, 0))]
         let plan = CompositionPlan.make(layout: layout, canvas: PixelSize(width: 100, height: 100), output: compositor.outputSize,
                                         frames: frames.mapValues(CompositionPlan.FrameGeometry.init))
@@ -135,7 +136,7 @@ private func frame(_ buffer: CVPixelBuffer, content: PixelRect? = nil) -> VideoF
         let compositor = try Compositor(outputSize: PixelSize(width: 100, height: 100))
         var layout = RecordingLayout()
         let id = UUID()
-        layout.add(VideoSource(id: id, kind: .browser(url: "x"), frame: PixelRect(x: 0, y: 0, width: 100, height: 100),
+        layout.add(VideoSource(id: id, kind: .browser(url: "x"), frame: PixelRect(x: 0, y: 0, width: 100, height: 100), on: PixelSize(width: 100, height: 100),
                                cornerRadius: 30, border: SourceBorder(width: 6, colorHex: "#0000FF")))
         let frames = [SourceKey.base: frame(solid(100, 100, 255, 0, 0)), .source(id): frame(solid(100, 100, 0, 255, 0))]
         let plan = CompositionPlan.make(layout: layout, canvas: PixelSize(width: 100, height: 100), output: compositor.outputSize,

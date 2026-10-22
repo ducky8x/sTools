@@ -91,7 +91,7 @@ import Testing
 
 @Suite struct RecordingLayoutTests {
     private func source(_ title: String) -> VideoSource {
-        VideoSource(kind: .browser(url: title), frame: PixelRect(x: 0, y: 0, width: 100, height: 100))
+        VideoSource(kind: .browser(url: title), frame: CanvasRect(x: 0, y: 0, width: 0.1, height: 0.1))
     }
 
     @Test func addingStacksOnTopAndReorderingRenumbers() {
@@ -124,14 +124,16 @@ import Testing
     @Test func sanitizePullsValuesIntoRange() {
         var layout = RecordingLayout(minecraftAudioVolume: 9)
         var bad = source("x")
-        bad.frame = PixelRect(x: -10, y: -10, width: 5000, height: 5)
+        bad.frame = CanvasRect(x: -0.01, y: -0.01, width: 2.6, height: 0.001)
         bad.opacity = 3
         bad.cornerRadius = -4
         bad.border.width = .nan
         layout.videoSources = [bad]
         layout.add(AudioSource(kind: .microphone(uniqueID: "m"), name: "Mic", volume: -2))
-        layout.sanitize(canvas: PixelSize(width: 1920, height: 1080))
-        #expect(layout.videoSources[0].frame == PixelRect(x: 0, y: 0, width: 1920, height: 16))
+        layout.sanitize()
+        // Inside the canvas, and at least 16 pixels of a 1920 × 1080 canvas tall.
+        #expect(layout.videoSources[0].frame == CanvasRect(x: 0, y: 0, width: 1, height: CanvasRect.minimumHeight))
+        #expect(CanvasMapping(PixelSize(width: 1920, height: 1080)).rect(layout.videoSources[0].frame).pixelAligned == PixelRect(x: 0, y: 0, width: 1920, height: 16))
         #expect(layout.videoSources[0].opacity == 1 && layout.videoSources[0].cornerRadius == 0 && layout.videoSources[0].border.width == 0)
         #expect(layout.audioSources[0].volume == 0)
         #expect(layout.minecraftAudioVolume == AudioSource.volumeRange.upperBound)
@@ -140,14 +142,14 @@ import Testing
     @Test func layoutsRoundTripAndToleratePartialFiles() throws {
         var layout = RecordingLayout(includesMinecraftAudio: false)
         layout.add(VideoSource(kind: .window(WindowReference(windowID: 7, appName: "Discord", bundleID: "com.hnc.Discord", title: "Voice")),
-                               frame: PixelRect(x: 1, y: 2, width: 300, height: 200), crop: CropInsets(left: 0.1), opacity: 0.8, cornerRadius: 12,
-                               border: SourceBorder(width: 2, colorHex: "#D9AE52")))
-        layout.add(VideoSource(kind: .camera(CameraReference(uniqueID: "cam", name: "FaceTime")), frame: PixelRect(x: 0, y: 0, width: 100, height: 100)))
-        layout.add(VideoSource(kind: .display(DisplayReference(displayID: 2, name: "LG")), frame: PixelRect(x: 0, y: 0, width: 100, height: 100)))
+                               frame: CanvasRect(x: 0.001, y: 0.002, width: 0.3, height: 0.2), crop: CropInsets(left: 0.1), opacity: 0.8, cornerRadius: 0.012,
+                               border: SourceBorder(width: 0.002, colorHex: "#D9AE52")))
+        layout.add(VideoSource(kind: .camera(CameraReference(uniqueID: "cam", name: "FaceTime")), frame: CanvasRect(x: 0, y: 0, width: 0.1, height: 0.1)))
+        layout.add(VideoSource(kind: .display(DisplayReference(displayID: 2, name: "LG")), frame: CanvasRect(x: 0, y: 0, width: 0.1, height: 0.1)))
         layout.add(AudioSource(kind: .app(bundleID: "com.hnc.Discord"), name: "Discord", volume: 0.5))
         let data = try JSONEncoder().encode(layout)
         #expect(try JSONDecoder().decode(RecordingLayout.self, from: data) == layout)
-        let partial = try JSONDecoder().decode(RecordingLayout.self, from: Data(#"{"videoSources": [{"kind": {"type": "browser", "url": "x"}, "frame": {"x": 0, "y": 0, "width": 10, "height": 10}}]}"#.utf8))
+        let partial = try JSONDecoder().decode(RecordingLayout.self, from: Data(#"{"videoSources": [{"kind": {"type": "browser", "url": "x"}, "frame": {"x": 0, "y": 0, "width": 0.1, "height": 0.1}}]}"#.utf8))
         #expect(partial.videoSources.first?.opacity == 1)
         #expect(partial.includesMinecraftAudio)
     }
