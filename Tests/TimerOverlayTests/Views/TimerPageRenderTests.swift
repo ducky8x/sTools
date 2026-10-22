@@ -364,11 +364,15 @@ struct TimerPageRenderTests {
     }
 
     @Test func hidingFromRecordingsAsksFirst() {
+        // Each result is worked out before `#expect`: its macro takes only Sendable closures, and these count.
         var asked = 0
-        #expect(TimerAdvancedSection.showsInRecordings(after: true, confirm: { asked += 1; return false }))
+        let turnedOn = TimerAdvancedSection.showsInRecordings(after: true, confirm: { asked += 1; return false })
+        #expect(turnedOn)
         #expect(asked == 0, "turning it on never asks")
-        #expect(TimerAdvancedSection.showsInRecordings(after: false, confirm: { asked += 1; return false }))
-        #expect(!TimerAdvancedSection.showsInRecordings(after: false, confirm: { asked += 1; return true }))
+        let turnedOffDeclined = TimerAdvancedSection.showsInRecordings(after: false, confirm: { asked += 1; return false })
+        #expect(turnedOffDeclined)
+        let turnedOffConfirmed = TimerAdvancedSection.showsInRecordings(after: false, confirm: { asked += 1; return true })
+        #expect(!turnedOffConfirmed)
         #expect(asked == 2)
     }
 
