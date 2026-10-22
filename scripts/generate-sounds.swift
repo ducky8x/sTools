@@ -137,7 +137,65 @@ let specs: [SoundSpec] = [
             Voice(start: 0.07, frequency: 523.25, partials: [(1, 1), (2, 0.2)], attack: 0.004, decayTau: 0.04),
         ], duration: duration)
     },
+    // The sidebar's glide, one per move of the selection marker, in three lengths for how far (and so how fast) the
+    // marker travels: a neighbor, a few rows, most of the sidebar. A longer one starts lower, climbs higher at its
+    // top speed and is a little louder. Peaks are set by loudness: the loudest 100 ms, A-weighted, of the long glide
+    // matches `page` (about −24 dBFS), the sound it took over from; the medium and short sit 1 and 2 dB under it.
+    SoundSpec(name: "glideShort", duration: 0.150, peak: 0.28, releaseSeconds: 0.040) { duration in
+        glide(duration: duration, rise: 0.030, settleTau: 0.040, lowHz: 420, highHz: 680, seed: 0x611DE_5)
+    },
+    SoundSpec(name: "glideMedium", duration: 0.220, peak: 0.29, releaseSeconds: 0.060) { duration in
+        glide(duration: duration, rise: 0.045, settleTau: 0.055, lowHz: 370, highHz: 860, seed: 0x611DE_3)
+    },
+    SoundSpec(name: "glideLong", duration: 0.300, peak: 0.28, releaseSeconds: 0.080) { duration in
+        glide(duration: duration, rise: 0.065, settleTau: 0.070, lowHz: 330, highHz: 1_080, seed: 0x611DE_1)
+    },
+    // The sidebar's detent, one for each row the marker passes over: a tiny tap like a trackpad click or a watch
+    // crown's detent. A bright edge, a short click and a low felt thump, all gone within a few milliseconds. It
+    // sits about 3 dB under `tick` by the same measure (about −36 dBFS), since several can come in a row.
+    SoundSpec(name: "detent", duration: 0.016, peak: 0.20, releaseSeconds: 0.004) { duration in
+        render([
+            Voice(frequency: 2_900, attack: 0.0004, decayTau: 0.0012, gain: 0.5),
+            Voice(frequency: 1_250, attack: 0.0006, decayTau: 0.0025, gain: 1),
+            Voice(frequency: 240, glideFrom: 310, glideTau: 0.003, partials: [(1, 1), (2, 0.2)],
+                  attack: 0.0012, decayTau: 0.0045, gain: 0.6),
+        ], duration: duration)
+    },
 ]
+
+/// A soft "vwoop" for the sidebar's glide. Its level follows the marker's speed through a move: a raised-cosine rise
+/// to the top speed, then an exponential settle, the shape of the marker's spring. Breathy noise runs through a
+/// resonant band-pass whose center follows the same curve, up from `lowHz` to `highHz` as the marker speeds up and
+/// back down as it settles, over a quieter layer of open air that brightens with it.
+func glide(duration: Double, rise: Double, settleTau: Double, lowHz: Double, highHz: Double,
+           seed: UInt64) -> [Double] {
+    var noise = Noise(seed: seed)
+    let count = Int((duration * sampleRate).rounded())
+    var samples = [Double](repeating: 0, count: count)
+    var x1 = 0.0, x2 = 0.0, y1 = 0.0, y2 = 0.0
+    var airSlow = 0.0, airFirst = 0.0, airSecond = 0.0
+    let quality = 2.4
+    let airHighpass = exp(-2 * Double.pi * 1_000 / sampleRate)
+    for index in 0..<count {
+        let t = Double(index) / sampleRate
+        let speed = t < rise ? 0.5 - 0.5 * cos(Double.pi * t / rise) : exp(-(t - rise) / settleTau)
+        let white = noise.next()
+        // The resonant body (a constant-peak band-pass), retuned every sample.
+        let center = lowHz + (highHz - lowHz) * speed
+        let w0 = 2 * Double.pi * center / sampleRate
+        let alpha = sin(w0) / (2 * quality)
+        let body = (alpha * white - alpha * x2 + 2 * cos(w0) * y1 - (1 - alpha) * y2) / (1 + alpha)
+        x2 = x1; x1 = white
+        y2 = y1; y1 = body
+        // The air: noise above 1 kHz under a two-pole lowpass that opens with the speed.
+        airSlow = airHighpass * airSlow + (1 - airHighpass) * white
+        let airCoefficient = exp(-2 * Double.pi * (1_400 + 2_200 * speed) / sampleRate)
+        airFirst = airCoefficient * airFirst + (1 - airCoefficient) * (white - airSlow)
+        airSecond = airCoefficient * airSecond + (1 - airCoefficient) * airFirst
+        samples[index] = speed * (body + 0.5 * airSecond)
+    }
+    return samples
+}
 
 // MARK: - Timer Overlay's sTools alarms
 

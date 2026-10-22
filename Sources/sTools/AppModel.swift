@@ -72,6 +72,8 @@ final class AppModel {
         handler: { [weak self] events in self?.handleHotkeyPress(events) })
     /// Shows each press's confirmation over the game.
     @ObservationIgnored let hotkeyHUD: any HotkeyConfirmationPresenting
+    /// The sidebar marker's glide and detents (spec 3.4); tests replace it with one on a fake player and clock.
+    @ObservationIgnored lazy var sidebarGlide = SidebarGlidePlayer(sound: sound) { [theme] in theme.reduceMotion }
 
     /// Every tool starts off (spec 3.5). `controllers` holds the tools that exist so far.
     init(services: ToolServices, theme: STTheme, sound: STSoundPlayer, controllers: [ToolID: any ToolController],

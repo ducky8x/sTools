@@ -6,6 +6,7 @@ import Testing
 private let intendedDuration: [STSound: Double] = [
     .click: 0.040, .tick: 0.025, .stamp: 0.140, .page: 0.180,
     .chime: 0.900, .recordStart: 0.160, .recordStop: 0.160,
+    .glideShort: 0.150, .glideMedium: 0.220, .glideLong: 0.300, .detent: 0.016,
 ]
 
 /// A 16-bit PCM WAV file read back into samples. Shared with `AlarmSoundResourceTests`.
@@ -50,7 +51,7 @@ struct WAV {
     }
 }
 
-private func loadWAV(_ sound: STSound) throws -> WAV {
+func loadWAV(_ sound: STSound) throws -> WAV {
     let url = try #require(STSoundPlayer.resourceURL(for: sound), "missing resource for \(sound)")
     return try #require(WAV(try Data(contentsOf: url)), "invalid RIFF/WAVE header for \(sound)")
 }
@@ -149,6 +150,23 @@ func shouldPlayRequiresAllThree(_ soundsEnabled: Bool, _ volume: Double, _ syste
     player.play(.chime)
     #expect(asked == 1)
     #expect(!player.isPlaying(.chime))
+}
+
+/// `isAudible` is `play`'s own decision, so the sidebar can skip scheduling detents that would stay silent.
+@MainActor @Test func isAudibleFollowsTheSameThreeSettings() {
+    var systemEnabled = true
+    let theme = STTheme()
+    let player = STSoundPlayer(theme: theme) { systemEnabled }
+    #expect(player.isAudible)
+    systemEnabled = false
+    #expect(!player.isAudible)
+    systemEnabled = true
+    theme.soundVolume = 0
+    #expect(!player.isAudible)
+    theme.soundVolume = 0.5
+    theme.soundsEnabled = false
+    #expect(!player.isAudible)
+    #expect(!STSoundPlayer.silent.isAudible)
 }
 
 @MainActor @Test func silentPlayerNeverPlays() {
