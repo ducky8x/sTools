@@ -25,6 +25,19 @@ public enum STFont {
         text(size, weight: weight).monospacedDigit()
     }
 
+    /// The height a SwiftUI `TextField` in `text(size, weight:)` or `figures(size, weight:)` (its digits don't
+    /// change it) needs for its line: the height its AppKit field sizes its cell to, `NSLayoutManager`'s default
+    /// line height. The field gets the font at the nearest whole point size (12.6 pt is drawn at 13 pt), so the
+    /// line is measured at that size.
+    @MainActor
+    public static func textLineHeight(_ size: CGFloat, weight: Font.Weight = .regular) -> CGFloat {
+        let points = size.rounded()
+        let font = NSFont(name: sourceSerifName(weight), size: points) ?? .systemFont(ofSize: points)
+        return lineMeasurer.defaultLineHeight(for: font)
+    }
+
+    @MainActor private static let lineMeasurer = NSLayoutManager()
+
     /// DM Serif Display, which the spec keeps for the wordmark in the Prologue's greeting.
     public static func greetingWordmark(_ size: CGFloat) -> Font { .custom(displayRegularName, size: size) }
 

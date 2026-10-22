@@ -253,6 +253,7 @@ public struct STSlider: View {
         return TextField("\(label) value", text: $draft)
             .textFieldStyle(.plain)
             .font(figuresFont)
+            .stFieldLineHeight(14 * theme.textScale, weight: .medium)
             .foregroundStyle(STColor.ink)
             .tint(theme.accent)
             .multilineTextAlignment(.trailing)

@@ -281,9 +281,11 @@ private func inkMass(_ rep: NSBitmapImageRep) -> Double {
     luminance(rep).flatMap { $0 }.filter { $0 > 0.15 }.reduce(0, +)
 }
 
-/// The pixel shift (within 3 px) that best lays `b` over `a`, and how well it fits. Renders of different sizes
-/// record an issue and fit nowhere, instead of reading past the smaller one and crashing the test run.
-private func bestShift(_ a: NSBitmapImageRep, _ b: NSBitmapImageRep) -> (dx: Int, dy: Int, error: Double, errorUnshifted: Double) {
+/// The pixel shift (within 3 px) that best lays `b` over `a`, and how well it fits, over `a`'s top `rows` pixel rows (all
+/// of them by default). Renders of different sizes record an issue and fit nowhere, instead of reading past the smaller
+/// one and crashing the test run.
+private func bestShift(_ a: NSBitmapImageRep, _ b: NSBitmapImageRep,
+                       rows: Int = .max) -> (dx: Int, dy: Int, error: Double, errorUnshifted: Double) {
     guard a.pixelsWide == b.pixelsWide, a.pixelsHigh == b.pixelsHigh else {
         Issue.record("Renders differ in size: \(a.pixelsWide)×\(a.pixelsHigh) and \(b.pixelsWide)×\(b.pixelsHigh) px")
         return (0, 0, .infinity, .infinity)
@@ -295,7 +297,7 @@ private func bestShift(_ a: NSBitmapImageRep, _ b: NSBitmapImageRep) -> (dx: Int
     for dy in -3...3 {
         for dx in -3...3 {
             var error = 0.0
-            for y in margin..<(a.pixelsHigh - margin) {
+            for y in margin..<min(a.pixelsHigh - margin, rows) {
                 for x in margin..<(a.pixelsWide - margin) {
                     let d = la[y][x] - lb[y + dy][x + dx]
                     error += d * d
@@ -317,23 +319,40 @@ private func bestShift(_ a: NSBitmapImageRep, _ b: NSBitmapImageRep) -> (dx: Int
 struct STTextFieldRenderingTests {
     private let sample = "Wolverine gypsy 01"
 
+    private func field(points: Double, revealed: Bool, text: String? = nil) -> some View {
+        STTextField("Name", text: .constant(text ?? sample))
+            .environment(\.stTheme, theme(scale: points / 14))
+            .environment(\.stRevealsNativeText, revealed)
+            .background(STColor.background)
+    }
+
     private func fieldRep(points: Double, revealed: Bool, text: String? = nil, scale: Int) -> NSBitmapImageRep {
-        let t = text ?? sample
-        return render(
-            STTextField("Name", text: .constant(t))
-                .environment(\.stTheme, theme(scale: points / 14))
-                .environment(\.stRevealsNativeText, revealed)
-                .background(STColor.background),
-            width: 260, scale: scale)
+        render(field(points: points, revealed: revealed, text: text), width: 260, scale: scale)
+    }
+
+    /// The field showing its own glyphs, and how many pixel rows from the top of the render it can draw them in: down
+    /// to its AppKit view's bottom edge, the bottom of its line. Now and then a process has SwiftUI size that view to
+    /// another font's line (see `stFieldLineHeight`); a shorter view still sits where the field belongs, but AppKit
+    /// cuts its glyphs off at that edge, so there's nothing below it to compare the overlay with.
+    private func nativeFieldRep(points: Double, scale: Int) -> (rep: NSBitmapImageRep, drawableRows: Int) {
+        let hosted = Hosted(field(points: points, revealed: true), width: 260, scale: scale)
+        let rep = hosted.capture()
+        guard let appKit = appKitField(in: hosted.host) else {
+            Issue.record("The field has no AppKit text field")
+            return (rep, rep.pixelsHigh)
+        }
+        let frame = appKit.convert(appKit.bounds, to: hosted.host)
+        let bottom = hosted.host.isFlipped ? frame.maxY : hosted.host.bounds.height - frame.minY
+        return (rep, Int((bottom * CGFloat(scale)).rounded()))
     }
 
     @Test(arguments: [12.0, 12.6, 13.0, 14.0, 15.0, 16.0, 17.0, 18.2], renderScales)
     func overlayTextLandsOnTheRealFieldsGlyphs(points: Double, scale: Int) {
-        let native = fieldRep(points: points, revealed: true, scale: scale)
+        let (native, drawableRows) = nativeFieldRep(points: points, scale: scale)
         let overlay = fieldRep(points: points, revealed: false, scale: scale)
         #expect(native.pixelsWide == overlay.pixelsWide && native.pixelsHigh == overlay.pixelsHigh)
         #expect(inkMass(native) > inkBar(100, scale: scale))
-        let shift = bestShift(native, overlay)
+        let shift = bestShift(native, overlay, rows: drawableRows)
         // Not one pixel off: at 2x that's half a point, at 1x (where layout snaps to whole points) a point.
         #expect(shift.dx == 0 && shift.dy == 0, "size \(points) at \(scale)x: best shift \(shift.dx),\(shift.dy) px")
         #expect(shift.errorUnshifted < edgeBar(60, scale: scale), "size \(points) at \(scale)x: residual \(shift.errorUnshifted)")
@@ -352,6 +371,38 @@ struct STTextFieldRenderingTests {
         let baselineOnly = render(
             Color.clear.frame(height: 1).background(STColor.surface).background(STColor.background), width: 260, height: 1, scale: scale)
         #expect(inkMass(empty) > inkMass(baselineOnly) + inkBar(20, scale: scale))
+    }
+}
+
+// MARK: - Field line height
+
+/// The editable AppKit field inside `view`.
+@MainActor
+private func appKitField(in view: NSView) -> NSTextField? {
+    if let field = view as? NSTextField, field.isEditable { return field }
+    return view.subviews.lazy.compactMap { appKitField(in: $0) }.first
+}
+
+@MainActor
+@Suite("Field line height")
+struct FieldLineHeightTests {
+    /// `stFieldLineHeight` holds a field to `STFont.textLineHeight`, so that has to be the height the real field's line
+    /// takes: for both field sizes (14 pt text, 13 pt figures) at every Text Size, in both weights the fields use. The
+    /// half points pin down which way the field rounds its font's size.
+    @Test(arguments: [Font.Weight.regular, .medium])
+    func isTheHeightOfTheRealFieldsLine(weight: Font.Weight) throws {
+        let textSizes = [13.0, 14.0].flatMap { base in stride(from: 0.9, through: 1.3001, by: 0.025).map { base * $0 } }
+        for size in textSizes + [12.5, 13.5, 14.5, 15.5, 16.5, 17.5] {
+            let host = hostingView(TextField("Name", text: .constant("Wolverine gypsy 01"))
+                .textFieldStyle(.plain)
+                .font(weight == .medium ? STFont.figures(size) : STFont.text(size))
+                .frame(width: 200))
+            host.frame = CGRect(x: 0, y: 0, width: 200, height: 40)
+            host.layoutSubtreeIfNeeded()
+            let field = try #require(appKitField(in: host))
+            let cell = try #require(field.cell)
+            #expect(cell.cellSize.height == STFont.textLineHeight(size, weight: weight), "\(size) pt \(weight)")
+        }
     }
 }
 
