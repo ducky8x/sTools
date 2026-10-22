@@ -770,15 +770,16 @@ struct KeyRebinderHotkeyTests {
         center.add(combo: HotkeyFixtures.combo("f18", .shift), actions: [.toggle(.nbbOverlay)])
         #expect(await eventually { controller.hotkeys(on: .key("caps_lock")).count == 2 })
         #expect(controller.rebindHotkeyNotes(for: .key("caps_lock"), becoming: nil).isEmpty)
-        // Without the other key, both are stranded.
+        // Without the other key, both are stranded. They're named in Home's order: the tools' own keys in sidebar
+        // order, so NBB Overlay's comes first.
         let alone = try await make(profileP([("caps_lock", "f18")]))
         defer { alone.remove() }
         alone.center?.add(combo: HotkeyFixtures.combo("f18"), actions: [.toggle(.crosshair)])
         alone.center?.add(combo: HotkeyFixtures.combo("f18", .shift), actions: [.toggle(.nbbOverlay)])
         #expect(alone.controller.rebindHotkeyNotes(for: .key("caps_lock"), becoming: nil)
-            == ["Remove Rebind would leave its hotkeys F18 (Crosshair) and \u{21E7}F18 (NBB Overlay) on F18, and no key would send F18."])
+            == ["Remove Rebind would leave its hotkeys \u{21E7}F18 (NBB Overlay) and F18 (Crosshair) on F18, and no key would send F18."])
         #expect(alone.controller.rebindHotkeyNotes(for: .key("caps_lock"), becoming: .key("f19"))
-            == ["Its hotkeys F18 (Crosshair) and \u{21E7}F18 (NBB Overlay) stay on F18, and no key will send F18."])
+            == ["Its hotkeys \u{21E7}F18 (NBB Overlay) and F18 (Crosshair) stay on F18, and no key will send F18."])
     }
 
     // MARK: Where hotkeys listen

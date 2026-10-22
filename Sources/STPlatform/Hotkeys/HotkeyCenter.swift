@@ -240,25 +240,33 @@ public final class HotkeyCenter {
         return notes
     }
 
-    /// Adds a binding at the end of the list and returns its id. A problem shows up in `statuses`.
+    /// Adds a binding and returns its id. A tool's own hotkey (its only action is one tool's, and the tool had none)
+    /// goes in the tool's sidebar place among the own hotkeys, which Home lists first; any other goes at the end
+    /// (`HotkeyKeySet.ordered`). A problem shows up in `statuses`.
     @discardableResult
     public func add(combo: HotkeyCombo, actions: [HotkeyAction]) -> UUID {
         let binding = HotkeyBinding(combo: combo, actions: actions)
-        settings.bindings.append(binding)
+        settings.bindings = HotkeyKeySet.ordered(settings.bindings + [binding])
         commit()
         return binding.id
     }
 
-    /// Changes a binding's combination and/or actions. Unknown ids are ignored.
+    /// Changes a binding's combination and/or actions. Unknown ids are ignored. The list stays `HotkeyKeySet.ordered`:
+    /// a binding that becomes a tool's own hotkey moves to the tool's sidebar place, and one that stops being one
+    /// follows the own hotkeys, ahead of the bindings that were after it.
     public func update(_ id: UUID, combo: HotkeyCombo? = nil, actions: [HotkeyAction]? = nil) {
         guard let index = settings.bindings.firstIndex(where: { $0.id == id }) else { return }
-        if let combo { settings.bindings[index].combo = combo }
-        if let actions { settings.bindings[index].actions = actions.uniqued }
+        var bindings = settings.bindings
+        if let combo { bindings[index].combo = combo }
+        if let actions { bindings[index].actions = actions.uniqued }
+        settings.bindings = HotkeyKeySet.ordered(bindings)
         commit()
     }
 
+    /// Removes a binding. When it was a tool's own hotkey, a second key for that tool alone (an older list can have
+    /// one) becomes the tool's own and moves up to its place.
     public func remove(_ id: UUID) {
-        settings.bindings.removeAll { $0.id == id }
+        settings.bindings = HotkeyKeySet.ordered(settings.bindings.filter { $0.id != id })
         commit()
     }
 
