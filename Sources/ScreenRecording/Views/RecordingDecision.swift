@@ -168,31 +168,44 @@ struct RecordingDecisionView: View {
 /// another page, or the introduction running. It sits over sTools' window when that's in front, else just above the
 /// middle of Minecraft's display (else the main display), on every Space and over full-screen apps.
 ///
-/// Showing it brings sTools forward so the name can be typed at once (hotkeys that take typed keys pause while it's
-/// typed, as in any sTools field). It leaves with sTools when another app comes forward and returns with it, and the
-/// key brings it back too. Once answered, the app that was in front when it came up gets the front back, unless the
-/// person went to another app in between.
+/// It takes the keyboard without making sTools the active app, like a launcher's panel: the app in front (Minecraft,
+/// usually) stays in front, nothing waits on macOS letting sTools come forward (from the background it may not), and
+/// no Space switches. The name can be typed at once (hotkeys that take typed keys pause while it's typed, as in any
+/// sTools field). It stays up until it's answered, whichever app is in front; clicking it, the key or the page's
+/// Save or Delete… gives it the keyboard again. Once it's answered it goes, and the keyboard goes back to the app in
+/// front.
 @MainActor
 public final class RecordingDecisionPanel: RecordingDecisionPresenting {
     private let theme: STTheme
     private let sound: STSoundPlayer
+    /// Makes the panel's window, once; tests give one that never reaches the screen.
+    private let makeWindow: @MainActor () -> RecordingDecisionWindow
     private var window: RecordingDecisionWindow?
     /// The recording the panel shows, and what has been typed for it: shown again as it was when it's brought back.
     private var shown: (files: [URL], draft: RecordingDecisionDraft)?
-    /// The app in front when the question came up; it gets the front back once the question is answered.
-    private var previousApp: NSRunningApplication?
-    private var resignObserver: NSObjectProtocol?
 
-    public init(theme: STTheme, sound: STSoundPlayer = .silent) {
-        self.theme = theme
-        self.sound = sound
+    public convenience init(theme: STTheme, sound: STSoundPlayer = .silent) {
+        self.init(theme: theme, sound: sound, makeWindow: { RecordingDecisionWindow() })
     }
 
-    public var isShowing: Bool { window?.isVisible ?? false }
+    init(theme: STTheme, sound: STSoundPlayer = .silent, makeWindow: @escaping @MainActor () -> RecordingDecisionWindow) {
+        self.theme = theme
+        self.sound = sound
+        self.makeWindow = makeWindow
+    }
 
     public func present(for controller: ScreenRecordingController) {
         guard let finished = controller.finished else { return }
-        let window = self.window ?? makeWindow()
+        present(finished, for: controller)
+    }
+
+    /// Shows `finished`'s question, or brings it back as it was left when it's the one already up.
+    func present(_ finished: ScreenRecordingController.Finished, for controller: ScreenRecordingController) {
+        let window = self.window ?? {
+            let window = makeWindow()
+            self.window = window
+            return window
+        }()
         let draft: RecordingDecisionDraft
         if let shown, shown.files == finished.files {
             draft = shown.draft
@@ -205,16 +218,13 @@ public final class RecordingDecisionPanel: RecordingDecisionPresenting {
                 .stMotionRoot(theme))
         }
         window.onCancel = { [weak controller, draft] in draft.cancel(controller) }
-        if !NSApp.isActive, let front = NSWorkspace.shared.frontmostApplication, front != .current {
-            previousApp = front
-        }
         place(window, display: controller.decisionDisplay)
         window.animationBehavior = theme.reduceMotion ? .none : .alertPanel
-        NSApp.activate()
-        window.makeKeyAndOrderFront(nil)
+        // In front of every app at its level, and key, without activating sTools (a non-activating panel).
+        window.orderFrontRegardless()
+        window.makeKey()
         window.invalidateShadow()
         window.focusFirstField()
-        watchForTheFrontChanging()
     }
 
     public func dismiss() {
@@ -225,19 +235,8 @@ public final class RecordingDecisionPanel: RecordingDecisionPresenting {
         window.contentView = nil
         window.onCancel = nil
         shown = nil
-        if let resignObserver { NotificationCenter.default.removeObserver(resignObserver) }
-        resignObserver = nil
-        if let previousApp, NSApp.isActive, !previousApp.isTerminated {
-            NSApp.yieldActivation(to: previousApp)
-            previousApp.activate(from: .current, options: [])
-        }
-        previousApp = nil
-    }
-
-    private func makeWindow() -> RecordingDecisionWindow {
-        let window = RecordingDecisionWindow()
-        self.window = window
-        return window
+        // The name field no longer has the keyboard: hotkeys on typed keys come back now, not at sTools' next event.
+        NSApp.updateWindows()
     }
 
     /// Over the main window when sTools is in front with it showing, else on `display`.
@@ -251,33 +250,27 @@ public final class RecordingDecisionPanel: RecordingDecisionPresenting {
         let area = screen?.visibleFrame ?? display?.frame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
         window.setFrame(RecordingDecisionLayout.frame(size: size, over: main?.frame, on: area), display: true)
     }
-
-    /// Going to another app while the question waits means the person chose where to be: the front isn't handed back.
-    private func watchForTheFrontChanging() {
-        guard resignObserver == nil else { return }
-        resignObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.previousApp = nil }
-        }
-    }
 }
 
 /// A borderless panel that takes the keyboard, so the name can be typed, and turns Esc into canceling the question.
-/// It floats above full-screen apps and sTools' overlays, on every Space, and hides while sTools isn't in front.
-final class RecordingDecisionWindow: NSPanel {
+/// It's a non-activating panel: it becomes key while another app (Minecraft) stays the active app, so showing it never
+/// depends on sTools coming forward. It floats above full-screen apps and sTools' overlays, on every Space, and stays
+/// up whichever app is in front until the question is answered.
+class RecordingDecisionWindow: NSPanel {
     /// Esc, or anything else that cancels.
     var onCancel: (() -> Void)?
 
     init() {
         super.init(contentRect: CGRect(x: 0, y: 0, width: RecordingDecisionView.width, height: 240),
-                   styleMask: [.borderless], backing: .buffered, defer: true)
+                   styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
         isReleasedWhenClosed = false
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true
         isMovableByWindowBackground = true
-        hidesOnDeactivate = true
+        // sTools is usually in the background while it's up; AppKit would keep a window that hides on deactivation off
+        // the screen all that time.
+        hidesOnDeactivate = false
         // Above Minecraft in full screen and above sTools' own overlays (`.screenSaver`), like the confirmation, so the
         // crosshair never draws over it.
         level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
@@ -308,8 +301,8 @@ final class RecordingDecisionWindow: NSPanel {
     private var wantsFieldFocus = false
 
     /// Puts the keyboard in the name field with its text selected, so typing replaces the offered name: now when the
-    /// panel is key, else as soon as it becomes key (sTools' activation can land a moment later). The field may only
-    /// exist after SwiftUI's next pass, so it's tried once more then.
+    /// panel is key, else as soon as it becomes key. The field may only exist after SwiftUI's next pass, so it's tried
+    /// once more then.
     func focusFirstField() {
         wantsFieldFocus = true
         if isKeyWindow { focusPendingField() }
@@ -318,6 +311,12 @@ final class RecordingDecisionWindow: NSPanel {
     override func becomeKey() {
         super.becomeKey()
         focusPendingField()
+        keyboardChanged()
+    }
+
+    override func resignKey() {
+        super.resignKey()
+        keyboardChanged()
     }
 
     private func focusPendingField() {
@@ -333,7 +332,18 @@ final class RecordingDecisionWindow: NSPanel {
         guard let field = Self.firstEditableField(in: contentView), makeFirstResponder(field) else { return false }
         field.currentEditor()?.selectAll(nil)
         wantsFieldFocus = false
+        NSApp.updateWindows()
         return true
+    }
+
+    /// sTools' hotkeys read whether someone is typing at each app update (`NSApplication.didUpdateNotification`). With
+    /// sTools in the background, nothing else may run one before the first key reaches the field, so one runs as soon
+    /// as AppKit is done changing the key window: a hotkey on a typed key steps aside while the name field has the
+    /// keyboard, and is back once it doesn't.
+    private func keyboardChanged() {
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated { NSApp.updateWindows() }
+        }
     }
 
     /// The first editable text field under `view`, depth first.

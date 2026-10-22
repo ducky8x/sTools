@@ -167,14 +167,58 @@ struct RecordingDecisionViewTests {
         #expect(!window.isVisible)
     }
 
-    /// It takes the keyboard, floats over full-screen apps and sTools' overlays on every Space, and leaves with sTools.
-    @Test func thePanelFloatsOverEverythingAndTakesTheKeyboard() {
+    /// It takes the keyboard without making sTools the active app, so Minecraft stays in front and macOS can't refuse
+    /// it; it floats over full-screen apps and sTools' overlays on every Space, and stays up while sTools isn't in
+    /// front, until it's answered.
+    @Test func thePanelTakesTheKeyboardOverEverythingWithoutActivatingSTools() {
         let window = RecordingDecisionWindow()
+        #expect(window.styleMask.contains(.nonactivatingPanel))
         #expect(window.canBecomeKey)
         #expect(!window.canBecomeMain)
+        #expect(!window.hidesOnDeactivate)
         #expect(window.level.rawValue > NSWindow.Level.screenSaver.rawValue)
         #expect(window.collectionBehavior.contains(.canJoinAllSpaces))
         #expect(window.collectionBehavior.contains(.fullScreenAuxiliary))
-        #expect(window.hidesOnDeactivate)
     }
+
+    /// Presenting orders the panel in and gives it the keyboard by itself, whichever app is in front: nothing waits on
+    /// sTools coming forward. Answering takes it away. On a window that never reaches the screen or the keyboard.
+    @Test func presentingShowsTheQuestionByItselfAndAnsweringTakesItAway() throws {
+        _ = STFont.register()
+        let fixture = Fixture()
+        defer { fixture.remove() }
+        let window = InertDecisionWindow()
+        let panel = RecordingDecisionPanel(theme: STTheme(), makeWindow: { window })
+        panel.present(fixture.finished, for: fixture.controller)
+        #expect(window.orderedInRegardless == 1)
+        #expect(window.keyRequests == 1)
+        let field = try #require(RecordingDecisionWindow.firstEditableField(in: window.contentView))
+        #expect(field.stringValue == fixture.finished.name)
+
+        // The key while it waits brings the same question back, as it was left.
+        panel.present(fixture.finished, for: fixture.controller)
+        #expect(window.orderedInRegardless == 2)
+        #expect(window.keyRequests == 2)
+        #expect(RecordingDecisionWindow.firstEditableField(in: window.contentView) === field)
+
+        panel.dismiss()
+        #expect(window.orderedOut == 1)
+        #expect(window.contentView == nil)
+    }
+}
+
+/// A question window that never reaches the screen or takes the keyboard: it counts what the panel asks of it.
+private final class InertDecisionWindow: RecordingDecisionWindow {
+    private(set) var orderedInRegardless = 0
+    private(set) var keyRequests = 0
+    private(set) var orderedOut = 0
+
+    override func orderFrontRegardless() { orderedInRegardless += 1 }
+    override func makeKey() { keyRequests += 1 }
+    override func makeKeyAndOrderFront(_ sender: Any?) {
+        orderedInRegardless += 1
+        keyRequests += 1
+    }
+    override func orderFront(_ sender: Any?) { orderedInRegardless += 1 }
+    override func orderOut(_ sender: Any?) { orderedOut += 1 }
 }
