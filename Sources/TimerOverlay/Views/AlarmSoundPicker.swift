@@ -73,20 +73,30 @@ struct AlarmSoundPicker: View {
 
     private func addSoundFile() {
         guard let file = chooseSoundFile() else { return }
-        do {
-            try controller.addSound(from: file)
-            errorText = nil
-        } catch {
-            errorText = Self.message(for: error)
-        }
+        errorText = Self.add(file, to: controller)
     }
 
     private func remove(_ sound: AlarmSound) {
+        errorText = Self.remove(sound, from: controller)
+    }
+
+    /// Copies `file` into `Sounds/` and makes it the alarm; the line to show when that fails, nil when it worked.
+    static func add(_ file: URL, to controller: TimerOverlayController) -> String? {
+        do {
+            try controller.addSound(from: file)
+            return nil
+        } catch {
+            return message(for: error)
+        }
+    }
+
+    /// Deletes one of the owner's files; the line to show when that fails, nil when it worked.
+    static func remove(_ sound: AlarmSound, from controller: TimerOverlayController) -> String? {
         do {
             try controller.removeSound(sound)
-            errorText = nil
+            return nil
         } catch {
-            errorText = Self.message(for: error)
+            return message(for: error)
         }
     }
 

@@ -351,9 +351,13 @@ struct TimerAdvancedSection: View {
     private var showsInRecordingsBinding: Binding<Bool> {
         Binding(
             get: { controller.settings.showsInRecordings },
-            set: { isOn in
-                if isOn || confirmHidingFromRecordings() { controller.settings.showsInRecordings = isOn }
-            })
+            set: { controller.settings.showsInRecordings = Self.showsInRecordings(after: $0, confirm: confirmHidingFromRecordings) })
+    }
+
+    /// "Show in recordings" after the switch is set to `isOn`: on at once, off only when the owner confirms the
+    /// warning, which is asked only then.
+    static func showsInRecordings(after isOn: Bool, confirm: @MainActor () -> Bool) -> Bool {
+        isOn || !confirm()
     }
 
     /// The display picked, or the main display while none is.

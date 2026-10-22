@@ -406,6 +406,39 @@ struct TimerPageRenderTests {
         }
     }
 
+    // MARK: Sounds and the recordings warning
+
+    @Test func addingAFileThatIsNoSoundSaysSo() throws {
+        let controller = makeController()
+        let file = FileManager.default.temporaryDirectory.appending(path: "not-a-sound-\(UUID().uuidString).wav")
+        try Data("plain text".utf8).write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        #expect(AlarmSoundPicker.add(file, to: controller) == OwnSoundsError.notASound.errorDescription)
+        #expect(controller.settings.soundID == TimerOverlaySettings.defaultSoundID)
+    }
+
+    @Test func anAddedFileBecomesTheAlarmAndCanBeRemoved() throws {
+        let ping = AlarmSound.systemSoundsDirectory.appending(path: "Ping.aiff")
+        try #require(FileManager.default.fileExists(atPath: ping.path))
+        let controller = makeController()
+        #expect(AlarmSoundPicker.add(ping, to: controller) == nil)
+        let added = try #require(controller.sounds.first { $0.id == controller.settings.soundID })
+        #expect(added.source == .file)
+        render(page(controller), name: "page-own-sound")
+        #expect(AlarmSoundPicker.remove(added, from: controller) == nil)
+        #expect(!controller.sounds.contains(added))
+        #expect(controller.settings.soundID == TimerOverlaySettings.defaultSoundID)
+    }
+
+    @Test func hidingFromRecordingsAsksFirst() {
+        var asked = 0
+        #expect(TimerAdvancedSection.showsInRecordings(after: true, confirm: { asked += 1; return false }))
+        #expect(asked == 0, "turning it on never asks")
+        #expect(TimerAdvancedSection.showsInRecordings(after: false, confirm: { asked += 1; return false }))
+        #expect(!TimerAdvancedSection.showsInRecordings(after: false, confirm: { asked += 1; return true }))
+        #expect(asked == 2)
+    }
+
     @Test func addSoundFileAndTheWarningGoThroughTheActions() {
         let log = ActionLog()
         _ = render(page(makeController(), log: log, showsAdvanced: true))
