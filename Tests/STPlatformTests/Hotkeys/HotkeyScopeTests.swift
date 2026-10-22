@@ -209,13 +209,16 @@ struct HotkeyScopeTests {
         #expect(h.registrar.active == [id: cmd1])
     }
 
-    /// A game that quit is forgotten, so whatever process later has its number isn't taken for Minecraft.
+    /// A game that quit is forgotten, so whatever process later has its number isn't taken for Minecraft. As in macOS,
+    /// the quit brings another app to the front, which is when the watcher sees it.
     @Test func aGameThatQuitIsForgotten() async {
-        let h = ScopeHarness(front: browserPID)
+        let h = ScopeHarness(front: minecraftPID)
         h.center.add(combo: cmd1, actions: [.toggle(.nbbOverlay)])
+        #expect(h.center.frontApp == .minecraft)
         h.processes.running.remove(minecraftPID)
         h.source.instances = []
         #expect(await eventually { h.locator.instances.isEmpty })
+        h.frontmost.bringToFront(browserPID)
 
         h.processes.running.insert(minecraftPID)
         h.frontmost.bringToFront(minecraftPID)
