@@ -66,7 +66,7 @@ Press your Start-timer key and a countdown pops up over the game, 2:30 by defaul
 
 ### Screen Recording
 
-Records Minecraft with sTools' overlays and backdrop, plus any windows, displays, cameras and web pages you arrange on one canvas. Sources don't have to be visible on your real screen. Sound from Minecraft, other apps and microphones is saved as one mixed track plus a track per source. Choose .mp4 or .mov, H.264 or HEVC, 30 or 60 fps. Files are written crash-safe. One key switches Screen Recording on and starts recording, and stops it when pressed again. A small panel then asks for a name and Save or Delete right over the game, ready to type in without leaving it, and Screen Recording switches off.
+Records Minecraft with sTools' overlays and backdrop, plus any windows, displays, cameras and web pages you arrange on one canvas. Sources don't have to be visible on your real screen. Sound from Minecraft, other apps and microphones is saved as one mixed track plus a track per source. Choose .mp4 or .mov, H.264 or HEVC, 30 or 60 fps. Files are written crash-safe. One key switches Screen Recording on and starts recording, and stops it when pressed again. "Recording started" shows over the game once the first frame is in the file, so a run started on it loses nothing, and a start that fails says why over the game. The stop switches Screen Recording off right away, camera light and recording indicator included; a small panel then asks for a name and Save or Delete for the finished file right over the game, ready to type in without leaving it.
 
 ### Key Rebinder
 
