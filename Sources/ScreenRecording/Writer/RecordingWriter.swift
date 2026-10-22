@@ -11,6 +11,10 @@ import VideoToolbox
 public final class RecordingWriter: @unchecked Sendable {
     public static let fragmentInterval = CMTime(seconds: 1, preferredTimescale: 600)
     private static let diskCheckInterval = CMTime(seconds: 1, preferredTimescale: 600)
+    /// How long a part that was split off waits for the rest of its sound once the picture has moved on: the session
+    /// writes sound a quarter second behind the picture (`RecordingSession.audioLag`), so this leaves room to spare. A
+    /// part closes sooner, as soon as every track's sound has passed its cut.
+    static let lateSoundAllowance = CMTime(seconds: 1, preferredTimescale: 600)
 
     public let events: AsyncStream<WriterEvent>
 
@@ -26,6 +30,9 @@ public final class RecordingWriter: @unchecked Sendable {
 
     private var phase = Phase.idle
     private var segment: Segment?
+    /// The part split off last, while it still takes the sound up to its cut (`lateSoundAllowance`): its picture has
+    /// ended there and the next part's has begun.
+    private var closing: ClosingSegment?
     private var segmentIndex = 0
     private var finishedFiles: [URL] = []
     private var finalizers: [Task<Void, Never>] = []
@@ -106,6 +113,7 @@ public final class RecordingWriter: @unchecked Sendable {
     public func finish() async -> WriterResult {
         let pending: [Task<Void, Never>] = locked {
             if case .recording = phase { phase = .stopped(.finished) }
+            closeSplitOffPart()
             if let segment {
                 finalize(segment, endTime: segment.lastEnd)
                 self.segment = nil
@@ -132,10 +140,11 @@ public final class RecordingWriter: @unchecked Sendable {
                 return countDroppedFrame()
             }
             if checkDisk(at: time, events: &events) { return .stopped }
+            if let closing, time - closing.cut >= Self.lateSoundAllowance { closeSplitOffPart() }
             if let interval = configuration.splitIntervalSeconds,
                (time - current.start).seconds >= interval {
                 do {
-                    finalize(current, endTime: time)
+                    splitOff(current, at: time)
                     segmentIndex += 1
                     current = try makeSegment(index: segmentIndex, start: time)
                     segment = current
@@ -165,36 +174,63 @@ public final class RecordingWriter: @unchecked Sendable {
     // MARK: Audio
 
     /// Appends a chunk to its track. Returns false if the chunk was discarded.
+    ///
+    /// Sound from before the last split's cut goes to the part split off there, which takes it until every track has
+    /// passed the cut; a chunk that spans the cut is divided at it, so the parts meet with no gap and no overlap.
     @discardableResult
     public func append(audio chunk: TrackAudio) -> Bool {
         var events: [WriterEvent] = []
         let accepted: Bool = locked {
-            guard case .recording = phase, var current = segment else { return false }
+            guard case .recording = phase, let current = segment else { return false }
             guard chunk.frameCount > 0, current.audio.indices.contains(chunk.track) else {
                 droppedAudioChunks += 1
                 return false
             }
             if let last = lastAudioEnd[chunk.track], chunk.time < last { return countDroppedAudio() }
-            if chunk.endTime <= current.start { return countDroppedAudio() }
-            let input = current.audio[chunk.track]
-            guard input.isReadyForMoreMediaData, let buffer = makeSampleBuffer(chunk) else {
-                return countDroppedAudio()
+            var rest = chunk
+            if var closing, chunk.time < closing.cut {
+                let (before, after) = chunk.divided(at: closing.cut)
+                if let before {
+                    switch write(before, to: &closing.segment, events: &events) {
+                    case .written: break
+                    case .dropped: return countDroppedAudio()
+                    case .failed: return false
+                    }
+                    self.closing = closing
+                }
+                if closing.hasSoundUpToItsCut(lastAudioEnd) { closeSplitOffPart() }
+                guard let after else { return true }
+                rest = after
             }
-            guard input.append(buffer) else {
-                stop(.failed(current.writer.error?.localizedDescription ?? "audio append failed"), events: &events)
-                return false
+            if rest.endTime <= current.start { return countDroppedAudio() }
+            var written = current
+            switch write(rest, to: &written, events: &events) {
+            case .written:
+                // The file ends with whichever runs longer, so sound past the last written frame (frames the
+                // encoder dropped at the end) isn't cut off.
+                if rest.endTime > written.lastEnd { written.lastEnd = rest.endTime }
+                segment = written
+                return true
+            case .dropped: return countDroppedAudio()
+            case .failed: return false
             }
-            lastAudioEnd[chunk.track] = chunk.endTime
-            // The file ends with whichever runs longer, so sound past the last written frame (frames the
-            // encoder dropped at the end) isn't cut off.
-            if chunk.endTime > current.lastEnd {
-                current.lastEnd = chunk.endTime
-                segment = current
-            }
-            return true
         }
         for event in events { continuation.yield(event) }
         return accepted
+    }
+
+    private enum AudioWrite { case written, dropped, failed }
+
+    /// Appends `chunk` to its track in `segment`; a failure stops the writer.
+    private func write(_ chunk: TrackAudio, to segment: inout Segment, events: inout [WriterEvent]) -> AudioWrite {
+        let input = segment.audio[chunk.track]
+        guard input.isReadyForMoreMediaData, let buffer = makeSampleBuffer(chunk) else { return .dropped }
+        guard input.append(buffer) else {
+            stop(.failed(segment.writer.error?.localizedDescription ?? "audio append failed"), events: &events)
+            return .failed
+        }
+        lastAudioEnd[chunk.track] = chunk.endTime
+        return .written
     }
 
     // MARK: Internals (all require the lock)
@@ -245,6 +281,7 @@ public final class RecordingWriter: @unchecked Sendable {
 
     private func stop(_ reason: WriterStopReason, events: inout [WriterEvent], announce: Bool = true) {
         phase = .stopped(reason)
+        closeSplitOffPart()
         if let segment {
             finalize(segment, endTime: segment.lastEnd)
             self.segment = nil
@@ -370,10 +407,29 @@ public final class RecordingWriter: @unchecked Sendable {
         AVEncoderBitRateKey: 160_000,
     ] }
 
+    /// Ends `segment`'s picture at `cut`, where the next part's begins, and keeps it open for the sound up to the cut,
+    /// which arrives a little later than the picture. A part without sound tracks closes at once. A part split off
+    /// earlier and still waiting for its sound closes first.
+    private func splitOff(_ segment: Segment, at cut: CMTime) {
+        closeSplitOffPart()
+        var ended = segment
+        ended.video.markAsFinished()
+        ended.videoIsFinished = true
+        closing = ClosingSegment(segment: ended, cut: cut)
+        if ended.audio.isEmpty || closing?.hasSoundUpToItsCut(lastAudioEnd) == true { closeSplitOffPart() }
+    }
+
+    /// Finishes the part split off last, at its cut: whatever sound it hasn't had by now is the next part's or lost.
+    private func closeSplitOffPart() {
+        guard let closing else { return }
+        self.closing = nil
+        finalize(closing.segment, endTime: closing.cut)
+    }
+
     /// Closes the segment's inputs and finishes the file in the background; `finish()` awaits every such task.
     private func finalize(_ segment: Segment, endTime: CMTime) {
         let writer = segment.writer
-        segment.video.markAsFinished()
+        if !segment.videoIsFinished { segment.video.markAsFinished() }
         for input in segment.audio { input.markAsFinished() }
         writer.endSession(atSourceTime: endTime)
         let url = segment.url
@@ -431,6 +487,8 @@ private struct Segment {
     let audio: [AVAssetWriterInput]
     let start: CMTime
     var lastEnd: CMTime
+    /// Its picture has ended (it was split off) and only its sound still comes in.
+    var videoIsFinished = false
 
     init(index: Int, url: URL, writer: AVAssetWriter, video: AVAssetWriterInput,
          adaptor: AVAssetWriterInputPixelBufferAdaptor, audio: [AVAssetWriterInput], start: CMTime) {
@@ -442,6 +500,35 @@ private struct Segment {
         self.audio = audio
         self.start = start
         self.lastEnd = start
+    }
+}
+
+/// A part split off at `cut`, still taking the sound up to it.
+private struct ClosingSegment {
+    var segment: Segment
+    let cut: CMTime
+
+    /// Whether every one of its tracks has had its sound up to the cut (`lastAudioEnd`, by track), to the nearest
+    /// sample frame.
+    func hasSoundUpToItsCut(_ lastAudioEnd: [Int: CMTime]) -> Bool {
+        segment.audio.indices.allSatisfy { track in
+            lastAudioEnd[track].map { (cut - $0).seconds * Double(TrackAudio.sampleRate) < 0.5 } ?? false
+        }
+    }
+}
+
+private extension TrackAudio {
+    /// The part of the chunk before `time` and the rest from `time` on, each nil when empty. `time` falls on the
+    /// nearest sample frame.
+    func divided(at time: CMTime) -> (before: TrackAudio?, after: TrackAudio?) {
+        let frames = Int(((time - self.time).seconds * Double(Self.sampleRate)).rounded())
+        guard frames < frameCount else { return (self, nil) }
+        guard frames > 0 else { return (nil, self) }
+        let before = TrackAudio(track: track, time: self.time, samples: Array(samples[..<(frames * Self.channelCount)]))
+        let after = TrackAudio(
+            track: track, time: self.time + CMTime(value: CMTimeValue(frames), timescale: CMTimeScale(Self.sampleRate)),
+            samples: Array(samples[(frames * Self.channelCount)...]))
+        return (before, after)
     }
 }
 

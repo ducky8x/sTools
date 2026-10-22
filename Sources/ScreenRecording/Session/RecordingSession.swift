@@ -20,6 +20,9 @@ public final class RecordingSession: @unchecked Sendable {
         /// The in-process feeds that wanted recording when it started (`InProcessAudioFeed.wantsRecording`), each a
         /// track after the layout's sources for the whole recording.
         public var feeds: [String]
+        /// Media seconds after which the recording continues in a new file; the options' split when nil. Tests split
+        /// a short recording with it.
+        var splitIntervalSeconds: TimeInterval?
 
         public init(layout: RecordingLayout, options: RecordingOptions, canvas: PixelSize, baseName: String,
                     directory: URL? = nil, feeds: [String] = []) {
@@ -77,6 +80,7 @@ public final class RecordingSession: @unchecked Sendable {
             options: configuration.options, baseName: configuration.baseName, canvas: output,
             audioTrackNames: trackNames, directory: configuration.directory)
         writerConfiguration.canvas = output
+        if let split = configuration.splitIntervalSeconds { writerConfiguration.splitIntervalSeconds = split }
         writer = RecordingWriter(configuration: writerConfiguration, freeSpace: freeSpace)
         if let warmed, warmed.outputSize == output.evenSized {
             compositor = warmed
