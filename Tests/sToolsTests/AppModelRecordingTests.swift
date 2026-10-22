@@ -153,6 +153,23 @@ struct AppModelRecordingTests {
         harness.recording.delete()
     }
 
+    /// A start that fails after the press says why over the game, without the seal, and the tool goes off.
+    @Test func aStartThatFailsSaysWhyOverTheGame() async throws {
+        let harness = RecordingHarness()
+        try FileManager.default.createDirectory(at: harness.directory, withIntermediateDirectories: true)
+        let blocker = harness.directory.appending(path: "not a folder")
+        try Data().write(to: blocker)
+        harness.recording.options.folderPath = blocker.appending(path: "Movies").path
+        let id = harness.addKey()
+        harness.press(id)
+        #expect(await waitUntil(timeout: RecordingHarness.patience) { harness.hud.lines.count == 2 })
+        #expect(harness.hud.lines == [startingLine, "Recording couldn\u{2019}t start: the recordings folder can\u{2019}t be written to"])
+        #expect(harness.hud.presented.map(\.sealed) == [false, false])
+        #expect(!harness.model.isOn(.screenRecording))
+        #expect(harness.recording.phase == .idle)
+        #expect(harness.question.presented == 0)
+    }
+
     /// Switched on by hand, the sources already run, so the press shows nothing of its own: "Recording started" comes
     /// a moment later, as the recording writes.
     @Test func anArmedToolsKeyConfirmsOnlyOnceWritingBegins() async throws {

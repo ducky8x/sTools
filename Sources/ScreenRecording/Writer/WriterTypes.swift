@@ -124,3 +124,15 @@ public enum RecordingWriterError: Error, Equatable {
     case fileExists(URL)
     case writerFailed(String)
 }
+
+/// Words for the page's note when a recording can't start (spec 5.4.4), instead of an error number.
+extension RecordingWriterError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .alreadyStarted: "The recording had already started."
+        case .invalidConfiguration(let detail): "Its settings can\u{2019}t be recorded (\(detail))."
+        case .fileExists(let url): "\(url.lastPathComponent) is already in the recordings folder."
+        case .writerFailed(let detail): "The file couldn\u{2019}t be written (\(detail))."
+        }
+    }
+}

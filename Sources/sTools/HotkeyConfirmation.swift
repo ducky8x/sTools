@@ -12,6 +12,8 @@ enum HotkeyConfirmation {
         case recordingStarting
         /// The writer put the recording's first frame in the file. Shown then, not at the press.
         case recordingStarted
+        /// A start the key made ended after the press without a recording, for this reason ("the disk is almost full").
+        case recordingCouldNotStart(String)
         /// Recording starts once the countdown (Screen Recording ▸ Advanced) runs out.
         case recordingCountdown(seconds: Int)
         case recordingStopped
@@ -32,8 +34,8 @@ enum HotkeyConfirmation {
         effects.contains { effect in
             switch effect {
             case .tool, .recordingStarted, .recordingCountdown, .recordingStopped, .recordingCanceled: true
-            case .needsAccessibility, .recordingStarting, .recordingFinishing, .recordingAwaitingDecision,
-                 .recordingNeedsPermission: false
+            case .needsAccessibility, .recordingStarting, .recordingCouldNotStart, .recordingFinishing,
+                 .recordingAwaitingDecision, .recordingNeedsPermission: false
             }
         }
     }
@@ -49,6 +51,7 @@ enum HotkeyConfirmation {
         case .needsAccessibility(let tool): "\(tool.title) needs Accessibility"
         case .recordingStarting: "Starting the recording\u{2026}"
         case .recordingStarted: "Recording started"
+        case .recordingCouldNotStart(let reason): "Recording couldn\u{2019}t start: \(reason)"
         case .recordingCountdown(let seconds): "Recording starts in \(seconds) seconds"
         case .recordingStopped: "Recording stopped"
         case .recordingCanceled: "Recording canceled"
@@ -75,10 +78,12 @@ enum HotkeyConfirmation {
         }
     }
 
-    /// The line once a start the key made has turned out: "Recording started" as its first frame is in the file.
+    /// The line once a start the key made has turned out: "Recording started" as its first frame is in the file, or
+    /// why it couldn't start.
     static func recordingStartEffect(_ outcome: ScreenRecordingController.KeyStartOutcome) -> Effect {
         switch outcome {
         case .started: .recordingStarted
+        case .failed(let reason): .recordingCouldNotStart(reason)
         }
     }
 }

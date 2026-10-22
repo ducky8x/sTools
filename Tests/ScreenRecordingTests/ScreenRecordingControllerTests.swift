@@ -900,18 +900,76 @@ struct ScreenRecordingFirstFrameTests {
     }
 
     /// A disk too full to record on stops the writer at its first frame, so the recording never starts: the start
-    /// ends with nothing left behind, the page says why, nothing is asked, and the tool is off.
+    /// ends with nothing left behind, the page says why, nothing is asked, and the tool is off. The key hears why, for
+    /// its line over the game.
     @Test func aFullDiskEndsTheStartWithNothingLeftBehind() async throws {
         let harness = Harness()
         defer { harness.remove() }
         harness.controller.freeSpace = FakeFreeSpace(100 * 1_048_576)
+        var outcomes: [ScreenRecordingController.KeyStartOutcome] = []
+        harness.controller.keyStartEnded = { outcomes.append($0) }
         harness.controller.toggleRecording()
         #expect(harness.controller.phase == .starting)
         #expect(await harness.waitUntil { harness.controller.phase == .idle && !harness.controller.isEnabled })
+        #expect(outcomes == [.failed("the disk is almost full")])
         #expect(harness.controller.notes == ["The recording couldn\u{2019}t start: the disk is almost full."])
         #expect(await harness.waitUntil { harness.savedFileNames().isEmpty })
         #expect(harness.presenter.presented.isEmpty)
         #expect(harness.controller.finished == nil)
+    }
+
+    /// A recordings folder that can't be made or written to fails the start as the writer opens its file: the key
+    /// hears why in a few words, the page says more, and the tool is off.
+    @Test func anUnwritableFolderEndsTheStartAndSaysWhy() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        let blocker = harness.directory.appending(path: "not a folder")
+        try Data().write(to: blocker)
+        harness.controller.options.folderPath = blocker.appending(path: "Movies").path
+        var outcomes: [ScreenRecordingController.KeyStartOutcome] = []
+        harness.controller.keyStartEnded = { outcomes.append($0) }
+        harness.controller.toggleRecording()
+        #expect(await harness.waitUntil { !outcomes.isEmpty })
+        #expect(outcomes == [.failed("the recordings folder can\u{2019}t be written to")])
+        #expect(harness.controller.phase == .idle)
+        #expect(!harness.controller.isEnabled)
+        #expect(harness.controller.notes.count == 1)
+        #expect(harness.controller.notes.first?.hasPrefix("The recording couldn\u{2019}t start: ") == true)
+        #expect(harness.presenter.presented.isEmpty)
+    }
+
+    /// A first frame that never reaches the file (an encoder that never takes one) doesn't leave the start hanging:
+    /// after a while it ends, says why, and leaves nothing behind.
+    @Test func aFirstFrameThatNeverComesEndsTheStart() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        let driver = ManualTickDriver()
+        harness.controller.makeTickDriver = { driver }
+        harness.controller.firstFrameTimeout = .milliseconds(300)
+        var outcomes: [ScreenRecordingController.KeyStartOutcome] = []
+        harness.controller.keyStartEnded = { outcomes.append($0) }
+        harness.controller.toggleRecording()
+        #expect(await harness.waitUntil { driver.isRunning })
+        #expect(outcomes.isEmpty)
+        #expect(await harness.waitUntil { !outcomes.isEmpty })
+        #expect(outcomes == [.failed("the video encoder didn\u{2019}t respond")])
+        #expect(harness.controller.phase == .idle)
+        #expect(!harness.controller.isEnabled)
+        #expect(!driver.isRunning)
+        #expect(await harness.waitUntil { harness.savedFileNames().isEmpty })
+    }
+
+    /// Record on the page says why on the page; the line over the game is the key's alone.
+    @Test func thePagesFailedStartReportsNothingOverTheGame() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        harness.controller.freeSpace = FakeFreeSpace(100 * 1_048_576)
+        var outcomes: [ScreenRecordingController.KeyStartOutcome] = []
+        harness.controller.keyStartEnded = { outcomes.append($0) }
+        await harness.controller.startRecording()
+        #expect(harness.controller.phase == .idle)
+        #expect(harness.controller.notes == ["The recording couldn\u{2019}t start: the disk is almost full."])
+        #expect(outcomes.isEmpty)
     }
 
     /// With a countdown, the press says so, and the start is reported once the countdown has run and the first frame

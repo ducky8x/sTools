@@ -84,6 +84,14 @@ struct HotkeyConfirmationTests {
         #expect(HotkeyConfirmation.summary([effect]) == "Recording started")
     }
 
+    /// A start that fails after the press says why, without the seal: nothing was recorded.
+    @Test func aStartThatFailsSaysWhy() {
+        let effect = HotkeyConfirmation.recordingStartEffect(.failed("the disk is almost full"))
+        #expect(effect == .recordingCouldNotStart("the disk is almost full"))
+        #expect(!HotkeyConfirmation.changedSomething([effect]))
+        #expect(HotkeyConfirmation.summary([effect]) == "Recording couldn\u{2019}t start: the disk is almost full")
+    }
+
     /// Without Screen & System Audio Recording nothing starts, so the line names the permission and earns no seal.
     @Test func aStartWithoutScreenRecordingPermissionSaysWhatsMissing() {
         #expect(HotkeyConfirmation.phrase(.recordingNeedsPermission) == "Screen Recording needs Screen & System Audio Recording")

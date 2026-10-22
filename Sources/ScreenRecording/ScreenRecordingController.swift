@@ -57,10 +57,14 @@ public final class ScreenRecordingController: ToolController {
     }
 
     /// How a start the key made turned out, once it has (spec 5.4.4): the line over the game says "Recording started"
-    /// only now. A start that was canceled reports nothing here; the press that canceled it said so.
+    /// only now, or why it couldn't start. A start that was canceled reports nothing here; the press that canceled it
+    /// said so.
     public enum KeyStartOutcome: Equatable, Sendable {
         /// The writer put the recording's first frame in the file.
         case started
+        /// It ended without a recording, for this reason: a few words for the line over the game ("the disk is almost
+        /// full"); the page's note says more.
+        case failed(String)
     }
 
     /// A finished recording waiting for its Save/Delete answer.
@@ -92,6 +96,9 @@ public final class ScreenRecordingController: ToolController {
     @ObservationIgnored var makeTickDriver: @MainActor () -> (any TickDriver)? = { nil }
     /// The recording disk's free space, as each recording's writer reads it; tests fake a full disk.
     @ObservationIgnored var freeSpace: any FreeSpaceProvider = VolumeFreeSpaceProvider()
+    /// How long a start waits for its first frame to reach the file once the writer is open, before it ends and says
+    /// why. A frame normally lands within one tick.
+    @ObservationIgnored var firstFrameTimeout: Duration = .seconds(5)
     public private(set) var phase = Phase.idle {
         didSet {
             guard phase != oldValue, !phaseWaiters.isEmpty else { return }
@@ -535,7 +542,7 @@ public final class ScreenRecordingController: ToolController {
         guard isCurrent(start) else { return }
         // A recording can only begin from a start with its sources up, never over one already writing.
         guard session == nil, let rig else {
-            failStart(start, note: "The recording couldn\u{2019}t start: its sources didn\u{2019}t start.")
+            failStart(start, reason: "its sources didn\u{2019}t start")
             return
         }
         notes = []
@@ -548,18 +555,46 @@ public final class ScreenRecordingController: ToolController {
             try session.start()
             self.session = session
             watchWriter(session, start: start)
+            watchForFirstFrame(session, start)
         } catch {
-            failStart(start, note: "The recording couldn\u{2019}t start: \(error.localizedDescription)")
+            failStart(start, reason: Self.startFailureReason(error), detail: error.localizedDescription)
         }
     }
 
-    /// A start that couldn't begin writing ends without a recording: a file it opened is removed, the page says why,
-    /// and the tool switches off as after a canceled start (the Prologue's test leaves it on).
-    private func failStart(_ start: Start, note text: String) {
+    /// A start that couldn't begin writing ends without a recording: a file it opened is removed, the page says why
+    /// (`detail`, or the `reason` itself), the key's line over the game hears `reason`, and the tool switches off as
+    /// after a canceled start (the Prologue's test leaves it on).
+    private func failStart(_ start: Start, reason: String, detail: String? = nil) {
         guard isCurrent(start) else { return }
         endStart()
-        note(text)
+        note("The recording couldn\u{2019}t start: \(detail ?? "\(reason).")")
+        if start.fromKey { keyStartEnded?(.failed(reason)) }
         if !start.isTest { switchOff() }
+    }
+
+    /// Ends a start whose first frame hasn't reached the file `firstFrameTimeout` after the writer opened it, so it
+    /// never hangs in "Starting".
+    private func watchForFirstFrame(_ session: RecordingSession, _ start: Start) {
+        let timeout = firstFrameTimeout
+        Task { [weak self] in
+            try? await Task.sleep(for: timeout)
+            guard let self, self.session === session, self.isCurrent(start) else { return }
+            let seconds = Double(timeout.components.seconds) + Double(timeout.components.attoseconds) / 1e18
+            self.failStart(start, reason: "the video encoder didn\u{2019}t respond",
+                           detail: "no frame reached the file in \(String(format: "%g", seconds)) seconds.")
+        }
+    }
+
+    /// A few words on why a writer couldn't open its file, for the line over the game.
+    static func startFailureReason(_ error: any Error) -> String {
+        switch error {
+        case is CompositorError: "sTools couldn\u{2019}t set up the video"
+        case RecordingWriterError.fileExists: "a recording with its name is already there"
+        case RecordingWriterError.invalidConfiguration: "its settings can\u{2019}t be recorded"
+        case is RecordingWriterError: "the file couldn\u{2019}t be written"
+        case is CocoaError: "the recordings folder can\u{2019}t be written to"
+        default: "the file couldn\u{2019}t be written"
+        }
     }
 
     /// The writer put `session`'s first frame in the file: the recording is under way, and the key's line over the
@@ -730,13 +765,13 @@ public final class ScreenRecordingController: ToolController {
                     self.note("Less than \(Self.gigabytes(free)) free on the recording disk.")
                 case .stoppedForLowDisk:
                     if self.isCurrent(start) {
-                        self.failStart(start, note: "The recording couldn\u{2019}t start: the disk is almost full.")
+                        self.failStart(start, reason: "the disk is almost full")
                     } else {
                         await self.stopRecording(explanation: "The disk is almost full, so the recording was finished.")
                     }
                 case .failed(let message):
                     if self.isCurrent(start) {
-                        self.failStart(start, note: "The recording couldn\u{2019}t start: \(message)")
+                        self.failStart(start, reason: "the file couldn\u{2019}t be written", detail: message)
                     } else {
                         await self.stopRecording(explanation: "The recording stopped: \(message)")
                     }
