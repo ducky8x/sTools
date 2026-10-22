@@ -22,14 +22,17 @@ final class FakeVideoCapture: VideoCapture, @unchecked Sendable {
     private let startTakes: Duration?
     /// Delivered as it starts, as ScreenCaptureKit sends a stream's first frame.
     private let firstFrame: VideoFrame?
+    /// How long stopping takes, as a real stream's or camera's stop can.
+    private let stopTakes: Duration?
 
     init(failsToStart: Bool = false, name: String = "video", stops: StopLog? = nil, startTakes: Duration? = nil,
-         firstFrame: VideoFrame? = nil) {
+         firstFrame: VideoFrame? = nil, stopTakes: Duration? = nil) {
         self.failsToStart = failsToStart
         self.name = name
         self.stops = stops
         self.startTakes = startTakes
         self.firstFrame = firstFrame
+        self.stopTakes = stopTakes
     }
 
     func start(deliver: @escaping @Sendable (VideoCaptureEvent) -> Void) async throws {
@@ -40,6 +43,7 @@ final class FakeVideoCapture: VideoCapture, @unchecked Sendable {
     }
 
     func stop() async {
+        if let stopTakes { try? await Task.sleep(for: stopTakes) }
         let wasRunning = handler.withLock { handler in
             defer { handler = nil }
             return handler != nil
@@ -58,11 +62,13 @@ final class FakeAudioCapture: AudioCapture, @unchecked Sendable {
     private let name: String
     private let stops: StopLog?
     private let startTakes: Duration?
+    private let stopTakes: Duration?
 
-    init(name: String = "audio", stops: StopLog? = nil, startTakes: Duration? = nil) {
+    init(name: String = "audio", stops: StopLog? = nil, startTakes: Duration? = nil, stopTakes: Duration? = nil) {
         self.name = name
         self.stops = stops
         self.startTakes = startTakes
+        self.stopTakes = stopTakes
     }
 
     func start(deliver: @escaping @Sendable (AudioChunk) -> Void) async throws {
@@ -71,6 +77,7 @@ final class FakeAudioCapture: AudioCapture, @unchecked Sendable {
     }
 
     func stop() async {
+        if let stopTakes { try? await Task.sleep(for: stopTakes) }
         let wasRunning = handler.withLock { handler in
             defer { handler = nil }
             return handler != nil
@@ -307,6 +314,45 @@ struct CaptureRigTests {
         #expect(video.values.allSatisfy { ($0 as? FakeVideoCapture)?.isRunning == true })
         #expect(audio.values.allSatisfy { ($0 as? FakeAudioCapture)?.isRunning == true })
         await rig.stop()
+    }
+
+    /// The stop ends every picture at once (spec 5.4.4: "stopping recording turns off the tool"): a camera that's slow
+    /// to stop doesn't keep the screen's recording indicator on behind it. Three pictures that each take 200 ms to stop
+    /// are all off in about 200 ms; one after another they would take 600 ms. The sound keeps running for the
+    /// recording's last samples.
+    @Test func everyPictureStopsAtOnce() async {
+        let take = Duration.milliseconds(200)
+        let pictures = [FakeVideoCapture(stopTakes: take), FakeVideoCapture(stopTakes: take), FakeVideoCapture(stopTakes: take)]
+        let sound = FakeAudioCapture()
+        let rig = CaptureRig(
+            video: [.base: pictures[0], .source(UUID()): pictures[1], .source(UUID()): pictures[2]],
+            audio: [.minecraft: sound], minimizedShowsNothing: false)
+        await rig.start()
+        let began = ContinuousClock.now
+        await rig.stopVideo()
+        let took = ContinuousClock.now - began
+        #expect(took >= take)
+        #expect(took < .milliseconds(450))
+        #expect(pictures.allSatisfy { !$0.isRunning })
+        #expect(sound.isRunning)
+        await rig.stop()
+        #expect(!sound.isRunning)
+    }
+
+    /// The full stop ends the sounds at once too, once the pictures are off.
+    @Test func everySoundStopsAtOnce() async {
+        let take = Duration.milliseconds(200)
+        let sounds = [FakeAudioCapture(stopTakes: take), FakeAudioCapture(stopTakes: take), FakeAudioCapture(stopTakes: take)]
+        let rig = CaptureRig(
+            video: [.base: FakeVideoCapture()],
+            audio: [.minecraft: sounds[0], .source(UUID()): sounds[1], .source(UUID()): sounds[2]], minimizedShowsNothing: false)
+        await rig.start()
+        let began = ContinuousClock.now
+        await rig.stop()
+        let took = ContinuousClock.now - began
+        #expect(took >= take)
+        #expect(took < .milliseconds(450))
+        #expect(sounds.allSatisfy { !$0.isRunning })
     }
 
     /// It knows which pictures are running: a start waits for Minecraft's first frame only when its capture started.

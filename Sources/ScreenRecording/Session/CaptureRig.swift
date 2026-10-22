@@ -87,17 +87,23 @@ public final class CaptureRig: @unchecked Sendable {
         }
     }
 
-    /// Stops every source and lets go of their frames; the event stream ends.
+    /// Stops every source and lets go of their frames; the event stream ends. The pictures go first, then the sounds,
+    /// each group at once.
     public func stop() async {
         attach(nil)
         await stopVideo()
-        for capture in audio.values { await capture.stop() }
+        await withTaskGroup(of: Void.self) { group in
+            for capture in audio.values {
+                group.addTask { await capture.stop() }
+            }
+        }
         hub.removeAll()
         continuation.finish()
     }
 
     /// Stops the windows, displays, cameras, browser sources and Minecraft's capture, and leaves the sound running: a
-    /// recording that stops needs no more pictures, but its last samples are still on their way (spec 5.4.4). The
+    /// recording that stops needs no more pictures, but its last samples are still on their way (spec 5.4.4). They all
+    /// stop at once, so a camera that's slow to stop doesn't keep the screen's recording indicator on behind it. The
     /// frames they left stay in the hub until `stop()`.
     public func stopVideo() async {
         let alreadyStopped = videoStopped.withLock { stopped in
@@ -105,7 +111,11 @@ public final class CaptureRig: @unchecked Sendable {
             return stopped
         }
         guard !alreadyStopped else { return }
-        for capture in video.values { await capture.stop() }
+        await withTaskGroup(of: Void.self) { group in
+            for capture in video.values {
+                group.addTask { await capture.stop() }
+            }
+        }
     }
 
     /// Routes sound to `bus` (a starting recording) or nowhere (`nil`).
