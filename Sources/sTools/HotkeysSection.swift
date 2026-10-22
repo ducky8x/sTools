@@ -178,10 +178,10 @@ struct HotkeysSection: View {
         HotkeyScope.allCases.map { STSegmentedOption($0, $0.title) }
     }
 
-    /// Every key set in view, in the order the arrow keys cycle through them. While the keys are Custom (`keySet` is
-    /// nil) none of them is underlined.
+    /// Every key set in view, in the order the arrow keys cycle through them, each read in words by VoiceOver. While
+    /// the keys are Custom (`keySet` is nil) none of them is underlined.
     static var keySetOptions: [STSegmentedOption<HotkeyKeySet?>] {
-        HotkeyKeySet.allCases.map { STSegmentedOption(Optional($0), $0.title) }
+        HotkeyKeySet.allCases.map { STSegmentedOption(Optional($0), $0.title, spokenTitle: $0.spokenTitle) }
     }
 
     /// The set's name: the set the tools' own hotkeys follow, or Custom once a key was set by hand.
@@ -514,7 +514,9 @@ struct HotkeyEditor: View {
 }
 
 /// A choice Home ▸ Hotkeys keeps in view (Where hotkeys work, Key set): its small-caps label with every option beside
-/// it, as a settings row, or the options under the label when the column is too narrow for both on one line.
+/// it, as a settings row, or the options under the label when the column is too narrow for both on one line. Either
+/// way VoiceOver finds a group named by the label and reads each option in it, the chosen one selected, instead of
+/// one element that runs every option together.
 private struct HotkeysChoiceRow<Control: View>: View {
     private let label: String
     private let showsRule: Bool
@@ -529,11 +531,12 @@ private struct HotkeysChoiceRow<Control: View>: View {
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            STSettingsRow(label, showsRule: showsRule) { control.fixedSize() }
+            STSettingsRow(label, showsRule: showsRule, combinesForAccessibility: false) { control.fixedSize() }
             VStack(alignment: .leading, spacing: 4) {
                 Text(label)
                     .stStyle(.label)
                     .foregroundStyle(theme.inkSecondary)
+                    .accessibilityHidden(true)
                 control
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -543,7 +546,9 @@ private struct HotkeysChoiceRow<Control: View>: View {
                     Rectangle().fill(STColor.rule).frame(height: 1).accessibilityHidden(true)
                 }
             }
-            .accessibilityElement(children: .combine)
+            // A group named by the label, its options read one by one, as the settings row keeps them.
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(label)
         }
     }
 }
