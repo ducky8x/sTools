@@ -119,7 +119,7 @@ public final class NBBOverlayController: ToolController {
         guard settings.placementModeEnabled, let display = currentDisplay else { return }
         var frame = panel.frame
         if settings.snappingEnabled {
-            frame = NBBPlacementSnapping.snapped(frame, in: display.frame, threshold: 14)
+            frame = PlacementSnapping.snapped(frame, in: display.frame, threshold: 14)
         }
         panel.moveTo(frame: frame)
         settings.offsetX = Int((frame.midX - display.frame.midX).rounded())
