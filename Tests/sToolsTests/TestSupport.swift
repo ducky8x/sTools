@@ -8,6 +8,7 @@ import STDesign
 @testable import STPlatform
 import Synchronization
 import Testing
+import TimerOverlay
 @testable import sTools
 
 /// A permission prober whose answers the test sets; requests never show a system prompt.
@@ -115,6 +116,10 @@ final class Harness {
     let store: SettingsStore
     let directory: URL
     let controllers: [ToolID: FakeController]
+    /// Timer Overlay's real controller in both modes, on fakes: its overlay, guides and alarm never reach the
+    /// screen or the speakers, and its clock moves only when a test moves it.
+    let timer: TimerOverlayController
+    let timerFakes = TimerFakes()
     let opened = OpenedURLs()
     let hotkeyRegistrar: any HotkeyRegistering
     let hotkeyHUD = FakeHotkeyHUD()
@@ -137,18 +142,20 @@ final class Harness {
         if prologueCompleted { store.save(AppState(prologueCompleted: true)) }
         var fakes: [ToolID: FakeController] = [:]
         if !usesRealControllers {
-            for tool in ToolID.allCases where tool.hasSwitch { fakes[tool] = FakeController() }
+            for tool in ToolID.allCases where tool.hasSwitch && tool != .timerOverlay { fakes[tool] = FakeController() }
         }
         controllers = fakes
         let opened = opened
         let permissions = PermissionCenter(prober: prober, openURL: { opened.urls.append($0) })
         let services = ToolServices(settings: store, displays: DisplayDirectory(screenProvider: { [harnessDisplay] }),
                                     minecraft: MinecraftLocator(source: source), permissions: permissions)
-        let all: [ToolID: any ToolController] = usesRealControllers
+        timer = timerFakes.makeController(services: services, theme: theme)
+        var all: [ToolID: any ToolController] = usesRealControllers
             ? [.nbbOverlay: NBBOverlayController(services: services),
                .windowBackdrop: BackdropController(services: services),
                .crosshair: CrosshairController(services: services)]
             : fakes.mapValues { $0 as any ToolController }
+        all[.timerOverlay] = timer
         var keyRebinder: KeyRebinderController?
         if withKeyRebinder {
             try? FileManager.default.createDirectory(at: karabinerConfigURL.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -185,4 +192,142 @@ func waitUntil(timeout: Duration = .seconds(3), _ condition: @MainActor () -> Bo
         try? await Task.sleep(for: .milliseconds(5))
     }
     return true
+}
+
+// MARK: - Timer Overlay fakes
+
+/// Timer Overlay's injected parts, all fake: the timer target's own fakes are internal to its tests, so the app's
+/// tests keep these. Nothing here shows a window, plays a sound or schedules a real wake.
+@MainActor
+final class TimerFakes {
+    let clock = FakeTimerClock()
+    let scheduler = FakeTimerScheduler()
+    let presenter = FakeTimerPresenter()
+    let guides = FakeRuleGuides()
+    let alarm = FakeAlarm()
+    let announcer = FakeTimerAnnouncer()
+
+    init() { scheduler.clock = clock }
+
+    func makeController(services: ToolServices, theme: STTheme) -> TimerOverlayController {
+        TimerOverlayController(services: services, theme: theme, clock: clock, scheduler: scheduler,
+                               activity: FakeTimerActivity(), wakeWatcher: FakeTimerWakeWatcher(),
+                               presenter: presenter, guides: guides, alarm: alarm, announcer: announcer)
+    }
+}
+
+@MainActor
+final class FakeTimerClock: TimerClock {
+    var time: TimeInterval = 1000
+    func now() -> TimeInterval { time }
+}
+
+/// Holds every wake until a test fires it with `advance(by:)`.
+@MainActor
+final class FakeTimerScheduler: TimerScheduling {
+    final class Wake: TimerScheduledWake {
+        let due: TimeInterval
+        let action: @MainActor () -> Void
+        var isCancelled = false
+        init(due: TimeInterval, action: @escaping @MainActor () -> Void) {
+            self.due = due
+            self.action = action
+        }
+        func cancel() { isCancelled = true }
+    }
+
+    private(set) var wakes: [Wake] = []
+    var clock: FakeTimerClock?
+
+    var pending: [Wake] { wakes.filter { !$0.isCancelled } }
+
+    func schedule(after delay: TimeInterval, _ action: @escaping @MainActor () -> Void) -> any TimerScheduledWake {
+        let wake = Wake(due: (clock?.time ?? 0) + delay, action: action)
+        wakes.append(wake)
+        return wake
+    }
+}
+
+@MainActor
+final class FakeTimerActivity: TimerActivity {
+    func begin() {}
+    func end() {}
+}
+
+@MainActor
+final class FakeTimerWakeWatcher: TimerWakeWatching {
+    func start(_ handler: @escaping @MainActor () -> Void) {}
+    func stop() {}
+}
+
+/// Records what the controller asked of the overlay, including whether each motion was reduced.
+@MainActor
+final class FakeTimerPresenter: TimerOverlayPresenting {
+    private(set) var isShowing = false
+    private(set) var plateFrame: CGRect?
+    private(set) var popIns: [Bool] = []
+    private(set) var pulses: [Bool] = []
+    private(set) var popOuts: [Bool] = []
+    private(set) var contents: [TimerOverlayContent] = []
+
+    /// Every motion asked for, as whether it was reduced.
+    var motions: [Bool] { popIns + pulses + popOuts }
+
+    func plateSize(for content: TimerOverlayContent, settings: TimerOverlaySettings) -> CGSize {
+        CGSize(width: 120, height: 48)
+    }
+
+    func popIn(_ content: TimerOverlayContent, settings: TimerOverlaySettings, plateFrame: CGRect, displayFrame: CGRect,
+               reduceMotion: Bool) {
+        isShowing = true
+        self.plateFrame = plateFrame
+        popIns.append(reduceMotion)
+        contents.append(content)
+    }
+
+    func update(_ content: TimerOverlayContent) { contents.append(content) }
+    func update(settings: TimerOverlaySettings) {}
+    func move(plateFrame: CGRect, displayFrame: CGRect) { self.plateFrame = plateFrame }
+    func pulse(reduceMotion: Bool) { pulses.append(reduceMotion) }
+
+    func popOut(reduceMotion: Bool, completion: @escaping @MainActor () -> Void) {
+        popOuts.append(reduceMotion)
+        isShowing = false
+        plateFrame = nil
+        completion()
+    }
+
+    func setPlacementMode(_ isOn: Bool, onDragChanged: @escaping @MainActor (CGSize) -> Void,
+                          onDragEnded: @escaping @MainActor () -> Void) {}
+}
+
+@MainActor
+final class FakeRuleGuides: RuleGuidesPresenting {
+    func show(_ zones: RuleZones, on display: DisplayInfo) {}
+    func markCovered(_ kinds: [RuleZones.Kind], plateFrame: CGRect) {}
+    func hide() {}
+}
+
+/// Never plays anything; counts what it was asked to play.
+@MainActor
+final class FakeAlarm: AlarmPlaying {
+    private(set) var isPlaying = false
+    var onRenderedBuffer: (@Sendable (AlarmRenderedBuffer) -> Void)?
+    private(set) var rings = 0
+
+    func ring(_ sound: URL, volume: Double, schedule: AlarmSchedule,
+              onRing: @escaping @MainActor (_ index: Int) -> Void, onEnd: @escaping @MainActor () -> Void) {
+        rings += 1
+        isPlaying = true
+    }
+
+    func playCue(_ cue: AlarmSchedule.Cue, volume: Double) {}
+    func preview(_ sound: URL, volume: Double, rings: Int, onEnd: @escaping @MainActor () -> Void) {}
+    func stop() { isPlaying = false }
+}
+
+@MainActor
+final class FakeTimerAnnouncer: TimerAnnouncing {
+    private(set) var announcements: [TimerAnnouncement] = []
+    func announce(_ announcement: TimerAnnouncement) { announcements.append(announcement) }
 }

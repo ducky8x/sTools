@@ -12,6 +12,8 @@ struct HotkeysSection: View {
     let model: AppModel
     @State private var editingID: UUID?
     @State private var isAddingNew = false
+    /// The actions a new hotkey's editor starts with: none for Add Hotkey…, Start timer for Set in Hotkeys….
+    @State private var newHotkeyActions: Set<HotkeyAction> = []
     @State private var advancedIsOpen: Bool
 
     init(model: AppModel, advancedIsOpen: Bool = false, editingID: UUID? = nil) {
@@ -22,8 +24,20 @@ struct HotkeysSection: View {
 
     private var hotkeys: HotkeyCenter { model.hotkeys }
 
+    /// Opens the add editor with the actions the app asked for, once.
+    private func takePendingNewHotkey() {
+        guard let actions = model.pendingNewHotkeyActions else { return }
+        model.pendingNewHotkeyActions = nil
+        editingID = nil
+        newHotkeyActions = actions
+        isAddingNew = true
+    }
+
     var body: some View {
         PageSectionTitle("Hotkeys").padding(.top, 28).padding(.bottom, 4)
+            // Timer Overlay's Set in Hotkeys… asks for a new hotkey with its actions already chosen.
+            .onAppear(perform: takePendingNewHotkey)
+            .onChange(of: model.pendingNewHotkeyActions) { _, _ in takePendingNewHotkey() }
         // One way to turn hotkeys on while they're off; once on, the switch turns them off again.
         Group {
             if hotkeys.isEnabled {
@@ -53,13 +67,19 @@ struct HotkeysSection: View {
                     })
             }
             if isAddingNew {
-                HotkeyEditor(model: model, existing: nil, onDone: { isAddingNew = false })
-                    .padding(.vertical, 10)
+                HotkeyEditor(model: model, existing: nil, initialActions: newHotkeyActions, onDone: {
+                    isAddingNew = false
+                    newHotkeyActions = []
+                })
+                // An editor already open for Add Hotkey… starts over when Set in Hotkeys… asks for Start timer.
+                .id(newHotkeyActions)
+                .padding(.vertical, 10)
             }
         }
         if !isAddingNew {
             Button("Add Hotkey\u{2026}") {
                 editingID = nil
+                newHotkeyActions = []
                 isAddingNew = true
             }
             .buttonStyle(STButtonStyle(.secondary))
@@ -220,18 +240,23 @@ struct HotkeyEditor: View {
 
     @State private var shortcut: STShortcut?
     @State private var actions: Set<HotkeyAction>
+    private let initialActions: Set<HotkeyAction>
 
-    init(model: AppModel, existing: HotkeyBinding?, onDone: @escaping () -> Void) {
+    /// `initialActions` chooses a new hotkey's actions up front (Timer Overlay's Set in Hotkeys…).
+    init(model: AppModel, existing: HotkeyBinding?, initialActions: Set<HotkeyAction> = [], onDone: @escaping () -> Void) {
         self.model = model
         self.existing = existing
         self.onDone = onDone
+        self.initialActions = initialActions
         _shortcut = State(initialValue: existing?.combo.asSTShortcut)
-        _actions = State(initialValue: Set(existing?.actions ?? []))
+        _actions = State(initialValue: existing.map { Set($0.actions) } ?? initialActions)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            STShortcutRecorder(shortcut: $shortcut, label: "Key or combination", validate: validate)
+            // A new hotkey opened with its actions chosen (Set in Hotkeys…) is ready for its key at once.
+            STShortcutRecorder(shortcut: $shortcut, label: "Key or combination",
+                               startsRecording: existing == nil && !initialActions.isEmpty, validate: validate)
                 .frame(maxWidth: 260)
             if let combo = shortcut?.hotkeyCombo {
                 let notes = model.hotkeys.notes(for: combo)

@@ -1,6 +1,7 @@
 import Observation
 import STPlatform
 import SwiftUI
+import TimerOverlay
 
 extension AppModel {
     var accessibilityGranted: Bool { permissions.status(.accessibility) == .granted }
@@ -14,7 +15,11 @@ extension AppModel {
 
     func status(of tool: ToolID) -> ToolStatus {
         if !tool.hasSwitch { return .alwaysAvailable }
-        if isOn(tool) { return .on }
+        if isOn(tool) {
+            // Timer Overlay says where its countdown is instead; `status` changes at most once a second.
+            if tool == .timerOverlay, let timer = timerOverlay { return .timer(timer.status.text) }
+            return .on
+        }
         return canSwitch(tool) ? .off : .needsAccessibility
     }
 
@@ -26,6 +31,9 @@ extension AppModel {
         controllers[tool]?.setEnabled(on)
         updateToolPolling()
     }
+
+    /// Timer Overlay's controller, when the app has one.
+    var timerOverlay: TimerOverlayController? { controller(for: .timerOverlay, as: TimerOverlayController.self) }
 
     func switchBinding(_ tool: ToolID) -> Binding<Bool> {
         Binding(get: { self.isOn(tool) }, set: { self.setTool(tool, on: $0) })

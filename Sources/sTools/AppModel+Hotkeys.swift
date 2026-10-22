@@ -1,9 +1,10 @@
 import ScreenRecording
 import STPlatform
+import TimerOverlay
 
 extension AppModel {
-    /// `HotkeyCenter` only knows the four switchable tools (`HotkeyTool`); Key Rebinder has no switch
-    /// and isn't one of them.
+    /// `HotkeyCenter` only toggles four tools (`HotkeyTool`): Key Rebinder has no switch, and Timer Overlay's key
+    /// starts the timer instead (`.startTimer`).
     private static func toolID(for hotkeyTool: HotkeyTool) -> ToolID {
         switch hotkeyTool {
         case .nbbOverlay: .nbbOverlay
@@ -58,8 +59,14 @@ extension AppModel {
             // Switching on (when needed) goes through `requestEnable`, which keeps rule R10.
             recording.toggleRecording()
             return effect
-        case .startTimer, .startTimerReleased:
-            // Timer Overlay isn't in the app yet, so its key does nothing for now.
+        case .startTimer:
+            // The overlay confirms what the press did, so it adds no sound or line (plan decision 5). Only a press
+            // that couldn't switch the tool on (no Accessibility, R10) gets the click and its line, without the seal.
+            guard let timer = timerOverlay else { return nil }
+            return timer.press() == .couldNotStart ? .needsAccessibility(.timerOverlay) : nil
+        case .startTimerReleased:
+            // Can arrive from inside a `HotkeyCenter` change, so nothing here may change the hotkeys.
+            timerOverlay?.release()
             return nil
         }
     }

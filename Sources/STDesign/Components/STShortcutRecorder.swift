@@ -261,6 +261,7 @@ final class STShortcutKeyMonitor {
 public struct STShortcutRecorder: View {
     @Binding private var shortcut: STShortcut?
     private let label: String
+    private let startsRecording: Bool
     private let validate: (STShortcut) -> String?
 
     @Environment(\.stTheme) private var theme
@@ -270,10 +271,12 @@ public struct STShortcutRecorder: View {
     @State private var model = STShortcutRecorderModel()
     @State private var monitor = STShortcutKeyMonitor()
 
-    public init(shortcut: Binding<STShortcut?>, label: String = "Shortcut",
+    /// `startsRecording` begins recording as the field appears, for a new hotkey opened ready for its key.
+    public init(shortcut: Binding<STShortcut?>, label: String = "Shortcut", startsRecording: Bool = false,
                 validate: ((STShortcut) -> String?)? = nil) {
         _shortcut = shortcut
         self.label = label
+        self.startsRecording = startsRecording
         self.validate = validate ?? STShortcutRecorderLogic.basicRejection
     }
 
@@ -305,6 +308,8 @@ public struct STShortcutRecorder: View {
                 if !enabled { stopRecording() }
             }
             .onDisappear { stopRecording() }
+            // After the first layout, so the focus it takes sticks.
+            .task { if startsRecording { startRecording() } }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(label)
             .accessibilityValue(accessibilityValue)

@@ -24,7 +24,7 @@ struct HomeToolRow: View {
                 Spacer(minLength: 16)
                 Text(status.label)
                     .stStyle(.label)
-                    .foregroundStyle(status == .on ? theme.accent : theme.inkSecondary)
+                    .foregroundStyle(status.isLit ? theme.accent : theme.inkSecondary)
             }
             .padding(.vertical, 12)
             .contentShape(Rectangle())

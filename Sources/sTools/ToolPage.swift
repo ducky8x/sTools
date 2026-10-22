@@ -5,8 +5,9 @@ import NBBOverlay
 import ScreenRecording
 import STDesign
 import SwiftUI
+import TimerOverlay
 
-/// One page for all five tools: header with the tool's switch, the Accessibility strip when needed, the tool's
+/// One page for all six tools: header with the tool's switch, the Accessibility strip when needed, the tool's
 /// Hotkey row (not on the Key Rebinder, which sets hotkeys on its keys), then the tool's own settings.
 struct ToolPage: View {
     let model: AppModel
@@ -75,6 +76,13 @@ struct ToolContent: View {
                 KeyRebinderView(controller: keyRebinder, showsHotkeys: !isTrial, openHotkeys: openHotkeys)
             } else {
                 LaterMilestonePlate(tool: tool)
+            }
+        case .timerOverlay:
+            if let controller = model.timerOverlay {
+                // Built here, inside the body, so the key row follows Home ▸ Hotkeys as it changes.
+                TimerOverlaySettingsView(
+                    controller: controller, keyStatus: TimerKeyStatus(hotkeys: model.hotkeys),
+                    onSetInHotkeys: isTrial ? nil : { [model] in model.openHotkeysForStartTimer() })
             }
         case .screenRecording:
             if let controller = model.controller(for: tool, as: ScreenRecordingController.self) {

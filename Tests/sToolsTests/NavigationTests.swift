@@ -67,7 +67,7 @@ struct NavigationHistoryTests {
 struct GoCommandTests {
     @Test func menuListsHomeToolsSettingsThenBackAndForward() {
         #expect(GoCommand.menu == [
-            .home, .tool(.nbbOverlay), .tool(.windowBackdrop), .tool(.crosshair),
+            .home, .tool(.nbbOverlay), .tool(.windowBackdrop), .tool(.crosshair), .tool(.timerOverlay),
             .tool(.screenRecording), .tool(.keyRebinder), .settings, .back, .forward,
         ])
     }
@@ -85,8 +85,9 @@ struct GoCommandTests {
         #expect(GoCommand.tool(.nbbOverlay).shortcutKey == "1")
         #expect(GoCommand.tool(.windowBackdrop).shortcutKey == "2")
         #expect(GoCommand.tool(.crosshair).shortcutKey == "3")
-        #expect(GoCommand.tool(.screenRecording).shortcutKey == "4")
-        #expect(GoCommand.tool(.keyRebinder).shortcutKey == "5")
+        #expect(GoCommand.tool(.timerOverlay).shortcutKey == "4")
+        #expect(GoCommand.tool(.screenRecording).shortcutKey == "5")
+        #expect(GoCommand.tool(.keyRebinder).shortcutKey == "6")
         #expect(GoCommand.settings.shortcutKey == ",")
         #expect(GoCommand.back.shortcutKey == "[")
         #expect(GoCommand.forward.shortcutKey == "]")
@@ -108,10 +109,10 @@ struct GoCommandTests {
 
 @Suite("ToolID")
 struct ToolIDTests {
-    @Test func toolsAreNumberedOneToFiveInOrder() {
-        #expect(ToolID.allCases.map(\.number) == [1, 2, 3, 4, 5])
+    @Test func toolsAreNumberedOneToSixInOrder() {
+        #expect(ToolID.allCases.map(\.number) == [1, 2, 3, 4, 5, 6])
         #expect(ToolID.allCases.map(\.title) == [
-            "NBB Overlay", "Window Backdrop", "Crosshair", "Screen Recording", "Key Rebinder",
+            "NBB Overlay", "Window Backdrop", "Crosshair", "Timer Overlay", "Screen Recording", "Key Rebinder",
         ])
     }
 
@@ -119,6 +120,7 @@ struct ToolIDTests {
         #expect(ToolID.nbbOverlay.tagline == "Ninjabrain Bot's answer, right over the game.")
         #expect(ToolID.windowBackdrop.tagline == "A clean stage behind Minecraft.")
         #expect(ToolID.crosshair.tagline == "The exact center, drawn your way.")
+        #expect(ToolID.timerOverlay.tagline == "Your Fire Resistance, counted down.")
         #expect(ToolID.screenRecording.tagline == "Minecraft and everything else, on one canvas.")
         #expect(ToolID.keyRebinder.tagline == "Every rebind, right on its key.")
     }
@@ -133,6 +135,6 @@ struct ToolIDTests {
     }
 
     @Test func sidebarNamesFitTheSidebar() {
-        #expect(ToolID.allCases.map(\.sidebarTitle) == ["NBB Overlay", "Backdrop", "Crosshair", "Recording", "Key Rebinder"])
+        #expect(ToolID.allCases.map(\.sidebarTitle) == ["NBB Overlay", "Backdrop", "Crosshair", "Timer Overlay", "Recording", "Key Rebinder"])
     }
 }
