@@ -82,7 +82,7 @@ struct ToolContent: View {
                 // Built here, inside the body, so the key row follows Home ▸ Hotkeys as it changes.
                 TimerOverlaySettingsView(
                     controller: controller, keyStatus: TimerKeyStatus(hotkeys: model.hotkeys),
-                    onSetInHotkeys: isTrial ? nil : { [model] in model.openHotkeysForStartTimer() })
+                    onSetInHotkeys: isTrial ? nil : { @MainActor @Sendable [model] in model.openHotkeysForStartTimer() })
             }
         case .screenRecording:
             if let controller = model.controller(for: tool, as: ScreenRecordingController.self) {
