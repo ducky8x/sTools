@@ -12,6 +12,8 @@ struct HotkeysSection: View {
     let model: AppModel
     @State private var editingID: UUID?
     @State private var isAddingNew = false
+    /// The actions a new hotkey's editor starts with: none for Add Hotkey…, Start timer for Set in Hotkeys….
+    @State private var newHotkeyActions: Set<HotkeyAction> = []
     @State private var advancedIsOpen: Bool
 
     init(model: AppModel, advancedIsOpen: Bool = false, editingID: UUID? = nil) {
@@ -30,8 +32,6 @@ struct HotkeysSection: View {
         newHotkeyActions = actions
         isAddingNew = true
     }
-
-    @State private var newHotkeyActions: Set<HotkeyAction> = []
 
     var body: some View {
         PageSectionTitle("Hotkeys").padding(.top, 28).padding(.bottom, 4)
@@ -71,6 +71,8 @@ struct HotkeysSection: View {
                     isAddingNew = false
                     newHotkeyActions = []
                 })
+                // An editor already open for Add Hotkey… starts over when Set in Hotkeys… asks for Start timer.
+                .id(newHotkeyActions)
                 .padding(.vertical, 10)
             }
         }
