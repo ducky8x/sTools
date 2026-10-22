@@ -228,7 +228,7 @@ private func renderRecorder(_ shortcut: STShortcut?, size: CGSize, theme: STThem
         .environment(\.stSoundPlayer, STSoundPlayer.silent)
         .frame(width: size.width, height: size.height)
         .background(STColor.background)
-    let host = NSHostingView(rootView: root)
+    let host = hostingView(root)
     host.frame = CGRect(origin: .zero, size: size)
     host.appearance = NSAppearance(named: .darkAqua)
     host.layoutSubtreeIfNeeded()
@@ -300,10 +300,9 @@ private struct ClickHarness {
 
     init() {
         _ = NSApplication.shared
-        STFont.register()
         let box = box
         let recorder = STShortcutRecorder(shortcut: Binding(get: { box.shortcut }, set: { box.shortcut = $0 }), label: "Key combination")
-        host = FirstMouseHost(rootView: AnyView(VStack { recorder.frame(width: 240) }.padding(20).frame(width: 320, height: 120, alignment: .top)))
+        host = hostingView(AnyView(VStack { recorder.frame(width: 240) }.padding(20).frame(width: 320, height: 120, alignment: .top)), as: FirstMouseHost.self)
         host.frame = CGRect(x: 0, y: 0, width: 320, height: 120)
         // Far outside every display, so nothing ever shows on screen.
         window = NSWindow(contentRect: CGRect(x: -8000, y: -8000, width: 320, height: 120), styleMask: [.borderless], backing: .buffered, defer: false)

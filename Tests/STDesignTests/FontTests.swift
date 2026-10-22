@@ -118,7 +118,7 @@ private func glyphs(_ font: NSFont, _ text: String) -> [CGGlyph] {
 
 @MainActor
 private func ink(_ view: some View) -> (height: Int, width: Int, pixels: [UInt8]) {
-    let renderer = ImageRenderer(content: view.padding(4).background(Color.white).environment(\.colorScheme, .light))
+    let renderer = imageRenderer(view.padding(4).background(Color.white).environment(\.colorScheme, .light))
     renderer.scale = 4
     guard let image = renderer.cgImage else { return (0, 0, []) }
     let (width, height) = (image.width, image.height)

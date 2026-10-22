@@ -298,7 +298,7 @@ private func renderControl<V: View>(_ view: V, size: CGSize, theme: STTheme = ST
         .environment(\.stSoundPlayer, STSoundPlayer.silent)
         .frame(width: size.width, height: size.height)
         .background(STColor.background)
-    let host = NSHostingView(rootView: root)
+    let host = hostingView(root)
     host.frame = CGRect(origin: .zero, size: size)
     host.appearance = NSAppearance(named: .darkAqua)
     host.layoutSubtreeIfNeeded()

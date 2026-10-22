@@ -216,7 +216,7 @@ private final class Hosted {
 
     init<V: View>(_ view: V, width: CGFloat, height: CGFloat? = nil, scale: Int = 2) {
         _ = NSApplication.shared
-        host = NSHostingView(rootView: AnyView(view.frame(width: width)))
+        host = hostingView(AnyView(view.frame(width: width)))
         self.scale = scale
         size = CGSize(width: width, height: height ?? ceil(host.fittingSize.height))
         host.frame = CGRect(origin: .zero, size: size)
@@ -315,9 +315,6 @@ private func bestShift(_ a: NSBitmapImageRep, _ b: NSBitmapImageRep) -> (dx: Int
 @MainActor
 @Suite("STTextField rendering")
 struct STTextFieldRenderingTests {
-    // See STTypingRendererTests.init(): guarantees the body font is registered before any render.
-    init() { STFont.register() }
-
     private let sample = "Wolverine gypsy 01"
 
     private func fieldRep(points: Double, revealed: Bool, text: String? = nil, scale: Int) -> NSBitmapImageRep {
@@ -363,12 +360,6 @@ struct STTextFieldRenderingTests {
 @MainActor
 @Suite("STTypingRenderer")
 struct STTypingRendererTests {
-    // Guarantees Source Serif 4 is registered before `font` resolves it, regardless of which other
-    // test (if any) happened to register it first — without this, a custom-font `Text` can silently
-    // fall back to a different font, and two independently-built `Text` trees (`rendered` vs `plain`)
-    // aren't guaranteed to fall back the same way, which showed up as spurious pixel mismatches.
-    init() { STFont.register() }
-
     private let font = STFont.text(14)
 
     private func rendered(_ text: String, progress: Double, inserted: Range<Int>? = nil, removed: String = "", anchor: Int = 0,
@@ -486,9 +477,6 @@ private struct BoundField: View {
 @MainActor
 @Suite("STTextField behavior")
 struct STTextFieldBehaviorTests {
-    // See STTypingRendererTests.init(): guarantees the body font is registered before any render.
-    init() { STFont.register() }
-
     @Test func typedTextSettlesIntoTheFinalLook() {
         let box = TextBox("Stev")
         let hosted = Hosted(BoundField(box: box), width: 200)
@@ -559,9 +547,6 @@ private func isClose(_ p: (r: Int, g: Int, b: Int), hex: String, tolerance: Int 
 @MainActor
 @Suite("Surfaces rendering")
 struct SurfacesRenderingTests {
-    // See STTypingRendererTests.init(): guarantees the body font is registered before any render.
-    init() { STFont.register() }
-
     @Test func plateHasSurfaceFillRoundedCornersAndAHairline() {
         let rep = render(
             STPlate { Color.clear.frame(width: 120, height: 80) }.padding(10).background(STColor.background),
@@ -745,7 +730,7 @@ private final class FocusedField {
     init?(text: String = "", width: CGFloat = 200) {
         _ = NSApplication.shared
         box = TextBox(text)
-        host = NSHostingView(rootView: AnyView(BoundField(box: box).frame(width: width)))
+        host = hostingView(AnyView(BoundField(box: box).frame(width: width)))
         host.frame = CGRect(x: 0, y: 0, width: width, height: ceil(host.fittingSize.height))
         window = FocusableWindow(contentRect: CGRect(x: -8000, y: -8000, width: host.frame.width, height: host.frame.height),
                                  styleMask: [.borderless], backing: .buffered, defer: false)
@@ -799,9 +784,6 @@ private func focusedFieldOrSkip(text: String = "") throws -> FocusedField {
 @MainActor
 @Suite("STTextField input", .serialized)
 struct STTextFieldInputTests {
-    // See STTypingRendererTests.init(): guarantees the body font is registered before any render.
-    init() { STFont.register() }
-
     @Test func focusDrawsTheAccentUnderline() throws {
         let unfocused = render(BoundField(box: TextBox("")), width: 200)
         let focused = try focusedFieldOrSkip()
@@ -863,19 +845,16 @@ struct STTextFieldInputTests {
 @MainActor
 @Suite("STTextField layout")
 struct STTextFieldLayoutTests {
-    // See STTypingRendererTests.init(): guarantees the body font is registered before any render.
-    init() { STFont.register() }
-
     @Test func idealWidthDoesNotGrowWithTheText() {
         _ = NSApplication.shared
-        let short = NSHostingView(rootView: STTextField("Name", text: .constant("ab")))
-        let long = NSHostingView(rootView: STTextField("Name", text: .constant(String(repeating: "Wolverine ", count: 30))))
+        let short = hostingView(STTextField("Name", text: .constant("ab")))
+        let long = hostingView(STTextField("Name", text: .constant(String(repeating: "Wolverine ", count: 30))))
         #expect(long.fittingSize.width == short.fittingSize.width)
     }
 
     @Test func heightCoversTheLineAndTheBaseline() {
         _ = NSApplication.shared
-        let host = NSHostingView(rootView: STTextField("Name", text: .constant("ab")))
+        let host = hostingView(STTextField("Name", text: .constant("ab")))
         #expect(host.fittingSize.height >= 24 && host.fittingSize.height <= 40)
     }
 }

@@ -31,7 +31,7 @@ private final class Hosted {
 
     init<V: View>(_ view: V, width: CGFloat) {
         _ = NSApplication.shared
-        host = NSHostingView(rootView: AnyView(
+        host = hostingView(AnyView(
             view
                 .environment(\.stSoundPlayer, STSoundPlayer.silent)
                 .frame(width: width)
@@ -65,7 +65,7 @@ private final class Hosted {
 
 @MainActor
 private func fittingHeight<V: View>(_ view: V, width: CGFloat = 360) -> CGFloat {
-    NSHostingView(rootView: view.environment(\.stSoundPlayer, STSoundPlayer.silent).frame(width: width)).fittingSize.height
+    hostingView(view.environment(\.stSoundPlayer, STSoundPlayer.silent).frame(width: width)).fittingSize.height
 }
 
 private func rgb(_ rep: NSBitmapImageRep, x: Int, y: Int) -> (r: Int, g: Int, b: Int) {
@@ -110,8 +110,6 @@ private func trackRightEnd(_ rep: NSBitmapImageRep) -> Int? {
 @MainActor
 @Suite("Settings rows name their controls once")
 struct SettingsRowLabelsTests {
-    init() { STFont.register() }
-
     @Test func settingsRowHidesItsControlsLabels() {
         let inRow = VisibilityBox()
         _ = fittingHeight(STSettingsRow("Size") { LabelsVisibilityProbe(box: inRow) })
