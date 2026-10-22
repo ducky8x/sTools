@@ -75,6 +75,12 @@ public enum HotkeyStatus: Equatable, Sendable {
 /// ignored while paused, as presses are. When a binding whose key is down is unregistered (a pause, the master
 /// switch, an edit or removal), macOS can't report that release any more, so the center sends it itself and forgets
 /// the key.
+///
+/// Key events carry the time their key moved, when their source stamps it (macOS through the registrar, the window's
+/// `NSEvent`): Start timer's double press and hold measure the keys, not when sTools got to them (`keyEventAge`). The
+/// times also keep a missed release from leaving a key dead, since a press over `staleKeyInterval` after the key was
+/// last reported is a new one, and tell a second or late report of a press that already counted (macOS and the window
+/// both reporting one tap) from a new press.
 @MainActor
 @Observable
 public final class HotkeyCenter {
@@ -103,11 +109,16 @@ public final class HotkeyCenter {
     /// Combinations macOS accepted this run, so a pause tries each one only once. A refusal forgets it again.
     @ObservationIgnored private var accepted: Set<HotkeyCombo> = []
     /// The registered bindings whose key is down: pressed, and not released or unregistered since. A press for one
-    /// of them is a repeat. Each says whether its press sent Start timer, so its release sends `.startTimerReleased`.
-    /// Always empty with a registrar that doesn't report releases, except for presses from sTools' own window.
-    @ObservationIgnored private var keysDown: [UUID: Bool] = [:]
-    /// The keys in `keysDown` whose press came from sTools' own window, whose release comes from there too.
-    @ObservationIgnored private var appKeysDown: Set<UUID> = []
+    /// of them is a repeat, unless the key was last reported over `staleKeyInterval` earlier. Always empty with a
+    /// registrar that doesn't report releases, except for presses from sTools' own window.
+    @ObservationIgnored private var keysDown: [UUID: KeyDown] = [:]
+    /// When each binding's last counted press went down, for presses whose source stamped it: a second report of that
+    /// press, or a late one of an earlier press, is told apart from a new one by it.
+    @ObservationIgnored private var lastCountedPress: [UUID: TimeInterval] = [:]
+    /// While the handler runs, when the key event behind the call happened; nil when its source didn't say.
+    @ObservationIgnored private var handlingEventTime: TimeInterval?
+    /// The clock key events are stamped on: seconds of system uptime. Tests replace it.
+    @ObservationIgnored var uptime: @MainActor () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     @ObservationIgnored private let log = STLog.logger("Hotkeys")
     /// Whether a hotkey's key has reached the window this run, logged once (spec 6.1's hardware check).
     @ObservationIgnored private var reachedWindow = false
@@ -271,33 +282,37 @@ public final class HotkeyCenter {
 
     // MARK: Keys in sTools' own window
 
-    /// A key went down in sTools' own window: macOS handed it to the window instead of turning it into a hotkey
-    /// press. When a registered hotkey has exactly this key and these modifiers, it fires as a press from macOS would
-    /// (a repeat, or a press for a key already down, is ignored) and this returns true, so the window doesn't also
-    /// type it. False while hotkeys are off or paused, or when no hotkey has this combination.
+    /// A key went down in sTools' own window at `time` (the event's `timestamp`, system uptime): macOS handed it to the
+    /// window instead of turning it into a hotkey press. When a registered hotkey has exactly this key and these
+    /// modifiers, it fires as a press from macOS would (a repeat, or a press macOS reported too, is ignored) and this
+    /// returns true, so the window doesn't also type it. False while hotkeys are off or paused, or when no hotkey has
+    /// this combination.
     @discardableResult
-    public func handleKeyDown(keyCode: UInt16, modifiers: HotkeyCombo.Modifiers, isRepeat: Bool) -> Bool {
+    public func handleKeyDown(keyCode: UInt16, modifiers: HotkeyCombo.Modifiers, isRepeat: Bool,
+                              at time: TimeInterval? = nil) -> Bool {
         let combo = HotkeyCombo(keyCode: keyCode, modifiers: modifiers)
         // Only a live registration counts: a paused one is unregistered, so its key goes on to the field.
         guard let id = registered.first(where: { $0.value == combo })?.key else { return false }
-        guard !isRepeat, keysDown[id] == nil else { return true }
         if !reachedWindow {
             reachedWindow = true
             log.info("A hotkey's key reached sTools' window: \(combo.displayString, privacy: .public)")
         }
-        appKeysDown.insert(id)
-        handlePress(id, tracksRelease: true)
+        if isRepeat {
+            // Held in the window: it keeps its press alive and is never a new one.
+            keysDown[id]?.lastReport = time ?? uptime()
+            return true
+        }
+        handlePress(id, from: .window, at: time)
         return true
     }
 
-    /// A key came up in sTools' own window. Ends the press of each hotkey on this key whose press came from the
-    /// window; true when there was one.
+    /// A key came up in sTools' own window at `time`. Ends the press of each hotkey on this key whose press came from
+    /// the window; true when there was one.
     @discardableResult
-    public func handleKeyUp(keyCode: UInt16) -> Bool {
-        let ids = appKeysDown.filter { registered[$0]?.keyCode == keyCode }
+    public func handleKeyUp(keyCode: UInt16, at time: TimeInterval? = nil) -> Bool {
+        let ids = keysDown.filter { $0.value.fromWindow && registered[$0.key]?.keyCode == keyCode }.map(\.key)
         for id in ids {
-            appKeysDown.remove(id)
-            handleRelease(id)
+            handleRelease(id, from: .window, at: time)
         }
         return !ids.isEmpty
     }
@@ -305,10 +320,28 @@ public final class HotkeyCenter {
     /// sTools stopped being the active app, so the window won't see the release of a key pressed in it: ends those
     /// presses now.
     public func releaseWindowKeys() {
-        for id in appKeysDown {
-            handleRelease(id)
+        for id in keysDown.filter({ $0.value.fromWindow }).map(\.key) {
+            handleRelease(id, from: .sTools, at: nil)
         }
-        appKeysDown.removeAll()
+    }
+
+    // MARK: Key timing
+
+    /// A key reported down again this soon after it was last reported, with no release between, is held (a repeat).
+    /// Any later, its release was missed and the press is a new one, so a lost release never leaves a key dead. Longer
+    /// than macOS's key repeat interval, so a held key's repeats, if macOS sends any, keep it down.
+    public static let staleKeyInterval: TimeInterval = 1
+    /// A press stamped this close to the last one that counted for its hotkey, or earlier, is that press again (macOS
+    /// and sTools' window both reporting one tap) or a late report of an earlier one.
+    static let sameKeyEventTolerance: TimeInterval = 0.005
+
+    /// While the handler runs, how long ago the key event behind the call happened, read when asked: the time sTools
+    /// took to get to it. 0 when its source didn't stamp it, for the releases the center sends itself, and outside a
+    /// handler call. Start timer takes it off its press, so its 0.4 s double press and 1 s hold measure the keys
+    /// (spec 5.6.2).
+    public var keyEventAge: TimeInterval {
+        guard let handlingEventTime else { return 0 }
+        return max(0, uptime() - handlingEventTime)
     }
 
     // MARK: Internals
@@ -322,31 +355,81 @@ public final class HotkeyCenter {
     /// no key is ever marked down.
     private var reportsReleases: Bool { registrar.onRelease != nil }
 
+    /// A key that is down, in `keysDown`.
+    private struct KeyDown {
+        /// Whether its press sent Start timer, so its release sends `.startTimerReleased`.
+        var startsTimer: Bool
+        /// Whether its press came from sTools' own window, whose release comes from there too.
+        var fromWindow: Bool
+        /// When it went down, and when it was last reported (its press or a repeat), on the uptime clock.
+        var downAt: TimeInterval
+        var lastReport: TimeInterval
+    }
+
+    /// Where a key event came from.
+    private enum KeySource {
+        case macOS
+        case window
+        case sTools
+    }
+
+    /// A press from the registrar, stamped with its event's time when the registrar knows it.
+    private func handlePress(_ id: UUID) {
+        handlePress(id, from: .macOS, at: registrar.eventTime)
+    }
+
+    /// A release from the registrar.
+    private func handleRelease(_ id: UUID) {
+        handleRelease(id, from: .macOS, at: registrar.eventTime)
+    }
+
     /// A press counts only for a binding registered right now: nothing is while hotkeys are off or paused, and a
     /// press macOS delivered just before an unregistration is stale. A press for a key that is still down is a
     /// repeat and is ignored until its release, so a held key never looks like a double press (which cancels the
-    /// timer); separate presses still count. Whether macOS repeats held hotkeys at all is to be confirmed on
-    /// hardware (spec 6.1); the rule is harmless if it doesn't.
-    private func handlePress(_ id: UUID, tracksRelease: Bool = false) {
+    /// timer); separate presses still count. A key last reported over `staleKeyInterval` earlier lost its release,
+    /// so its press counts. A stamped press no later than the last counted one is a second or late report of a press
+    /// that already counted. Whether macOS repeats held hotkeys or ever drops a release is to be confirmed on hardware
+    /// (spec 6.1).
+    private func handlePress(_ id: UUID, from source: KeySource, at stamped: TimeInterval?) {
         guard registered[id] != nil, let binding = settings.bindings.first(where: { $0.id == id }) else { return }
-        if reportsReleases || tracksRelease {
-            guard keysDown[id] == nil else { return }
-            keysDown[id] = binding.actions.contains(.startTimer)
+        let time = stamped ?? uptime()
+        if let stamped, let last = lastCountedPress[id], stamped <= last + Self.sameKeyEventTolerance { return }
+        if reportsReleases || source == .window {
+            if let down = keysDown[id] {
+                let quiet = time - down.lastReport
+                if quiet <= Self.staleKeyInterval {
+                    keysDown[id]?.lastReport = max(down.lastReport, time)
+                    return
+                }
+            }
+            keysDown[id] = KeyDown(startsTimer: binding.actions.contains(.startTimer), fromWindow: source == .window,
+                                   downAt: time, lastReport: time)
         }
+        if let stamped { lastCountedPress[id] = stamped }
         let outcome = HotkeyAction.resolve(binding.actions, toolStates: toolStates())
         var events = outcome.toolChanges.map { HotkeyEvent.setTool($0.tool, isOn: $0.isOn) }
         if outcome.togglesRecording { events.append(.toggleRecording) }
         if outcome.startsTimer { events.append(.startTimer) }
         guard !events.isEmpty else { return }
-        handler(events)
+        send(events, stampedAt: stamped)
     }
 
     /// A release counts only for a key whose press counted, and sends an event only when that press sent Start
-    /// timer.
-    private func handleRelease(_ id: UUID) {
-        appKeysDown.remove(id)
-        guard keysDown.removeValue(forKey: id) == true else { return }
-        handler([.startTimerReleased])
+    /// timer. A stamped release from before its key's press is a late report of an earlier release, so it ends nothing.
+    private func handleRelease(_ id: UUID, from source: KeySource, at stamped: TimeInterval?) {
+        guard let down = keysDown[id] else { return }
+        if let stamped, stamped + Self.sameKeyEventTolerance < down.downAt { return }
+        keysDown[id] = nil
+        guard down.startsTimer else { return }
+        send([.startTimerReleased], stampedAt: stamped)
+    }
+
+    /// Calls the handler with `events`, saying when their key event happened while it runs (`keyEventAge`).
+    private func send(_ events: [HotkeyEvent], stampedAt time: TimeInterval?) {
+        let outer = handlingEventTime
+        handlingEventTime = time
+        defer { handlingEventTime = outer }
+        handler(events)
     }
 
     /// Brings registrations and statuses in line with the settings: unregisters what is no longer wanted,
@@ -380,8 +463,8 @@ public final class HotkeyCenter {
             registrar.unregister(id: id)
             registered[id] = nil
             // macOS can't report this key's release any more.
-            appKeysDown.remove(id)
-            if keysDown.removeValue(forKey: id) == true { timerReleases += 1 }
+            lastCountedPress[id] = nil
+            if keysDown.removeValue(forKey: id)?.startsTimer == true { timerReleases += 1 }
         }
         for binding in settings.bindings {
             guard let combo = wanted[binding.id] else { continue }
@@ -397,7 +480,7 @@ public final class HotkeyCenter {
             }
         }
         if newStatuses != statuses { statuses = newStatuses }
-        for _ in 0..<timerReleases { handler([.startTimerReleased]) }
+        for _ in 0..<timerReleases { send([.startTimerReleased], stampedAt: nil) }
     }
 
     /// While stepping aside: a combination macOS accepted before is fine; anything else is registered and released

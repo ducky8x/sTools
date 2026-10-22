@@ -36,13 +36,16 @@ final class HotkeyKeyWatcher {
         appChanged(NSApplication.didUpdateNotification)
     }
 
-    /// True when a hotkey took the key, so the window doesn't type it.
+    /// True when a hotkey took the key, so the window doesn't type it. Each key goes with the time it moved (the
+    /// event's timestamp, system uptime, as macOS stamps hotkey events), so a key reported here and by macOS counts
+    /// once and the timer's gestures measure the keys.
     private func handle(_ event: NSEvent) -> Bool {
         switch event.type {
         case .keyDown:
-            center.handleKeyDown(keyCode: event.keyCode, modifiers: Self.modifiers(of: event.modifierFlags), isRepeat: event.isARepeat)
+            center.handleKeyDown(keyCode: event.keyCode, modifiers: Self.modifiers(of: event.modifierFlags), isRepeat: event.isARepeat,
+                                 at: event.timestamp)
         case .keyUp:
-            center.handleKeyUp(keyCode: event.keyCode)
+            center.handleKeyUp(keyCode: event.keyCode, at: event.timestamp)
         default:
             false
         }
