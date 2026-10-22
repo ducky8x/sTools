@@ -5,11 +5,12 @@ extension AppModel {
     var canGoBack: Bool { history.canGoBack }
     var canGoForward: Bool { history.canGoForward }
 
-    /// Opens `route` and plays the page sound; the current page is left alone.
+    /// Opens `route` and plays the sidebar marker's glide; the current page is left alone.
     func navigate(to route: Route) {
         guard route != history.current else { return }
+        let from = history.current
         history.push(route)
-        sound.play(.page)
+        sidebarGlide.glide(from: from, to: route)
     }
 
     /// Opens Home scrolled to its Hotkeys section (the Key Rebinder's Open Hotkeys), even when Home is already open.
@@ -27,9 +28,11 @@ extension AppModel {
         }
         switch command {
         case .back:
-            if history.back() != nil { sound.play(.page) }
+            let from = history.current
+            if let to = history.back() { sidebarGlide.glide(from: from, to: to) }
         case .forward:
-            if history.forward() != nil { sound.play(.page) }
+            let from = history.current
+            if let to = history.forward() { sidebarGlide.glide(from: from, to: to) }
         default:
             if let route = command.route { navigate(to: route) }
         }
