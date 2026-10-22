@@ -43,32 +43,22 @@ public struct TimerPageActions {
 }
 
 /// Everything below the page header for Timer Overlay (spec 5.6.3): the rule notice when it's due, the preview plate
-/// with the live time, Start, Pause / Resume, Cancel and Test, the rule line when chosen, Duration, the key row, the
-/// everyday settings, then an Advanced section with every other row of spec 5.6.7.
+/// with the live time, Start, Pause / Resume, Cancel and Test, the rule line when chosen, Duration, the everyday
+/// settings, then an Advanced section with every other row of spec 5.6.7. The Start-timer key is set on the page's
+/// Hotkey row above, as every tool page's is (spec 6.1).
 public struct TimerOverlaySettingsView: View {
     @Bindable private var controller: TimerOverlayController
-    private let keyStatus: TimerKeyStatus
-    private let onSetInHotkeys: (@MainActor () -> Void)?
     private let actions: TimerPageActions?
     @State private var advancedExpanded: Bool
 
-    /// - Parameters:
-    ///   - keyStatus: the Start-timer hotkeys from Home ▸ Hotkeys, which the app fills in from `HotkeyCenter`.
-    ///   - onSetInHotkeys: opens Home ▸ Hotkeys with a new Start-timer hotkey, ready to record. nil hides
-    ///     **Set in Hotkeys…** (the Prologue's trial records the key in place).
-    ///   - actions: the open panel and the recordings warning; nil uses the live ones.
-    public init(controller: TimerOverlayController, keyStatus: TimerKeyStatus, onSetInHotkeys: (@MainActor () -> Void)?,
-                actions: TimerPageActions? = nil) {
-        self.init(controller: controller, keyStatus: keyStatus, onSetInHotkeys: onSetInHotkeys, actions: actions,
-                  showsAdvanced: false)
+    /// - Parameter actions: the open panel and the recordings warning; nil uses the live ones.
+    public init(controller: TimerOverlayController, actions: TimerPageActions? = nil) {
+        self.init(controller: controller, actions: actions, showsAdvanced: false)
     }
 
     /// Test hook: the same page, with Advanced open or closed from the start.
-    init(controller: TimerOverlayController, keyStatus: TimerKeyStatus, onSetInHotkeys: (@MainActor () -> Void)?,
-         actions: TimerPageActions?, showsAdvanced: Bool) {
+    init(controller: TimerOverlayController, actions: TimerPageActions?, showsAdvanced: Bool) {
         self.controller = controller
-        self.keyStatus = keyStatus
-        self.onSetInHotkeys = onSetInHotkeys
         self.actions = actions
         _advancedExpanded = State(initialValue: showsAdvanced)
     }
@@ -94,7 +84,6 @@ public struct TimerOverlaySettingsView: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 DurationPicker(settings: $controller.settings)
-                TimerKeyRow(status: keyStatus, onSetInHotkeys: onSetInHotkeys)
                 STSettingsRow("Look") {
                     STSegmented(selection: $controller.settings.look, options: [
                         .init(.plate, "sTools plate"), .init(.digitsOnly, "Digits only"), .init(.compactPill, "Compact pill"),

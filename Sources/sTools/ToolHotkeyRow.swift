@@ -1,6 +1,7 @@
 import STDesign
 import STPlatform
 import SwiftUI
+import TimerOverlay
 
 extension ToolID {
     /// The tool a hotkey toggles; nil for the tools a hotkey doesn't toggle: Screen Recording and Timer Overlay, whose
@@ -66,10 +67,10 @@ enum ToolHotkey {
 }
 
 /// A tool page's Hotkey row, near the top (spec 6.1): the key for the tool's one action (it toggles an overlay tool,
-/// or starts and stops Screen Recording), set, changed or cleared right here by pressing a key (Delete clears, Esc
-/// cancels). Under it, what's wrong with that key, the notes both hotkey editors show, the other hotkeys that do the
-/// tool's action, where hotkeys work and the key set with Change… (Home ▸ Hotkeys), and, while hotkeys are off, Turn
-/// On. Timer Overlay's page has its own Hotkey row instead (`TimerKeyRow`).
+/// starts and stops Screen Recording, or starts the timer), set, changed or cleared right here by pressing a key
+/// (Delete clears, Esc cancels). Under it, Timer Overlay's one line on what its key does, what's wrong with that key,
+/// the notes both hotkey editors show, the other hotkeys that do the tool's action, where hotkeys work and the key set
+/// with Change… (Home ▸ Hotkeys), and, while hotkeys are off, Turn On.
 struct ToolHotkeyRow: View {
     let model: AppModel
     let tool: ToolID
@@ -77,7 +78,7 @@ struct ToolHotkeyRow: View {
     @Environment(\.stTheme) private var theme
 
     init?(model: AppModel, tool: ToolID) {
-        guard tool != .timerOverlay, let action = tool.hotkeyAction else { return nil }
+        guard let action = tool.hotkeyAction else { return nil }
         self.model = model
         self.tool = tool
         self.action = action
@@ -92,6 +93,9 @@ struct ToolHotkeyRow: View {
                 STShortcutRecorder(shortcut: shortcutBinding, label: "\(tool.title) hotkey",
                                    validate: { ToolHotkey.refusal(for: $0.hotkeyCombo, action: action, in: hotkeys) })
                     .frame(width: 200)
+            }
+            if let purposeLine {
+                caption(purposeLine)
             }
             if let own, let problem = HotkeyWording.statusNote(hotkeys.status(of: own.id), combo: own.combo) {
                 Text(problem)
@@ -129,6 +133,13 @@ struct ToolHotkeyRow: View {
     var whereLine: String {
         HotkeyWording.whereAndKeySet(scope: hotkeys.scope, keySet: hotkeys.keySet,
                                      accessibilityGranted: model.accessibilityGranted)
+    }
+
+    /// What the key does, where a page needs to say more than its title: Timer Overlay's key starts the timer, and its
+    /// cancel gesture switches the tool off. Nil for the other tools.
+    var purposeLine: String? {
+        guard tool == .timerOverlay else { return nil }
+        return TimerKeyLine.text(for: model.timerOverlay?.settings.cancelGesture ?? .doublePress)
     }
 
     /// Change…: Home ▸ Hotkeys, where both are set.

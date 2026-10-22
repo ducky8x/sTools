@@ -3,8 +3,8 @@ import Foundation
 /// Home ▸ Hotkeys ▸ Key set (spec 6.1): one hotkey per tool, in sidebar order, each doing that tool's main action.
 ///
 /// A set owns one hotkey per tool, the tool's own hotkey: the first whose only action is the tool's main action (the
-/// hotkey a tool page's Hotkey row, or Timer Overlay's Hotkey row, sets). Picking a set changes only those and lists
-/// them first, in sidebar order; every other hotkey stays as it is, after them. A new install starts with ⌘1–⌘5.
+/// hotkey a tool page's Hotkey row sets). Picking a set changes only those and lists them first, in sidebar order;
+/// every other hotkey stays as it is, after them. A new install starts with ⌘1–⌘5.
 public enum HotkeyKeySet: String, CaseIterable, Hashable, Sendable {
     /// ⌘1–⌘5, a new install's.
     case command

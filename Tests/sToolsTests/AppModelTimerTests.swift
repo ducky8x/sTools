@@ -280,12 +280,12 @@ struct AppModelTimerTests {
         #expect(harness.model.pendingPageAnchor == .hotkeys)
     }
 
-    @Test func theKeyRowFollowsTheHotkeyList() {
+    @Test func theHotkeyRowFollowsTheHotkeyList() {
         let harness = Harness()
         let hotkeys = harness.model.hotkeys
-        #expect(!TimerKeyStatus(hotkeys: hotkeys).hasKey)
+        #expect(ToolHotkey.own(for: .startTimer, in: hotkeys.bindings) == nil)
         hotkeys.add(combo: HotkeyCombo(keyCode: 105, modifiers: []), actions: [.startTimer])
-        #expect(TimerKeyStatus(hotkeys: hotkeys).hasKey)
+        #expect(ToolHotkey.own(for: .startTimer, in: hotkeys.bindings)?.combo.displayString == "F13")
     }
 
     // MARK: - Settings
