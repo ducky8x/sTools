@@ -27,6 +27,29 @@ import Testing
         #expect(AudioSourceTrack.tracks(for: layout).map(\.title) == ["Minecraft", "Audio", "Mix 2", "minecraft 2", "Music", "Music 2"])
     }
 
+    @Test func feedsComeAfterTheSourcesAtFullVolume() {
+        let music = source("Music", volume: 0.5)
+        let layout = RecordingLayout(audioSources: [music], minecraftAudioVolume: 0.8)
+        let tracks = AudioSourceTrack.tracks(for: layout, feeds: ["Timer alarm"])
+        #expect(tracks.map(\.title) == ["Minecraft", "Music", "Timer alarm"])
+        #expect(tracks.map(\.id) == [.minecraft, .source(music.id), .feed("Timer alarm")])
+        #expect(tracks.map(\.volume) == [0.8, 0.5, 1])
+        #expect(AudioSourceTrack.mixer(for: tracks).gain(for: .feed("Timer alarm")) == 1)
+    }
+
+    @Test func withoutFeedsThereIsNoFeedTrack() {
+        let layout = RecordingLayout(audioSources: [source("Music")])
+        #expect(AudioSourceTrack.tracks(for: layout, feeds: []) == AudioSourceTrack.tracks(for: layout))
+        #expect(!AudioSourceTrack.tracks(for: layout).contains { if case .feed = $0.id { true } else { false } })
+    }
+
+    @Test func aSourceNamedLikeAFeedKeepsItsTitleAndTheFeedIsNumbered() {
+        let layout = RecordingLayout(audioSources: [source("Timer alarm")], includesMinecraftAudio: false)
+        let tracks = AudioSourceTrack.tracks(for: layout, feeds: ["Timer alarm", "Timer alarm", " "])
+        #expect(tracks.map(\.title) == ["Timer alarm", "Timer alarm 2", "Audio"])
+        #expect(tracks.map(\.id).last == .feed(" "))
+    }
+
     @Test func namesAreTrimmed() {
         let layout = RecordingLayout(audioSources: [source("  Discord \n")], includesMinecraftAudio: false)
         #expect(AudioSourceTrack.tracks(for: layout).first?.title == "Discord")

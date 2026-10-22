@@ -2,6 +2,7 @@ import CoreMedia
 import CoreVideo
 import Foundation
 import os
+import STPlatform
 import Testing
 @testable import ScreenRecording
 
@@ -100,6 +101,74 @@ struct RecordingSessionTests {
         let packets = info.audioTracks.map(\.sampleCount)
         #expect(packets.allSatisfy { abs($0 - packets[0]) <= 2 })
         #expect(abs(Double(packets[0] * 1024) / 48_000 - 2.0) < 0.1)
+    }
+
+    /// Timer Overlay's alarm on its own track (spec 5.4.1): synthetic buffers through an in-process feed, stamped
+    /// in host ticks as the alarm's tap stamps them.
+    private func recordWithAlarmFeed(wantsRecording: Bool, in directory: URL) async throws -> (RecordingSession, MovieInfo) {
+        let canvas = PixelSize(width: 320, height: 180)
+        let feed = InProcessAudio().feed(named: "Timer alarm")
+        let base = FakeVideoCapture(), game = FakeAudioCapture()
+        let rig = CaptureRig(
+            video: [.base: base], audio: [.minecraft: game, .feed(feed.name): FeedCapture(feed: feed)], minimizedShowsNothing: false)
+        await rig.start()
+        let clock = ManualClock(100)
+        let driver = ManualTickDriver()
+        var options = RecordingOptions()
+        options.frameRate = .fps30
+        let session = try RecordingSession(
+            configuration: .init(layout: RecordingLayout(), options: options, canvas: canvas, baseName: "alarm",
+                                 directory: directory, feeds: wantsRecording ? [feed.name] : []),
+            rig: rig, clock: clock, driver: driver)
+        base.push(.frame(solidFrame(canvas, at: 100)))
+        try session.start()
+        func publishAlarm(at now: Double) {
+            let start = Int(now * 48_000)
+            let samples = (0..<1600).flatMap { i -> [Float] in
+                let v = Float(sin(Double(start + i) * 2 * .pi * 880 / 48_000) * 0.3)
+                return [v, v]
+            }
+            feed.publish(InProcessAudioBuffer(samples: samples, sampleRate: 48_000, channelCount: 2, hostTime: hostTicks(now)))
+        }
+        for i in 0..<30 {
+            let now = 100 + Double(i) / 30
+            game.push(frames: 1600, at: now, frequency: 440)
+            publishAlarm(at: now)
+            if i % 3 == 0 { base.push(.frame(solidFrame(canvas, at: now))) }
+            clock.set(now + 0.001)
+            driver.fire()
+            try await Task.sleep(for: .milliseconds(4))
+        }
+        for i in 30..<40 {
+            let now = 100 + Double(i) / 30
+            game.push(frames: 1600, at: now, frequency: 440)
+            publishAlarm(at: now)
+        }
+        let result = await session.stop()
+        await rig.stop()
+        #expect(!feed.hasListeners)
+        return (session, try await MovieInfo.load(try #require(result.files.first)))
+    }
+
+    @Test func aFeedThatWantsRecordingIsANamedTrackAfterTheSources() async throws {
+        let directory = try WriterFixture.makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let (session, info) = try await recordWithAlarmFeed(wantsRecording: true, in: directory)
+        #expect(session.tracks.map(\.title) == ["Minecraft", "Timer alarm"])
+        #expect(session.tracks.last?.id == .feed("Timer alarm"))
+        #expect(session.tracks.last?.volume == 1)
+        #expect(info.audioTracks.map(\.title) == ["Mix", "Minecraft", "Timer alarm"])
+        let packets = info.audioTracks.map(\.sampleCount)
+        #expect(packets.allSatisfy { abs($0 - packets[0]) <= 2 })
+        #expect(abs(Double(packets[0] * 1024) / 48_000 - 1.0) < 0.1)
+    }
+
+    @Test func aFeedThatDoesNotWantRecordingGetsNoTrack() async throws {
+        let directory = try WriterFixture.makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let (session, info) = try await recordWithAlarmFeed(wantsRecording: false, in: directory)
+        #expect(session.tracks.map(\.title) == ["Minecraft"])
+        #expect(info.audioTracks.map(\.title) == ["Mix", "Minecraft"])
     }
 
     @Test func aSilentLayoutWritesNoAudioTracks() async throws {

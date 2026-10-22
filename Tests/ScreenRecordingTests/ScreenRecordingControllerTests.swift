@@ -45,6 +45,8 @@ private struct Granted: PermissionProbing {
 private struct Harness {
     let directory: URL
     let factory = FakeFactory()
+    /// The harness's own feeds, so nothing leaks into or out of the app's.
+    let audio = InProcessAudio()
     let controller: ScreenRecordingController
     let source: StaticMinecraftWindowSource
 
@@ -59,7 +61,8 @@ private struct Harness {
             settings: SettingsStore(directory: directory.appending(path: "settings", directoryHint: .isDirectory)),
             displays: DisplayDirectory(), minecraft: locator, permissions: PermissionCenter(prober: Granted()))
         let factory = factory
-        controller = ScreenRecordingController(services: services, makeFactory: { _ in factory }, loadAvailable: { _ in AvailableSources() })
+        controller = ScreenRecordingController(
+            services: services, makeFactory: { _ in factory }, loadAvailable: { _ in AvailableSources() }, inProcessAudio: audio)
         var options = controller.options
         options.folderPath = directory.appending(path: "Movies").path
         options.canvas = .custom(PixelSize(width: 320, height: 180))
@@ -102,6 +105,45 @@ struct ScreenRecordingControllerTests {
         #expect(harness.factory.videos.count == 1)
         #expect(harness.factory.audios[micID] != nil)
         #expect(harness.controller.previewMessage == nil)
+        harness.controller.setEnabled(false)
+    }
+
+    /// Timer Overlay's alarm feed (spec 5.4.1, plan decision 3): armed, the rig listens to every feed; a recording
+    /// gets the feed's track only when the feed wants recording as it starts.
+    @Test(arguments: [true, false])
+    func aFeedIsATrackOnlyWhenItWantsRecordingAtTheStart(wantsRecording: Bool) async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        harness.controller.options.fileType = .mov
+        harness.controller.options.askSaveDelete = false
+        let feed = harness.audio.feed(named: "Timer alarm")
+        feed.wantsRecording = wantsRecording
+        await harness.arm()
+        #expect(feed.hasListeners)
+        await harness.record(seconds: 0.5)
+        let file = try #require(harness.controller.lastSaved?.files.first ?? harness.controller.finished?.files.first)
+        let titles = try await MovieInfo.load(file).audioTracks.map(\.title)
+        #expect(titles.contains("Timer alarm") == wantsRecording)
+        #expect(titles.first == "Mix")
+        harness.controller.setEnabled(false)
+        for _ in 0..<200 where feed.hasListeners { try? await Task.sleep(for: .milliseconds(5)) }
+        #expect(!feed.hasListeners)
+    }
+
+    @Test func aFeedTurnedOnDuringARecordingWaitsForTheNextOne() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        harness.controller.options.fileType = .mov
+        harness.controller.options.askSaveDelete = false
+        let feed = harness.audio.feed(named: "Timer alarm")
+        await harness.arm()
+        harness.factory.bases[42]?.push(.frame(VideoFrame(pixelBuffer: WriterFixture.makeFrame(index: 1, size: PixelSize(width: 320, height: 180)), hostTime: HostMediaClock().now())))
+        await harness.controller.startRecording()
+        feed.wantsRecording = true
+        try? await Task.sleep(for: .seconds(0.4))
+        await harness.controller.stopRecording(explanation: nil)
+        let file = try #require(harness.controller.lastSaved?.files.first ?? harness.controller.finished?.files.first)
+        #expect(!(try await MovieInfo.load(file).audioTracks.map(\.title).contains("Timer alarm")))
         harness.controller.setEnabled(false)
     }
 

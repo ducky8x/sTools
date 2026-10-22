@@ -4,6 +4,8 @@ import Foundation
 public enum AudioTrackID: Hashable, Sendable {
     case minecraft
     case source(UUID)
+    /// sTools' own sound from the in-process feed with this name, such as *Timer alarm* (`InProcessAudio`).
+    case feed(String)
 }
 
 /// Keeps a summed signal inside -1...1 without the harsh flat top of hard clipping: samples below the knee
