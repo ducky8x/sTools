@@ -28,6 +28,9 @@ final class AppModel {
     /// The actions of a new hotkey Home ▸ Hotkeys opens its editor with (Timer Overlay's Set in Hotkeys…); Home
     /// clears it once the editor is open.
     var pendingNewHotkeyActions: Set<HotkeyAction>?
+    /// The hotkey whose editor Home ▸ Hotkeys opens, recording (Set in Hotkeys… for the timer's own key); Home clears
+    /// it once the editor is open.
+    var pendingEditHotkeyID: UUID?
     var appearance: AppearanceSettings
     var general: GeneralSettings
     var updates: UpdateSettings

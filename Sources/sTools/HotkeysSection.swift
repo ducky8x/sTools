@@ -18,6 +18,8 @@ struct HotkeysSection: View {
     @State private var advancedIsOpen: Bool
     /// The key set waiting for the answer to "Replace the keys you set?".
     @State private var pendingKeySet: HotkeyKeySet?
+    /// The hotkey whose editor opened recording (Set in Hotkeys… for the timer's own key).
+    @State private var recordingID: UUID?
 
     init(model: AppModel, advancedIsOpen: Bool = false, editingID: UUID? = nil) {
         self.model = model
@@ -27,20 +29,50 @@ struct HotkeysSection: View {
 
     private var hotkeys: HotkeyCenter { model.hotkeys }
 
-    /// Opens the add editor with the actions the app asked for, once.
-    private func takePendingNewHotkey() {
-        guard let actions = model.pendingNewHotkeyActions else { return }
-        model.pendingNewHotkeyActions = nil
-        editingID = nil
-        newHotkeyActions = actions
-        isAddingNew = true
+    /// What another page asks Home ▸ Hotkeys to open (Timer Overlay's Set in Hotkeys…).
+    enum EditorRequest: Equatable {
+        /// The editor of this hotkey, recording a new key: the timer's own Start-timer key.
+        case edit(UUID)
+        /// A new hotkey with these actions chosen, ready for its key.
+        case add(Set<HotkeyAction>)
+    }
+
+    /// Takes the request waiting in `model`, once: it's cleared, so the next call returns nil.
+    static func takeEditorRequest(from model: AppModel) -> EditorRequest? {
+        if let id = model.pendingEditHotkeyID {
+            model.pendingEditHotkeyID = nil
+            return .edit(id)
+        }
+        if let actions = model.pendingNewHotkeyActions {
+            model.pendingNewHotkeyActions = nil
+            return .add(actions)
+        }
+        return nil
+    }
+
+    /// Opens the editor the app asked for, once.
+    private func takeEditorRequest() {
+        switch Self.takeEditorRequest(from: model) {
+        case .edit(let id)?:
+            isAddingNew = false
+            newHotkeyActions = []
+            editingID = id
+            recordingID = id
+        case .add(let actions)?:
+            editingID = nil
+            newHotkeyActions = actions
+            isAddingNew = true
+        case nil:
+            break
+        }
     }
 
     var body: some View {
         PageSectionTitle("Hotkeys").padding(.top, 28).padding(.bottom, 4)
-            // Timer Overlay's Set in Hotkeys… asks for a new hotkey with its actions already chosen.
-            .onAppear(perform: takePendingNewHotkey)
-            .onChange(of: model.pendingNewHotkeyActions) { _, _ in takePendingNewHotkey() }
+            // Timer Overlay's Set in Hotkeys… asks for its own key's editor, or a new hotkey with Start timer chosen.
+            .onAppear(perform: takeEditorRequest)
+            .onChange(of: model.pendingNewHotkeyActions) { _, _ in takeEditorRequest() }
+            .onChange(of: model.pendingEditHotkeyID) { _, _ in takeEditorRequest() }
         // One way to turn hotkeys on while they're off; once on, the switch turns them off again.
         Group {
             if hotkeys.isEnabled {
@@ -87,8 +119,10 @@ struct HotkeysSection: View {
             ForEach(hotkeys.bindings) { binding in
                 HotkeyBindingRow(
                     model: model, binding: binding, isEditing: editingID == binding.id,
+                    recordsAtOnce: recordingID == binding.id,
                     onToggleEdit: {
                         isAddingNew = false
+                        recordingID = nil
                         editingID = editingID == binding.id ? nil : binding.id
                     })
             }
@@ -231,6 +265,8 @@ struct HotkeyBindingRow: View {
     let model: AppModel
     let binding: HotkeyBinding
     let isEditing: Bool
+    /// Whether its editor opens recording a new key (Set in Hotkeys… for the timer's own key).
+    var recordsAtOnce = false
     let onToggleEdit: () -> Void
     @Environment(\.stTheme) private var theme
 
@@ -285,7 +321,9 @@ struct HotkeyBindingRow: View {
                 .padding(.bottom, 12)
             }
             if isEditing {
-                HotkeyEditor(model: model, existing: binding, onDone: onToggleEdit)
+                HotkeyEditor(model: model, existing: binding, startsRecording: recordsAtOnce, onDone: onToggleEdit)
+                    // An editor already open starts over, recording, when Set in Hotkeys… asks for it.
+                    .id(recordsAtOnce)
                     .padding(.leading, 12)
                     .padding(.bottom, 10)
             }
@@ -347,22 +385,28 @@ struct HotkeyEditor: View {
     @State private var shortcut: STShortcut?
     @State private var actions: Set<HotkeyAction>
     private let initialActions: Set<HotkeyAction>
+    private let startsRecording: Bool
 
-    /// `initialActions` chooses a new hotkey's actions up front (Timer Overlay's Set in Hotkeys…).
-    init(model: AppModel, existing: HotkeyBinding?, initialActions: Set<HotkeyAction> = [], onDone: @escaping () -> Void) {
+    /// `initialActions` chooses a new hotkey's actions up front (Timer Overlay's Set in Hotkeys…). `startsRecording`
+    /// opens an existing hotkey recording a new key (Set in Hotkeys… for the timer's own key).
+    init(model: AppModel, existing: HotkeyBinding?, initialActions: Set<HotkeyAction> = [], startsRecording: Bool = false,
+         onDone: @escaping () -> Void) {
         self.model = model
         self.existing = existing
         self.onDone = onDone
         self.initialActions = initialActions
+        self.startsRecording = startsRecording
         _shortcut = State(initialValue: existing?.combo.asSTShortcut)
         _actions = State(initialValue: existing.map { Set($0.actions) } ?? initialActions)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // A new hotkey opened with its actions chosen (Set in Hotkeys…) is ready for its key at once.
+            // A new hotkey opened with its actions chosen (Set in Hotkeys…) is ready for its key at once, and so is the
+            // timer's own key opened by Set in Hotkeys….
             STShortcutRecorder(shortcut: $shortcut, label: "Key or combination",
-                               startsRecording: existing == nil && !initialActions.isEmpty, validate: validate)
+                               startsRecording: startsRecording || (existing == nil && !initialActions.isEmpty),
+                               validate: validate)
                 .frame(maxWidth: 260)
             if let combo = shortcut?.hotkeyCombo {
                 let notes = model.hotkeys.notes(for: combo)
