@@ -1,0 +1,237 @@
+import STDesign
+import STPlatform
+import Testing
+import TimerOverlay
+@testable import sTools
+
+/// Timer Overlay in the app (plan T8): its place among the tools, its live status, its key, Set in Hotkeys…, its
+/// settings and the Dock. Every harness builds the timer on fakes, so nothing here shows the overlay or rings.
+@MainActor
+@Suite("AppModel Timer Overlay")
+struct AppModelTimerTests {
+    // MARK: - The tool
+
+    @Test func theAppOwnsTheTimerControllerInBothHarnessModes() {
+        #expect(Harness().model.timerOverlay != nil)
+        #expect(Harness(usesRealControllers: true).model.timerOverlay != nil)
+    }
+
+    @Test func itNeedsAccessibilityAndHasASwitch() {
+        #expect(ToolID.timerOverlay.requiresAccessibility)
+        #expect(ToolID.timerOverlay.hasSwitch)
+        #expect(ToolID.timerOverlay.trial == nil)
+        #expect(ToolID.timerOverlay.hotkeyTool == nil)
+        let denied = Harness(accessibility: .denied)
+        #expect(denied.model.status(of: .timerOverlay) == .needsAccessibility)
+        denied.model.setTool(.timerOverlay, on: true)
+        #expect(!denied.model.isOn(.timerOverlay))
+        #expect(!denied.timer.isEnabled)
+    }
+
+    @Test func theSwitchDrivesTheController() {
+        let harness = Harness()
+        harness.model.setTool(.timerOverlay, on: true)
+        #expect(harness.timer.isEnabled)
+        harness.model.setTool(.timerOverlay, on: false)
+        #expect(!harness.timer.isEnabled)
+    }
+
+    // MARK: - Status
+
+    @Test func theStatusIsTheTimersOwnWordsInGoldWhileOn() {
+        let harness = Harness()
+        #expect(harness.model.status(of: .timerOverlay) == .off)
+        harness.model.setTool(.timerOverlay, on: true)
+        #expect(harness.model.status(of: .timerOverlay) == .timer("Ready"))
+        #expect(harness.model.status(of: .timerOverlay).label == "READY")
+        #expect(harness.model.status(of: .timerOverlay).isLit)
+        harness.timer.start()
+        #expect(harness.model.status(of: .timerOverlay) == .timer("2:30 left"))
+        harness.timer.pause()
+        #expect(harness.model.status(of: .timerOverlay) == .timer("Paused, 2:30"))
+    }
+
+    @Test func onlyOnAndTheTimerReadInGold() {
+        #expect(ToolStatus.on.isLit)
+        #expect(ToolStatus.timer("Ready").isLit)
+        #expect(!ToolStatus.off.isLit)
+        #expect(!ToolStatus.needsAccessibility.isLit)
+        #expect(!ToolStatus.alwaysAvailable.isLit)
+        #expect(ToolStatus.timer("Paused, 99:59:59").label == "PAUSED, 99:59:59")
+    }
+
+    // MARK: - The key
+
+    @Test func aStartTimerPressSwitchesTheToolOnAndStartsWithNoConfirmation() {
+        let harness = Harness()
+        let effect = harness.model.handleHotkeyEvent(.startTimer)
+        #expect(effect == nil)
+        #expect(harness.model.isOn(.timerOverlay))
+        #expect(harness.timer.phase == .counting)
+        #expect(harness.timerFakes.presenter.isShowing)
+    }
+
+    @Test func aPressThatCannotStartSaysTimerOverlayNeedsAccessibilityWithoutTheSeal() {
+        let harness = Harness(accessibility: .denied)
+        harness.model.hotkeys.showsConfirmation = true
+        harness.model.handleHotkeyPress([.startTimer])
+        #expect(harness.hotkeyHUD.lines == ["Timer Overlay needs Accessibility"])
+        #expect(harness.hotkeyHUD.presented.first?.sealed == false)
+        #expect(!harness.model.isOn(.timerOverlay))
+        #expect(harness.timer.phase == .idle)
+    }
+
+    @Test func aPressThatActsShowsNoLine() {
+        let harness = Harness()
+        harness.model.hotkeys.showsConfirmation = true
+        harness.model.handleHotkeyPress([.startTimer])
+        #expect(harness.hotkeyHUD.presented.isEmpty)
+    }
+
+    @Test func aReleaseGoesToTheTimerWithNoConfirmation() {
+        let harness = Harness()
+        harness.model.handleHotkeyEvent(.startTimer)
+        #expect(harness.model.handleHotkeyEvent(.startTimerReleased) == nil)
+        harness.model.handleHotkeyPress([.startTimerReleased])
+        #expect(harness.hotkeyHUD.presented.isEmpty)
+        // A release while the tool is off does nothing at all.
+        let off = Harness()
+        #expect(off.model.handleHotkeyEvent(.startTimerReleased) == nil)
+        #expect(!off.model.isOn(.timerOverlay))
+    }
+
+    @Test func aReducedMotionThemeReachesTheOverlay() {
+        // macOS's Reduce motion, which the app's watcher keeps in its theme even while the window is closed.
+        let harness = Harness(theme: STTheme(systemReduceMotion: true))
+        #expect(harness.model.theme.reduceMotion)
+        harness.model.handleHotkeyEvent(.startTimer)
+        #expect(!harness.timerFakes.presenter.popIns.isEmpty)
+        #expect(harness.timerFakes.presenter.motions.allSatisfy { $0 })
+    }
+
+    @Test func reduceAnimationsInSettingsReachesTheOverlay() {
+        let harness = Harness()
+        harness.model.theme.motionMode = .reduced
+        harness.model.handleHotkeyEvent(.startTimer)
+        #expect(harness.timerFakes.presenter.popIns == [true])
+    }
+
+    @Test func fullMotionPopsInWithMotion() {
+        let harness = Harness()
+        harness.model.handleHotkeyEvent(.startTimer)
+        #expect(harness.timerFakes.presenter.popIns == [false])
+    }
+
+    @Test func onAndIdleItHoldsNoPanelNoAlarmAndNoWake() {
+        let harness = Harness()
+        harness.model.setTool(.timerOverlay, on: true)
+        #expect(!harness.timerFakes.presenter.isShowing)
+        #expect(!harness.timerFakes.alarm.isPlaying)
+        #expect(harness.timerFakes.scheduler.pending.isEmpty)
+    }
+
+    @Test func turningTheToolOffCancelsTheRun() {
+        let harness = Harness()
+        harness.model.handleHotkeyEvent(.startTimer)
+        harness.model.setTool(.timerOverlay, on: false)
+        #expect(harness.timer.phase != .counting)
+        #expect(harness.model.status(of: .timerOverlay) == .off)
+    }
+
+    // MARK: - Set in Hotkeys…
+
+    @Test func setInHotkeysOpensHomesHotkeysWithANewStartTimerHotkey() {
+        let harness = Harness()
+        harness.model.hotkeys.isEnabled = true
+        var asked = false
+        harness.model.confirmTurningOnHotkeys = { asked = true; return true }
+        harness.model.navigate(to: .tool(.timerOverlay))
+        harness.model.openHotkeysForStartTimer()
+        #expect(!asked)
+        #expect(harness.model.route == .home)
+        #expect(harness.model.pendingPageAnchor == .hotkeys)
+        #expect(harness.model.pendingNewHotkeyActions == [.startTimer])
+    }
+
+    @Test func setInHotkeysAsksBeforeTurningHotkeysOn() {
+        let harness = Harness()
+        harness.model.hotkeys.isEnabled = false
+        harness.model.confirmTurningOnHotkeys = { true }
+        harness.model.openHotkeysForStartTimer()
+        #expect(harness.model.hotkeys.isEnabled)
+        #expect(harness.model.pendingNewHotkeyActions == [.startTimer])
+    }
+
+    @Test func decliningOpensHotkeysWithoutANewOne() {
+        let harness = Harness()
+        harness.model.hotkeys.isEnabled = false
+        harness.model.confirmTurningOnHotkeys = { false }
+        harness.model.navigate(to: .tool(.timerOverlay))
+        harness.model.openHotkeysForStartTimer()
+        #expect(!harness.model.hotkeys.isEnabled)
+        #expect(harness.model.pendingNewHotkeyActions == nil)
+        #expect(harness.model.route == .home)
+        #expect(harness.model.pendingPageAnchor == .hotkeys)
+    }
+
+    @Test func theKeyRowFollowsTheHotkeyList() {
+        let harness = Harness()
+        let hotkeys = harness.model.hotkeys
+        #expect(!TimerKeyStatus(hotkeys: hotkeys).hasKey)
+        hotkeys.add(combo: HotkeyCombo(keyCode: 105, modifiers: []), actions: [.startTimer])
+        #expect(TimerKeyStatus(hotkeys: hotkeys).hasKey)
+    }
+
+    // MARK: - Settings
+
+    @Test func itsSettingsAreAKnownVersionAndResetWithTheTools() {
+        #expect(AppModel.knownSettingsVersions[TimerOverlaySettings.name] == TimerOverlaySettings.version)
+        let harness = Harness()
+        harness.timer.settings.durationSeconds = 60
+        harness.model.resetAllToolsToDefault()
+        #expect(harness.timer.settings == TimerOverlaySettings.defaultValue)
+    }
+
+    // MARK: - The Dock
+
+    @Test func theDockShowsNothingWhileItsSettingIsOff() {
+        let harness = Harness()
+        harness.model.handleHotkeyEvent(.startTimer)
+        #expect(harness.model.timerDockBadge == nil)
+        #expect(harness.model.timerDockItems.isEmpty)
+    }
+
+    @Test func theDockBadgeAndMenuFollowTheCountdown() {
+        let harness = Harness()
+        harness.timer.settings.showsDockCountdown = true
+        #expect(harness.model.timerDockBadge == nil)
+        #expect(harness.model.timerDockItems.map(\.action) == [.start])
+        harness.model.performTimerDockItem(.start)
+        #expect(harness.model.isOn(.timerOverlay))
+        #expect(harness.model.timerDockBadge == "2:30")
+        #expect(harness.model.timerDockItems.map(\.action) == [.start, .pause, .cancel])
+        harness.model.performTimerDockItem(.pause)
+        #expect(harness.timer.phase == .paused)
+        #expect(harness.model.timerDockItems.map(\.action) == [.start, .resume, .cancel])
+        harness.model.performTimerDockItem(.resume)
+        #expect(harness.timer.phase == .counting)
+        harness.model.performTimerDockItem(.cancel)
+        #expect(harness.model.timerDockItems.map(\.action) == [.start])
+    }
+
+    @Test func theDockOffersNothingWithoutAccessibility() {
+        let harness = Harness(accessibility: .denied)
+        harness.timer.settings.showsDockCountdown = true
+        #expect(harness.model.timerDockItems.isEmpty)
+    }
+
+    @Test func theBadgeWatcherHearsEachChange() async {
+        let harness = Harness()
+        harness.timer.settings.showsDockCountdown = true
+        var badges: [String?] = []
+        harness.model.watchTimerDockBadge { badges.append($0) }
+        #expect(badges == [nil])
+        harness.model.performTimerDockItem(.start)
+        #expect(await waitUntil { badges.last == "2:30" })
+    }
+}
