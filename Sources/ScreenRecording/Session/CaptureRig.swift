@@ -88,6 +88,7 @@ public final class CaptureRig: @unchecked Sendable {
             }
             guard !late else {
                 await capture.stop()
+                hub.clear(key)
                 return
             }
             continuation.yield(.started(key))

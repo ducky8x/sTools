@@ -367,7 +367,8 @@ struct CaptureRigTests {
     /// guard would.
     @Test func aStopWhileTheSourcesStartLeavesNothingRunning() async {
         let take = Duration.milliseconds(200)
-        let pictures = [FakeVideoCapture(startTakes: take), FakeVideoCapture(startTakes: take)]
+        let pictures = [FakeVideoCapture(startTakes: take, firstFrame: solidFrame(PixelSize(width: 8, height: 8), at: 1)),
+                        FakeVideoCapture(startTakes: take)]
         let sounds = [FakeAudioCapture(startTakes: take), FakeAudioCapture(startTakes: take)]
         let rig = CaptureRig(
             video: [.base: pictures[0], .source(UUID()): pictures[1]],
@@ -380,6 +381,7 @@ struct CaptureRigTests {
         #expect(pictures.allSatisfy { !$0.isRunning })
         #expect(sounds.allSatisfy { !$0.isRunning })
         #expect(!rig.hasStarted(.base))
+        #expect(rig.hub.snapshot().frames.isEmpty)
     }
 
     /// A rig that was stopped before it started starts nothing.
