@@ -243,6 +243,21 @@ public final class HotkeyCenter {
         commit()
     }
 
+    // MARK: Key sets
+
+    /// The key set the tools' own hotkeys follow now, or nil when they follow none (Custom).
+    public var keySet: HotkeyKeySet? { HotkeyKeySet.current(in: settings.bindings) }
+
+    /// Picks `keySet`, in one change: each tool's own hotkey gets the set's key (one is added where a tool has none;
+    /// None, `noKeys`, removes them), and every other hotkey stays. Callers ask first when `keySet.replacedEdits(in:)` isn't
+    /// empty.
+    public func apply(_ keySet: HotkeyKeySet) {
+        let bindings = keySet.applied(to: settings.bindings)
+        guard bindings != settings.bindings else { return }
+        settings.bindings = bindings
+        commit()
+    }
+
     /// Why `combo` could not be added right now, ignoring the binding `id` (pass it when editing that
     /// binding). For checking a combination before the user commits it. A system refusal can only be
     /// found by really registering, so it is reported on the binding's status instead.

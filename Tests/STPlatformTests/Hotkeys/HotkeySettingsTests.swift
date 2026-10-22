@@ -8,8 +8,9 @@ struct HotkeySettingsTests {
         #expect(HotkeySettings.name == "hotkeys")
         #expect(HotkeySettings.version == 1)
         #expect(HotkeySettings.defaultValue.isEnabled == false)
-        #expect(HotkeySettings.defaultValue.bindings.isEmpty)
+        #expect(HotkeySettings.defaultValue.bindings.map(\.combo) == HotkeyKeySet.command.combos, "a new install's ⌘1–⌘5")
         #expect(HotkeySettings.defaultValue.showsConfirmation)
+        #expect(HotkeySettings().bindings.isEmpty)
     }
 
     /// Documents saved before the confirmation setting existed keep their switch and bindings, and get it on.
@@ -45,9 +46,10 @@ struct HotkeySettingsTests {
         #expect(binding.actions == [.toggle(.crosshair), .startStopRecording])
     }
 
+    /// A file that exists keeps what it has: without a list it has none, and gets no new install's key set.
     @Test func missingKeysFallBackToDefaults() throws {
         let settings = try JSONDecoder().decode(HotkeySettings.self, from: Data("{}".utf8))
-        #expect(settings == .defaultValue)
+        #expect(settings == HotkeySettings())
     }
 
     // MARK: Where hotkeys work
@@ -161,7 +163,7 @@ struct HotkeySettingsTests {
 
     @Test func wrongTypesFallBackToDefaults() throws {
         let allWrong = #"{"isEnabled":"yes","showsConfirmation":3,"pausesWhileSToolsIsActive":"no","bindings":{"a":1}}"#
-        #expect(try JSONDecoder().decode(HotkeySettings.self, from: Data(allWrong.utf8)) == .defaultValue)
+        #expect(try JSONDecoder().decode(HotkeySettings.self, from: Data(allWrong.utf8)) == HotkeySettings())
 
         let oneWrong = #"{"isEnabled":true,"showsConfirmation":false,"pausesWhileSToolsIsActive":false,"bindings":"oops"}"#
         let settings = try JSONDecoder().decode(HotkeySettings.self, from: Data(oneWrong.utf8))

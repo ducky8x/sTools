@@ -61,7 +61,8 @@ private final class Harness {
     var presses: [[HotkeyEvent]] = []
     var center: HotkeyCenter!
 
-    init(preload: HotkeySettings? = nil) async {
+    /// Starts from an empty list unless `preload` says otherwise; a new install's key set has tests of its own.
+    init(preload: HotkeySettings? = HotkeySettings()) async {
         store = SettingsStore(directory: directory, debounce: .milliseconds(1))
         if let preload {
             store.save(preload)
@@ -631,9 +632,11 @@ struct HotkeyCenterTests {
 
     @Test func settingTheSwitchToItsCurrentValueDoesNothing() async {
         let h = await Harness()
+        let writes = h.store.writeCount
         h.center.isEnabled = false
+        await h.store.flush()
         #expect(h.registrar.log.isEmpty)
-        #expect(h.store.writeCount == 0)
+        #expect(h.store.writeCount == writes)
     }
 
     // MARK: Any key

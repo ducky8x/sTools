@@ -35,7 +35,9 @@ public struct HotkeyBinding: Codable, Hashable, Identifiable, Sendable {
 public struct HotkeySettings: SettingsDocument {
     public static let name = "hotkeys"
     public static let version = 1
-    public static let defaultValue = HotkeySettings()
+    /// A new install's (no `hotkeys.json` yet): ⌘1–⌘5, one per tool in sidebar order, with the master switch off.
+    /// A file that exists keeps what it has, even an empty list.
+    public static let defaultValue = HotkeySettings(bindings: HotkeyKeySet.newInstall.bindings())
 
     /// The master switch. Off by default; while off, nothing is registered with the system.
     public var isEnabled: Bool

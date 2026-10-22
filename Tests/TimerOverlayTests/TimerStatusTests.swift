@@ -77,7 +77,9 @@ struct TimerKeyStatusTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let registrar = RefusingRegistrar()
         registrar.refused = [f14]
-        let hotkeys = HotkeyCenter(store: SettingsStore(directory: directory), registrar: registrar,
+        let store = SettingsStore(directory: directory)
+        store.save(HotkeySettings()) // an existing, empty list, rather than a new install's ⌘1–⌘5
+        let hotkeys = HotkeyCenter(store: store, registrar: registrar,
                                    toolStates: { [:] }, handler: { _ in })
         #expect(TimerKeyStatus(hotkeys: hotkeys) == .noKey)
         let first = hotkeys.add(combo: f13, actions: [.startTimer])
