@@ -12,4 +12,16 @@ extension TimerOverlayController {
     public func setPlacementMode(_ isOn: Bool) {
         settings.placementModeEnabled = isOn
     }
+
+    /// "Move by dragging" changed. Built in the next commit.
+    func placementSettingChanged() {}
+
+    /// Minecraft or the displays changed while placement mode may be dragging. Built in the next commit.
+    func placementEnvironmentChanged() {}
+}
+
+/// A drag of the plate in placement mode, from its start to its end.
+struct PlacementDrag {
+    /// The plate's frame when the drag started.
+    let startFrame: CGRect
 }
