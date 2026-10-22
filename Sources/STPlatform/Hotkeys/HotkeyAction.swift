@@ -19,9 +19,10 @@ public enum HotkeyAction: Hashable, Sendable {
     /// does, and a press switches the tool on when it's off.
     case startTimer
 
-    /// Every action, in the order a picker should list them.
+    /// Every action, in the order a picker should list them: the sidebar's (NBB Overlay, Window Backdrop, Crosshair,
+    /// Timer Overlay's Start timer, Screen Recording), the order the key sets give the tools their keys in.
     public static var allCases: [HotkeyAction] {
-        HotkeyTool.allCases.map(HotkeyAction.toggle) + [.startStopRecording, .startTimer]
+        HotkeyTool.allCases.map(HotkeyAction.toggle) + [.startTimer, .startStopRecording]
     }
 }
 

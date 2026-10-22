@@ -135,10 +135,12 @@ struct HotkeyActionTests {
         #expect(list.uniqued == [.toggle(.crosshair), .startStopRecording, .toggle(.nbbOverlay)])
     }
 
-    /// One chip per tool: three toggles, Screen Recording's one action, then Start timer.
-    @Test func allCasesListsThreeTogglesScreenRecordingThenStartTimer() {
+    /// One chip per tool, in sidebar order: the three toggles, Start timer (Timer Overlay), then Screen Recording's one
+    /// action. The key sets give the tools their keys in the same order.
+    @Test func allCasesFollowTheSidebar() {
         #expect(HotkeyAction.allCases == [.toggle(.nbbOverlay), .toggle(.windowBackdrop), .toggle(.crosshair),
-                                          .startStopRecording, .startTimer])
+                                          .startTimer, .startStopRecording])
+        #expect(HotkeyAction.allCases == HotkeyKeySet.toolActions)
     }
 
     @Test func storedAsPlainStrings() throws {
