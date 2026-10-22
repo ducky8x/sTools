@@ -24,7 +24,7 @@ struct ToolHotkeyRowTests {
         #expect(ToolID.timerOverlay.hotkeyAction == .startTimer)
         #expect(ToolID.keyRebinder.hotkeyAction == nil)
         #expect(ToolID.screenRecording.hotkeyTool == nil)
-        for tool in [ToolID.nbbOverlay, .windowBackdrop, .crosshair, .screenRecording] {
+        for tool in [ToolID.crosshair, .nbbOverlay, .screenRecording, .windowBackdrop] {
             #expect(ToolHotkeyRow(model: harness.model, tool: tool)?.action == tool.hotkeyAction)
         }
         // Timer Overlay's page has its own Key row instead.
