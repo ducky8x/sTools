@@ -177,6 +177,30 @@ struct STShortcutRecorderModel: Equatable {
 /// A local `NSEvent` monitor that exists only while recording. It swallows every key press so the
 /// shortcut being recorded doesn't also trigger menu commands or type into other controls, and reports
 /// clicks (which end recording) and the app losing focus without swallowing them.
+/// Tells the app when a field starts and stops listening for raw key presses (a shortcut recorder recording), so
+/// global hotkeys can step aside meanwhile and the field gets every key (spec 6.1). The app sets `onChange` once;
+/// with none set, nothing happens.
+@MainActor
+public enum STKeyCapture {
+    /// Called with true when the first listener starts and false when the last one stops.
+    public static var onChange: (@MainActor (Bool) -> Void)?
+    private static var listeners: Set<ObjectIdentifier> = []
+
+    /// Whether any field is listening right now.
+    public static var isCapturing: Bool { !listeners.isEmpty }
+
+    static func begin(_ listener: AnyObject) {
+        let wasCapturing = isCapturing
+        listeners.insert(ObjectIdentifier(listener))
+        if !wasCapturing { onChange?(true) }
+    }
+
+    static func end(_ listener: AnyObject) {
+        guard listeners.remove(ObjectIdentifier(listener)) != nil, !isCapturing else { return }
+        onChange?(false)
+    }
+}
+
 @MainActor
 final class STShortcutKeyMonitor {
     enum Event {
@@ -192,6 +216,7 @@ final class STShortcutKeyMonitor {
 
     func start(_ handle: @escaping @MainActor (Event) -> Void) {
         stop()
+        STKeyCapture.begin(self)
         token = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged, .leftMouseDown, .rightMouseDown, .otherMouseDown]) { event in
             switch event.type {
             case .keyDown:
@@ -218,6 +243,7 @@ final class STShortcutKeyMonitor {
         token = nil
         if let resignObserver { NotificationCenter.default.removeObserver(resignObserver) }
         resignObserver = nil
+        STKeyCapture.end(self)
     }
 }
 

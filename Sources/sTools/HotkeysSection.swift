@@ -4,7 +4,7 @@ import STPlatform
 import SwiftUI
 
 /// Home ▸ Hotkeys (spec 6.1): a master switch, the list of bindings, an add/edit editor for each, and
-/// Advanced (spec 2.4) with the press confirmation and the pause while sTools is in front. Any key works, alone
+/// Advanced (spec 2.4) with the press confirmation. Any key works, alone
 /// or with modifiers. What the Key Rebinder knows (which key on the keyboard sends a hotkey's key, what Minecraft
 /// uses it for) arrives through `model.hotkeys.advisor`; without one, those lines are simply left out.
 struct HotkeysSection: View {
@@ -33,10 +33,6 @@ struct HotkeysSection: View {
             Task { await prepareAdvice() }
         }
         if hotkeys.isEnabled {
-            if hotkeys.pausesWhileSToolsIsActive {
-                HotkeysCaption("Hotkeys pause while sTools is in front. Switch to another app to use them.")
-                    .padding(.top, 10)
-            }
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(hotkeys.bindings) { binding in
                     HotkeyBindingRow(
@@ -59,14 +55,9 @@ struct HotkeysSection: View {
             .padding(.top, 8)
             STAdvancedDisclosure(isExpanded: $advancedIsOpen) {
                 VStack(alignment: .leading, spacing: 0) {
-                    STSettingsRow("Show a confirmation") {
+                    STSettingsRow("Show a confirmation", showsRule: false) {
                         STSwitch(isOn: confirmationBinding, label: "Show a confirmation")
                     }
-                    STSettingsRow("Pause while sTools is in front", showsRule: false) {
-                        STSwitch(isOn: pauseBinding, label: "Pause while sTools is in front")
-                    }
-                    HotkeysCaption("Lets you type, record and test every key in sTools. Off: hotkeys also fire in sTools, but sTools can't record or test their keys.")
-                        .padding(.bottom, 8)
                 }
             }
             .padding(.top, 14)
@@ -84,10 +75,6 @@ struct HotkeysSection: View {
 
     private var confirmationBinding: Binding<Bool> {
         Binding(get: { model.hotkeys.showsConfirmation }, set: { model.hotkeys.showsConfirmation = $0 })
-    }
-
-    private var pauseBinding: Binding<Bool> {
-        Binding(get: { model.hotkeys.pausesWhileSToolsIsActive }, set: { model.hotkeys.pausesWhileSToolsIsActive = $0 })
     }
 }
 

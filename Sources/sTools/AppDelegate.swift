@@ -1,23 +1,17 @@
 import AppKit
 
 /// Keeps the app alive after its window closes, reopens the window from the Dock, shuts tools off on quit, and
-/// tells the hotkeys whether sTools is in front.
+/// keeps hotkeys working while sTools is in front.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = AppModel()
+    private var hotkeyKeys: HotkeyKeyWatcher?
 
-    // Hotkeys pause while sTools is the active app (Home ▸ Hotkeys ▸ Advanced), so every key works in sTools.
-    // Only the delegate tells the center, so a pause never outlasts sTools being in front.
+    // Hotkeys fire in every app, sTools included; they pause only while sTools listens for raw keys (spec 6.1).
     func applicationDidFinishLaunching(_ notification: Notification) {
-        model.hotkeys.appIsActive = NSApp.isActive
-    }
-
-    func applicationDidBecomeActive(_ notification: Notification) {
-        model.hotkeys.appIsActive = true
-    }
-
-    func applicationDidResignActive(_ notification: Notification) {
-        model.hotkeys.appIsActive = false
+        let watcher = HotkeyKeyWatcher(center: model.hotkeys)
+        watcher.start()
+        hotkeyKeys = watcher
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }

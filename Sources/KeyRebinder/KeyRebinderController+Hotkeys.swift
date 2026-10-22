@@ -4,7 +4,7 @@ import STPlatform
 
 /// How a key's sTools hotkeys show on it: a gold ring, or a slashed red one when one of them isn't working.
 public enum HotkeyMark: Hashable, Sendable {
-    /// Every hotkey on the key is registered (live, or paused while sTools is in front).
+    /// Every hotkey on the key is registered (live, or paused while sTools listens for keys).
     case working
     /// At least one isn't working: macOS refused it, another hotkey already uses its combination, macOS keeps the
     /// combination, or it has no actions.

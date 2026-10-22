@@ -77,15 +77,26 @@ public final class KeyRebinderController {
 
     // Live key tester (spec 5.5.5).
     public var isTesting = false {
-        didSet { if !isTesting { litKeys = []; lastTrace = nil } }
+        didSet {
+            if !isTesting { litKeys = []; lastTrace = nil }
+            updateHotkeyPause()
+        }
     }
     public private(set) var litKeys: Set<KarabinerEvent> = []
     public private(set) var lastTrace: KeyTester.Trace?
 
     /// While true, the next key (or mouse button 3 and up) pressed becomes `capturedOutput` instead of
     /// selecting a key; buttons 1 and 2 stay free for clicking.
-    public var isCapturingOutput = false
+    public var isCapturingOutput = false {
+        didSet { updateHotkeyPause() }
+    }
     public var capturedOutput: KarabinerEvent?
+
+    /// sTools hotkeys pause while the page listens for raw keys (Test keys, or choosing an output by pressing it), so
+    /// those see every key (spec 5.5.3, 5.5.5, 6.1). Selecting a key by pressing it doesn't pause them.
+    func updateHotkeyPause() {
+        hotkeyCenter?.setPaused(isTesting || isCapturingOutput, for: .keyRebinder)
+    }
 
     @ObservationIgnored private let services: ToolServices
     @ObservationIgnored private let configURL: URL
@@ -531,7 +542,7 @@ public final class KeyRebinderController {
     public func testerPressed(_ event: KarabinerEvent) {
         guard isTesting else { return }
         litKeys.insert(event)
-        // Hotkeys pause while sTools is in front, which is why their keys can arrive here at all.
+        // Hotkeys pause while Test keys is on, which is why their keys can arrive here at all.
         let hotkeys = showsHotkeyLayer && hotkeysAreOn ? hotkeyCenter?.activeBindings ?? [] : []
         lastTrace = KeyTester.trace(
             event, physicalKeys: physicalKeys, bindings: derived.bindings, minecraftKeybinds: minecraftKeybinds,

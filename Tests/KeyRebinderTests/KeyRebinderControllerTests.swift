@@ -851,17 +851,24 @@ struct KeyRebinderHotkeyTests {
         let center = try #require(harness.center)
         let controller = harness.controller
         let id = center.add(combo: HotkeyFixtures.combo("f13"), actions: [.toggle(.crosshair)])
-        center.appIsActive = true
-        #expect(center.isPaused)
+        center.isEnabled = true
+        #expect(!center.isPaused)
+        // Test keys pauses hotkeys while it listens, so their keys arrive here.
         controller.isTesting = true
+        #expect(center.isPaused)
+        #expect(center.pauses == [.keyRebinder])
         controller.testerPressed(.key("f13"))
         #expect(controller.lastTrace?.hotkeys.map(\.id) == [id])
         #expect(controller.lastTrace?.hotkeysArePaused == true)
-        #expect(controller.lastTrace?.summary().hasSuffix("sTools hotkey on F13: F13 (Crosshair). It pauses while sTools is in front.") == true)
+        #expect(controller.lastTrace?.summary().hasSuffix("sTools hotkey on F13: F13 (Crosshair). It pauses while Test keys is on.") == true)
 
-        center.appIsActive = false
-        controller.testerPressed(.key("f13"))
-        #expect(controller.lastTrace?.hotkeysArePaused == false)
+        controller.isTesting = false
+        #expect(!center.isPaused)
+        controller.isCapturingOutput = true
+        #expect(center.pauses == [.keyRebinder])
+        controller.isCapturingOutput = false
+        #expect(center.pauses.isEmpty)
+        controller.isTesting = true
         controller.settings.showsHotkeys = false
         controller.testerPressed(.key("f13"))
         #expect(controller.lastTrace?.hotkeys.isEmpty == true)

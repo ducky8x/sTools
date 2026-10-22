@@ -50,18 +50,19 @@ struct HotkeySettingsTests {
         #expect(settings == .defaultValue)
     }
 
-    // MARK: Pause setting
+    // MARK: The old pause setting
 
-    @Test func thePauseSettingDefaultsOnAndRoundTrips() throws {
-        #expect(HotkeySettings.defaultValue.pausesWhileSToolsIsActive)
-        let older = #"{"isEnabled":true,"bindings":[],"showsConfirmation":false}"#
-        #expect(try JSONDecoder().decode(HotkeySettings.self, from: Data(older.utf8)).pausesWhileSToolsIsActive)
+    /// Builds that paused hotkeys whenever sTools was in front saved `pausesWhileSToolsIsActive`, on by default.
+    /// That pause was why hotkeys never fired in sTools; the key is now ignored on load and dropped on save.
+    @Test func theOldPauseSettingIsIgnoredAndDropped() throws {
+        let older = #"{"isEnabled":true,"bindings":[],"showsConfirmation":false,"pausesWhileSToolsIsActive":true}"#
+        let settings = try JSONDecoder().decode(HotkeySettings.self, from: Data(older.utf8))
+        #expect(settings == HotkeySettings(isEnabled: true, bindings: [], showsConfirmation: false))
 
-        let value = HotkeySettings(isEnabled: true, bindings: [], showsConfirmation: true, pausesWhileSToolsIsActive: false)
-        let data = try JSONEncoder().encode(value)
+        let data = try JSONEncoder().encode(settings)
         let json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-        #expect(json["pausesWhileSToolsIsActive"] as? Bool == false)
-        #expect(try JSONDecoder().decode(HotkeySettings.self, from: data) == value)
+        #expect(json["pausesWhileSToolsIsActive"] == nil)
+        #expect(Set(json.keys) == ["isEnabled", "bindings", "showsConfirmation"])
     }
 
     // MARK: Lossy decoding (one bad entry never costs the rest)
@@ -129,7 +130,7 @@ struct HotkeySettingsTests {
 
         let oneWrong = #"{"isEnabled":true,"showsConfirmation":false,"pausesWhileSToolsIsActive":false,"bindings":"oops"}"#
         let settings = try JSONDecoder().decode(HotkeySettings.self, from: Data(oneWrong.utf8))
-        #expect(settings == HotkeySettings(isEnabled: true, bindings: [], showsConfirmation: false, pausesWhileSToolsIsActive: false))
+        #expect(settings == HotkeySettings(isEnabled: true, bindings: [], showsConfirmation: false))
     }
 
     /// Before lossy decoding, one bad entry made the settings store move the whole file aside.

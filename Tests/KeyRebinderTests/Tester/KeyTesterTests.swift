@@ -70,9 +70,9 @@ import STPlatform
         #expect(paused.hotkeys == [withOption, alone])
         #expect(paused.hotkeysArePaused)
         #expect(paused.summary() == "F18 arrived; it comes from Caps Lock. sTools hotkeys on F18: \u{2325}F18 (Crosshair), "
-            + "F18 (NBB Overlay + Crosshair). They pause while sTools is in front.")
+            + "F18 (NBB Overlay + Crosshair). They pause while Test keys is on.")
         let one = KeyTester.trace(.key("f18"), physicalKeys: keys, bindings: rebound, hotkeys: [withOption], hotkeysPaused: true)
-        #expect(one.summary().hasSuffix("sTools hotkey on F18: \u{2325}F18 (Crosshair). It pauses while sTools is in front."))
+        #expect(one.summary().hasSuffix("sTools hotkey on F18: \u{2325}F18 (Crosshair). It pauses while Test keys is on."))
     }
 
     @Test func theHotkeySentenceComesAfterMinecraftsActionsAndCanBeLeftOut() {
@@ -80,7 +80,7 @@ import STPlatform
         let trace = KeyTester.trace(
             .key("q"), physicalKeys: keys, bindings: [:], minecraftKeybinds: keybinds, hotkeys: [HotkeyFixtures.hotkey("q", .shift)],
             hotkeysPaused: true)
-        #expect(trace.summary() == "Q, not rebound. In Minecraft: Drop item. sTools hotkey on Q: \u{21E7}Q (Crosshair). It pauses while sTools is in front.")
+        #expect(trace.summary() == "Q, not rebound. In Minecraft: Drop item. sTools hotkey on Q: \u{21E7}Q (Crosshair). It pauses while Test keys is on.")
         #expect(trace.summary(showsHotkeys: false) == "Q, not rebound. In Minecraft: Drop item.")
     }
 

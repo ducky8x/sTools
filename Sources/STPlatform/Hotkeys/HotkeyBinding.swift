@@ -43,19 +43,16 @@ public struct HotkeySettings: SettingsDocument {
     /// Advanced: whether a press shows the on-screen confirmation (a seal and what changed). On by default;
     /// the sound plays either way.
     public var showsConfirmation: Bool
-    /// Advanced: whether hotkeys pause while sTools is the active app, so every key works in sTools itself
-    /// (typing, recording a combination, testing keys). On by default. Builds without it ignore the key.
-    public var pausesWhileSToolsIsActive: Bool
 
-    public init(isEnabled: Bool = false, bindings: [HotkeyBinding] = [], showsConfirmation: Bool = true,
-                pausesWhileSToolsIsActive: Bool = true) {
+    public init(isEnabled: Bool = false, bindings: [HotkeyBinding] = [], showsConfirmation: Bool = true) {
         self.isEnabled = isEnabled
         self.bindings = bindings
         self.showsConfirmation = showsConfirmation
-        self.pausesWhileSToolsIsActive = pausesWhileSToolsIsActive
     }
 
-    private enum CodingKeys: String, CodingKey { case isEnabled, bindings, showsConfirmation, pausesWhileSToolsIsActive }
+    /// Files from builds that paused hotkeys whenever sTools was in front also carry `pausesWhileSToolsIsActive`.
+    /// Hotkeys now pause only while sTools listens for raw keys, so that key is ignored and dropped on the next save.
+    private enum CodingKeys: String, CodingKey { case isEnabled, bindings, showsConfirmation }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -65,8 +62,7 @@ public struct HotkeySettings: SettingsDocument {
         let bindings = try? container.decodeIfPresent([LossyElement<HotkeyBinding>].self, forKey: .bindings)
         self.init(isEnabled: flag(.isEnabled, default: false),
                   bindings: bindings?.compactMap(\.value) ?? [],
-                  showsConfirmation: flag(.showsConfirmation, default: true),
-                  pausesWhileSToolsIsActive: flag(.pausesWhileSToolsIsActive, default: true))
+                  showsConfirmation: flag(.showsConfirmation, default: true))
     }
 }
 
