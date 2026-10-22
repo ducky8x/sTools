@@ -155,6 +155,7 @@ public final class RecordingWriter: @unchecked Sendable {
             current.lastEnd = time + CMTime(value: 1, timescale: CMTimeScale(configuration.frameRate))
             segment = current
             framesWritten += 1
+            if framesWritten == 1 { events.append(.firstFrameWritten) }
             return .written
         }
         for event in events { continuation.yield(event) }

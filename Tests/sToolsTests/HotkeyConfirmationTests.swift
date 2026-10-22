@@ -20,6 +20,7 @@ struct HotkeyConfirmationTests {
     }
 
     @Test func recordingPhrases() {
+        #expect(HotkeyConfirmation.phrase(.recordingStarting) == "Starting the recording\u{2026}")
         #expect(HotkeyConfirmation.phrase(.recordingStarted) == "Recording started")
         #expect(HotkeyConfirmation.phrase(.recordingStopped) == "Recording stopped")
         #expect(HotkeyConfirmation.phrase(.recordingCountdown(seconds: 3)) == "Recording starts in 3 seconds")
@@ -38,6 +39,9 @@ struct HotkeyConfirmationTests {
         #expect(!HotkeyConfirmation.changedSomething([.needsAccessibility(.crosshair), .needsAccessibility(.nbbOverlay)]))
         #expect(!HotkeyConfirmation.changedSomething([.recordingFinishing]))
         #expect(!HotkeyConfirmation.changedSomething([.recordingAwaitingDecision]))
+        // A start that's still waiting for its first frame hasn't recorded anything yet.
+        #expect(!HotkeyConfirmation.changedSomething([.recordingStarting]))
+        #expect(HotkeyConfirmation.changedSomething([.recordingStarted]))
         #expect(!HotkeyConfirmation.changedSomething([]))
     }
 
@@ -45,10 +49,13 @@ struct HotkeyConfirmationTests {
         #expect(HotkeyConfirmation.summary([]).isEmpty)
     }
 
-    /// The line follows what the press did, which the controller reports as the press returns.
+    /// The line follows what the press did, which the controller reports as the press returns. A start says nothing of
+    /// "Recording started" yet: that comes once the recording writes (`recordingStartEffect`). While its sources start,
+    /// the press says it's starting; with them already running, the press has no line of its own.
     @Test func recordingEffectSaysWhatThePressDid() {
-        let cases: [(ScreenRecordingController.KeyPress, HotkeyConfirmation.Effect)] = [
-            (.started, .recordingStarted),
+        let cases: [(ScreenRecordingController.KeyPress, HotkeyConfirmation.Effect?)] = [
+            (.starting(waitsForSources: true), .recordingStarting),
+            (.starting(waitsForSources: false), nil),
             (.countdown(seconds: 5), .recordingCountdown(seconds: 5)),
             (.stopped, .recordingStopped),
             (.canceled, .recordingCanceled),
@@ -63,10 +70,26 @@ struct HotkeyConfirmationTests {
     }
 
     /// A press that started nothing gets its line without the seal.
-    @Test func aStartThatCouldNotSwitchOnEarnsNoSeal() {
-        #expect(!HotkeyConfirmation.changedSomething([HotkeyConfirmation.recordingEffect(.couldNotSwitchOn)]))
-        #expect(HotkeyConfirmation.summary([HotkeyConfirmation.recordingEffect(.couldNotSwitchOn)])
-            == "Screen Recording needs Accessibility")
+    @Test func aStartThatCouldNotSwitchOnEarnsNoSeal() throws {
+        let effect = try #require(HotkeyConfirmation.recordingEffect(.couldNotSwitchOn))
+        #expect(!HotkeyConfirmation.changedSomething([effect]))
+        #expect(HotkeyConfirmation.summary([effect]) == "Screen Recording needs Accessibility")
+    }
+
+    /// Once a start the key made writes its first frame, the line is "Recording started", with the seal.
+    @Test func aStartThatWritesSaysRecordingStarted() {
+        let effect = HotkeyConfirmation.recordingStartEffect(.started)
+        #expect(effect == .recordingStarted)
+        #expect(HotkeyConfirmation.changedSomething([effect]))
+        #expect(HotkeyConfirmation.summary([effect]) == "Recording started")
+    }
+
+    /// A start that fails after the press says why, without the seal: nothing was recorded.
+    @Test func aStartThatFailsSaysWhy() {
+        let effect = HotkeyConfirmation.recordingStartEffect(.failed("the disk is almost full"))
+        #expect(effect == .recordingCouldNotStart("the disk is almost full"))
+        #expect(!HotkeyConfirmation.changedSomething([effect]))
+        #expect(HotkeyConfirmation.summary([effect]) == "Recording couldn\u{2019}t start: the disk is almost full")
     }
 
     /// Without Screen & System Audio Recording nothing starts, so the line names the permission and earns no seal.

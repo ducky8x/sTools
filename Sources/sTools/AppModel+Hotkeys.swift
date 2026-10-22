@@ -27,11 +27,16 @@ extension AppModel {
     }
 
     /// One hotkey press (spec 6.1's toggle semantics are already resolved by `HotkeyCenter`): carries out its
-    /// events in order, then confirms the press once — the stamp sound, and unless Home ▸ Hotkeys ▸ Advanced
-    /// turns it off, the seal with a line of what changed, on Minecraft's display. A press that changed
-    /// nothing (a tool needs Accessibility) gets a plain click and its line without the seal.
+    /// events in order, then confirms the press once (`confirm`).
     func handleHotkeyPress(_ events: [HotkeyEvent]) {
-        let effects = events.compactMap { handleHotkeyEvent($0) }
+        confirm(events.compactMap { handleHotkeyEvent($0) })
+    }
+
+    /// Confirms what a press did, or what it led to once that happened (a start the key made writing its first
+    /// frame): the stamp sound, and unless Home ▸ Hotkeys ▸ Advanced turns it off, the seal with a line of what changed
+    /// on Minecraft's display, which VoiceOver announces. Something that changed nothing (a tool needs Accessibility, a
+    /// recording that is only starting) gets a plain click and its line without the seal.
+    func confirm(_ effects: [HotkeyConfirmation.Effect]) {
         guard !effects.isEmpty else { return }
         let changed = HotkeyConfirmation.changedSomething(effects)
         sound.play(changed ? .stamp : .click)
@@ -53,8 +58,10 @@ extension AppModel {
         case .toggleRecording:
             guard let recording = controller(for: .screenRecording, as: ScreenRecordingController.self) else { return nil }
             // Switching on (when needed) goes through `requestEnable`, which keeps rule R10. The line says what the
-            // press did: a second press while the recording starts cancels it rather than starting another.
-            return HotkeyConfirmation.recordingEffect(recording.toggleRecording())
+            // press did: a second press while the recording starts cancels it rather than starting another. A start
+            // isn't confirmed as "Recording started" until its first frame is in the file (`keyStartEnded`); its
+            // timings count from when the key went down.
+            return HotkeyConfirmation.recordingEffect(recording.toggleRecording(secondsAgo: hotkeys.keyEventAge))
         case .startTimer:
             // The overlay confirms a start, restart, pause or cancel itself, so those add no sound or line (plan
             // decision 5). A press that couldn't switch the tool on (no Accessibility, R10) gets the click and its line,

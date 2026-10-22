@@ -65,51 +65,104 @@ public final class FrameHub: @unchecked Sendable {
         var stats = HubStats()
     }
 
-    private let state = OSAllocatedUnfairLock(initialState: [SourceKey: Slot]())
+    /// Someone waiting for a slot's first frame (`waitForFrame`).
+    private struct Waiter {
+        let key: SourceKey
+        let continuation: CheckedContinuation<Bool, Never>
+    }
+
+    private struct State {
+        var slots: [SourceKey: Slot] = [:]
+        var waiters: [UInt64: Waiter] = [:]
+        var nextWaiter: UInt64 = 0
+
+        /// Takes the waiters for `key`, or for every slot when nil.
+        mutating func takeWaiters(for key: SourceKey?) -> [Waiter] {
+            let taken = waiters.filter { key == nil || $0.value.key == key }
+            for id in taken.keys { waiters[id] = nil }
+            return Array(taken.values)
+        }
+    }
+
+    private let state = OSAllocatedUnfairLock(initialState: State())
 
     public init() {}
 
     /// Stores `frame` as the latest of `key`, replacing an earlier frame no tick has used yet.
     public func submit(_ frame: VideoFrame, for key: SourceKey) {
-        state.withLock { slots in
-            var slot = slots[key] ?? Slot()
+        let waiters = state.withLock { state in
+            var slot = state.slots[key] ?? Slot()
             slot.stats.received += 1
             if slot.frame != nil, !slot.consumed { slot.stats.coalesced += 1 }
             slot.frame = frame
             slot.consumed = false
-            slots[key] = slot
+            state.slots[key] = slot
+            return state.takeWaiters(for: key)
         }
+        for waiter in waiters { waiter.continuation.resume(returning: true) }
     }
 
-    /// Empties a slot (its window closed). The compositor skips the source from the next tick on.
+    /// Empties a slot (its window closed). The compositor skips the source from the next tick on, and a wait for its
+    /// first frame ends.
     public func clear(_ key: SourceKey) {
-        state.withLock { slots in
-            guard var slot = slots[key] else { return }
-            slot.frame = nil
-            slot.consumed = true
-            slots[key] = slot
+        let waiters = state.withLock { state in
+            if var slot = state.slots[key] {
+                slot.frame = nil
+                slot.consumed = true
+                state.slots[key] = slot
+            }
+            return state.takeWaiters(for: key)
         }
+        for waiter in waiters { waiter.continuation.resume(returning: false) }
     }
 
     /// Hides a slot without forgetting its last frame (a minimized window with "show nothing").
     public func setHidden(_ hidden: Bool, for key: SourceKey) {
-        state.withLock { slots in
-            var slot = slots[key] ?? Slot()
+        state.withLock { state in
+            var slot = state.slots[key] ?? Slot()
             slot.hidden = hidden
-            slots[key] = slot
+            state.slots[key] = slot
         }
+    }
+
+    /// Waits until `key` has a frame, for `timeout` at most: a recording's start waits for Minecraft's first frame,
+    /// so its file doesn't open on a black canvas (spec 5.4.4). True once there is one; false when the wait timed
+    /// out, or the slot or every frame was let go of.
+    public func waitForFrame(of key: SourceKey, timeout: Duration) async -> Bool {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+            let id: UInt64? = state.withLock { state in
+                guard state.slots[key]?.frame == nil else { return nil }
+                let id = state.nextWaiter
+                state.nextWaiter += 1
+                state.waiters[id] = Waiter(key: key, continuation: continuation)
+                return id
+            }
+            guard let id else {
+                continuation.resume(returning: true)
+                return
+            }
+            Task {
+                try? await Task.sleep(for: timeout)
+                self.endWait(id)
+            }
+        }
+    }
+
+    private func endWait(_ id: UInt64) {
+        let waiter = state.withLock { $0.waiters.removeValue(forKey: id) }
+        waiter?.continuation.resume(returning: false)
     }
 
     /// The latest frame of every visible source. Call once per tick.
     public func snapshot() -> FrameSnapshot {
-        state.withLock { slots in
+        state.withLock { state in
             var frames: [SourceKey: SnapshotFrame] = [:]
-            for key in Array(slots.keys) {
-                guard var slot = slots[key], let frame = slot.frame, !slot.hidden else { continue }
+            for key in Array(state.slots.keys) {
+                guard var slot = state.slots[key], let frame = slot.frame, !slot.hidden else { continue }
                 let isNew = !slot.consumed
                 if !isNew { slot.stats.reused += 1 }
                 slot.consumed = true
-                slots[key] = slot
+                state.slots[key] = slot
                 frames[key] = SnapshotFrame(frame: frame, isNew: isNew)
             }
             return FrameSnapshot(frames: frames)
@@ -119,17 +172,21 @@ public final class FrameHub: @unchecked Sendable {
     /// The latest frame of every visible source, without marking anything used: for the live preview, which
     /// must not disturb the recording's accounting.
     public func peek() -> [SourceKey: VideoFrame] {
-        state.withLock { slots in
-            slots.compactMapValues { slot in slot.hidden ? nil : slot.frame }
+        state.withLock { state in
+            state.slots.compactMapValues { slot in slot.hidden ? nil : slot.frame }
         }
     }
 
     public func stats(for key: SourceKey) -> HubStats {
-        state.withLock { $0[key]?.stats ?? HubStats() }
+        state.withLock { $0.slots[key]?.stats ?? HubStats() }
     }
 
-    /// Drops every stored frame, releasing their buffers.
+    /// Drops every stored frame, releasing their buffers, and ends every wait for a first frame.
     public func removeAll() {
-        state.withLock { $0.removeAll() }
+        let waiters = state.withLock { state in
+            state.slots.removeAll()
+            return state.takeWaiters(for: nil)
+        }
+        for waiter in waiters { waiter.continuation.resume(returning: false) }
     }
 }

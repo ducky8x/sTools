@@ -99,6 +99,8 @@ public struct WriterResult: Sendable, Equatable {
 
 public enum WriterEvent: Sendable, Equatable {
     case segmentStarted(index: Int, url: URL)
+    /// The recording's first frame is in the file: it has really started (spec 5.4.4). Once per writer.
+    case firstFrameWritten
     case segmentFinished(index: Int, url: URL)
     case lowDiskWarning(freeBytes: Int64)
     /// Free space fell under the hard floor; the writer has stopped and is finalizing.
@@ -121,4 +123,16 @@ public enum RecordingWriterError: Error, Equatable {
     case invalidConfiguration(String)
     case fileExists(URL)
     case writerFailed(String)
+}
+
+/// Words for the page's note when a recording can't start (spec 5.4.4), instead of an error number.
+extension RecordingWriterError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .alreadyStarted: "The recording had already started."
+        case .invalidConfiguration(let detail): "Its settings can\u{2019}t be recorded (\(detail))."
+        case .fileExists(let url): "\(url.lastPathComponent) is already in the recordings folder."
+        case .writerFailed(let detail): "The file couldn\u{2019}t be written (\(detail))."
+        }
+    }
 }

@@ -69,7 +69,9 @@ struct RecordBar: View {
         case .starting: return "Starting the sources."
         case .countingDown: return "Get ready."
         case .finishing: return "Writing the file\u{2026}"
-        case .deciding: return "Choose Save or Delete. Screen Recording switches off after."
+        case .deciding:
+            // The stop switched the tool off; it's on again only if it was switched on by hand since.
+            return controller.isEnabled ? "Choose Save or Delete." : "Screen Recording is off. Choose Save or Delete."
         case .idle:
             if !canRecord { return "Allow Screen & System Audio Recording to record." }
             return controller.isEnabled ? "Ready. Stopping switches Screen Recording off." : "Record switches Screen Recording on first."
