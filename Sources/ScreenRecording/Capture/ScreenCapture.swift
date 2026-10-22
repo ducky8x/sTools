@@ -43,6 +43,8 @@ public final class ScreenCapture: NSObject, VideoCapture, SCStreamOutput, SCStre
         var stream: StreamBox?
         var deliver: (@Sendable (VideoCaptureEvent) -> Void)?
         var includedWindowIDs: Set<UInt32> = []
+        /// The size the stream was last asked to run at.
+        var requestedSize: PixelSize?
     }
 
     public init(target: Target, showsCursor: Bool, frameRate: Int = 60) {
@@ -57,17 +59,10 @@ public final class ScreenCapture: NSObject, VideoCapture, SCStreamOutput, SCStre
             (Set(OverlayPanel.visibleWindowNumbers()), Set(OverlayPanel.captureExcludedWindowNumbers()))
         }
         let (filter, included) = try makeFilter(content, overlays: overlays, excluded: excluded)
-        let configuration = SCStreamConfiguration()
         let scale = CGFloat(filter.pointPixelScale)
-        configuration.width = max(2, Int((filter.contentRect.width * scale).rounded()))
-        configuration.height = max(2, Int((filter.contentRect.height * scale).rounded()))
-        configuration.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(frameRate))
-        configuration.pixelFormat = kCVPixelFormatType_32BGRA
-        configuration.colorSpaceName = CGColorSpace.sRGB
-        configuration.queueDepth = 5
-        configuration.showsCursor = showsCursor
-        configuration.scalesToFit = true
-        configuration.preservesAspectRatio = true
+        let size = PixelSize(width: max(2, Int((filter.contentRect.width * scale).rounded())),
+                             height: max(2, Int((filter.contentRect.height * scale).rounded())))
+        let configuration = Self.configuration(size: size, frameRate: frameRate, showsCursor: showsCursor)
         let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
         try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
         let box = StreamBox(stream)
@@ -75,9 +70,39 @@ public final class ScreenCapture: NSObject, VideoCapture, SCStreamOutput, SCStre
             $0.stream = box
             $0.deliver = deliver
             $0.includedWindowIDs = included
+            $0.requestedSize = size
         }
         try await box.stream.startCapture()
         if case .base = target { startRefreshing() }
+    }
+
+    private static func configuration(size: PixelSize, frameRate: Int, showsCursor: Bool) -> SCStreamConfiguration {
+        let configuration = SCStreamConfiguration()
+        configuration.width = size.width
+        configuration.height = size.height
+        configuration.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(frameRate))
+        configuration.pixelFormat = kCVPixelFormatType_32BGRA
+        configuration.colorSpaceName = CGColorSpace.sRGB
+        configuration.queueDepth = 5
+        configuration.showsCursor = showsCursor
+        configuration.scalesToFit = true
+        configuration.preservesAspectRatio = true
+        return configuration
+    }
+
+    /// Runs the stream at `size`, once per size: a window resized past the stream, or one whose display changed
+    /// backing scale, is then captured one to one again instead of scaled to the size it started at.
+    private func resize(to size: PixelSize) {
+        let box: StreamBox? = state.withLock { state in
+            guard state.requestedSize != size, let stream = state.stream else { return nil }
+            state.requestedSize = size
+            return stream
+        }
+        guard let box else { return }
+        let frameRate = frameRate, showsCursor = showsCursor
+        Task {
+            try? await box.stream.updateConfiguration(Self.configuration(size: size, frameRate: frameRate, showsCursor: showsCursor))
+        }
     }
 
     public func stop() async {
@@ -152,10 +177,13 @@ public final class ScreenCapture: NSObject, VideoCapture, SCStreamOutput, SCStre
         switch status {
         case .complete:
             guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+            let bufferSize = PixelSize(width: CVPixelBufferGetWidth(pixelBuffer), height: CVPixelBufferGetHeight(pixelBuffer))
+            let metadata = FrameMetadata(info)
             let frame = VideoFrame(
-                pixelBuffer: pixelBuffer, contentRect: Self.contentRect(info),
+                pixelBuffer: pixelBuffer, contentRect: metadata.contentRect(in: bufferSize),
                 hostTime: CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
             deliver?(.frame(frame))
+            if let size = metadata.streamSize(for: bufferSize) { resize(to: size) }
         case .suspended:
             deliver?(.minimized(true))
         case .started, .idle, .blank, .stopped:
@@ -170,11 +198,71 @@ public final class ScreenCapture: NSObject, VideoCapture, SCStreamOutput, SCStre
         deliver?(.ended(error.localizedDescription))
     }
 
-    /// Where the content sits in the buffer, in pixels: the frame's content rect (points) times its scale
-    /// factor, the way Apple's capture sample and WebRTC crop it.
-    static func contentRect(_ info: [SCStreamFrameInfo: Any]) -> PixelRect? {
-        guard let dictionary = info[.contentRect], let rect = CGRect(dictionaryRepresentation: dictionary as! CFDictionary) else { return nil }
-        let scale = (info[.scaleFactor] as? CGFloat) ?? 1
-        return PixelRect(x: rect.minX * scale, y: rect.minY * scale, width: rect.width * scale, height: rect.height * scale)
+}
+
+/// What ScreenCaptureKit says about where a frame's content is (WWDC22 "Take ScreenCaptureKit to the next level"),
+/// as plain values, so it's worked out (and tested) without a stream.
+///
+/// The content rect is the region of the stream's output the content covers, in points of that output; the scale
+/// factor turns those points into the buffer's pixels (WebRTC and OBS crop the same way). The content scale says
+/// how much the content was scaled to fit the output: under 1 when it's bigger than the stream (a window resized
+/// past it, or its display gone from 1x to 2x). It doesn't move the content rect; it gives the content's own size.
+struct FrameMetadata: Equatable, Sendable {
+    var contentRect: CGRect?
+    var scaleFactor: Double?
+    var contentScale: Double?
+
+    init(contentRect: CGRect? = nil, scaleFactor: Double? = nil, contentScale: Double? = nil) {
+        self.contentRect = contentRect
+        self.scaleFactor = scaleFactor
+        self.contentScale = contentScale
+    }
+
+    init(_ info: [SCStreamFrameInfo: Any]) {
+        self.init(
+            contentRect: (info[.contentRect] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) },
+            scaleFactor: (info[.scaleFactor] as? NSNumber)?.doubleValue,
+            contentScale: (info[.contentScale] as? NSNumber)?.doubleValue)
+    }
+
+    private static func usable(_ value: Double?) -> Double? {
+        guard let value, value.isFinite, value > 0 else { return nil }
+        return value
+    }
+
+    /// Where the content sits in a buffer `bufferSize` big, in pixels, kept inside the buffer: the content rect
+    /// times the scale factor. Without a usable scale factor (reported on mixed Retina and non-Retina setups) it's
+    /// the scale at which the content fills the buffer along one side, which is exact while the content was fitted
+    /// to the stream or the stream runs at the content's size. Nil without a usable content rect: the whole
+    /// buffer is used.
+    func contentRect(in bufferSize: PixelSize) -> PixelRect? {
+        guard let rect = contentRect, !bufferSize.isEmpty,
+              [rect.minX, rect.minY, rect.width, rect.height].allSatisfy(\.isFinite), rect.width > 0, rect.height > 0
+        else { return nil }
+        let width = Double(bufferSize.width), height = Double(bufferSize.height)
+        let scale = Self.usable(scaleFactor) ?? min(width / rect.width, height / rect.height)
+        let left = max(0, rect.minX * scale), top = max(0, rect.minY * scale)
+        let right = min(width, rect.maxX * scale), bottom = min(height, rect.maxY * scale)
+        guard right > left, bottom > top else { return nil }
+        return PixelRect(x: left, y: top, width: right - left, height: bottom - top)
+    }
+
+    /// The size the stream should run at for its content to fill it one to one (the content's own pixel size:
+    /// what it covers in the buffer divided by the content scale, shrunk to the largest canvas side if need be), or
+    /// nil when it already does, within 2 pixels.
+    func streamSize(for bufferSize: PixelSize) -> PixelSize? {
+        guard let content = contentRect(in: bufferSize) else { return nil }
+        let scale = Self.usable(contentScale) ?? 1
+        var width = content.width / scale, height = content.height / scale
+        let limit = Double(RecordingOptions.canvasSideRange.upperBound)
+        if max(width, height) > limit {
+            let shrink = limit / max(width, height)
+            width *= shrink
+            height *= shrink
+        }
+        width = max(2, width.rounded())
+        height = max(2, height.rounded())
+        guard abs(width - Double(bufferSize.width)) > 2 || abs(height - Double(bufferSize.height)) > 2 else { return nil }
+        return PixelSize(width: Int(width), height: Int(height))
     }
 }

@@ -108,7 +108,14 @@ public struct ResizeEdges: OptionSet, Sendable {
 /// Snapping for the canvas editor: a dragged frame's edges and center catch on the canvas edges and center
 /// and on the edges and centers of the other sources, when they come within `threshold` pixels.
 public enum SnapEngine {
+    /// The snap distance on a canvas whose shorter side is 1080 pixels.
     public static let defaultThreshold = 8.0
+
+    /// The snap distance on a `canvas`-sized canvas: `defaultThreshold` at 1080 pixels on the shorter side, scaled
+    /// with the canvas, so it covers the same share of the canvas (and of the editor's plate) at 1x, 2x or any size.
+    public static func threshold(for canvas: PixelSize) -> Double {
+        defaultThreshold * Double(max(1, min(canvas.width, canvas.height))) / 1080
+    }
 
     private struct Candidate {
         var position: Double

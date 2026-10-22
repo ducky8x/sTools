@@ -32,6 +32,36 @@ import Testing
         #expect(abs(pushed.frame.maxX - 1) < 1e-9 && abs(pushed.frame.maxY - 1) < 1e-9)
     }
 
+    @Test func theSnapDistanceScalesWithTheCanvas() {
+        #expect(SnapEngine.threshold(for: PixelSize(width: 1920, height: 1080)) == 8)
+        #expect(SnapEngine.threshold(for: PixelSize(width: 3840, height: 2160)) == 16)
+        #expect(abs(SnapEngine.threshold(for: PixelSize(width: 1280, height: 720)) - 16.0 / 3) < 1e-12)
+        #expect(SnapEngine.threshold(for: PixelSize(width: 1080, height: 1920)) == 8)
+    }
+
+    /// The same drag at 1x (a 1920 x 1080 canvas) and at 2x (3840 x 2160) snaps the same way, to the same place.
+    @Test func snappingFeelsTheSameAt1xAnd2x() {
+        let start = CanvasRect(x: 0.25, y: 0.25, width: 0.25, height: 0.25)
+        let other = CanvasRect(x: 0.6, y: 0.1, width: 0.2, height: 0.2)
+        let source = VideoSource(kind: .browser(url: "x"), frame: start)
+        for (gap, snaps) in [(6.0, true), (10.0, false)] {
+            var results: [CanvasEditing.Result] = []
+            for canvas in [PixelSize(width: 1920, height: 1080), PixelSize(width: 3840, height: 2160)] {
+                let k = Double(canvas.height) / 1080
+                // Move the left edge to `gap` 1080p pixels from the canvas's left edge.
+                let dx = (gap - 480) * k
+                let move = CanvasEditing.drag(.body, source: source, by: (dx, 0), canvas: canvas, others: [other], contentSize: nil)
+                #expect((move.frame.minX == 0) == snaps)
+                // Resize the right edge to `gap` 1080p pixels short of the other source's left edge.
+                let right = CanvasEditing.drag(.resize(.right), source: source, by: ((1152 - gap - 960) * k, 0), canvas: canvas,
+                                               others: [other], contentSize: nil)
+                #expect((abs(right.frame.maxX - 0.6) < 1e-9) == snaps)
+                results.append(move)
+            }
+            #expect(abs(results[0].frame.minX - results[1].frame.minX) < 1e-9)
+        }
+    }
+
     @Test func resizingMovesOnlyTheDraggedEdges() {
         let result = CanvasEditing.drag(.resize(.right), source: source(), by: (53, 40), canvas: canvas, others: [], contentSize: nil)
         #expect(pixels(result) == PixelRect(x: 200, y: 100, width: 453, height: 200))
