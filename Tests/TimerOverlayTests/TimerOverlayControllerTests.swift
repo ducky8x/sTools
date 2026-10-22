@@ -352,6 +352,31 @@ struct TimerOverlayControllerTests {
         #expect(rig.alarm.cues.isEmpty, "the chime at 0:30 passed while the Mac slept")
     }
 
+    @Test func overtimeCountsUpUntilTheOverlayLeaves() {
+        let rig = TimerRig { $0.durationSeconds = 2; $0.atZero = .overtime }
+        rig.controller.setEnabled(true)
+        rig.controller.start()
+        rig.runToZero()
+        rig.scheduler.advance(by: 3.01)
+        #expect(rig.controller.content.text == "+0:03" && rig.controller.content.state == .timesUp)
+        #expect(rig.controller.status == .timesUp, "the status doesn't count up")
+        rig.scheduler.fireAll()
+        #expect(rig.controller.phase == .idle && rig.isQuiet, "the overtime wakes end with the run")
+    }
+
+    @Test func switchingOffWhileTheOverlayLeavesEndsTheRunAtOnce() {
+        let rig = TimerRig()
+        rig.presenter.exitsAtOnce = false
+        rig.controller.setEnabled(true)
+        rig.controller.start()
+        rig.controller.cancel()
+        #expect(rig.controller.phase == .leaving && rig.activity.isHeld, "the activity lasts through the exit")
+        rig.controller.setEnabled(false)
+        #expect(rig.controller.phase == .idle && !rig.activity.isHeld && rig.scheduler.pending.isEmpty)
+        rig.presenter.finishExit()
+        #expect(rig.controller.phase == .idle && rig.controller.status == .off && rig.isQuiet)
+    }
+
     @Test func zeroAndTheStartAreAnnounced() {
         let rig = TimerRig { $0.durationSeconds = 3 }
         rig.controller.setEnabled(true)
@@ -774,5 +799,37 @@ struct TimerPlacementModeTests {
         #expect(!rig.guides.isShowing && rig.controller.phase == .idle && rig.isQuiet)
         rig.controller.setEnabled(true)
         #expect(rig.presenter.popIns.count == 1, "no plate comes back")
+    }
+}
+
+/// Hard limits on the whole module, read from its source.
+@Suite("Timer Overlay hard limits")
+struct TimerOverlayLimitsTests {
+    private static let sources = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        .deletingLastPathComponent().appending(path: "Sources/TimerOverlay", directoryHint: .isDirectory)
+
+    private static func sourceTexts() throws -> [(name: String, text: String)] {
+        let files = try #require(FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil))
+            .compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" }
+        return try files.map { ($0.lastPathComponent, try String(contentsOf: $0, encoding: .utf8)) }
+    }
+
+    /// Spec 5.6.8: the timer never reads Minecraft's files, screen or sound, and never sends keys, pauses the game or
+    /// moves focus.
+    @Test func itNeverReadsOrActsOnTheGame() throws {
+        let texts = try Self.sourceTexts()
+        #expect(texts.count > 20)
+        for token in ["CGEvent", "options.txt", "ScreenCaptureKit", "SCStream", "SCShareableContent", "activate("] {
+            #expect(texts.filter { $0.text.contains(token) }.map(\.name).isEmpty, "\(token)")
+        }
+    }
+
+    /// The plan's cost rule: nothing runs all the time; one-shot wakes go through the injected scheduler.
+    @Test func nothingRunsAllTheTime() throws {
+        let texts = try Self.sourceTexts()
+        for token in ["TimelineView", "CADisplayLink", "CVDisplayLink", "Timer.publish", "scheduledTimer",
+                      "repeatForever", "Task.sleep", "Thread.sleep", "usleep("] {
+            #expect(texts.filter { $0.text.contains(token) }.map(\.name).isEmpty, "\(token)")
+        }
     }
 }
