@@ -1100,3 +1100,71 @@ struct ScreenRecordingQuickStartTests {
         harness.controller.delete()
     }
 }
+
+/// Each start is timed from the press to its first frame, and the timings go to the log for Copy Diagnostics, so a real
+/// press on ducky's Mac shows where any delay comes from (spec 5.4.4).
+@Suite("Screen Recording's start timings", .serialized) @MainActor
+struct ScreenRecordingStartTimingTests {
+    /// Already armed, with Minecraft's frame in, the writer opens right after the press: nothing waits for the sources
+    /// (they take 3 s to start here) or for Minecraft's frame (a wait of up to 10 s here), and the encoder and Core
+    /// Image were readied while the tool was armed. The bounds sit far below those waits, since the whole suite keeps
+    /// the main thread busy; the first frame's own wait is the encoder's, which is only logged.
+    @Test func anArmedToolOpensItsFileRightAfterThePress() async throws {
+        let harness = Harness(sourcesTake: .seconds(3))
+        defer { harness.remove() }
+        harness.controller.minecraftFrameWait = .seconds(10)
+        await harness.arm()
+        #expect(await harness.waitUntil { harness.factory.bases[42]?.isRunning == true && harness.controller.isWarmedUp })
+        harness.controller.toggleRecording()
+        #expect(await harness.waitUntil { harness.controller.phase == .recording })
+        let timings = try #require(harness.controller.lastStartTimings)
+        #expect(!timings.switchedOn)
+        #expect(timings.toSources < .milliseconds(1500), "\(timings.summary)")
+        #expect(timings.toWriter < .seconds(2), "\(timings.summary)")
+        #expect(timings.toWriter <= timings.toFirstFrame)
+        await harness.controller.stopRecording(explanation: nil)
+        harness.controller.delete()
+    }
+
+    /// The timings add up in order: the sources, Minecraft's first frame, the writer's file, the first frame in it.
+    @Test func eachStartsTimingsAddUp() async throws {
+        let harness = Harness(sourcesTake: .milliseconds(200))
+        defer { harness.remove() }
+        harness.controller.toggleRecording()
+        #expect(await harness.waitUntil { harness.controller.phase == .recording })
+        let timings = try #require(harness.controller.lastStartTimings)
+        #expect(timings.switchedOn)
+        #expect(timings.toSources >= .milliseconds(200))
+        #expect(timings.toSources <= timings.toMinecraftFrame)
+        #expect(timings.toMinecraftFrame <= timings.toWriter)
+        #expect(timings.toWriter <= timings.toFirstFrame)
+        #expect(timings.summary.hasPrefix("Recording started "))
+        #expect(timings.summary.contains("after the press"))
+        await harness.controller.stopRecording(explanation: nil)
+        harness.controller.delete()
+    }
+
+    /// Switching the tool on readies the encoder and Core Image alongside the sources, and switching it off lets go
+    /// of what was readied.
+    @Test func armingWarmsUpAndSwitchingOffLetsGo() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        #expect(!harness.controller.isWarmedUp)
+        await harness.arm()
+        #expect(await harness.waitUntil { harness.controller.isWarmedUp })
+        harness.controller.setEnabled(false)
+        #expect(await harness.waitUntil { !harness.controller.isWarmedUp })
+    }
+
+    /// The timings read as one line, in milliseconds.
+    @Test func theSummaryReadsInMilliseconds() {
+        let timings = ScreenRecordingController.StartTimings(
+            switchedOn: true, countdownSeconds: 0, toSources: .milliseconds(312), toMinecraftFrame: .milliseconds(340),
+            toWriter: .milliseconds(349), toFirstFrame: .milliseconds(362))
+        #expect(timings.summary == "Recording started 362 ms after the press (switched on): sources 312 ms, Minecraft\u{2019}s first frame 28 ms, writer 9 ms, first frame 13 ms.")
+        let counted = ScreenRecordingController.StartTimings(
+            switchedOn: false, countdownSeconds: 3, toSources: .milliseconds(0), toMinecraftFrame: .milliseconds(3001),
+            toWriter: .milliseconds(3008), toFirstFrame: .milliseconds(3020))
+        #expect(counted.summary == "Recording started 3020 ms after the press (armed, after a 3 s countdown): sources 0 ms, Minecraft\u{2019}s first frame 1 ms, writer 7 ms, first frame 12 ms.")
+    }
+}

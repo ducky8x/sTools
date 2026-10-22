@@ -40,7 +40,8 @@ public final class RecordingSession: @unchecked Sendable {
 
     private let rig: CaptureRig
     private let writer: RecordingWriter
-    private let compositor: Compositor
+    /// Draws each frame: the one readied while the tool was armed (`RecordingWarmUp`) when it's for this output size.
+    let compositor: Compositor
     private let clock: any MediaClock
     private let driver: any TickDriver
     private var frameClock: FrameClock?
@@ -61,7 +62,8 @@ public final class RecordingSession: @unchecked Sendable {
 
     public init(
         configuration: Configuration, rig: CaptureRig, clock: any MediaClock = HostMediaClock(),
-        driver: (any TickDriver)? = nil, freeSpace: any FreeSpaceProvider = VolumeFreeSpaceProvider()
+        driver: (any TickDriver)? = nil, freeSpace: any FreeSpaceProvider = VolumeFreeSpaceProvider(),
+        compositor warmed: Compositor? = nil
     ) throws {
         self.configuration = configuration
         self.rig = rig
@@ -76,7 +78,11 @@ public final class RecordingSession: @unchecked Sendable {
             audioTrackNames: trackNames, directory: configuration.directory)
         writerConfiguration.canvas = output
         writer = RecordingWriter(configuration: writerConfiguration, freeSpace: freeSpace)
-        compositor = try Compositor(outputSize: output)
+        if let warmed, warmed.outputSize == output.evenSized {
+            compositor = warmed
+        } else {
+            compositor = try Compositor(outputSize: output)
+        }
     }
 
     /// Starts writing now.

@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Observation
+import OSLog
 import STPlatform
 
 /// Owns Screen Recording (spec 5.4). The tool's switch arms the recorder: the sources run, the plate shows the
@@ -67,6 +68,47 @@ public final class ScreenRecordingController: ToolController {
         case failed(String)
     }
 
+    /// How long one start took from the press to its first frame in the file, step by step (spec 5.4.4): logged for
+    /// Copy Diagnostics, so a real press shows where any delay comes from. Each time is counted from the press.
+    public struct StartTimings: Equatable, Sendable {
+        /// The tool was off at the press, so its sources had to start first; otherwise it was already armed.
+        public var switchedOn: Bool
+        /// The countdown (Advanced) the start ran, 0 for none.
+        public var countdownSeconds: Int
+        /// The sources ran.
+        public var toSources: Duration
+        /// Minecraft's first frame was in (after the countdown, when one ran).
+        public var toMinecraftFrame: Duration
+        /// The writer had opened the file and the frame clock ran.
+        public var toWriter: Duration
+        /// The first frame was in the file: "Recording started".
+        public var toFirstFrame: Duration
+
+        public init(switchedOn: Bool, countdownSeconds: Int, toSources: Duration, toMinecraftFrame: Duration,
+                    toWriter: Duration, toFirstFrame: Duration) {
+            self.switchedOn = switchedOn
+            self.countdownSeconds = countdownSeconds
+            self.toSources = toSources
+            self.toMinecraftFrame = toMinecraftFrame
+            self.toWriter = toWriter
+            self.toFirstFrame = toFirstFrame
+        }
+
+        /// One line for the log, in milliseconds: the whole time, then each step's own share (the countdown left out).
+        public var summary: String {
+            var how = switchedOn ? "switched on" : "armed"
+            if countdownSeconds > 0 { how += ", after a \(countdownSeconds) s countdown" }
+            let minecraft = toMinecraftFrame - toSources - .seconds(countdownSeconds)
+            return "Recording started \(Self.ms(toFirstFrame)) ms after the press (\(how)): sources \(Self.ms(toSources)) ms, "
+                + "Minecraft\u{2019}s first frame \(Self.ms(minecraft)) ms, writer \(Self.ms(toWriter - toMinecraftFrame)) ms, "
+                + "first frame \(Self.ms(toFirstFrame - toWriter)) ms."
+        }
+
+        private static func ms(_ duration: Duration) -> Int {
+            max(0, Int((duration / .milliseconds(1)).rounded()))
+        }
+    }
+
     /// A finished recording waiting for its Save/Delete answer.
     public struct Finished: Equatable {
         public var files: [URL]
@@ -114,6 +156,14 @@ public final class ScreenRecordingController: ToolController {
     /// Code waiting for the phase to change (`waitWhile(_:)`), woken at each change.
     @ObservationIgnored private var phaseWaiters: [CheckedContinuation<Void, Never>] = []
     public private(set) var finished: Finished?
+    /// How the latest start that reached its first frame went, step by step.
+    @ObservationIgnored public private(set) var lastStartTimings: StartTimings?
+    /// The encoder and Core Image are ready for the next recording (`RecordingWarmUp`): readied as the tool arms, let
+    /// go of as it switches off.
+    @ObservationIgnored private(set) var isWarmedUp = false
+    @ObservationIgnored private var warmedCompositor: Compositor?
+    @ObservationIgnored private var warmUpTask: Task<Void, Never>?
+    @ObservationIgnored private let log = STLog.logger("Recording")
     public private(set) var lastSaved: RecordingFinisher.SaveResult?
     /// Things that happened to sources (spec 5.4.6), newest last.
     public private(set) var notes: [String] = []
@@ -130,6 +180,7 @@ public final class ScreenRecordingController: ToolController {
             guard options != oldValue else { return }
             services.settings.save(options)
             if isEnabled, phase == .idle, captureAffecting(options) != captureAffecting(oldValue) { rearm() }
+            if isEnabled, options.outputSize != oldValue.outputSize || options.codec != oldValue.codec { warmUp() }
         }
     }
 
@@ -239,8 +290,10 @@ public final class ScreenRecordingController: ToolController {
     ///
     /// Add Source's listing (ScreenCaptureKit's window list, the cameras and microphones, the apps) is read alongside:
     /// only a window source needs it first, to find its window again, so the key's start isn't held up by it otherwise.
+    /// The encoder and Core Image are readied alongside too (`warmUp`).
     private func arm(restarting: Bool = false) {
         armTask?.cancel()
+        warmUp()
         armCount += 1
         let count = armCount
         armTask = Task { [weak self] in
@@ -269,7 +322,37 @@ public final class ScreenRecordingController: ToolController {
         armTask?.cancel()
         if phase == .recording { await stopRecording(explanation: nil) }
         endStart()
+        coolDown()
         await tearDownRig()
+    }
+
+    /// Readies what the next recording's first frame would wait for, off the main thread and alongside the sources:
+    /// the encoder for the chosen codec (once per launch) and a compositor at the output size that has drawn the
+    /// layout once. Nothing shows and nothing asks for a permission. A compositor already at that size is kept.
+    private func warmUp() {
+        let canvas = canvas
+        let output = LayoutMath.outputSize(options.outputSize, canvas: canvas).evenSized
+        let codec = options.codec
+        let layout = layout
+        let kept = warmedCompositor?.outputSize == output ? warmedCompositor : nil
+        warmUpTask?.cancel()
+        warmUpTask = Task { [weak self] in
+            let compositor = await Task.detached(priority: .userInitiated) {
+                RecordingWarmUp.warmEncoder(codec: codec)
+                return kept ?? RecordingWarmUp.compositor(outputSize: output, layout: layout, canvas: canvas)
+            }.value
+            guard let self, !Task.isCancelled, self.isEnabled else { return }
+            self.warmedCompositor = compositor
+            self.isWarmedUp = true
+        }
+    }
+
+    /// Lets go of what `warmUp` readied, as the tool switches off.
+    private func coolDown() {
+        warmUpTask?.cancel()
+        warmUpTask = nil
+        warmedCompositor = nil
+        isWarmedUp = false
     }
 
     private func buildRig() async {
@@ -464,6 +547,28 @@ public final class ScreenRecordingController: ToolController {
         let isTest: Bool
         /// Made by the key, whose line over the game hears how it turned out (`keyStartEnded`).
         let fromKey: Bool
+        /// When each step was reached, for `StartTimings`.
+        let marks: StartMarks
+    }
+
+    /// When a start reached each step, from its press.
+    private final class StartMarks {
+        let pressed = ContinuousClock.now
+        let switchedOn: Bool
+        var sources: ContinuousClock.Instant?
+        var minecraftFrame: ContinuousClock.Instant?
+        var writer: ContinuousClock.Instant?
+
+        init(switchedOn: Bool) { self.switchedOn = switchedOn }
+
+        func timings(countdown: Countdown, firstFrame: ContinuousClock.Instant) -> StartTimings {
+            let sources = sources ?? pressed
+            let minecraftFrame = minecraftFrame ?? sources
+            let writer = writer ?? minecraftFrame
+            return StartTimings(
+                switchedOn: switchedOn, countdownSeconds: countdown.seconds, toSources: sources - pressed,
+                toMinecraftFrame: minecraftFrame - pressed, toWriter: writer - pressed, toFirstFrame: firstFrame - pressed)
+        }
     }
 
     /// The part of a start that can't wait: switches the tool on when it's off, then marks the start (`.starting`)
@@ -476,13 +581,14 @@ public final class ScreenRecordingController: ToolController {
     private func beginStart(isTest: Bool, fromKey: Bool) -> (KeyPress, Start?) {
         services.permissions.refresh([.screenRecording])
         guard screenRecordingPermission == .granted else { return (.needsPermission, nil) }
+        let marks = StartMarks(switchedOn: !isEnabled)
         if !isEnabled {
             if let requestEnable { guard requestEnable() else { return (.couldNotSwitchOn, nil) } } else { setEnabled(true) }
         }
         startCount += 1
         phase = .starting
         let countdown = options.countdown
-        let start = Start(number: startCount, countdown: countdown, isTest: isTest, fromKey: fromKey)
+        let start = Start(number: startCount, countdown: countdown, isTest: isTest, fromKey: fromKey, marks: marks)
         let press: KeyPress = countdown == .off ? .starting(waitsForSources: !sourcesAreReady) : .countdown(seconds: countdown.seconds)
         return (press, start)
     }
@@ -498,6 +604,7 @@ public final class ScreenRecordingController: ToolController {
             await task.value
             guard isCurrent(start) else { return }
         }
+        start.marks.sources = .now
         if start.countdown != .off {
             for remaining in stride(from: start.countdown.seconds, to: 0, by: -1) {
                 phase = .countingDown(remaining)
@@ -510,6 +617,7 @@ public final class ScreenRecordingController: ToolController {
             _ = await rig.hub.waitForFrame(of: .base, timeout: minecraftFrameWait)
             guard isCurrent(start) else { return }
         }
+        start.marks.minecraftFrame = .now
         beginWriting(start)
     }
 
@@ -567,8 +675,10 @@ public final class ScreenRecordingController: ToolController {
             layout: layout, options: options, canvas: canvas, baseName: RecordingFinisher.dateName(for: Date()),
             feeds: inProcessAudio.feeds.filter(\.wantsRecording).map(\.name))
         do {
-            let session = try RecordingSession(configuration: configuration, rig: rig, driver: makeTickDriver(), freeSpace: freeSpace)
+            let session = try RecordingSession(
+                configuration: configuration, rig: rig, driver: makeTickDriver(), freeSpace: freeSpace, compositor: warmedCompositor)
             try session.start()
+            start.marks.writer = .now
             self.session = session
             watchWriter(session, start: start)
             watchForFirstFrame(session, start)
@@ -583,6 +693,8 @@ public final class ScreenRecordingController: ToolController {
     private func failStart(_ start: Start, reason: String, detail: String? = nil) {
         guard isCurrent(start) else { return }
         endStart()
+        let elapsed = Int(((ContinuousClock.now - start.marks.pressed) / .milliseconds(1)).rounded())
+        log.notice("Recording couldn\u{2019}t start \(elapsed, privacy: .public) ms after the press: \(reason, privacy: .public)")
         note("The recording couldn\u{2019}t start: \(detail ?? "\(reason).")")
         if start.fromKey { keyStartEnded?(.failed(reason)) }
         if !start.isTest { switchOff() }
@@ -617,6 +729,9 @@ public final class ScreenRecordingController: ToolController {
     /// game can say so.
     private func didStartWriting(_ session: RecordingSession, _ start: Start) {
         guard self.session === session, isCurrent(start) else { return }
+        let timings = start.marks.timings(countdown: start.countdown, firstFrame: .now)
+        lastStartTimings = timings
+        log.notice("\(timings.summary, privacy: .public)")
         phase = .recording
         recordingDisplaySize = minecraftDisplaySize
         elapsedSeconds = 0
