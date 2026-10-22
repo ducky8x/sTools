@@ -164,10 +164,11 @@ struct HotkeysSection: View {
         return "This \(verb) the \(keys) you set for \(list). Your other hotkeys stay as they are."
     }
 
-    /// The tool a key set's action belongs to: Start timer is Timer Overlay's.
+    /// The tool a key set's action belongs to (`ToolID.hotkeyAction`): Start timer is Timer Overlay's, and Screen
+    /// Recording's one action is Screen Recording's.
     private static func toolName(for action: HotkeyAction?) -> String {
         guard let action else { return "" }
-        return action == .startTimer ? ToolID.timerOverlay.title : action.title
+        return ToolID.allCases.first { $0.hotkeyAction == action }?.title ?? action.title
     }
 
     /// Picks `set` at once, or asks first when it would replace a key set by hand.

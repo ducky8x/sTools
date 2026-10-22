@@ -15,19 +15,14 @@ extension ToolID {
     }
 
     /// The tool's one hotkey action (spec 6.1): the toggle of the three overlay tools, Screen Recording's start/stop,
-    /// Timer Overlay's Start timer. Nil for the Key Rebinder, which sets hotkeys on its keys instead.
+    /// Timer Overlay's Start timer. Nil for the Key Rebinder, which sets hotkeys on its keys instead. A key set's hotkey
+    /// for the tool does this action too (Home ▸ Hotkeys ▸ Key set, `HotkeyKeySet.toolActions`).
     var hotkeyAction: HotkeyAction? {
         switch self {
         case .screenRecording: .startStopRecording
         case .timerOverlay: .startTimer
         default: hotkeyTool.map(HotkeyAction.toggle)
         }
-    }
-
-    /// The action a key set's hotkey for this tool does (Home ▸ Hotkeys ▸ Key set): its toggle, or Start timer for
-    /// Timer Overlay; nil for the Key Rebinder.
-    var keySetAction: HotkeyAction? {
-        self == .timerOverlay ? .startTimer : hotkeyTool.map(HotkeyAction.toggle)
     }
 }
 
