@@ -442,7 +442,7 @@ struct HotkeyEditor: View {
             }
             STChips(selection: $actions, options: HotkeyAction.allCases.map { STSegmentedOption($0, $0.title) }, label: "Actions")
             HStack(spacing: 14) {
-                Button("Save") { save() }
+                Button("Save Hotkey") { save() }
                     .buttonStyle(STButtonStyle(.primary))
                     .disabled(shortcut == nil || actions.isEmpty)
                 if existing != nil {
