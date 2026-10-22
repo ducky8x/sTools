@@ -352,6 +352,31 @@ struct TimerOverlayControllerTests {
         #expect(rig.alarm.cues.isEmpty, "the chime at 0:30 passed while the Mac slept")
     }
 
+    @Test func overtimeCountsUpUntilTheOverlayLeaves() {
+        let rig = TimerRig { $0.durationSeconds = 2; $0.atZero = .overtime }
+        rig.controller.setEnabled(true)
+        rig.controller.start()
+        rig.runToZero()
+        rig.scheduler.advance(by: 3.01)
+        #expect(rig.controller.content.text == "+0:03" && rig.controller.content.state == .timesUp)
+        #expect(rig.controller.status == .timesUp, "the status doesn't count up")
+        rig.scheduler.fireAll()
+        #expect(rig.controller.phase == .idle && rig.isQuiet, "the overtime wakes end with the run")
+    }
+
+    @Test func switchingOffWhileTheOverlayLeavesEndsTheRunAtOnce() {
+        let rig = TimerRig()
+        rig.presenter.exitsAtOnce = false
+        rig.controller.setEnabled(true)
+        rig.controller.start()
+        rig.controller.cancel()
+        #expect(rig.controller.phase == .leaving && rig.activity.isHeld, "the activity lasts through the exit")
+        rig.controller.setEnabled(false)
+        #expect(rig.controller.phase == .idle && !rig.activity.isHeld && rig.scheduler.pending.isEmpty)
+        rig.presenter.finishExit()
+        #expect(rig.controller.phase == .idle && rig.controller.status == .off && rig.isQuiet)
+    }
+
     @Test func zeroAndTheStartAreAnnounced() {
         let rig = TimerRig { $0.durationSeconds = 3 }
         rig.controller.setEnabled(true)
