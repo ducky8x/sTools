@@ -126,6 +126,11 @@ public final class HotkeyCenter {
         self.toolStates = toolStates
         self.handler = handler
         self.settings = store.load(HotkeySettings.self)
+        // A file from an earlier version was upgraded as it loaded (a list an earlier build left someone with becomes
+        // ⌘1–⌘5 in sidebar order): writing it back makes that happen once.
+        if let stored = store.storedVersion(HotkeySettings.self), stored < HotkeySettings.version {
+            store.save(settings)
+        }
         registrar.onPress = { [weak self] id in self?.handlePress(id) }
         registrar.onRelease = { [weak self] id in self?.handleRelease(id) }
         synchronize()

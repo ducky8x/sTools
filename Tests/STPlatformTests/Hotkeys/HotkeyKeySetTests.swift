@@ -289,13 +289,14 @@ struct HotkeyKeySetTests {
                            [.setTool(.crosshair, isOn: true)], [.startTimer], [.toggleRecording]])
     }
 
-    /// Existing files keep what they have: an empty list stays empty.
+    /// A current file keeps what it has: an empty list (the None key set) stays empty. Lists from earlier versions
+    /// have tests of their own (`HotkeyMigrationTests`).
     @MainActor
     @Test func anExistingFileKeepsItsList() async throws {
         let (store, directory) = temporaryStore()
         defer { try? FileManager.default.removeItem(at: directory) }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try Data(#"{"version":1,"value":{"isEnabled":true,"bindings":[]}}"#.utf8).write(to: directory.appending(path: "hotkeys.json"))
+        try Data(#"{"version":2,"value":{"isEnabled":true,"bindings":[]}}"#.utf8).write(to: directory.appending(path: "hotkeys.json"))
         let loaded = store.load(HotkeySettings.self)
         #expect(loaded.bindings.isEmpty)
         #expect(loaded.isEnabled)

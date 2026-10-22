@@ -34,7 +34,9 @@ public struct HotkeyBinding: Codable, Hashable, Identifiable, Sendable {
 /// falls back to its default.
 public struct HotkeySettings: SettingsDocument {
     public static let name = "hotkeys"
-    public static let version = 1
+    /// 2 since the key sets: a version 1 list an earlier build left someone with becomes ⌘1–⌘5 in sidebar order, once
+    /// (`HotkeyListUpgrade`).
+    public static let version = 2
     /// A new install's (no `hotkeys.json` yet): ⌘1–⌘5, one per tool in sidebar order, with hotkeys on. They work only
     /// in sTools and Minecraft by default, so they take no other app's keys from the first launch.
     public static let defaultValue = HotkeySettings(isEnabled: true, bindings: HotkeyKeySet.newInstall.bindings())
@@ -73,6 +75,12 @@ public struct HotkeySettings: SettingsDocument {
                   bindings: bindings?.compactMap(\.value) ?? [],
                   showsConfirmation: flag(.showsConfirmation, default: true),
                   scope: (try? container.decodeIfPresent(HotkeyScope.self, forKey: .scope)) ?? .sToolsAndMinecraft)
+    }
+
+    /// Version 1 to 2: a list an earlier build left someone with becomes the new install's key set (`HotkeyListUpgrade`);
+    /// every other list, and every other setting, stays as it is.
+    public static func migrate(from oldVersion: Int, _ raw: [String: Any]) throws -> [String: Any] {
+        oldVersion == 1 ? HotkeyListUpgrade.upgrade(raw) : raw
     }
 }
 

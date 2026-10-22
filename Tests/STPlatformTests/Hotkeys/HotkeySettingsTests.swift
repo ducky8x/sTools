@@ -8,7 +8,7 @@ struct HotkeySettingsTests {
     /// Minecraft, so they take no other app's keys. A value built in code starts off and empty, as before.
     @Test func identityAndDefaults() {
         #expect(HotkeySettings.name == "hotkeys")
-        #expect(HotkeySettings.version == 1)
+        #expect(HotkeySettings.version == 2)
         #expect(HotkeySettings.defaultValue.isEnabled, "a new install starts with hotkeys on")
         #expect(HotkeySettings.defaultValue.bindings.map(\.combo) == HotkeyKeySet.command.combos, "a new install's ⌘1–⌘5")
         #expect(HotkeySettings.defaultValue.showsConfirmation)
