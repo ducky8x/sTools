@@ -102,7 +102,7 @@ public struct SettingsBackup: Sendable {
         /// The `Backups/...` folder holding the settings as they were before the import, nil when there was nothing to back up.
         public let backupURL: URL?
 
-        /// Documents, images and sounds applied: Settings' "Imported N item(s)".
+        /// Documents, images and sounds applied: Settings' "Imported 3 items".
         public var appliedCount: Int { (documents + images + sounds).filter { $0.outcome == .applied }.count }
         public var skippedCount: Int { (documents + images + sounds).count - appliedCount }
     }

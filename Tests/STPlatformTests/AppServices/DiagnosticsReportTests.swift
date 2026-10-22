@@ -78,8 +78,10 @@ private func makeReport(
 
     /// A settings file's size agrees with its count, one byte included.
     @Test func aOneByteFileReadsInTheSingular() {
-        let text = makeReport(settingsFiles: [SettingsFileInfo(name: "tiny.json", bytes: 1)]).render()
+        let text = makeReport(settingsFiles: [SettingsFileInfo(name: "tiny.json", bytes: 1), SettingsFileInfo(name: "empty.json", bytes: 0)])
+            .render()
         #expect(text.contains("tiny.json (1 byte)"))
+        #expect(text.contains("empty.json (0 bytes)"))
     }
 
     @Test func emptyInputsReadAsNone() {

@@ -16,7 +16,7 @@ struct PermissionStepView: View {
 
         static func usedBy(_ permission: Permission) -> String {
             switch permission {
-            case .accessibility: "Crosshair, Timer Overlay, NBB Overlay, Screen Recording, Window Backdrop"
+            case .accessibility: "Crosshair, Timer Overlay, NBB Overlay, Screen Recording, Window Backdrop, hotkeys in Minecraft"
             case .screenRecording, .appAudio, .microphone, .camera: "Screen Recording"
             }
         }
