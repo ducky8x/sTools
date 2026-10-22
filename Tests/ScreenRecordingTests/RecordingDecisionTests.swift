@@ -86,6 +86,25 @@ struct RecordingDecisionViewTests {
         #expect(RecordingDecisionView.lengthLine(split) == "00:12:34 long, in 2 files.")
     }
 
+    /// A name that's already in the folder isn't the one Save or Esc will use, so the lines name the free one.
+    @Test func itNamesTheFreeNameWhenTheTypedOrDateNameIsTaken() throws {
+        let fixture = Fixture()
+        defer { fixture.remove() }
+        try FileManager.default.createDirectory(at: fixture.directory, withIntermediateDirectories: true)
+        for name in ["Seed 1.mp4", "2026-10-21 21.04.37.mp4"] {
+            try Data().write(to: fixture.directory.appending(path: name))
+        }
+        var options = fixture.controller.options
+        options.fileType = .mp4
+        let folder = (options.folderPath as NSString).abbreviatingWithTildeInPath
+        #expect(RecordingDecisionView.savedAsLine(name: "Seed 1", finished: fixture.finished, options: options)
+                == "Saved as Seed 1 2.mp4 in \(folder).")
+        #expect(RecordingDecisionView.savedAsLine(name: "", finished: fixture.finished, options: options)
+                == "Without a name it\u{2019}s saved as 2026-10-21 21.04.37 2.mp4 in \(folder).")
+        #expect(RecordingDecisionView.escapeLine(finished: fixture.finished, options: options)
+                == "Esc saves it as 2026-10-21 21.04.37 2.mp4, so nothing is lost.")
+    }
+
     /// Dropped frames are counted in words that agree with the count, one frame included.
     @Test func droppedFramesReadInTheSingularForOne() {
         #expect(RecordingDecisionView.droppedLine(1).hasPrefix("1 frame was dropped. "))
