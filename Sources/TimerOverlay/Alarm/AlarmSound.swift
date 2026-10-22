@@ -122,11 +122,15 @@ extension AlarmSound {
         if let sound = find(id, soundsDirectory: soundsDirectory, macOSDirectory: macOSDirectory) {
             return Resolution(sound: sound, isMissing: false)
         }
-        let fallback = find(fallbackID, soundsDirectory: soundsDirectory, macOSDirectory: macOSDirectory)
+        return Resolution(sound: fallback(macOSDirectory: macOSDirectory), isMissing: true)
+    }
+
+    /// What plays instead of a sound that's gone: Ping, or sTools' first alarm on a Mac without Ping.
+    public static func fallback(macOSDirectory: URL = systemSoundsDirectory) -> AlarmSound {
+        macOSSound(named: "Ping", in: macOSDirectory)
             ?? sToolsSounds.first
             ?? AlarmSound(source: .macOS, name: "Ping", title: "Ping",
                           url: macOSDirectory.appending(path: "Ping.aiff", directoryHint: .notDirectory))
-        return Resolution(sound: fallback, isMissing: true)
     }
 
     private static func find(_ id: String, soundsDirectory: URL, macOSDirectory: URL) -> AlarmSound? {
