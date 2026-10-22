@@ -80,7 +80,8 @@ public enum HotkeyStatus: Equatable, Sendable {
 /// `NSEvent`): Start timer's double press and hold measure the keys, not when sTools got to them (`keyEventAge`). The
 /// times also keep a missed release from leaving a key dead, since a press over `staleKeyInterval` after the key was
 /// last reported is a new one, and tell a second or late report of a press that already counted (macOS and the window
-/// both reporting one tap) from a new press.
+/// both reporting one tap) from a new press. Every key event and every change to what's registered is logged at the
+/// notice level, which the unified log keeps and Copy Diagnostics includes.
 @MainActor
 @Observable
 public final class HotkeyCenter {
@@ -295,7 +296,7 @@ public final class HotkeyCenter {
         guard let id = registered.first(where: { $0.value == combo })?.key else { return false }
         if !reachedWindow {
             reachedWindow = true
-            log.info("A hotkey's key reached sTools' window: \(combo.displayString, privacy: .public)")
+            log.notice("A hotkey's key reached sTools' window: \(combo.displayString, privacy: .public)")
         }
         if isRepeat {
             // Held in the window: it keeps its press alive and is never a new one.
@@ -364,13 +365,15 @@ public final class HotkeyCenter {
         /// When it went down, and when it was last reported (its press or a repeat), on the uptime clock.
         var downAt: TimeInterval
         var lastReport: TimeInterval
+        /// The repeats since its press, so only the first one is logged.
+        var repeats = 0
     }
 
-    /// Where a key event came from.
-    private enum KeySource {
+    /// Where a key event came from, for the log.
+    private enum KeySource: String {
         case macOS
-        case window
-        case sTools
+        case window = "sTools' window"
+        case sTools = "sTools itself"
     }
 
     /// A press from the registrar, stamped with its event's time when the registrar knows it.
@@ -389,18 +392,28 @@ public final class HotkeyCenter {
     /// timer); separate presses still count. A key last reported over `staleKeyInterval` earlier lost its release,
     /// so its press counts. A stamped press no later than the last counted one is a second or late report of a press
     /// that already counted. Whether macOS repeats held hotkeys or ever drops a release is to be confirmed on hardware
-    /// (spec 6.1).
+    /// (spec 6.1); the log says what happened.
     private func handlePress(_ id: UUID, from source: KeySource, at stamped: TimeInterval?) {
-        guard registered[id] != nil, let binding = settings.bindings.first(where: { $0.id == id }) else { return }
+        guard let combo = registered[id], let binding = settings.bindings.first(where: { $0.id == id }) else {
+            log.notice("A press from \(source.rawValue, privacy: .public) of a hotkey that isn't live now was ignored")
+            return
+        }
         let time = stamped ?? uptime()
-        if let stamped, let last = lastCountedPress[id], stamped <= last + Self.sameKeyEventTolerance { return }
+        let key = Self.describe(combo, from: source, at: stamped)
+        if let stamped, let last = lastCountedPress[id], stamped <= last + Self.sameKeyEventTolerance {
+            log.notice("\(key, privacy: .public) down: ignored, a press that already counted")
+            return
+        }
         if reportsReleases || source == .window {
             if let down = keysDown[id] {
                 let quiet = time - down.lastReport
                 if quiet <= Self.staleKeyInterval {
                     keysDown[id]?.lastReport = max(down.lastReport, time)
+                    keysDown[id]?.repeats += 1
+                    if down.repeats == 0 { log.notice("\(key, privacy: .public) down: ignored, still held (a repeat)") }
                     return
                 }
+                log.notice("\(key, privacy: .public) down: its release never came (last seen \(quiet, format: .fixed(precision: 2), privacy: .public) s before), so this press is new")
             }
             keysDown[id] = KeyDown(startsTimer: binding.actions.contains(.startTimer), fromWindow: source == .window,
                                    downAt: time, lastReport: time)
@@ -410,6 +423,7 @@ public final class HotkeyCenter {
         var events = outcome.toolChanges.map { HotkeyEvent.setTool($0.tool, isOn: $0.isOn) }
         if outcome.togglesRecording { events.append(.toggleRecording) }
         if outcome.startsTimer { events.append(.startTimer) }
+        log.notice("\(key, privacy: .public) down: counted, \(Self.describe(events), privacy: .public)")
         guard !events.isEmpty else { return }
         send(events, stampedAt: stamped)
     }
@@ -417,9 +431,17 @@ public final class HotkeyCenter {
     /// A release counts only for a key whose press counted, and sends an event only when that press sent Start
     /// timer. A stamped release from before its key's press is a late report of an earlier release, so it ends nothing.
     private func handleRelease(_ id: UUID, from source: KeySource, at stamped: TimeInterval?) {
-        guard let down = keysDown[id] else { return }
-        if let stamped, stamped + Self.sameKeyEventTolerance < down.downAt { return }
+        let key = Self.describe(registered[id], from: source, at: stamped)
+        guard let down = keysDown[id] else {
+            log.notice("\(key, privacy: .public) up: ignored, no press of it counted")
+            return
+        }
+        if let stamped, stamped + Self.sameKeyEventTolerance < down.downAt {
+            log.notice("\(key, privacy: .public) up: ignored, older than the press it would end")
+            return
+        }
         keysDown[id] = nil
+        log.notice("\(key, privacy: .public) up: ends its press\(down.startsTimer ? ", Start timer released" : "", privacy: .public)")
         guard down.startsTimer else { return }
         send([.startTimerReleased], stampedAt: stamped)
     }
@@ -430,6 +452,42 @@ public final class HotkeyCenter {
         handlingEventTime = time
         defer { handlingEventTime = outer }
         handler(events)
+    }
+
+    /// "⌘2 from macOS at 1234.567": a key event, for the log.
+    private static func describe(_ combo: HotkeyCombo?, from source: KeySource, at time: TimeInterval?) -> String {
+        let name = combo?.displayString ?? "A hotkey"
+        let when = time.map { String(format: " at %.3f", $0) } ?? ""
+        return "\(name) from \(source.rawValue)\(when)"
+    }
+
+    /// What a press sends, for the log: "Crosshair on, Start timer".
+    private static func describe(_ events: [HotkeyEvent]) -> String {
+        guard !events.isEmpty else { return "nothing to do" }
+        return events.map { event in
+            switch event {
+            case .setTool(let tool, let isOn): "\(tool.rawValue) \(isOn ? "on" : "off")"
+            case .toggleRecording: "Screen Recording"
+            case .startTimer: "Start timer"
+            case .startTimerReleased: "Start timer released"
+            }
+        }.joined(separator: ", ")
+    }
+
+    /// What is live now and why, for the log: every change to what's registered with macOS is logged.
+    private func logRegistrations() {
+        let live = settings.bindings.compactMap { registered[$0.id]?.displayString }
+        let why = if !settings.isEnabled {
+            "hotkeys are off"
+        } else if !worksInFrontApp {
+            "another app is in front"
+        } else if !pauses.isEmpty {
+            "paused while sTools listens for keys: \(pauses.map { "\($0)" }.sorted().joined(separator: ", "))"
+        } else {
+            "\(frontApp) is in front"
+        }
+        let line = "\(live.isEmpty ? "none" : live.joined(separator: " ")) (\(why); Where hotkeys work: \(settings.scope.title))"
+        log.notice("Hotkeys live: \(line, privacy: .public)")
     }
 
     /// Brings registrations and statuses in line with the settings: unregisters what is no longer wanted,
@@ -458,13 +516,18 @@ public final class HotkeyCenter {
             }
         }
 
+        let wasLive = registered
         var timerReleases = 0
         for (id, combo) in registered where stepsAside(combo) || wanted[id] != combo {
             registrar.unregister(id: id)
             registered[id] = nil
             // macOS can't report this key's release any more.
             lastCountedPress[id] = nil
-            if keysDown.removeValue(forKey: id)?.startsTimer == true { timerReleases += 1 }
+            if let down = keysDown.removeValue(forKey: id) {
+                let key = Self.describe(combo, from: .sTools, at: nil)
+                log.notice("\(key, privacy: .public) up: its hotkey stood aside while the key was down\(down.startsTimer ? ", Start timer released" : "", privacy: .public)")
+                if down.startsTimer { timerReleases += 1 }
+            }
         }
         for binding in settings.bindings {
             guard let combo = wanted[binding.id] else { continue }
@@ -480,6 +543,7 @@ public final class HotkeyCenter {
             }
         }
         if newStatuses != statuses { statuses = newStatuses }
+        if registered != wasLive { logRegistrations() }
         for _ in 0..<timerReleases { send([.startTimerReleased], stampedAt: nil) }
     }
 

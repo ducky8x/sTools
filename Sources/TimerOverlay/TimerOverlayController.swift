@@ -22,7 +22,8 @@ public enum TimerPressResult: Equatable, Sendable {
 ///
 /// - Presses become actions through `PressPolicy`, stamped with the controller's own clock at the moment their key
 ///   moved, which the app passes as how long ago that was. The cancel gestures switch the tool off themselves
-///   (`setEnabled(false)`); the app reads `isEnabled` after each press and release, so its switch follows.
+///   (`setEnabled(false)`); the app reads `isEnabled` after each press and release, so its switch follows. Every
+///   press, and every release that acts, is logged at the notice level for Copy Diagnostics.
 /// - `TimerEngine` runs the countdown; the presenter shows the overlay, the alarm player rings it and plays the cues
 ///   before zero, at `AlarmSchedule`'s times.
 /// - Motion: every pop-in, pop-out and pulse hands the presenter `theme.reduceMotion` as it starts, so Reduce
@@ -86,6 +87,7 @@ public final class TimerOverlayController: ToolController {
     /// Where the macOS sounds are. Tests point it elsewhere.
     @ObservationIgnored var macOSSoundsDirectory = AlarmSound.systemSoundsDirectory
     @ObservationIgnored var policy = PressPolicy()
+    @ObservationIgnored private let log = STLog.logger("Timer")
 
     // The overlay
     /// Whether the overlay is up: popped in, and not popped out since.
@@ -257,18 +259,44 @@ public final class TimerOverlayController: ToolController {
     /// switches it back on and starts a countdown.
     @discardableResult
     public func press(secondsAgo: TimeInterval = 0) -> TimerPressResult {
-        let at = clock.now() - max(0, secondsAgo)
-        guard isEnabled || switchOn() else { return .couldNotStart }
+        let age = max(0, secondsAgo)
+        let at = clock.now() - age
+        let wasOn = isEnabled
+        let phaseBefore = phase
+        let gap = policy.lastPress.map { at - $0 }
+        guard isEnabled || switchOn() else {
+            log.notice("Start timer pressed: Timer Overlay is off and couldn't switch on")
+            return .couldNotStart
+        }
         let action = policy.handle(.press, at: at, phase: phase, settings: settings)
-        return perform(action) ? .acted : .ignored
+        let acted = perform(action)
+        logKey("pressed", age: age, gap: gap, phase: phaseBefore, action: action, acted: acted, wasOn: wasOn)
+        return acted ? .acted : .ignored
     }
 
     /// The Start-timer key came up `secondsAgo`, for the hold-to-cancel gesture, which cancels and switches the tool
     /// off.
     public func release(secondsAgo: TimeInterval = 0) {
-        let at = clock.now() - max(0, secondsAgo)
+        let age = max(0, secondsAgo)
+        let at = clock.now() - age
         guard isEnabled else { return }
-        perform(policy.handle(.release, at: at, phase: phase, settings: settings))
+        let phaseBefore = phase
+        let held = policy.lastPress.map { at - $0 }
+        let action = policy.handle(.release, at: at, phase: phase, settings: settings)
+        guard action != .ignore else { return }
+        let acted = perform(action)
+        logKey("released", age: age, gap: held, phase: phaseBefore, action: action, acted: acted, wasOn: true)
+    }
+
+    /// One line per key event that reached the timer: what the press table did and whether the tool stayed on. The
+    /// hotkey log has the key itself; together they show a double press from the keys to the switch.
+    private func logKey(_ edge: String, age: TimeInterval, gap: TimeInterval?, phase: TimerPhase,
+                        action: PressPolicy.Action, acted: Bool, wasOn: Bool) {
+        let since = gap.map { String(format: "%.3f s after the last press", $0) } ?? "no press before it"
+        let line = "Start timer \(edge) \(String(format: "%.3f", age)) s before sTools got to it, \(since): "
+            + "\(phase) \u{2192} \(action.rawValue)\(acted ? "" : " (nothing to do)"); "
+            + "Timer Overlay \(wasOn ? "on" : "off") \u{2192} \(isEnabled ? "on" : "off")"
+        log.notice("\(line, privacy: .public)")
     }
 
     /// Carries out what the press table decided. False when it did nothing.

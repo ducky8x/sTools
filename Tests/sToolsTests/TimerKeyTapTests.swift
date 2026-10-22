@@ -71,10 +71,10 @@ private final class Keyboard {
     private let registrar: KeyboardRegistrar
     private let uptime: Uptime
     /// The uptime and the timer's clock at the test's second 0.
-    private let uptimeZero: TimeInterval = 500
+    private let uptimeZero: TimeInterval
     private let timerZero: TimeInterval
 
-    init() throws {
+    init(uptimeZero: TimeInterval = 500) throws {
         let registrar = KeyboardRegistrar()
         let uptime = Uptime()
         let harness = Harness(hotkeyRegistrar: registrar,
@@ -84,6 +84,7 @@ private final class Keyboard {
         self.registrar = registrar
         self.uptime = uptime
         self.harness = harness
+        self.uptimeZero = uptimeZero
         timerZero = harness.timerFakes.clock.time
         moveClocks(to: 0)
     }
@@ -221,5 +222,30 @@ struct TimerKeyTapTests {
         #expect(keys.model.isOn(.timerOverlay))
         keys.tap(at: 2, held: 1.2)
         #expect(!keys.model.isOn(.timerOverlay) && keys.hudLines == ["Timer Overlay off"])
+    }
+}
+
+/// Copy Diagnostics reads the unified log (`OSLogLineReader`), which keeps notice-level lines: a double tap can be
+/// followed there from the keys to the switch.
+@MainActor
+@Suite("Timer Overlay's key in the log")
+struct TimerKeyLogTests {
+    @Test func aDoubleTapCanBeFollowedInTheLogCopyDiagnosticsReads() async throws {
+        let since = Date().addingTimeInterval(-1)
+        // Its own uptime, so its lines can't be mistaken for another test's.
+        let keys = try Keyboard(uptimeZero: 7_321)
+        keys.tap(at: 0)
+        keys.tap(at: 0.25)
+        // The unified log can take a moment to hand back what was just written.
+        let deadline = ContinuousClock.now + .seconds(15)
+        var lines: [String] = []
+        repeat {
+            lines = try OSLogLineReader().recentLines(since: since, limit: 10_000)
+            if lines.contains(where: { $0.contains("Timer Overlay on \u{2192} off") }) { break }
+            try await Task.sleep(for: .milliseconds(50))
+        } while ContinuousClock.now < deadline
+        #expect(lines.contains { $0.contains("\u{2318}2 from macOS at 7321.000 down: counted, Start timer") })
+        #expect(lines.contains { $0.contains("\u{2318}2 from macOS at 7321.250 down: counted, Start timer") })
+        #expect(lines.contains { $0.contains("counting \u{2192} cancelAndSwitchOff; Timer Overlay on \u{2192} off") })
     }
 }

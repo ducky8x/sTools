@@ -52,7 +52,8 @@ public struct PressPolicy: Equatable, Sendable {
     /// Absorbs float noise in the input times, so a press exactly 0.4 s later still counts as quick.
     private static let timeSlack: TimeInterval = 1e-9
 
-    private var lastPress: TimeInterval?
+    /// When the last press came, as its input was stamped; nil before the first and after `reset()`.
+    public private(set) var lastPress: TimeInterval?
     /// Whether the last press was the second of a double press, so the next one starts afresh.
     private var lastPressEndedDoublePress = false
 
