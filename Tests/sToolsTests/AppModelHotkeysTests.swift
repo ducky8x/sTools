@@ -199,12 +199,12 @@ struct AppModelHotkeysTests {
         harness.model.hotkeys.isEnabled = true
         let id = harness.model.hotkeys.add(combo: pad1, actions: [.toggle(.crosshair)])
 
-        harness.model.hotkeys.setPaused(true, for: .typing)
+        harness.model.hotkeys.setPaused(true, for: .recordingKey)
         #expect(fake.registered.isEmpty)
         fake.onPress?(id)
         #expect(!harness.model.isOn(.crosshair))
 
-        harness.model.hotkeys.setPaused(false, for: .typing)
+        harness.model.hotkeys.setPaused(false, for: .recordingKey)
         #expect(fake.registered == [id: pad1])
         fake.onPress?(id)
         #expect(harness.model.isOn(.crosshair))
@@ -370,7 +370,7 @@ struct HomeHotkeysRenderTests {
         let harness = Harness(accessibility: .granted)
         harness.model.hotkeys.isEnabled = true
         let before = render(harness)
-        harness.model.hotkeys.setPaused(true, for: .typing)
+        harness.model.hotkeys.setPaused(true, for: .recordingKey)
         let typing = render(harness)
         // Nothing on Home depends on a pause any more.
         #expect(before.representation(using: .png, properties: [:]) == typing.representation(using: .png, properties: [:]))

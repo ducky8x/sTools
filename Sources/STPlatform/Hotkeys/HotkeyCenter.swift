@@ -142,14 +142,23 @@ public final class HotkeyCenter {
         }
     }
 
-    /// Hotkeys are on but paused, because something in sTools is listening for raw keys.
+    /// Hotkeys are on but paused, because something in sTools is listening for raw keys. While only typing pauses
+    /// them, just the hotkeys that would take a typed key step aside.
     public var isPaused: Bool { settings.isEnabled && !pauses.isEmpty }
 
     /// Starts or ends a pause for `reason`. Hotkeys come back when the last pause ends.
     public func setPaused(_ paused: Bool, for reason: HotkeyPause) {
-        let wasPaused = !pauses.isEmpty
+        let before = pauses
         if paused { pauses.insert(reason) } else { pauses.remove(reason) }
-        if wasPaused != !pauses.isEmpty { synchronize() }
+        if pauses != before { synchronize() }
+    }
+
+    /// Whether `combo` steps aside during the pauses in force: every hotkey while a key is recorded or the Key
+    /// Rebinder listens; while someone only types, just the ones that would take a typed character or editing key
+    /// (`interferesWithTyping`), so F-keys and ⌘ or ⌃ combinations keep working next to a focused text field.
+    private func pauses(_ combo: HotkeyCombo) -> Bool {
+        guard settings.isEnabled, !pauses.isEmpty else { return false }
+        return pauses == [.typing] ? combo.interferesWithTyping : true
     }
 
     /// While the master switch is on, the bindings that take their key from other apps: valid, the first owner of
@@ -215,7 +224,8 @@ public final class HotkeyCenter {
     @discardableResult
     public func handleKeyDown(keyCode: UInt16, modifiers: HotkeyCombo.Modifiers, isRepeat: Bool) -> Bool {
         let combo = HotkeyCombo(keyCode: keyCode, modifiers: modifiers)
-        guard !isPaused, let id = registered.first(where: { $0.value == combo })?.key else { return false }
+        // Only a live registration counts: a paused one is unregistered, so its key goes on to the field.
+        guard let id = registered.first(where: { $0.value == combo })?.key else { return false }
         guard !isRepeat, keysDown[id] == nil else { return true }
         if !reachedWindow {
             reachedWindow = true
@@ -311,9 +321,8 @@ public final class HotkeyCenter {
             }
         }
 
-        let paused = isPaused
         var timerReleases = 0
-        for (id, combo) in registered where paused || wanted[id] != combo {
+        for (id, combo) in registered where pauses(combo) || wanted[id] != combo {
             registrar.unregister(id: id)
             registered[id] = nil
             // macOS can't report this key's release any more.
@@ -322,7 +331,7 @@ public final class HotkeyCenter {
         }
         for binding in settings.bindings {
             guard let combo = wanted[binding.id] else { continue }
-            if paused {
+            if pauses(combo) {
                 newStatuses[binding.id] = probe(combo, id: binding.id)
             } else if registered[binding.id] == combo {
                 newStatuses[binding.id] = .registered

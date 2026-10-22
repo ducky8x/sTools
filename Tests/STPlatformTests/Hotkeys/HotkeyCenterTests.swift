@@ -425,11 +425,11 @@ struct HotkeyCenterTests {
         let h = await Harness()
         h.center.isEnabled = true
         let id = h.center.add(combo: f13, actions: [.startTimer])
-        h.center.setPaused(true, for: .typing)
+        h.center.setPaused(true, for: .recordingKey)
         h.registrar.press(id)
         h.registrar.release(id)
         h.registrar.press(id)
-        h.center.setPaused(false, for: .typing)
+        h.center.setPaused(false, for: .recordingKey)
         h.registrar.release(id)
         #expect(h.presses.isEmpty)
     }
@@ -441,12 +441,12 @@ struct HotkeyCenterTests {
         h.center.isEnabled = true
         let id = h.center.add(combo: f13, actions: [.startTimer])
         h.registrar.press(id)
-        h.center.setPaused(true, for: .typing)
+        h.center.setPaused(true, for: .recordingKey)
         #expect(h.presses == [[.startTimer], [.startTimerReleased]])
         #expect(h.registrar.active.isEmpty)
 
         h.registrar.release(id)
-        h.center.setPaused(false, for: .typing)
+        h.center.setPaused(false, for: .recordingKey)
         h.registrar.release(id)
         #expect(h.presses == [[.startTimer], [.startTimerReleased]])
     }
@@ -488,7 +488,7 @@ struct HotkeyCenterTests {
         h.center.isEnabled = true
         let id = h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
         h.registrar.press(id)
-        h.center.setPaused(true, for: .typing)
+        h.center.setPaused(true, for: .recordingKey)
         h.center.isEnabled = false
         #expect(h.presses == [[.setTool(.crosshair, isOn: true)]])
     }
@@ -504,7 +504,7 @@ struct HotkeyCenterTests {
         center.isEnabled = true
         let id = center.add(combo: f13, actions: [.startTimer])
         registrar.onPress?(id)
-        center.setPaused(true, for: .typing)
+        center.setPaused(true, for: .recordingKey)
         center.isEnabled = false
         #expect(h.presses == [[.startTimer]])
     }
@@ -570,8 +570,8 @@ struct HotkeyCenterTests {
         h.center.isEnabled = true
         let id = h.center.add(combo: f13, actions: [.startTimer])
         h.registrar.press(id)
-        h.center.setPaused(true, for: .typing)
-        h.center.setPaused(false, for: .typing)
+        h.center.setPaused(true, for: .recordingKey)
+        h.center.setPaused(false, for: .recordingKey)
         h.registrar.press(id)
         #expect(h.presses == [[.startTimer], [.startTimerReleased], [.startTimer]])
     }
@@ -670,7 +670,7 @@ struct HotkeyCenterTests {
         let a = h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
         let b = h.center.add(combo: ctrlOptV, actions: [.toggle(.nbbOverlay)])
 
-        for reason in [HotkeyPause.recordingKey, .typing, .keyRebinder] {
+        for reason in [HotkeyPause.recordingKey, .keyRebinder] {
             h.center.setPaused(true, for: reason)
             #expect(h.center.isPaused)
             #expect(h.registrar.active.isEmpty)
@@ -681,6 +681,36 @@ struct HotkeyCenterTests {
             #expect(!h.center.isPaused)
             #expect(h.registrar.active == [a: pad1, b: ctrlOptV])
         }
+    }
+
+    /// Next to a focused text field only the hotkeys that would take a typed key step aside: a bare keypad key or
+    /// letter does, an F-key or a ⌘ or ⌃ combination keeps working.
+    @Test func typingPausesOnlyTheHotkeysThatTakeATypedKey() async {
+        let h = await Harness()
+        h.center.isEnabled = true
+        let pad = h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
+        let letter = h.center.add(combo: bareC, actions: [.toggle(.windowBackdrop)])
+        let ctrlOpt = h.center.add(combo: ctrlOptV, actions: [.toggle(.nbbOverlay)])
+        let function = h.center.add(combo: f13, actions: [.startTimer])
+
+        h.center.setPaused(true, for: .typing)
+        #expect(h.center.isPaused)
+        #expect(h.registrar.active == [ctrlOpt: ctrlOptV, function: f13])
+        #expect(h.center.status(of: pad) == .registered)
+        #expect(h.center.status(of: letter) == .registered)
+        h.registrar.tap(ctrlOpt)
+        #expect(h.presses == [[.setTool(.nbbOverlay, isOn: true)]])
+        // A typed key goes on to the field; an F-key reaching the window still fires.
+        #expect(!h.center.handleKeyDown(keyCode: bareC.keyCode, modifiers: [], isRepeat: false))
+        #expect(h.center.handleKeyDown(keyCode: f13.keyCode, modifiers: [], isRepeat: false))
+
+        // Recording a key on top of that pauses every hotkey.
+        h.center.setPaused(true, for: .recordingKey)
+        #expect(h.registrar.active.isEmpty)
+        h.center.setPaused(false, for: .recordingKey)
+        #expect(h.registrar.active == [ctrlOpt: ctrlOptV, function: f13])
+        h.center.setPaused(false, for: .typing)
+        #expect(h.registrar.active == [pad: pad1, letter: bareC, ctrlOpt: ctrlOptV, function: f13])
     }
 
     /// Recording a key while a text field still has focus: hotkeys come back only when both are over.
@@ -703,10 +733,10 @@ struct HotkeyCenterTests {
         let h = await Harness()
         h.center.isEnabled = true
         h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
-        h.center.setPaused(false, for: .typing)
-        h.center.setPaused(true, for: .typing)
-        h.center.setPaused(true, for: .typing)
-        h.center.setPaused(false, for: .typing)
+        h.center.setPaused(false, for: .recordingKey)
+        h.center.setPaused(true, for: .recordingKey)
+        h.center.setPaused(true, for: .recordingKey)
+        h.center.setPaused(false, for: .recordingKey)
         #expect(h.registrar.log == ["register Pad 1", "unregister Pad 1", "register Pad 1"])
     }
 
@@ -738,10 +768,10 @@ struct HotkeyCenterTests {
         let id = h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
         #expect(!h.center.handleKeyDown(keyCode: 83, modifiers: [], isRepeat: false))
         h.center.isEnabled = true
-        h.center.setPaused(true, for: .typing)
+        h.center.setPaused(true, for: .recordingKey)
         #expect(!h.center.handleKeyDown(keyCode: 83, modifiers: [], isRepeat: false))
         #expect(h.presses.isEmpty)
-        h.center.setPaused(false, for: .typing)
+        h.center.setPaused(false, for: .recordingKey)
         #expect(h.center.handleKeyDown(keyCode: 83, modifiers: [], isRepeat: false))
         #expect(h.presses == [[.setTool(.crosshair, isOn: true)]])
         #expect(h.center.status(of: id) == .registered)
@@ -782,12 +812,12 @@ struct HotkeyCenterTests {
         let h = await Harness()
         h.center.isEnabled = true
         let id = h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
-        h.center.setPaused(true, for: .typing)
+        h.center.setPaused(true, for: .recordingKey)
         // A press macOS delivered just before the pause began.
         h.registrar.press(id)
         #expect(h.events.isEmpty)
 
-        h.center.setPaused(false, for: .typing)
+        h.center.setPaused(false, for: .recordingKey)
         h.registrar.press(id)
         #expect(h.events == [.setTool(.crosshair, isOn: true)])
     }
@@ -795,11 +825,11 @@ struct HotkeyCenterTests {
     @Test func pausingWhileOffChangesNothing() async {
         let h = await Harness()
         let id = h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
-        h.center.setPaused(true, for: .typing)
+        h.center.setPaused(true, for: .recordingKey)
         #expect(!h.center.isPaused)
         #expect(h.registrar.log.isEmpty)
         #expect(h.center.status(of: id) == .inactive)
-        h.center.setPaused(false, for: .typing)
+        h.center.setPaused(false, for: .recordingKey)
         #expect(h.registrar.log.isEmpty)
         #expect(h.center.status(of: id) == .inactive)
     }
@@ -807,7 +837,7 @@ struct HotkeyCenterTests {
     @Test func aComboAddedWhilePausedIsTriedOnce() async {
         let h = await Harness()
         h.center.isEnabled = true
-        h.center.setPaused(true, for: .typing)
+        h.center.setPaused(true, for: .recordingKey)
         let id = h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
         #expect(h.registrar.log == ["register Pad 1", "unregister Pad 1"])
         #expect(h.center.status(of: id) == .registered)
@@ -816,7 +846,7 @@ struct HotkeyCenterTests {
         h.center.update(id, actions: [.toggle(.crosshair), .toggle(.nbbOverlay)])
         #expect(h.registrar.log == ["register Pad 1", "unregister Pad 1"])
 
-        h.center.setPaused(false, for: .typing)
+        h.center.setPaused(false, for: .recordingKey)
         #expect(h.registrar.log == ["register Pad 1", "unregister Pad 1", "register Pad 1"])
         #expect(h.registrar.active == [id: pad1])
     }
@@ -825,7 +855,7 @@ struct HotkeyCenterTests {
         let h = await Harness()
         h.center.isEnabled = true
         let id = h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
-        h.center.setPaused(true, for: .typing)
+        h.center.setPaused(true, for: .recordingKey)
         h.center.update(id, actions: [.toggle(.nbbOverlay)])
         #expect(h.registrar.log == ["register Pad 1", "unregister Pad 1"])
         #expect(h.center.status(of: id) == .registered)
@@ -835,13 +865,13 @@ struct HotkeyCenterTests {
         let h = await Harness()
         h.registrar.refused = [pad1]
         h.center.isEnabled = true
-        h.center.setPaused(true, for: .typing)
+        h.center.setPaused(true, for: .recordingKey)
         let id = h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
         #expect(h.center.status(of: id) == .conflict(.systemRefused))
         #expect(h.registrar.active.isEmpty)
 
         h.registrar.refused = []
-        h.center.setPaused(false, for: .typing)
+        h.center.setPaused(false, for: .recordingKey)
         #expect(h.center.status(of: id) == .registered)
         #expect(h.registrar.active == [id: pad1])
     }
@@ -851,14 +881,14 @@ struct HotkeyCenterTests {
     @Test func aRefusalOnResumeIsForgottenAndTriedAgainNextPause() async {
         let h = await Harness()
         h.center.isEnabled = true
-        h.center.setPaused(true, for: .typing)
+        h.center.setPaused(true, for: .recordingKey)
         let id = h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
         h.registrar.refused = [pad1]
-        h.center.setPaused(false, for: .typing)
+        h.center.setPaused(false, for: .recordingKey)
         #expect(h.center.status(of: id) == .conflict(.systemRefused))
 
         h.registrar.refused = []
-        h.center.setPaused(true, for: .typing)
+        h.center.setPaused(true, for: .recordingKey)
         #expect(h.center.status(of: id) == .registered)
         #expect(h.registrar.log.suffix(2) == ["register Pad 1", "unregister Pad 1"])
         #expect(h.registrar.active.isEmpty)
@@ -867,7 +897,7 @@ struct HotkeyCenterTests {
     @Test func conflictsStillReportWhilePaused() async {
         let h = await Harness()
         h.center.isEnabled = true
-        h.center.setPaused(true, for: .typing)
+        h.center.setPaused(true, for: .recordingKey)
         let first = h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
         let duplicate = h.center.add(combo: pad1, actions: [.toggle(.nbbOverlay)])
         let reserved = h.center.add(combo: HotkeyCombo(keyCode: 12, modifiers: .command), actions: [.toggle(.crosshair)])
@@ -894,7 +924,7 @@ struct HotkeyCenterTests {
         h.center.isEnabled = true
         #expect(h.center.activeBindings.map(\.id) == [first, last])
 
-        h.center.setPaused(true, for: .typing)
+        h.center.setPaused(true, for: .recordingKey)
         #expect(h.center.isPaused)
         #expect(h.center.activeBindings.map(\.id) == [first, last])
 
@@ -910,9 +940,9 @@ struct HotkeyCenterTests {
 
         let changes = ChangeCounter()
         withObservationTracking { _ = h.center.statuses } onChange: { changes.increment() }
-        h.center.setPaused(true, for: .typing)
-        h.center.setPaused(false, for: .typing)
-        h.center.setPaused(true, for: .typing)
+        h.center.setPaused(true, for: .recordingKey)
+        h.center.setPaused(false, for: .recordingKey)
+        h.center.setPaused(true, for: .recordingKey)
         h.center.showsConfirmation = false
         #expect(changes.value == 0)
 
