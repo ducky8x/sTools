@@ -632,3 +632,147 @@ struct TimerOverlayControllerTests {
         #expect(!TimerRig(accessibility: .denied).controller.isAvailable)
     }
 }
+
+@MainActor
+@Suite("Timer Overlay placement mode")
+struct TimerPlacementModeTests {
+    /// The default plate's center on the test display: 453 right of and 459 above its center.
+    private static let ownersCenter = CGPoint(x: timerTestDisplay.frame.midX + 453, y: timerTestDisplay.frame.midY + 459)
+
+    @Test func placementModeSwitchesTheToolOnAndShowsTheSavedDuration() {
+        let rig = TimerRig()
+        rig.controller.setPlacementMode(true)
+        #expect(rig.controller.isEnabled && rig.controller.isPlacing && rig.presenter.isPlacing)
+        #expect(rig.presenter.popIns.map(\.content.text) == ["02:30"])
+        #expect(rig.controller.phase == .idle && rig.controller.status == .ready)
+        let plate = rig.presenter.popIns.first?.plateFrame
+        #expect(plate.map { CGPoint(x: $0.midX, y: $0.midY) } == Self.ownersCenter)
+        #expect(rig.controller.isWatchingEnvironment, "it follows the display while the plate is up")
+    }
+
+    @Test func placementModeStaysOffWhenTheToolCantSwitchOn() {
+        let rig = TimerRig()
+        rig.controller.requestEnable = { false }
+        rig.controller.setPlacementMode(true)
+        #expect(!rig.controller.settings.placementModeEnabled && !rig.controller.isPlacing)
+        #expect(rig.presenter.popIns.isEmpty && !rig.presenter.isPlacing && rig.isQuiet)
+    }
+
+    @Test func aDragShowsTheGuidesAndSavesWhereThePlateSettles() {
+        let rig = TimerRig()
+        rig.controller.setPlacementMode(true)
+        #expect(!rig.guides.isShowing)
+        rig.presenter.drag(by: CGSize(width: -100, height: 40))
+        rig.presenter.drag(by: CGSize(width: -200, height: 100))
+        #expect(rig.guides.shown.count == 1, "the zones are worked out once per drag")
+        #expect(rig.guides.marks.count == 2)
+        let moved = rig.presenter.moves.last?.plateFrame
+        #expect(moved.map { CGPoint(x: $0.midX, y: $0.midY) }
+            == CGPoint(x: Self.ownersCenter.x - 200, y: Self.ownersCenter.y - 100))
+        rig.presenter.endDrag()
+        #expect(!rig.guides.isShowing && rig.guides.hides == 1)
+        #expect(rig.controller.settings.offsetX == 253 && rig.controller.settings.offsetY == -359)
+        #expect(rig.controller.phase == .idle && rig.presenter.isShowing)
+    }
+
+    @Test func coveringTheToastsTurnsThePlatesEdgeToDanger() {
+        let rig = TimerRig()
+        rig.controller.setPlacementMode(true)
+        rig.presenter.drag(by: .zero)
+        #expect(rig.guides.marks.last == [.toasts], "the owner's spot overlaps the toast column at GUI scale 3")
+        #expect(rig.presenter.updates.last?.showsDangerEdge == true && rig.controller.content.showsDangerEdge)
+        // Down and left, clear of the toasts and of Game Paused.
+        rig.presenter.drag(by: CGSize(width: -300, height: 200))
+        #expect(rig.guides.marks.last == [])
+        #expect(rig.presenter.updates.last?.showsDangerEdge == false)
+        rig.presenter.drag(by: .zero)
+        rig.presenter.endDrag()
+        #expect(!rig.controller.content.showsDangerEdge, "the edge goes with the guides")
+    }
+
+    @Test func snappingPullsADroppedPlateToTheEdge() {
+        let rig = TimerRig()
+        rig.controller.setPlacementMode(true)
+        let start = rig.presenter.plateFrame ?? .zero
+        let toRight = timerTestDisplay.frame.maxX - start.maxX - 6
+        rig.presenter.drag(by: CGSize(width: toRight, height: 0))
+        rig.presenter.endDrag()
+        #expect(rig.presenter.moves.last?.plateFrame.maxX == timerTestDisplay.frame.maxX)
+    }
+
+    @Test func withoutGuidesADragShowsNone() {
+        let rig = TimerRig { $0.showsRuleGuides = false }
+        rig.controller.setPlacementMode(true)
+        rig.presenter.drag(by: CGSize(width: -50, height: 0))
+        rig.presenter.endDrag()
+        #expect(rig.guides.shown.isEmpty && rig.guides.marks.isEmpty)
+        #expect(rig.controller.settings.offsetX == 403)
+    }
+
+    @Test func typedXYMovesThePlate() {
+        let rig = TimerRig()
+        rig.controller.setPlacementMode(true)
+        rig.controller.settings.offsetX = 0
+        rig.controller.settings.offsetY = 0
+        let plate = rig.presenter.moves.last?.plateFrame
+        #expect(plate.map { CGPoint(x: $0.midX, y: $0.midY) }
+            == CGPoint(x: timerTestDisplay.frame.midX, y: timerTestDisplay.frame.midY))
+    }
+
+    @Test func aCountdownSharesThePlate() {
+        let rig = TimerRig { $0.durationSeconds = 3 }
+        rig.controller.setPlacementMode(true)
+        rig.controller.start()
+        #expect(rig.presenter.popIns.count == 1, "the countdown counts on the sample's plate")
+        #expect(rig.presenter.updates.isEmpty, "the first second looks like the sample")
+        #expect(rig.controller.content.text == "00:03" && rig.controller.phase == .counting)
+        rig.scheduler.fireNext()
+        #expect(rig.presenter.updates.last?.text == "00:02")
+        rig.scheduler.fireAll()
+        #expect(rig.presenter.popOuts.isEmpty && rig.presenter.isShowing, "the plate stays")
+        #expect(rig.controller.phase == .idle && rig.controller.content.text == "00:03")
+        #expect(rig.presenter.pulses.count == 3 && rig.alarm.rings.count == 1)
+        #expect(!rig.activity.isHeld && rig.scheduler.pending.isEmpty)
+    }
+
+    @Test func placementModeIgnoresTheFocusSettings() async {
+        let rig = TimerRig { $0.visibleOnlyWhileMinecraftFocused = true; $0.pausesWhileMinecraftNotFocused = true }
+        await rig.setMinecraft(on: timerTestDisplay, isFrontmost: true)
+        rig.controller.setPlacementMode(true)
+        rig.controller.start()
+        await rig.setMinecraft(on: timerTestDisplay, isFrontmost: false)
+        #expect(rig.presenter.popOuts.isEmpty && rig.controller.phase == .counting)
+    }
+
+    @Test func turningPlacementModeOffHidesTheSample() {
+        let rig = TimerRig()
+        rig.controller.setPlacementMode(true)
+        rig.controller.setPlacementMode(false)
+        #expect(!rig.presenter.isPlacing && rig.presenter.popOuts.count == 1)
+        #expect(rig.controller.isEnabled && rig.isQuiet)
+    }
+
+    @Test func turningPlacementModeOffMidDragPutsThePlateBack() {
+        let rig = TimerRig()
+        rig.controller.setPlacementMode(true)
+        rig.controller.start()
+        rig.presenter.drag(by: CGSize(width: -300, height: 50))
+        rig.controller.setPlacementMode(false)
+        #expect(!rig.guides.isShowing && rig.controller.settings.offsetX == 453)
+        let plate = rig.presenter.moves.last?.plateFrame
+        #expect(plate.map { CGPoint(x: $0.midX, y: $0.midY) } == Self.ownersCenter)
+        #expect(rig.presenter.isShowing && rig.controller.phase == .counting)
+    }
+
+    @Test func turningTheToolOffEndsPlacementMode() {
+        let rig = TimerRig()
+        rig.controller.setPlacementMode(true)
+        rig.controller.start()
+        rig.presenter.drag(by: CGSize(width: -40, height: 0))
+        rig.controller.setEnabled(false)
+        #expect(!rig.controller.settings.placementModeEnabled && !rig.presenter.isPlacing)
+        #expect(!rig.guides.isShowing && rig.controller.phase == .idle && rig.isQuiet)
+        rig.controller.setEnabled(true)
+        #expect(rig.presenter.popIns.count == 1, "no plate comes back")
+    }
+}

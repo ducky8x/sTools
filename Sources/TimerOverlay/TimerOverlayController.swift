@@ -280,7 +280,7 @@ public final class TimerOverlayController: ToolController {
     }
 
     /// Switches the tool on when it's off, through the app when it can. Whether it's on afterwards.
-    private func switchOn() -> Bool {
+    func switchOn() -> Bool {
         guard !isEnabled else { return true }
         if let requestEnable {
             guard requestEnable() else { return false }
