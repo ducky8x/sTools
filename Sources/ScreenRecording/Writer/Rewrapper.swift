@@ -22,17 +22,22 @@ extension RewrapError: LocalizedError {
 /// Copies a recorded .mov into an .mp4 without re-encoding (spec 5.4.2, "On Save with .mp4 selected").
 public enum Rewrapper {
     /// Rewraps `source` into `destination`, then verifies codec, sample counts, audio tracks and track names.
-    /// The source is left untouched. On any failure the destination is removed.
+    /// The source is left untouched. A file already at `destination` is never replaced or removed: the rewrap fails
+    /// first. On any other failure the destination it wrote is removed.
     @discardableResult
     public static func rewrap(from source: URL, to destination: URL) async throws -> MovieInfo {
+        guard !FileManager.default.fileExists(atPath: destination.path) else {
+            throw RewrapError.cannotWrite("\(destination.lastPathComponent) is already there")
+        }
+        var wrote = false
         do {
-            try await copySamples(from: source, to: destination)
+            try await copySamples(from: source, to: destination, wrote: &wrote)
             let original = try await MovieInfo.load(source)
             let rewrapped = try await MovieInfo.load(destination)
             try verify(original, rewrapped)
             return rewrapped
         } catch {
-            try? FileManager.default.removeItem(at: destination)
+            if wrote { try? FileManager.default.removeItem(at: destination) }
             throw error
         }
     }
@@ -58,7 +63,8 @@ public enum Rewrapper {
         if !problems.isEmpty { throw RewrapError.verificationFailed(problems.joined(separator: "; ")) }
     }
 
-    private static func copySamples(from source: URL, to destination: URL) async throws {
+    /// `wrote` turns true once the writer has made `destination`: before that, a file there isn't this rewrap's.
+    private static func copySamples(from source: URL, to destination: URL, wrote: inout Bool) async throws {
         let asset = AVURLAsset(url: source)
         let tracks: [AVAssetTrack]
         do {
@@ -91,6 +97,7 @@ public enum Rewrapper {
 
         guard reader.startReading() else { throw RewrapError.cannotRead(reader.error?.localizedDescription ?? "") }
         guard writer.startWriting() else { throw RewrapError.cannotWrite(writer.error?.localizedDescription ?? "") }
+        wrote = true
         writer.startSession(atSourceTime: .zero)
 
         await withTaskGroup(of: Void.self) { group in
