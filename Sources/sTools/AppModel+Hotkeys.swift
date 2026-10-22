@@ -59,8 +59,9 @@ extension AppModel {
             guard let recording = controller(for: .screenRecording, as: ScreenRecordingController.self) else { return nil }
             // Switching on (when needed) goes through `requestEnable`, which keeps rule R10. The line says what the
             // press did: a second press while the recording starts cancels it rather than starting another. A start
-            // isn't confirmed as "Recording started" until its first frame is in the file (`keyStartEnded`).
-            return HotkeyConfirmation.recordingEffect(recording.toggleRecording())
+            // isn't confirmed as "Recording started" until its first frame is in the file (`keyStartEnded`); its
+            // timings count from when the key went down.
+            return HotkeyConfirmation.recordingEffect(recording.toggleRecording(secondsAgo: hotkeys.keyEventAge))
         case .startTimer:
             // The overlay confirms a start, restart, pause or cancel itself, so those add no sound or line (plan
             // decision 5). A press that couldn't switch the tool on (no Accessibility, R10) gets the click and its line,

@@ -1144,6 +1144,20 @@ struct ScreenRecordingStartTimingTests {
         harness.controller.delete()
     }
 
+    /// The key's start is timed from when its key went down, so the timings include the time sTools took to get to it.
+    @Test func aKeysTimingsCountFromItsKeyEvent() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        await harness.arm()
+        harness.controller.toggleRecording(secondsAgo: 0.3)
+        #expect(await harness.waitUntil { harness.controller.phase == .recording })
+        let timings = try #require(harness.controller.lastStartTimings)
+        #expect(timings.toSources >= .milliseconds(300))
+        #expect(timings.toFirstFrame >= .milliseconds(300))
+        await harness.controller.stopRecording(explanation: nil)
+        harness.controller.delete()
+    }
+
     /// Switching the tool on readies the encoder and Core Image alongside the sources, and switching it off lets go
     /// of what was readied.
     @Test func armingWarmsUpAndSwitchingOffLetsGo() async throws {

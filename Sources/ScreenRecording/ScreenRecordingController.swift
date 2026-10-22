@@ -500,9 +500,10 @@ public final class ScreenRecordingController: ToolController {
     /// stops one, which switches the tool off at once and then asks Save or Delete. Pressed before anything is written
     /// (while the sources start, or during the countdown), it cancels the start and the tool switches off. While the
     /// question waits for its answer it brings it forward again and starts nothing. Returns what the press did; the
-    /// start and the finishing of a stopped recording carry on after it returns.
+    /// start and the finishing of a stopped recording carry on after it returns. `secondsAgo`: how long ago the key
+    /// went down, so a start's timings (`lastStartTimings`) count from the key rather than from when sTools got to it.
     @discardableResult
-    public func toggleRecording() -> KeyPress {
+    public func toggleRecording(secondsAgo: TimeInterval = 0) -> KeyPress {
         switch phase {
         case .recording:
             // The tool and its sources go off now, with the press; the file is finished after.
@@ -519,7 +520,7 @@ public final class ScreenRecordingController: ToolController {
         case .finishing:
             return .finishing
         case .idle:
-            let (press, start) = beginStart(isTest: false, fromKey: true)
+            let (press, start) = beginStart(isTest: false, fromKey: true, secondsAgo: secondsAgo)
             if let start { Task { await run(start) } }
             return press
         }
@@ -553,13 +554,17 @@ public final class ScreenRecordingController: ToolController {
 
     /// When a start reached each step, from its press.
     private final class StartMarks {
-        let pressed = ContinuousClock.now
+        /// When the key went down (or Record was clicked).
+        let pressed: ContinuousClock.Instant
         let switchedOn: Bool
         var sources: ContinuousClock.Instant?
         var minecraftFrame: ContinuousClock.Instant?
         var writer: ContinuousClock.Instant?
 
-        init(switchedOn: Bool) { self.switchedOn = switchedOn }
+        init(switchedOn: Bool, secondsAgo: TimeInterval) {
+            self.switchedOn = switchedOn
+            pressed = .now - .seconds(max(0, secondsAgo))
+        }
 
         func timings(countdown: Countdown, firstFrame: ContinuousClock.Instant) -> StartTimings {
             let sources = sources ?? pressed
@@ -578,10 +583,10 @@ public final class ScreenRecordingController: ToolController {
     /// Without Screen & System Audio Recording nothing starts and the tool stays as it was: there would be nothing to
     /// record but a blank canvas, and arming could bring up macOS's prompt over the game. The page's Allow… is where
     /// it's given. It's read fresh here (a cheap check that never prompts), so a grant since counts at once.
-    private func beginStart(isTest: Bool, fromKey: Bool) -> (KeyPress, Start?) {
+    private func beginStart(isTest: Bool, fromKey: Bool, secondsAgo: TimeInterval = 0) -> (KeyPress, Start?) {
         services.permissions.refresh([.screenRecording])
         guard screenRecordingPermission == .granted else { return (.needsPermission, nil) }
-        let marks = StartMarks(switchedOn: !isEnabled)
+        let marks = StartMarks(switchedOn: !isEnabled, secondsAgo: secondsAgo)
         if !isEnabled {
             if let requestEnable { guard requestEnable() else { return (.couldNotSwitchOn, nil) } } else { setEnabled(true) }
         }
