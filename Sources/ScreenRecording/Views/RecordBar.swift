@@ -62,8 +62,8 @@ struct RecordBar: View {
             return parts.joined(separator: " \u{00B7} ")
         case .countingDown: return "Get ready."
         case .finishing: return "Writing the file\u{2026}"
-        case .deciding: return "Choose Save or Delete."
-        case .idle: return controller.isEnabled ? "Ready." : "Record switches Screen Recording on first."
+        case .deciding: return "Choose Save or Delete. Screen Recording switches off after."
+        case .idle: return controller.isEnabled ? "Ready. Stopping switches Screen Recording off." : "Record switches Screen Recording on first."
         }
     }
 

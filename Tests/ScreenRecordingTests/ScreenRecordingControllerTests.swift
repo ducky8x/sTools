@@ -221,7 +221,8 @@ struct ScreenRecordingControllerTests {
         #expect(FileManager.default.fileExists(atPath: saved.path))
         #expect(!FileManager.default.fileExists(atPath: finished.files[0].path))
         #expect(harness.presenter.presented.count == 1 && harness.presenter.dismissals == 1)
-        harness.controller.setEnabled(false)
+        // Stopping a recording turns the tool off once it's saved.
+        #expect(!harness.controller.isEnabled)
     }
 
     @Test func deleteRemovesTheRecording() async throws {
@@ -233,7 +234,7 @@ struct ScreenRecordingControllerTests {
         harness.controller.delete()
         #expect(!FileManager.default.fileExists(atPath: file.path))
         #expect(harness.controller.phase == .idle)
-        harness.controller.setEnabled(false)
+        #expect(!harness.controller.isEnabled)
     }
 
     @Test func withTheQuestionOffItSavesByDateAndTime() async throws {
@@ -247,9 +248,9 @@ struct ScreenRecordingControllerTests {
         let saved = try #require(harness.controller.lastSaved?.files.first)
         #expect(saved.pathExtension == "mov")
         #expect(saved.lastPathComponent.range(of: #"^\d{4}-\d{2}-\d{2} \d{2}\.\d{2}\.\d{2}\.mov$"#, options: .regularExpression) != nil)
-        // Saved without the question.
+        // Saved without the question, and the tool off all the same.
         #expect(harness.presenter.presented.isEmpty)
-        harness.controller.setEnabled(false)
+        #expect(!harness.controller.isEnabled)
     }
 
     @Test func theTestRecordingIsSavedWithoutAsking() async throws {
@@ -262,8 +263,9 @@ struct ScreenRecordingControllerTests {
         #expect(saved)
         #expect(harness.controller.options.askSaveDelete)
         #expect(harness.controller.phase == .idle)
-        // The Prologue's test asks nothing.
+        // The Prologue's test asks nothing and leaves the tool on, so it can run again at once.
         #expect(harness.presenter.presented.isEmpty)
+        #expect(harness.controller.isEnabled)
         let file = try #require(harness.controller.lastSaved?.files.first)
         #expect(FileManager.default.fileExists(atPath: file.path))
         harness.controller.setEnabled(false)
@@ -314,3 +316,175 @@ struct ScreenRecordingControllerTests {
     }
 }
 
+/// Screen Recording's one key and the question after a stop (spec 5.4.4, 6.1): the key turns recording on and off,
+/// stopping asks for the name and Save or Delete, and once it's answered the tool is off. On fakes: no capture, no
+/// window, no sound.
+@Suite("Screen Recording's one key", .serialized) @MainActor
+struct ScreenRecordingKeyTests {
+    @Test func offTheKeySwitchesTheToolOnAndRecordsAtOnce() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        #expect(!harness.controller.isEnabled)
+        harness.controller.toggleRecording()
+        #expect(await harness.waitUntil { harness.controller.phase == .recording })
+        #expect(harness.controller.isEnabled)
+        await harness.controller.stopRecording(explanation: nil)
+        harness.controller.delete()
+    }
+
+    @Test func whileRecordingTheKeyStopsAndAsksWithTheDateAndTimeOffered() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        await harness.recordByKey()
+        #expect(harness.controller.phase == .deciding)
+        let finished = try #require(harness.controller.finished)
+        #expect(harness.presenter.presented == [finished])
+        #expect(harness.presenter.isShowing)
+        // The offered name is the one it was written under: its date and time.
+        #expect(finished.name.range(of: #"^\d{4}-\d{2}-\d{2} \d{2}\.\d{2}\.\d{2}$"#, options: .regularExpression) != nil)
+        #expect(finished.files.map { $0.deletingPathExtension().lastPathComponent } == [finished.name])
+        // Still on until the question is answered.
+        #expect(harness.controller.isEnabled)
+        harness.controller.delete()
+    }
+
+    @Test func savingKeepsTheFileUnderItsNameAndTurnsTheToolOff() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        harness.controller.options.fileType = .mov
+        await harness.recordByKey()
+        await harness.controller.save(name: "Any% 14:02")
+        #expect(harness.savedFileNames() == ["Any% 14-02.mov"])
+        #expect(harness.controller.lastSaved?.files.map(\.lastPathComponent) == ["Any% 14-02.mov"])
+        #expect(harness.presenter.dismissals == 1 && !harness.presenter.isShowing)
+        #expect(harness.controller.phase == .idle)
+        #expect(!harness.controller.isEnabled)
+    }
+
+    @Test func deletingRemovesTheFileAndTurnsTheToolOff() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        await harness.recordByKey()
+        let file = try #require(harness.controller.finished?.files.first)
+        #expect(FileManager.default.fileExists(atPath: file.path))
+        harness.controller.delete()
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+        #expect(harness.savedFileNames().isEmpty)
+        #expect(harness.controller.lastSaved == nil)
+        #expect(harness.presenter.dismissals == 1)
+        #expect(!harness.controller.isEnabled)
+    }
+
+    /// Esc cancels the naming: the recording is saved under the offered date-and-time name, so nothing is lost.
+    @Test func cancelingSavesUnderTheOfferedName() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        harness.controller.options.fileType = .mov
+        await harness.recordByKey()
+        let finished = try #require(harness.controller.finished)
+        let draft = RecordingDecisionDraft(name: "typed but not saved")
+        draft.cancel(harness.controller)
+        #expect(await harness.waitUntil { harness.controller.lastSaved != nil })
+        #expect(harness.savedFileNames() == ["\(finished.name).mov"])
+        #expect(harness.presenter.dismissals == 1)
+        #expect(await harness.waitUntil { !harness.controller.isEnabled })
+    }
+
+    /// Inside the Delete confirmation, Esc steps back to the question; it neither deletes nor saves.
+    @Test func escInTheDeleteConfirmationStepsBack() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        await harness.recordByKey()
+        let draft = RecordingDecisionDraft(name: try #require(harness.controller.finished).name)
+        draft.confirmsDelete = true
+        draft.cancel(harness.controller)
+        #expect(!draft.confirmsDelete)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(harness.controller.phase == .deciding)
+        #expect(harness.controller.lastSaved == nil)
+        harness.controller.delete()
+    }
+
+    /// The page's Stop asks the same question, and the tool goes off after it all the same.
+    @Test func thePagesStopAsksAndTurnsTheToolOffToo() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        await harness.arm()
+        await harness.record(seconds: 0.3)
+        #expect(harness.controller.phase == .deciding)
+        #expect(harness.presenter.presented.count == 1)
+        await harness.controller.cancelDecision()
+        #expect(harness.controller.lastSaved?.files.count == 1)
+        #expect(!harness.controller.isEnabled)
+    }
+
+    /// Pressed while the question waits, the key brings it forward again and changes nothing else.
+    @Test func theKeyWhileItAsksBringsTheQuestionBack() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        await harness.recordByKey()
+        harness.controller.toggleRecording()
+        #expect(harness.presenter.presented.count == 2)
+        #expect(harness.controller.phase == .deciding)
+        harness.controller.delete()
+    }
+
+    /// A second answer, from a double click or quitting while it saves, finds nothing to do.
+    @Test func aSecondAnswerDoesNothing() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        harness.controller.options.fileType = .mov
+        await harness.recordByKey()
+        async let first: Void = harness.controller.save(name: "One")
+        async let second: Void = harness.controller.save(name: "Two")
+        _ = await (first, second)
+        harness.controller.delete()
+        let saved = harness.savedFileNames()
+        #expect(saved == ["One.mov"] || saved == ["Two.mov"])
+    }
+
+    /// Through the app's switch when it has one, so the sidebar and Home follow.
+    @Test func theToolGoesOffThroughTheAppsSwitch() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        var requests = 0
+        harness.controller.requestDisable = { [controller = harness.controller] in
+            requests += 1
+            controller.setEnabled(false)
+        }
+        await harness.recordByKey()
+        #expect(requests == 0)
+        harness.controller.delete()
+        #expect(requests == 1)
+        #expect(!harness.controller.isEnabled)
+    }
+
+    /// The key turns recording off before it began, too: canceling the countdown switches the tool off.
+    @Test func cancelingTheCountdownTurnsTheToolOff() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        harness.controller.options.countdown = .threeSeconds
+        harness.controller.toggleRecording()
+        #expect(await harness.waitUntil { harness.controller.phase == .countingDown(3) })
+        #expect(harness.controller.isEnabled)
+        harness.controller.toggleRecording()
+        #expect(harness.controller.phase == .idle)
+        #expect(!harness.controller.isEnabled)
+        #expect(harness.presenter.presented.isEmpty)
+    }
+
+    /// Quitting mid-recording keeps it under its date-and-time name without showing the question.
+    @Test func quittingSavesWithoutAsking() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        harness.controller.options.fileType = .mov
+        harness.controller.toggleRecording()
+        #expect(await harness.waitUntil { harness.controller.phase == .recording })
+        harness.pushFrame()
+        try await Task.sleep(for: .milliseconds(250))
+        await harness.controller.finishForQuit()
+        #expect(harness.presenter.presented.isEmpty)
+        #expect(harness.savedFileNames().count == 1)
+        #expect(!harness.controller.isEnabled)
+    }
+}
