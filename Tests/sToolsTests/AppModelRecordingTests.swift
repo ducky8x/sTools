@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import STDesign
 @testable import ScreenRecording
@@ -193,5 +194,31 @@ struct AppModelRecordingTests {
         #expect(harness.question.presented == 0)
         #expect(harness.savedFileNames().count == 1)
         #expect(!harness.model.isOn(.screenRecording))
+    }
+}
+
+/// The recording question takes the keyboard over Minecraft without making sTools the active app (spec 5.4.4), yet
+/// typing a name in it still sets aside the hotkeys on typed keys, as typing in sTools' window does (spec 6.1).
+@MainActor
+@Suite("Typing in the recording question")
+struct RecordingQuestionTypingTests {
+    @Test func typingInAPanelThatHasTheKeyboardWithSToolsInTheBackgroundCounts() {
+        let editable = NSTextView()
+        let readOnly = NSTextView()
+        readOnly.isEditable = false
+        #expect(HotkeyKeyWatcher.isTyping(appIsActive: false, firstResponder: editable, keyWindowIsNonactivatingPanel: true))
+        #expect(!HotkeyKeyWatcher.isTyping(appIsActive: false, firstResponder: editable, keyWindowIsNonactivatingPanel: false))
+        #expect(!HotkeyKeyWatcher.isTyping(appIsActive: false, firstResponder: readOnly, keyWindowIsNonactivatingPanel: true))
+        #expect(!HotkeyKeyWatcher.isTyping(appIsActive: false, firstResponder: nil, keyWindowIsNonactivatingPanel: true))
+    }
+
+    /// Only a panel that takes the keyboard without activating sTools counts while sTools is in the background.
+    @Test func theQuestionsKindOfPanelIsTheOneThatCounts() {
+        let question = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+        let window = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: true)
+        #expect(HotkeyKeyWatcher.takesKeysWithoutActivating(question))
+        #expect(!HotkeyKeyWatcher.takesKeysWithoutActivating(window))
+        #expect(!HotkeyKeyWatcher.takesKeysWithoutActivating(nil))
+        #expect(!question.isVisible && !window.isVisible)
     }
 }
