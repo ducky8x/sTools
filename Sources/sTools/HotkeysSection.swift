@@ -193,7 +193,9 @@ struct HotkeysSection: View {
     static func keySetCaption(_ set: HotkeyKeySet?) -> String {
         guard let set else { return "Custom: keys you set yourself. Pick a set for one key per tool, in sidebar order." }
         let keys = HotkeyKeySet.toolActions.compactMap { action in
-            set.combo(for: action).map { "\($0.displayString) \(toolName(for: action))".replacingOccurrences(of: " ", with: "\u{00A0}") }
+            set.combo(for: action).map { combo in
+                "\(combo.displayString) \(toolName(for: action))".replacingOccurrences(of: " ", with: "\u{00A0}")
+            }
         }
         return keys.isEmpty ? "No tool has a key of its own." : keys.joined(separator: " · ")
     }
