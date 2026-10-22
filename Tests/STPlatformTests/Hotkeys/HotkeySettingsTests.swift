@@ -75,6 +75,22 @@ struct HotkeySettingsTests {
         #expect(binding.actions == [.toggle(.crosshair), .startStopRecording])
     }
 
+    /// Start timer is stored as "startTimer" and survives beside an action this build doesn't know. A build without
+    /// it drops it the same way and keeps the hotkey (spec 5.6.10).
+    @Test func startTimerRoundTripsBesideAnUnknownAction() throws {
+        let json = """
+        {"id":"5B0C8B8E-6D0B-4F1E-9B7B-0B7C1C3D4E5F","combo":{"keyCode":105,"modifiers":0},
+         "actions":["startTimer","someFutureAction","toggle.crosshair"]}
+        """
+        let binding = try JSONDecoder().decode(HotkeyBinding.self, from: Data(json.utf8))
+        #expect(binding.actions == [.startTimer, .toggle(.crosshair)])
+
+        let data = try JSONEncoder().encode(binding)
+        let stored = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(stored["actions"] as? [String] == ["startTimer", "toggle.crosshair"])
+        #expect(try JSONDecoder().decode(HotkeyBinding.self, from: data) == binding)
+    }
+
     /// The binding stays (it shows "No actions") when none of its actions is known, or its actions aren't a list.
     @Test func aBindingWithNoKnownActionIsKeptEmpty() throws {
         for actions in [#"["someFutureAction"]"#, #""toggle.crosshair""#, "null"] {
@@ -145,6 +161,7 @@ struct HotkeySettingsTests {
             HotkeyBinding(combo: HotkeyCombo(keyCode: 8, modifiers: [.control, .option]),
                           actions: [.toggle(.crosshair), .toggle(.nbbOverlay), .startStopRecording]),
             HotkeyBinding(combo: HotkeyCombo(keyCode: 96, modifiers: .shift), actions: [.toggle(.windowBackdrop)]),
+            HotkeyBinding(combo: HotkeyCombo(keyCode: 105, modifiers: []), actions: [.startTimer]),
         ])
 
         let writer = SettingsStore(directory: directory)

@@ -85,13 +85,37 @@ struct HotkeyResolveTests {
     @Test func emptySetDoesNothing() {
         let outcome = HotkeyAction.resolve([], toolStates: [.crosshair: true])
         #expect(outcome == HotkeyOutcome(toolChanges: [], togglesRecording: false))
+        #expect(!outcome.startsTimer)
     }
 
     @Test func repeatedActionsCountOnce() {
-        let outcome = HotkeyAction.resolve([.toggle(.crosshair), .toggle(.crosshair), .startStopRecording, .startStopRecording],
+        let outcome = HotkeyAction.resolve([.toggle(.crosshair), .toggle(.crosshair), .startStopRecording, .startStopRecording,
+                                            .startTimer, .startTimer],
                                            toolStates: [:])
         #expect(changes(outcome) == ["crosshair=true"])
         #expect(outcome.togglesRecording)
+        #expect(outcome.startsTimer)
+    }
+
+    @Test func startTimerActsOnItsOwn() {
+        let alone = HotkeyAction.resolve([.startTimer], toolStates: [:])
+        #expect(alone == HotkeyOutcome(toolChanges: [], togglesRecording: false, startsTimer: true))
+        #expect(!HotkeyAction.resolve([.toggle(.crosshair), .startStopRecording], toolStates: [:]).startsTimer)
+    }
+
+    /// Timer Overlay has no toggle, so Start timer never counts as a tool that is off (spec 6.1).
+    @Test func startTimerNeverTakesPartInTheToggleDecision() {
+        let allOn: [HotkeyTool: Bool] = [.crosshair: true, .nbbOverlay: true]
+        let outcome = HotkeyAction.resolve([.startTimer, .toggle(.crosshair), .toggle(.nbbOverlay), .startStopRecording],
+                                           toolStates: allOn)
+        #expect(changes(outcome) == ["crosshair=false", "nbbOverlay=false"])
+        #expect(outcome.togglesRecording)
+        #expect(outcome.startsTimer)
+    }
+
+    @Test func anOutcomeStartsNoTimerUnlessToldTo() {
+        #expect(!HotkeyOutcome(toolChanges: [], togglesRecording: true).startsTimer)
+        #expect(HotkeyOutcome(toolChanges: [], togglesRecording: false, startsTimer: true).startsTimer)
     }
 
     @Test func missingToolCountsAsOff() {
@@ -107,15 +131,15 @@ struct HotkeyActionTests {
         #expect(list.uniqued == [.toggle(.crosshair), .startStopRecording, .toggle(.nbbOverlay)])
     }
 
-    @Test func allCasesListsFourToolsThenRecording() {
+    @Test func allCasesListsFourTogglesRecordingThenStartTimer() {
         #expect(HotkeyAction.allCases == [.toggle(.nbbOverlay), .toggle(.windowBackdrop), .toggle(.crosshair),
-                                          .toggle(.screenRecording), .startStopRecording])
+                                          .toggle(.screenRecording), .startStopRecording, .startTimer])
     }
 
     @Test func storedAsPlainStrings() throws {
-        let data = try JSONEncoder().encode([HotkeyAction.toggle(.windowBackdrop), .startStopRecording])
-        #expect(String(decoding: data, as: UTF8.self) == #"["toggle.windowBackdrop","startStopRecording"]"#)
-        #expect(try JSONDecoder().decode([HotkeyAction].self, from: data) == [.toggle(.windowBackdrop), .startStopRecording])
+        let data = try JSONEncoder().encode([HotkeyAction.toggle(.windowBackdrop), .startStopRecording, .startTimer])
+        #expect(String(decoding: data, as: UTF8.self) == #"["toggle.windowBackdrop","startStopRecording","startTimer"]"#)
+        #expect(try JSONDecoder().decode([HotkeyAction].self, from: data) == [.toggle(.windowBackdrop), .startStopRecording, .startTimer])
     }
 
     @Test func everyActionRoundTrips() throws {

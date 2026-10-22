@@ -10,6 +10,7 @@ extension HotkeyAction {
         case .toggle(.crosshair): "Crosshair"
         case .toggle(.screenRecording): "Screen Recording"
         case .startStopRecording: "Start/stop recording"
+        case .startTimer: "Start timer"
         }
     }
 }
