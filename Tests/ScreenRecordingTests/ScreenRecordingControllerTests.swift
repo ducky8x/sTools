@@ -26,6 +26,8 @@ private final class FakeFactory: CaptureFactory {
     var baseSendsFirstFrame = true
     /// How long every other source (windows, cameras, microphones, app sound) takes to start.
     var otherSourcesStartTake: Duration?
+    /// How long every sound source takes to stop, which holds a stopped recording in its finishing.
+    var soundSourcesStopTake: Duration?
 
     func base(minecraftWindowID: UInt32, showsCursor: Bool) -> (any VideoCapture)? {
         let first = baseSendsFirstFrame
@@ -47,14 +49,14 @@ private final class FakeFactory: CaptureFactory {
     }
 
     func audio(for source: AudioSource) -> (any AudioCapture)? {
-        let capture = FakeAudioCapture(name: "audio", stops: stops, startTakes: otherSourcesStartTake)
+        let capture = FakeAudioCapture(name: "audio", stops: stops, startTakes: otherSourcesStartTake, stopTakes: soundSourcesStopTake)
         audios[source.id] = capture
         audioCaptures.append(capture)
         return capture
     }
 
     func minecraftAudio(processID: Int32) -> (any AudioCapture)? {
-        let capture = FakeAudioCapture(name: "audio", stops: stops, startTakes: otherSourcesStartTake)
+        let capture = FakeAudioCapture(name: "audio", stops: stops, startTakes: otherSourcesStartTake, stopTakes: soundSourcesStopTake)
         minecraftAudio = capture
         audioCaptures.append(capture)
         return capture
@@ -612,6 +614,73 @@ struct ScreenRecordingKeyTests {
         #expect(harness.controller.phase == .idle)
         #expect(harness.controller.isEnabled)
         harness.controller.setEnabled(false)
+    }
+
+    /// How a test stops the recording: Screen Recording's key, or the tool's switch turned off by hand.
+    enum StopBy: CaseIterable { case key, switchOff }
+
+    /// Stops a recording that has been going a moment, the way `by` says, while its sound sources take a while to
+    /// stop; returns once the file is being finished.
+    private func stopWhileTheSoundTakesItsTime(_ harness: Harness, by: StopBy) async throws {
+        harness.factory.soundSourcesStopTake = .milliseconds(600)
+        harness.addCameraAndMicrophone()
+        await harness.arm()
+        harness.pushFrame()
+        await harness.controller.startRecording()
+        #expect(harness.controller.phase == .recording)
+        try await Task.sleep(for: .milliseconds(250))
+        switch by {
+        case .key: #expect(harness.controller.toggleRecording() == .stopped)
+        case .switchOff: harness.controller.setEnabled(false)
+        }
+        #expect(await harness.waitUntil { harness.controller.phase == .finishing })
+        #expect(!harness.controller.isEnabled)
+    }
+
+    /// Spec 5.4.4: switched back on by hand while the stopped recording's file is still being finished, the tool stays
+    /// on with its sources, however the recording was stopped. The finishing stop never tears down what the switch
+    /// started, so the next press records.
+    @Test(arguments: StopBy.allCases)
+    func switchedBackOnWhileTheFileFinishesItStaysOnWithItsSources(by: StopBy) async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        try await stopWhileTheSoundTakesItsTime(harness, by: by)
+        let made = harness.factory.videoCaptures.count
+        harness.controller.setEnabled(true)
+        #expect(await harness.waitUntil { harness.controller.phase == .deciding })
+        #expect(await harness.waitUntil { harness.factory.videoCaptures.count == made + 2 })
+        // What the stop still had to do once the file was finished has run by now.
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(harness.controller.isEnabled)
+        let rearmedRun = harness.factory.videoCaptures.dropFirst(made).allSatisfy { $0.isRunning }
+        #expect(rearmedRun, "the sources the switch started still run")
+        #expect(await harness.waitUntil { harness.controller.isWarmedUp })
+        harness.controller.delete()
+        #expect(harness.controller.isEnabled)
+        harness.pushFrame()
+        #expect(harness.controller.toggleRecording() == .starting(waitsForSources: false), "the sources already run")
+        #expect(await harness.waitUntil { harness.controller.phase == .recording })
+        #expect(!harness.controller.notes.contains { $0.contains("sources didn\u{2019}t start") })
+        #expect(harness.controller.toggleRecording() == .stopped)
+        #expect(await harness.waitUntil { harness.controller.phase == .deciding })
+        harness.controller.delete()
+    }
+
+    /// Left off, a stop by the key or by the switch still ends with the tool off, no source running and nothing
+    /// readied, once the file is finished and the question is up.
+    @Test(arguments: StopBy.allCases)
+    func leftOffTheStopLeavesNothingRunning(by: StopBy) async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        try await stopWhileTheSoundTakesItsTime(harness, by: by)
+        #expect(await harness.waitUntil { harness.controller.phase == .deciding })
+        #expect(await harness.waitUntil { !harness.factory.anyRunning })
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(!harness.controller.isEnabled)
+        #expect(!harness.factory.anyRunning)
+        #expect(!harness.controller.isWarmedUp)
+        harness.controller.delete()
+        #expect(!harness.controller.isEnabled)
     }
 
     /// While the question waits, the key brings it back ("Save or delete the last recording first") and starts nothing:
