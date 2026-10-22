@@ -52,12 +52,9 @@ extension AppModel {
             return .tool(tool, isOn: isOn(tool))
         case .toggleRecording:
             guard let recording = controller(for: .screenRecording, as: ScreenRecordingController.self) else { return nil }
-            let effect = HotkeyConfirmation.recordingEffect(
-                phase: recording.phase, canStart: isOn(.screenRecording) || canSwitch(.screenRecording),
-                countdown: recording.options.countdown)
-            // Switching on (when needed) goes through `requestEnable`, which keeps rule R10.
-            recording.toggleRecording()
-            return effect
+            // Switching on (when needed) goes through `requestEnable`, which keeps rule R10. The line says what the
+            // press did: a second press while the recording starts cancels it rather than starting another.
+            return HotkeyConfirmation.recordingEffect(recording.toggleRecording())
         case .startTimer:
             // The overlay confirms what the press did, so it adds no sound or line (plan decision 5). Only a press
             // that couldn't switch the tool on (no Accessibility, R10) gets the click and its line, without the seal.

@@ -41,8 +41,9 @@ private final class RecordingHarness {
     static let patience: Duration = .seconds(20)
 
     /// `hotkeys` is the `hotkeys.json` the launch finds: an existing, empty list by default; nil for a new install,
-    /// which starts with ⌘1–⌘5.
-    init(hotkeys: HotkeySettings? = HotkeySettings()) {
+    /// which starts with ⌘1–⌘5. `armingTakes`: how long the sources take to come up when the tool switches on, as
+    /// ScreenCaptureKit's listing and the captures starting can on real hardware.
+    init(hotkeys: HotkeySettings? = HotkeySettings(), armingTakes: Duration? = nil) {
         let store = SettingsStore(directory: directory, debounce: .milliseconds(10))
         store.save(AppState(prologueCompleted: true))
         if let hotkeys { store.save(hotkeys) }
@@ -51,7 +52,11 @@ private final class RecordingHarness {
             minecraft: MinecraftLocator(source: StaticMinecraftWindowSource(instances: [])),
             permissions: PermissionCenter(prober: FakeProber(accessibility: .granted), openURL: { _ in }))
         recording = ScreenRecordingController(
-            services: services, makeFactory: { _ in NoCapture() }, loadAvailable: { _ in AvailableSources() },
+            services: services, makeFactory: { _ in NoCapture() },
+            loadAvailable: { _ in
+                if let armingTakes { try? await Task.sleep(for: armingTakes) }
+                return AvailableSources()
+            },
             inProcessAudio: InProcessAudio(), decisionPresenter: question)
         recording.options.folderPath = directory.appending(path: "Movies", directoryHint: .isDirectory).path
         recording.options.canvas = .custom(PixelSize(width: 320, height: 180))
@@ -104,6 +109,33 @@ struct AppModelRecordingTests {
         #expect(harness.hud.lines == ["Recording started"])
         await harness.recording.stopRecording(explanation: nil)
         harness.recording.delete()
+    }
+
+    /// Off, the first press starts the sources, which take a moment. A second press then cancels the start, as one
+    /// during a countdown does: nothing is written or asked, the tool is off and the line says so. (It used to start
+    /// a second recording, one of which kept writing unseen.)
+    @Test func aSecondPressWhileItStartsCancelsIt() async throws {
+        let harness = RecordingHarness(armingTakes: .milliseconds(300))
+        let id = harness.addKey()
+        harness.press(id)
+        #expect(harness.recording.phase == .starting)
+        #expect(harness.model.isOn(.screenRecording))
+        try await Task.sleep(for: .milliseconds(50))
+        harness.press(id)
+        #expect(harness.recording.phase == .idle)
+        #expect(!harness.model.isOn(.screenRecording))
+        #expect(harness.hud.lines == ["Recording started", "Recording canceled"])
+        // Long after the sources would have come up, still nothing.
+        try await Task.sleep(for: .milliseconds(700))
+        #expect(harness.recording.phase == .idle)
+        #expect(!harness.model.isOn(.screenRecording))
+        #expect(harness.savedFileNames().isEmpty)
+        #expect(harness.question.presented == 0)
+        // The next press records as usual.
+        #expect(await harness.recordByKey(id))
+        #expect(harness.savedFileNames().count == 1)
+        harness.recording.delete()
+        #expect(!harness.model.isOn(.screenRecording))
     }
 
     /// A new install's key set gives Screen Recording ⌘5 with its one action, so once hotkeys are on, ⌘5 records,

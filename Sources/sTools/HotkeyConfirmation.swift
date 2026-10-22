@@ -11,10 +11,12 @@ enum HotkeyConfirmation {
         /// Recording starts once the countdown (Screen Recording ▸ Advanced) runs out.
         case recordingCountdown(seconds: Int)
         case recordingStopped
-        case countdownCanceled
+        /// A start was canceled before anything was written (the sources were starting, or the countdown ran), and
+        /// Screen Recording switched off.
+        case recordingCanceled
         /// The last recording is still being finished, so the press changed nothing.
         case recordingFinishing
-        /// The last recording waits for Save or Delete in sTools' window, so the press changed nothing.
+        /// The last recording waits for Save or Delete in its panel, so the press only brought that forward.
         case recordingAwaitingDecision
     }
 
@@ -23,7 +25,7 @@ enum HotkeyConfirmation {
     static func changedSomething(_ effects: [Effect]) -> Bool {
         effects.contains { effect in
             switch effect {
-            case .tool, .recordingStarted, .recordingCountdown, .recordingStopped, .countdownCanceled: true
+            case .tool, .recordingStarted, .recordingCountdown, .recordingStopped, .recordingCanceled: true
             case .needsAccessibility, .recordingFinishing, .recordingAwaitingDecision: false
             }
         }
@@ -41,26 +43,23 @@ enum HotkeyConfirmation {
         case .recordingStarted: "Recording started"
         case .recordingCountdown(let seconds): "Recording starts in \(seconds) seconds"
         case .recordingStopped: "Recording stopped"
-        case .countdownCanceled: "Recording canceled"
+        case .recordingCanceled: "Recording canceled"
         case .recordingFinishing: "Still finishing the last recording"
         case .recordingAwaitingDecision: "Save or delete the last recording first"
         }
     }
 
-    /// What the start/stop-recording action will do, read before it runs: `toggleRecording()` acts
-    /// asynchronously, so the phase afterward doesn't tell. `canStart` is false when the tool is off and
-    /// can't be switched on.
-    static func recordingEffect(phase: ScreenRecordingController.Phase, canStart: Bool,
-                                countdown: Countdown) -> Effect {
-        switch phase {
-        case .recording: .recordingStopped
-        case .countingDown: .countdownCanceled
+    /// The line for one press of Screen Recording's key, from what the press did (`toggleRecording()` says so as
+    /// it returns, before the start or the stop has finished).
+    static func recordingEffect(_ press: ScreenRecordingController.KeyPress) -> Effect {
+        switch press {
+        case .started: .recordingStarted
+        case .countdown(let seconds): .recordingCountdown(seconds: seconds)
+        case .stopped: .recordingStopped
+        case .canceled: .recordingCanceled
+        case .awaitingDecision: .recordingAwaitingDecision
         case .finishing: .recordingFinishing
-        case .deciding: .recordingAwaitingDecision
-        case .idle:
-            if !canStart { .needsAccessibility(.screenRecording) }
-            else if countdown == .off { .recordingStarted }
-            else { .recordingCountdown(seconds: countdown.seconds) }
+        case .couldNotSwitchOn: .needsAccessibility(.screenRecording)
         }
     }
 }

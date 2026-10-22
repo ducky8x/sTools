@@ -8,18 +8,43 @@ import STPlatform
 /// recording.
 ///
 /// Stopping a recording turns the tool off (spec 5.4.4): the Save/Delete question comes up (`decisionPresenter`), and
-/// once it's answered, or the recording is saved without asking, the tool switches off. A canceled countdown switches
-/// it off too. Only the Prologue's 5-second test leaves it on.
+/// once it's answered, or the recording is saved without asking, the tool switches off. A start canceled before
+/// anything was written (while the sources start, or during the countdown) switches it off too. Only the Prologue's
+/// 5-second test leaves it on.
 @MainActor
 @Observable
 public final class ScreenRecordingController: ToolController {
     public enum Phase: Equatable {
         case idle
+        /// A recording was asked for and nothing is written yet: the sources are starting (switching the tool on arms
+        /// them first, which can take a second or two). Writing begins as soon as they run, after the countdown when
+        /// one is set. The key, the page's Cancel or switching the tool off cancels it, and nothing is left behind.
+        case starting
         case countingDown(Int)
         case recording
         case finishing
         /// Stopped; waiting for Save or Delete.
         case deciding
+    }
+
+    /// What one press of Screen Recording's key did (spec 5.4.4, 6.1), for the confirmation over the game. It's known
+    /// as the press returns; the start and the stop carry on after it.
+    public enum KeyPress: Equatable, Sendable {
+        /// A recording started, the tool switched on first when it was off. It writes as soon as the sources run.
+        case started
+        /// The countdown (Advanced) started; the recording starts when it runs out.
+        case countdown(seconds: Int)
+        /// The recording stopped; the question asks for its name and Save or Delete.
+        case stopped
+        /// A start was canceled before anything was written (the sources were starting, or the countdown ran), and
+        /// the tool switched off.
+        case canceled
+        /// The last recording still waits for Save or Delete; the question comes forward again.
+        case awaitingDecision
+        /// The last recording is still being finished; nothing changed.
+        case finishing
+        /// The tool couldn't switch on (it needs Accessibility, rule R10), so nothing started.
+        case couldNotSwitchOn
     }
 
     /// A finished recording waiting for its Save/Delete answer.
@@ -80,11 +105,17 @@ public final class ScreenRecordingController: ToolController {
     @ObservationIgnored private let inProcessAudio: InProcessAudio
     @ObservationIgnored private var rig: CaptureRig?
     @ObservationIgnored private var session: RecordingSession?
+    /// The latest arming: starting the sources when the tool switches on, or restarting them after a change. A start
+    /// waits for it.
     @ObservationIgnored private var armTask: Task<Void, Never>?
+    /// Counts armings, so only the latest one marks the sources ready (`sourcesAreReady`).
+    @ObservationIgnored private var armCount = 0
+    @ObservationIgnored private var armedCount = 0
+    /// Counts starts, so a start that was canceled while it waited never writes.
+    @ObservationIgnored private var startCount = 0
     @ObservationIgnored private var eventsTask: Task<Void, Never>?
     @ObservationIgnored private var readoutTask: Task<Void, Never>?
     @ObservationIgnored private var previewTask: Task<Void, Never>?
-    @ObservationIgnored private var countdownTask: Task<Void, Never>?
     @ObservationIgnored private var previewCompositor: Compositor?
     @ObservationIgnored private var armedMinecraftID: Int32?
     @ObservationIgnored private var recordingDisplaySize: PixelSize?
@@ -117,6 +148,7 @@ public final class ScreenRecordingController: ToolController {
     }
 
     public var isRecording: Bool { phase == .recording }
+    /// From the moment a start is asked for until the recording is stopped: the sources it starts with stay as they are.
     public var isLayoutLocked: Bool { phase != .idle && phase != .deciding }
 
     // MARK: Canvas
@@ -150,31 +182,43 @@ public final class ScreenRecordingController: ToolController {
         if enabled {
             arm()
         } else {
-            Task { await disarm() }
+            // A start ends here, before anything is written; a recording stops (and asks) as the sources go. Switched
+            // back on before that runs, the tool keeps its sources, and a start made since goes on.
+            endStart()
+            Task {
+                guard !isEnabled else { return }
+                await disarm()
+            }
         }
     }
 
-    private func arm() {
+    /// Starts the sources, or with `restarting`, stops and starts them again; `armTask` is what a start waits for.
+    private func arm(restarting: Bool = false) {
         armTask?.cancel()
+        armCount += 1
+        let count = armCount
         armTask = Task { [weak self] in
             guard let self else { return }
+            if restarting { await self.tearDownRig() }
             await self.refreshAvailableSources()
             await self.buildRig()
+            if count > self.armedCount { self.armedCount = count }
         }
     }
 
+    /// A setting, a source, Minecraft or a display changed while idle. The restart is the arming a start waits for,
+    /// so a press just after the change records with the new sources instead of the ones being stopped.
     private func rearm() {
-        Task {
-            await tearDownRig()
-            arm()
-        }
+        arm(restarting: true)
     }
+
+    /// The sources run and nothing is restarting them, so a start can write at once, without waiting.
+    private var sourcesAreReady: Bool { rig != nil && armedCount == armCount }
 
     private func disarm() async {
         armTask?.cancel()
         if phase == .recording { await stopRecording(explanation: nil) }
-        countdownTask?.cancel()
-        if case .countingDown = phase { phase = .idle }
+        endStart()
         await tearDownRig()
     }
 
@@ -313,44 +357,123 @@ public final class ScreenRecordingController: ToolController {
 
     // MARK: Recording
 
-    /// Screen Recording's hotkey (spec 6.1): starts a recording, switching the tool on first when it's off, and
-    /// stops one, which asks Save or Delete. While the question waits for its answer it brings it forward again.
-    public func toggleRecording() {
+    /// Screen Recording's key (spec 5.4.4, 6.1): starts a recording, switching the tool on first when it's off, and
+    /// stops one, which asks Save or Delete. Pressed before anything is written (while the sources start, or during
+    /// the countdown), it cancels the start and the tool switches off. While the question waits for its answer it
+    /// brings it forward again. Returns what the press did; the start and the stop carry on after it returns.
+    @discardableResult
+    public func toggleRecording() -> KeyPress {
         switch phase {
-        case .recording: Task { await stopRecording(explanation: nil) }
-        case .countingDown: cancelCountdown()
-        case .idle: Task { await startRecording() }
-        case .deciding: presentDecision()
-        case .finishing: break
+        case .recording:
+            Task { await stopRecording(explanation: nil) }
+            return .stopped
+        case .starting, .countingDown:
+            cancelStart()
+            return .canceled
+        case .deciding:
+            presentDecision()
+            return .awaitingDecision
+        case .finishing:
+            return .finishing
+        case .idle:
+            let (press, start) = beginStart(isTest: false)
+            if let start { Task { await run(start) } }
+            return press
         }
     }
 
+    /// Record on the page: starts a recording as the key does, switching the tool on first when it's off. Returns
+    /// once it writes, or once the start ended without a recording (canceled or failed).
     public func startRecording() async {
+        await startRecording(isTest: false)
+    }
+
+    private func startRecording(isTest: Bool) async {
         guard phase == .idle else { return }
+        let (_, start) = beginStart(isTest: isTest)
+        if let start { await run(start) }
+    }
+
+    /// One start, from the press until the first frame is written.
+    private struct Start {
+        let number: Int
+        let countdown: Countdown
+        /// The Prologue's 5-second test, which leaves the tool on whatever happens.
+        let isTest: Bool
+    }
+
+    /// The part of a start that can't wait: switches the tool on when it's off, then marks the start (`.starting`)
+    /// before anything waits, so a press while the sources come up finds it and cancels it instead of starting a
+    /// second recording.
+    private func beginStart(isTest: Bool) -> (KeyPress, Start?) {
         if !isEnabled {
-            if let requestEnable { guard requestEnable() else { return } } else { setEnabled(true) }
+            if let requestEnable { guard requestEnable() else { return (.couldNotSwitchOn, nil) } } else { setEnabled(true) }
         }
-        await armTask?.value
-        guard isEnabled, rig != nil else { return }
-        if options.countdown != .off {
-            for remaining in stride(from: options.countdown.seconds, to: 0, by: -1) {
+        startCount += 1
+        phase = .starting
+        let countdown = options.countdown
+        let start = Start(number: startCount, countdown: countdown, isTest: isTest)
+        return (countdown == .off ? .started : .countdown(seconds: countdown.seconds), start)
+    }
+
+    /// The rest of a start: waits for the sources, runs the countdown, then writes. It leaves off as soon as the start
+    /// was canceled.
+    private func run(_ start: Start) async {
+        // The sources come up after switching on, or restart after a change made just before the press: the latest
+        // arming is the one to wait for. Already running, nothing waits, so Record writes at once.
+        var awaited: Task<Void, Never>?
+        while !sourcesAreReady, let task = armTask, task != awaited {
+            awaited = task
+            await task.value
+            guard isCurrent(start) else { return }
+        }
+        if start.countdown != .off {
+            for remaining in stride(from: start.countdown.seconds, to: 0, by: -1) {
                 phase = .countingDown(remaining)
                 try? await Task.sleep(for: .seconds(1))
-                guard case .countingDown = phase else { return }
+                guard isCurrent(start) else { return }
             }
         }
-        beginWriting()
+        beginWriting(start)
     }
 
-    /// The recording never began, so the tool switches off as after a stop.
-    public func cancelCountdown() {
-        guard case .countingDown = phase else { return }
-        phase = .idle
+    /// Whether `start` is still the one under way: not canceled, and no other start since.
+    private func isCurrent(_ start: Start) -> Bool {
+        guard start.number == startCount else { return false }
+        switch phase {
+        case .starting, .countingDown: return true
+        default: return false
+        }
+    }
+
+    /// The key, or the page's Cancel, before anything was written (while the sources start or the countdown runs):
+    /// the recording never began, so the start ends and the tool switches off, as after a stop.
+    public func cancelStart() {
+        guard endStart() else { return }
         switchOff()
     }
 
-    private func beginWriting() {
-        guard let rig else { phase = .idle; return }
+    /// Ends a start before anything was written, leaving the tool as it is. True when one was under way.
+    @discardableResult
+    private func endStart() -> Bool {
+        switch phase {
+        case .starting, .countingDown:
+            phase = .idle
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func beginWriting(_ start: Start) {
+        guard isCurrent(start) else { return }
+        // A recording can only begin from a start with its sources up, never over one already writing.
+        guard session == nil, let rig else {
+            endStart()
+            note("The recording couldn\u{2019}t start: its sources didn\u{2019}t start.")
+            if !start.isTest { switchOff() }
+            return
+        }
         notes = []
         lastSaved = nil
         let configuration = RecordingSession.Configuration(
@@ -371,6 +494,8 @@ public final class ScreenRecordingController: ToolController {
         } catch {
             phase = .idle
             note("The recording couldn\u{2019}t start: \(error.localizedDescription)")
+            // Nothing was recorded, so the tool switches off as after a canceled start (the test leaves it on).
+            if !start.isTest { switchOff() }
         }
     }
 
@@ -379,7 +504,7 @@ public final class ScreenRecordingController: ToolController {
     /// The tool stays on afterwards, so the test can run again at once.
     @discardableResult
     public func recordTest(for duration: Duration) async -> Bool {
-        await startRecording()
+        await startRecording(isTest: true)
         guard phase == .recording else { return false }
         try? await Task.sleep(for: duration)
         guard phase == .recording else { return false }
@@ -634,6 +759,7 @@ public final class ScreenRecordingController: ToolController {
     public var diagnosticsSummary: String {
         switch phase {
         case .recording: "Recording (\(Int(elapsedSeconds)) s)"
+        case .starting, .countingDown: "Starting a recording"
         default: isEnabled ? "Armed, \(layout.videoSources.count) video and \(layout.audioSources.count) audio sources" : "Off"
         }
     }

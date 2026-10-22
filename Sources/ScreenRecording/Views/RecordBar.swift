@@ -39,8 +39,12 @@ struct RecordBar: View {
             Button("Stop") { Task { await controller.stopRecording(explanation: nil) } }
                 .buttonStyle(STButtonStyle(.primary))
                 .keyboardShortcut(".", modifiers: .command)
+        case .starting:
+            // Nothing is written yet; canceling switches the tool off, as the key does.
+            Button("Starting\u{2026} Cancel") { controller.cancelStart() }
+                .buttonStyle(STButtonStyle(.secondary))
         case .countingDown(let remaining):
-            Button("Recording in \(remaining)\u{2026} Cancel") { controller.cancelCountdown() }
+            Button("Recording in \(remaining)\u{2026} Cancel") { controller.cancelStart() }
                 .buttonStyle(STButtonStyle(.secondary))
         case .finishing:
             Button("Finishing\u{2026}") {}.buttonStyle(STButtonStyle(.secondary)).disabled(true)
@@ -60,6 +64,7 @@ struct RecordBar: View {
             var parts = [ByteCountFormatter.string(fromByteCount: controller.fileSize, countStyle: .file)]
             if controller.droppedFrames > 0 { parts.append("\(controller.droppedFrames) frames dropped") }
             return parts.joined(separator: " \u{00B7} ")
+        case .starting: return "Starting the sources."
         case .countingDown: return "Get ready."
         case .finishing: return "Writing the file\u{2026}"
         case .deciding: return "Choose Save or Delete. Screen Recording switches off after."

@@ -69,7 +69,9 @@ private struct Harness {
     let controller: ScreenRecordingController
     let source: StaticMinecraftWindowSource
 
-    init(minecraft: Bool = true) {
+    /// `armingTakes`: how long listing the sources takes when the tool switches on, as ScreenCaptureKit's listing can
+    /// on real hardware (with Minecraft's capture, its sound and a camera starting after it, up to a couple of seconds).
+    init(minecraft: Bool = true, armingTakes: Duration? = nil) {
         directory = FileManager.default.temporaryDirectory.appending(path: "stools-recording-\(UUID().uuidString)", directoryHint: .isDirectory)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let window = MinecraftWindow(windowNumber: 42, processID: 4242, title: "Minecraft* 1.16.1", frame: CGRect(x: 0, y: 0, width: 800, height: 600))
@@ -81,8 +83,12 @@ private struct Harness {
             displays: DisplayDirectory(), minecraft: locator, permissions: PermissionCenter(prober: Granted()))
         let factory = factory
         controller = ScreenRecordingController(
-            services: services, makeFactory: { _ in factory }, loadAvailable: { _ in AvailableSources() }, inProcessAudio: audio,
-            decisionPresenter: presenter)
+            services: services, makeFactory: { _ in factory },
+            loadAvailable: { _ in
+                if let armingTakes { try? await Task.sleep(for: armingTakes) }
+                return AvailableSources()
+            },
+            inProcessAudio: audio, decisionPresenter: presenter)
         var options = controller.options
         options.folderPath = directory.appending(path: "Movies").path
         options.canvas = .custom(PixelSize(width: 320, height: 180))
@@ -471,6 +477,97 @@ struct ScreenRecordingKeyTests {
         #expect(harness.controller.phase == .idle)
         #expect(!harness.controller.isEnabled)
         #expect(harness.presenter.presented.isEmpty)
+    }
+
+    /// Off, the key switches the tool on and starts at once, but writing begins only once the sources run. A second
+    /// press in that moment cancels the start, as one during a countdown does: nothing is written, nothing is asked,
+    /// and the tool is off. (It used to start a second recording, and one of the two kept writing unseen.)
+    @Test func aSecondPressWhileItStartsCancelsItAndWritesNothing() async throws {
+        let harness = Harness(armingTakes: .milliseconds(300))
+        defer { harness.remove() }
+        #expect(harness.controller.toggleRecording() == .started)
+        #expect(harness.controller.phase == .starting)
+        #expect(harness.controller.isEnabled)
+        #expect(harness.controller.isLayoutLocked)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(harness.controller.toggleRecording() == .canceled)
+        #expect(harness.controller.phase == .idle)
+        #expect(!harness.controller.isEnabled)
+        // Long after the sources would have started, still nothing.
+        try await Task.sleep(for: .milliseconds(700))
+        #expect(harness.controller.phase == .idle)
+        #expect(!harness.controller.isEnabled)
+        #expect(harness.savedFileNames().isEmpty)
+        #expect(harness.presenter.presented.isEmpty)
+    }
+
+    /// One press while the sources take their time records exactly once, and the next press stops that recording.
+    @Test func onePressWhileTheSourcesTakeTheirTimeRecordsOnce() async throws {
+        let harness = Harness(armingTakes: .milliseconds(300))
+        defer { harness.remove() }
+        harness.controller.options.fileType = .mov
+        #expect(harness.controller.toggleRecording() == .started)
+        #expect(await harness.waitUntil { harness.controller.phase == .recording })
+        harness.pushFrame()
+        try await Task.sleep(for: .milliseconds(250))
+        #expect(harness.controller.toggleRecording() == .stopped)
+        #expect(await harness.waitUntil { harness.controller.phase == .deciding })
+        #expect(harness.controller.finished?.files.count == 1)
+        #expect(harness.savedFileNames().count == 1)
+        harness.controller.delete()
+        #expect(harness.savedFileNames().isEmpty)
+        #expect(!harness.controller.isEnabled)
+    }
+
+    /// After a canceled start, the next press switches the tool on and records again.
+    @Test func aPressAfterACanceledStartRecords() async throws {
+        let harness = Harness(armingTakes: .milliseconds(200))
+        defer { harness.remove() }
+        harness.controller.toggleRecording()
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(harness.controller.toggleRecording() == .canceled)
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(harness.controller.toggleRecording() == .started)
+        #expect(await harness.waitUntil { harness.controller.phase == .recording })
+        #expect(harness.controller.isEnabled)
+        harness.pushFrame()
+        try await Task.sleep(for: .milliseconds(250))
+        await harness.controller.stopRecording(explanation: nil)
+        #expect(harness.savedFileNames().count == 1)
+        harness.controller.delete()
+    }
+
+    /// Switching the tool off while it starts ends the start too.
+    @Test func switchingOffWhileItStartsWritesNothing() async throws {
+        let harness = Harness(armingTakes: .milliseconds(300))
+        defer { harness.remove() }
+        harness.controller.toggleRecording()
+        try await Task.sleep(for: .milliseconds(50))
+        harness.controller.setEnabled(false)
+        #expect(harness.controller.phase == .idle)
+        try await Task.sleep(for: .milliseconds(600))
+        #expect(harness.controller.phase == .idle)
+        #expect(!harness.controller.isEnabled)
+        #expect(harness.savedFileNames().isEmpty)
+    }
+
+    /// What each press reports, for the confirmation over the game.
+    @Test func eachPressSaysWhatItDid() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        #expect(harness.controller.toggleRecording() == .started)
+        #expect(await harness.waitUntil { harness.controller.phase == .recording })
+        harness.pushFrame()
+        try await Task.sleep(for: .milliseconds(250))
+        #expect(harness.controller.toggleRecording() == .stopped)
+        #expect(await harness.waitUntil { harness.controller.phase == .deciding })
+        #expect(harness.controller.toggleRecording() == .awaitingDecision)
+        harness.controller.delete()
+        harness.controller.options.countdown = .threeSeconds
+        #expect(harness.controller.toggleRecording() == .countdown(seconds: 3))
+        #expect(await harness.waitUntil { harness.controller.phase == .countingDown(3) })
+        #expect(harness.controller.toggleRecording() == .canceled)
+        #expect(!harness.controller.isEnabled)
     }
 
     /// Quitting mid-recording keeps it under its date-and-time name without showing the question.
