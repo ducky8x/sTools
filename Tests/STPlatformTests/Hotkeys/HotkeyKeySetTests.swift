@@ -240,8 +240,10 @@ struct HotkeyKeySetTests {
 
     // MARK: A new install
 
+    /// A new install's hotkeys are on from the first launch: they work only in sTools and Minecraft by default, so
+    /// they take no other app's keys (a browser's ⌘1 still switches tabs).
     @MainActor
-    @Test func aNewInstallStartsWithCommandOneToFiveAndHotkeysOff() {
+    @Test func aNewInstallStartsWithCommandOneToFiveAndHotkeysOn() {
         let (store, directory) = temporaryStore()
         defer { try? FileManager.default.removeItem(at: directory) }
         let registrar = KeySetRegistrar()
@@ -249,13 +251,14 @@ struct HotkeyKeySetTests {
         #expect(center.bindings.map(\.combo) == HotkeyKeySet.command.combos)
         #expect(center.bindings.map(\.actions) == [[nbb], [backdrop], [crosshair], [timer], [recording]])
         #expect(center.keySet == .command)
-        #expect(!center.isEnabled)
+        #expect(center.isEnabled)
         #expect(center.scope == .sToolsAndMinecraft)
-        #expect(registrar.active.isEmpty)
+        #expect(Set(registrar.active.values) == Set(HotkeyKeySet.command.combos), "registered at once")
+        #expect(center.bindings.allSatisfy { center.status(of: $0.id) == .registered })
     }
 
-    /// Turned on, each of a new install's keys does its tool's main action: ⌘4 sends Start timer, and ⌘5 starts or
-    /// stops a recording.
+    /// Each of a new install's keys does its tool's main action: ⌘4 sends Start timer, and ⌘5 starts or stops a
+    /// recording.
     @MainActor
     @Test func aNewInstallsKeysEachDoTheirToolsMainAction() {
         let (store, directory) = temporaryStore()
@@ -263,7 +266,6 @@ struct HotkeyKeySetTests {
         let registrar = KeySetRegistrar()
         var events: [[HotkeyEvent]] = []
         let center = HotkeyCenter(store: store, registrar: registrar, toolStates: { [:] }, handler: { events.append($0) })
-        center.isEnabled = true
         for binding in center.bindings { registrar.onPress?(binding.id) }
         #expect(events == [[.setTool(.nbbOverlay, isOn: true)], [.setTool(.windowBackdrop, isOn: true)],
                            [.setTool(.crosshair, isOn: true)], [.startTimer], [.toggleRecording]])

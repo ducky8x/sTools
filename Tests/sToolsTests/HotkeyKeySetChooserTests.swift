@@ -33,7 +33,7 @@ struct HotkeyKeySetChooserTests {
         #expect(hotkeys.keySet == .command)
         #expect(hotkeys.bindings.map { "\($0.combo.displayString) \(HotkeyWording.summary($0.actions))" }
             == ["⌘1 NBB Overlay", "⌘2 Window Backdrop", "⌘3 Crosshair", "⌘4 Start timer", "⌘5 Screen Recording"])
-        #expect(!hotkeys.isEnabled)
+        #expect(hotkeys.isEnabled, "on from the first launch, in sTools and Minecraft only")
         #expect(hotkeys.scope == .sToolsAndMinecraft)
         #expect(ToolHotkey.own(for: .toggle(.crosshair), in: hotkeys.bindings)?.combo.displayString == "⌘3")
         #expect(TimerKeyStatus(hotkeys: hotkeys).title == "Start timer: ⌘4")
@@ -43,8 +43,7 @@ struct HotkeyKeySetChooserTests {
             #expect(ToolHotkey.own(for: action, in: hotkeys.bindings)?.combo.displayString == "⌘\(tool.number)", "\(tool)")
         }
 
-        // Turned on, they register at once, and each fires its tool's main action.
-        hotkeys.isEnabled = true
+        // They're registered at once (with the harness's fake registrar, never with macOS).
         let fake = harness.hotkeyRegistrar as! FakeHotkeyRegistrar
         #expect(Set(fake.registered.values) == Set(HotkeyKeySet.command.combos))
     }

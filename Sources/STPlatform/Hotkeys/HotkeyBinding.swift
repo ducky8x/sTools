@@ -35,11 +35,12 @@ public struct HotkeyBinding: Codable, Hashable, Identifiable, Sendable {
 public struct HotkeySettings: SettingsDocument {
     public static let name = "hotkeys"
     public static let version = 1
-    /// A new install's (no `hotkeys.json` yet): ⌘1–⌘5, one per tool in sidebar order, with the master switch off.
-    /// A file that exists keeps what it has, even an empty list.
-    public static let defaultValue = HotkeySettings(bindings: HotkeyKeySet.newInstall.bindings())
+    /// A new install's (no `hotkeys.json` yet): ⌘1–⌘5, one per tool in sidebar order, with hotkeys on. They work only
+    /// in sTools and Minecraft by default, so they take no other app's keys from the first launch.
+    public static let defaultValue = HotkeySettings(isEnabled: true, bindings: HotkeyKeySet.newInstall.bindings())
 
-    /// The master switch. Off by default; while off, nothing is registered with the system.
+    /// The master switch: on for a new install (`defaultValue`), off in a value built without saying (an existing
+    /// file without it, tests). While off, nothing is registered with the system.
     public var isEnabled: Bool
     public var bindings: [HotkeyBinding]
     /// Advanced: whether a press shows the on-screen confirmation (a seal and what changed). On by default;
