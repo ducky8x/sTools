@@ -32,7 +32,7 @@ extension ToolID {
 @MainActor
 enum ToolHotkey {
     static func own(for action: HotkeyAction, in bindings: [HotkeyBinding]) -> HotkeyBinding? {
-        bindings.first { $0.actions == [action] }
+        HotkeyKeySet.ownBinding(for: action, in: bindings)
     }
 
     /// The other hotkeys with the tool's action, together with something else.
@@ -40,15 +40,10 @@ enum ToolHotkey {
         bindings.filter { $0.actions.contains(action) && $0.actions != [action] }
     }
 
-    /// Sets the tool's own hotkey to `combo`: changes its key, or adds it at the end of the list. Nil clears it.
+    /// Sets the tool's own hotkey to `combo`: changes its key, or adds it in its sidebar place among the tools' own
+    /// hotkeys, which Home lists first. Nil clears it.
     static func set(_ combo: HotkeyCombo?, for action: HotkeyAction, in center: HotkeyCenter) {
-        let own = own(for: action, in: center.bindings)
-        switch (combo, own) {
-        case (let combo?, let own?): center.update(own.id, combo: combo)
-        case (let combo?, nil): center.add(combo: combo, actions: [action])
-        case (nil, let own?): center.remove(own.id)
-        case (nil, nil): break
-        }
+        center.setOwnHotkey(combo, for: action)
     }
 
     /// Why the row refuses `combo` while recording, with the same rules as Home's editor: another hotkey has it, macOS

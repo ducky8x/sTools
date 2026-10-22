@@ -249,10 +249,26 @@ public final class HotkeyCenter {
     public var keySet: HotkeyKeySet? { HotkeyKeySet.current(in: settings.bindings) }
 
     /// Picks `keySet`, in one change: each tool's own hotkey gets the set's key (one is added where a tool has none;
-    /// None, `noKeys`, removes them), and every other hotkey stays. Callers ask first when `keySet.replacedEdits(in:)` isn't
-    /// empty.
+    /// None, `noKeys`, removes them) and they're listed first, in sidebar order; every other hotkey stays, after them.
+    /// Callers ask first when `keySet.replacedEdits(in:)` isn't empty.
     public func apply(_ keySet: HotkeyKeySet) {
         let bindings = keySet.applied(to: settings.bindings)
+        guard bindings != settings.bindings else { return }
+        settings.bindings = bindings
+        commit()
+    }
+
+    /// Sets the tool's own hotkey (`HotkeyKeySet.ownBinding`, the one a tool page's Hotkey row edits) to `combo`, in
+    /// one change: its key changes and it keeps its id, or a new one is added; nil removes it. The list is then
+    /// `HotkeyKeySet.ordered`, so the tools' own hotkeys read in sidebar order, as after picking a key set.
+    public func setOwnHotkey(_ combo: HotkeyCombo?, for action: HotkeyAction) {
+        var bindings = settings.bindings
+        if let index = bindings.firstIndex(where: { $0.actions == [action] }) {
+            if let combo { bindings[index].combo = combo } else { bindings.remove(at: index) }
+        } else if let combo {
+            bindings.append(HotkeyBinding(combo: combo, actions: [action]))
+        }
+        bindings = HotkeyKeySet.ordered(bindings)
         guard bindings != settings.bindings else { return }
         settings.bindings = bindings
         commit()
