@@ -152,15 +152,21 @@ func shouldPlayRequiresAllThree(_ soundsEnabled: Bool, _ volume: Double, _ syste
     #expect(!player.isPlaying(.chime))
 }
 
+/// macOS's "Play user interface sound effects" as a test sets it. A class rather than a captured `var`, since the
+/// player's closure is sendable.
+@MainActor private final class SystemSoundsSetting {
+    var isOn = true
+}
+
 /// `isAudible` is `play`'s own decision, so the sidebar can skip scheduling detents that would stay silent.
 @MainActor @Test func isAudibleFollowsTheSameThreeSettings() {
-    var systemEnabled = true
+    let system = SystemSoundsSetting()
     let theme = STTheme()
-    let player = STSoundPlayer(theme: theme) { systemEnabled }
+    let player = STSoundPlayer(theme: theme) { system.isOn }
     #expect(player.isAudible)
-    systemEnabled = false
+    system.isOn = false
     #expect(!player.isAudible)
-    systemEnabled = true
+    system.isOn = true
     theme.soundVolume = 0
     #expect(!player.isAudible)
     theme.soundVolume = 0.5
