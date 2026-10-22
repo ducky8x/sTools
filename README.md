@@ -23,7 +23,7 @@
   <a href="#license">License</a>
 </p>
 
-sTools puts the tools around a speedrun into one native Mac app: Ninjabrain Bot's answer drawn over the game, a backdrop that hides everything behind Minecraft, a crosshair placed to the pixel, a screen recorder that lays out a whole scene, and a visual editor for your Karabiner-Elements rebinds.
+sTools puts the tools around a speedrun into one native Mac app: Ninjabrain Bot's answer drawn over the game, a backdrop that hides everything behind Minecraft, a crosshair placed to the pixel, a countdown that pops up over the game on one key, a screen recorder that lays out a whole scene, and a visual editor for your Karabiner-Elements rebinds.
 
 It's built for the game first. Overlays are click-through and never take focus from Minecraft, and anything with a reasonable alternative is a setting. The app itself is always dark, set in serif type with gold accents.
 
@@ -38,8 +38,9 @@ It's built for the game first. Overlays are click-through and never take focus f
 | 1 | [NBB Overlay](#nbb-overlay) | Shows Ninjabrain Bot's current result over the game. | Accessibility, Ninjabrain Bot |
 | 2 | [Window Backdrop](#window-backdrop) | Hides everything behind the Minecraft window. | Accessibility |
 | 3 | [Crosshair](#crosshair) | Draws a crosshair at the exact center of the screen. | Accessibility |
-| 4 | [Screen Recording](#screen-recording) | Records Minecraft and your other sources on one canvas. | Accessibility, Screen & System Audio Recording |
-| 5 | [Key Rebinder](#key-rebinder) | Shows and edits your rebinds on a drawn keyboard and mouse. | Karabiner-Elements 16+, to edit |
+| 4 | [Timer Overlay](#timer-overlay) | Pops a countdown over the game on one key, rings and leaves. | Accessibility |
+| 5 | [Screen Recording](#screen-recording) | Records Minecraft and your other sources on one canvas. | Accessibility, Screen & System Audio Recording |
+| 6 | [Key Rebinder](#key-rebinder) | Shows and edits your rebinds on a drawn keyboard and mouse. | Karabiner-Elements 16+, to edit |
 
 Each tool has its own page: a live preview where it helps, then its settings, with the rarely needed ones under **Advanced**. Switch tools on and off from the sidebar or their pages.
 
@@ -59,6 +60,10 @@ Draws a click-through crosshair at the exact center of Minecraft's display, abov
   <img src="docs/images/crosshair.png" width="640" alt="The Crosshair page: a preview plate with a white plus outlined in black, and rows for shape, fill color and outline">
 </p>
 
+### Timer Overlay
+
+Press your Start-timer key and a countdown pops up over the game, 2:30 by default or any length you set. At zero it rings an alarm, pulses with each ring and leaves by itself; press again to restart, or twice quickly to cancel. Choose a look (a plate, digits only or a compact pill) and its colors, font and size, and an alarm from macOS's sounds, four sTools alarms or your own files. Drag it into place with guides that show when it covers the hotbar, chat, toasts or anything else the rules need visible. It can also count down on the Dock icon, and it shows in your sTools recordings, with the alarm on its own track if you want it.
+
 ### Screen Recording
 
 Records Minecraft with sTools' overlays and backdrop, plus any windows, displays, cameras and web pages you arrange on one canvas. Sources don't have to be visible on your real screen. Sound from Minecraft, other apps and microphones is saved as one mixed track plus a track per source. Choose .mp4 or .mov, H.264 or HEVC, 30 or 60 fps. Files are written crash-safe, and when you stop, you choose Save or Delete.
@@ -67,24 +72,23 @@ Records Minecraft with sTools' overlays and backdrop, plus any windows, displays
 
 Draws your keyboard (ANSI, ISO or JIS, laptop or full size) and mouse with every Karabiner-Elements rebind on its key and your Minecraft keybinds underneath, read from `options.txt`. Edit rebinds for all devices or just one, change complex rules, manage profiles, and light up keys as you press them. A checker points out duplicates and rebinds that may break the speedrun remap rules, but never blocks a save. Every save backs up `karabiner.json` first and leaves the rest of it as it was.
 
-**Coming next:** Timer Overlay, a countdown on one hotkey that pops up over the game, rings an alarm and leaves by itself.
-
 ## Around the tools
 
-- **Global hotkeys.** Your own shortcuts, set at the top of Home, on each tool's page or right on a key in the Key Rebinder: any key, alone or with ⌃ ⌥ ⇧ ⌘, that switches a set of tools on or off together or starts and stops a recording. They work whichever app has focus, Minecraft and sTools included, need no permission and show a small confirmation over the game. A hotkey's key goes to sTools instead of the game, so sTools warns you when it's one Minecraft uses. Hotkeys are off until you turn them on, and they pause only while sTools records a key or you type in it.
+- **Global hotkeys.** Your own shortcuts, set at the top of Home, on each tool's page or right on a key in the Key Rebinder: any key, alone or with ⌃ ⌥ ⇧ ⌘, that switches a set of tools on or off together, starts the timer, or starts and stops a recording. They work whichever app has focus, Minecraft and sTools included, need no permission and show a small confirmation over the game. A hotkey's key goes to sTools instead of the game, so sTools warns you when it's one Minecraft uses. Hotkeys are off until you turn them on, and they pause only while sTools records a key or you type in it.
 - **The Prologue.** On first launch, an animated welcome, then help with each permission, Ninjabrain Bot and Karabiner-Elements, then a hands-on try of every tool. Back and Skip work on every step, and Help ▸ Replay Introduction runs it again.
 - **Settings.** Open at login, sounds and volume, text size, accent color, update options, exporting and importing all your settings in one file, resetting the tools or all of sTools, and Copy Diagnostics for bug reports.
-- **Reduce animations.** sTools animates nearly everything: switches spring, numbers roll, successes stamp a gold seal. One switch in Settings ▸ Appearance turns every animation off, and macOS's Reduce motion does the same.
+- **Reduce animations.** sTools animates nearly everything: switches spring, numbers roll, successes stamp a gold seal, and the sidebar glides with a soft tick for each row it passes (and a tap on a Force Touch trackpad). One switch in Settings ▸ Appearance turns every animation off, and macOS's Reduce motion does the same.
 - **Updates.** sTools checks for new versions on its own and can download and install them when you quit. Settings ▸ Updates shows the version you're running, and Check for Updates… is there and in the app menu.
 
 Close the window and your tools keep running; click the Dock icon to bring it back. Quitting turns everything off.
 
 ## Speedrun rules
 
-Two tools touch the [Minecraft: Java Edition speedrunning rules](https://www.minecraftspeedrunning.com/public-resources/rules):
+Three tools touch the [Minecraft: Java Edition speedrunning rules](https://www.minecraftspeedrunning.com/public-resources/rules):
 
 - The NBB Overlay shows only what Ninjabrain Bot itself shows, as rule A.11.7.a.i requires of tools that use its API. Its settings can hide or reformat information, never add to it.
 - The Key Rebinder's checker cites the remap rules (A.10.1–A.10.4) when a rebind may break them. It only advises; you decide.
+- Timer Overlay isn't on the rules' list of allowed tools, so ask the moderators before submitting runs that use it (A.11.9). It never reads or acts on the game, and its placement guides help keep the hotbar, chat, toasts and your in-game timer visible.
 
 ## Requirements
 
@@ -100,7 +104,7 @@ The Prologue walks you through each one, and a tool's page offers **Allow…** w
 
 | Permission | Why | Used by |
 |------------|-----|---------|
-| Accessibility | Finds the Minecraft window and follows it: where it is, which display it's on, whether it has focus. | NBB Overlay, Window Backdrop, Crosshair, Screen Recording |
+| Accessibility | Finds the Minecraft window and follows it: where it is, which display it's on, whether it has focus. | NBB Overlay, Window Backdrop, Crosshair, Timer Overlay, Screen Recording |
 | Screen & System Audio Recording | Records Minecraft and the windows and displays you add. macOS may ask you to reopen sTools after you allow it. | Screen Recording |
 | App audio | Records the sound of Minecraft and other apps. | Screen Recording |
 | Microphone | Records your voice, once you add a microphone. | Screen Recording |
@@ -160,7 +164,7 @@ scripts/build-dmg.sh            # wrap build/sTools.app in the styled DMG
 | `ScreenRecording` | Capture, compositing, audio and the file writer |
 | `KeyRebinder` | Karabiner configuration and command line, keyboard layouts, checker, key tester |
 | `Prologue` | The first-launch introduction |
-| `TimerOverlay` | Timer Overlay, in progress |
+| `TimerOverlay` | Timer Overlay: countdown, overlay, alarm and placement |
 
 ### Documentation
 
