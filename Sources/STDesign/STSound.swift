@@ -5,6 +5,9 @@ import SwiftUI
 /// The UI sound set. Each case maps to a bundled `<rawValue>.wav` in `Resources/Sounds`.
 public enum STSound: String, CaseIterable, Sendable {
     case click, tick, stamp, page, chime, recordStart, recordStop
+    /// The sidebar's glide as its selection marker moves, in three lengths for a near, middling and far move, and
+    /// the detent it plays for each row the marker passes over (spec 3.4).
+    case glideShort, glideMedium, glideLong, detent
 
     /// The bundled file, for code that plays a sound at its own volume instead of through `STSoundPlayer`,
     /// such as Timer Overlay's cues before zero. Asking loads nothing.
@@ -38,13 +41,16 @@ public final class STSoundPlayer {
     /// Plays `sound` from the start at the theme's volume, unless sounds are off, the volume is zero or
     /// macOS has UI sound effects turned off. A missing or unreadable resource stays silent.
     public func play(_ sound: STSound) {
-        guard Self.shouldPlay(soundsEnabled: theme.soundsEnabled,
-                              volume: theme.soundVolume,
-                              systemEnabled: systemSoundsEnabled()) else { return }
-        guard let player = player(for: sound) else { return }
+        guard isAudible, let player = player(for: sound) else { return }
         player.volume = Float(min(theme.soundVolume, 1))
         player.currentTime = 0
         player.play()
+    }
+
+    /// Whether `play(_:)` would make a sound now: sounds on, a volume above zero and macOS's UI sound effects on.
+    /// Lets a caller skip work that only serves sounds, such as scheduling the sidebar's detents.
+    public var isAudible: Bool {
+        Self.shouldPlay(soundsEnabled: theme.soundsEnabled, volume: theme.soundVolume, systemEnabled: systemSoundsEnabled())
     }
 
     /// The pure decision behind `play(_:)`.
