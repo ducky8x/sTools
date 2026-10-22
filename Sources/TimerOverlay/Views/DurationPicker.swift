@@ -27,7 +27,6 @@ struct DurationPicker: View {
         VStack(alignment: .leading, spacing: 0) {
             STSettingsRow("Duration", showsRule: choice != .custom) {
                 STChips(selection: selection(choice), options: options, label: "Duration")
-                    .frame(maxWidth: 340, alignment: .trailing)
             }
             if choice == .custom {
                 STSettingsRow("Custom duration") {
