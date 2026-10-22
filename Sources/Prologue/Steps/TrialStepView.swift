@@ -1,7 +1,7 @@
 import STDesign
 import SwiftUI
 
-/// Steps 9–13: one tool tried on the real screen (spec 4.2). The checklist on the left ticks itself as the user
+/// Steps 9–14: one tool tried on the real screen (spec 4.2). The checklist on the left ticks itself as the user
 /// does each thing, each item can be skipped; the tool's own controls sit on the right.
 struct TrialStepView: View {
     let model: PrologueModel
@@ -11,6 +11,7 @@ struct TrialStepView: View {
         static func title(_ trial: PrologueTrial) -> String {
             switch trial {
             case .crosshair: "Crosshair"
+            case .timerOverlay: "Timer Overlay"
             case .windowBackdrop: "Window Backdrop"
             case .nbbOverlay: "NBB Overlay"
             case .screenRecording: "Screen Recording"
@@ -21,6 +22,7 @@ struct TrialStepView: View {
         static func standfirst(_ trial: PrologueTrial) -> String {
             switch trial {
             case .crosshair: "Try it on the real screen. Each item ticks itself as you go."
+            case .timerOverlay: "Run a short test countdown over the game. Each item ticks itself as you go."
             case .windowBackdrop: "Hide everything behind the game. Each item ticks itself as you go."
             case .nbbOverlay: "Put Ninjabrain Bot\u{2019}s answer over the game. Each item ticks itself as you go."
             case .screenRecording: "Arrange a canvas and record a short test. Each item ticks itself as you go."

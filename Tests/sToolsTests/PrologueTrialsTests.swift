@@ -1,8 +1,12 @@
 import Backdrop
 import Crosshair
+import Foundation
 import NBBOverlay
 import Prologue
+import STDesign
+import STPlatform
 import Testing
+import TimerOverlay
 @testable import sTools
 
 @MainActor
@@ -83,6 +87,138 @@ struct PrologueTrialsTests {
         prologue.requestSkipIntroduction()
         prologue.confirmSkipIntroduction()
         #expect(nbb.sample == nil)
+    }
+
+    // MARK: Timer Overlay (spec 5.6.9)
+
+    /// Fires the timer's held wakes in order, moving its fake clock along, for `seconds`.
+    private func runTimer(_ fakes: TimerFakes, for seconds: TimeInterval) {
+        let end = fakes.clock.time + seconds
+        while let wake = fakes.scheduler.pending.filter({ $0.due <= end }).min(by: { $0.due < $1.due }) {
+            fakes.clock.time = max(fakes.clock.time, wake.due)
+            wake.cancel()
+            wake.action()
+        }
+        fakes.clock.time = end
+    }
+
+    @Test func theTimerTrialSwitchesOnAndTicksWhenTheTestRunHasLeft() async throws {
+        let harness = Harness()
+        harness.model.beginPrologue(at: .timerTrial)
+        let timer = harness.timer
+        let duration = timer.settings.durationSeconds
+        let content = harness.model.trialContent(.timerOverlay)
+        #expect(content.items().map(\.id) == ["on", "test", "place", "key"])
+        content.onAppear()
+        #expect(content.completed().isEmpty)
+        // The trial keeps no timer of its own.
+        #expect(harness.timerFakes.scheduler.pending.isEmpty)
+
+        harness.model.setTool(.timerOverlay, on: true)
+        #expect(content.completed() == ["on"])
+
+        #expect(timer.runTest())
+        #expect(await waitUntil { harness.model.trials.timerTestRunning })
+        runTimer(harness.timerFakes, for: 3)
+        #expect(timer.phase == .counting)
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(!content.completed().contains("test"))
+
+        runTimer(harness.timerFakes, for: 120)
+        #expect(timer.phase == .idle)
+        #expect(await waitUntil { content.completed().contains("test") })
+        #expect(timer.settings.durationSeconds == duration)
+        content.onDisappear()
+    }
+
+    @Test func aRealCountdownStartedDuringTheTestDoesNotTickIt() async throws {
+        let harness = Harness()
+        harness.model.beginPrologue(at: .timerTrial)
+        let timer = harness.timer
+        let content = harness.model.trialContent(.timerOverlay)
+        content.onAppear()
+        harness.model.setTool(.timerOverlay, on: true)
+        #expect(timer.runTest())
+        #expect(await waitUntil { harness.model.trials.timerTestRunning })
+        #expect(timer.start())
+        #expect(await waitUntil { !harness.model.trials.timerTestRunning })
+        timer.cancel()
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(timer.phase == .idle)
+        #expect(!content.completed().contains("test"))
+        content.onDisappear()
+    }
+
+    /// With Reduce animations the trial's Test run asks the overlay for no motion at all.
+    @Test func theTimerTrialsTestRunHasNoMotionWithReduceAnimations() async throws {
+        let harness = Harness(theme: STTheme(systemReduceMotion: true))
+        harness.model.beginPrologue(at: .timerTrial)
+        let content = harness.model.trialContent(.timerOverlay)
+        content.onAppear()
+        harness.model.setTool(.timerOverlay, on: true)
+        #expect(harness.timer.runTest())
+        #expect(await waitUntil { harness.model.trials.timerTestRunning })
+        runTimer(harness.timerFakes, for: 120)
+        #expect(harness.timer.phase == .idle)
+        #expect(await waitUntil { content.completed().contains("test") })
+        let presenter = harness.timerFakes.presenter
+        #expect(!presenter.popIns.isEmpty)
+        #expect(presenter.motions.allSatisfy { $0 })
+        content.onDisappear()
+    }
+
+    @Test func draggingTheTimerTicksPlacement() throws {
+        let harness = Harness()
+        harness.model.beginPrologue(at: .timerTrial)
+        let content = harness.model.trialContent(.timerOverlay)
+        content.onAppear()
+        harness.timer.settings.offsetX += 12
+        #expect(content.completed() == ["place"])
+        content.onDisappear()
+    }
+
+    @Test func withoutAccessibilityTheTimerCannotBeSwitchedOnOrTested() {
+        let harness = Harness(accessibility: .denied)
+        harness.model.beginPrologue(at: .timerTrial)
+        let items = harness.model.trialContent(.timerOverlay).items()
+        #expect(items.first { $0.id == "on" }?.unavailableReason == TrialCopy.needsAccessibility)
+        #expect(items.first { $0.id == "test" }?.unavailableReason == TrialCopy.needsAccessibility)
+    }
+
+    /// The trial's own recorder saves the key as a Home ▸ Hotkeys hotkey; while Hotkeys are off it asks first.
+    @Test func aStartTimerKeyIsAHotkeyAndAsksWhileHotkeysAreOff() throws {
+        let harness = Harness()
+        harness.model.beginPrologue(at: .timerTrial)
+        harness.model.hotkeys.isEnabled = false
+        let content = harness.model.trialContent(.timerOverlay)
+        content.onAppear()
+        var asked = 0
+        var answer = false
+        harness.model.confirmTurningOnHotkeys = {
+            asked += 1
+            return answer
+        }
+        let combo = HotkeyCombo(keyCode: 0x60, modifiers: [])
+
+        TrialStartTimerKey.set(combo, in: harness.model)
+        #expect(asked == 1)
+        #expect(!harness.model.hotkeys.isEnabled)
+        #expect(TrialStartTimerKey.own(in: harness.model.hotkeys.bindings) == nil)
+        #expect(!content.completed().contains("key"))
+
+        answer = true
+        TrialStartTimerKey.set(combo, in: harness.model)
+        #expect(asked == 2)
+        #expect(harness.model.hotkeys.isEnabled)
+        let own = try #require(TrialStartTimerKey.own(in: harness.model.hotkeys.bindings))
+        #expect(own.actions == [.startTimer])
+        #expect(own.combo == combo)
+        #expect(content.completed().contains("key"))
+
+        TrialStartTimerKey.set(nil, in: harness.model)
+        #expect(TrialStartTimerKey.own(in: harness.model.hotkeys.bindings) == nil)
+        #expect(asked == 2)
+        content.onDisappear()
     }
 
     @Test func replayStartsTheTrialsAfresh() throws {

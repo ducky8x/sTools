@@ -1,14 +1,26 @@
+import STPlatform
 import Testing
 @testable import Prologue
 
 @Suite("Prologue flow")
 struct PrologueFlowTests {
-    @Test func hasFifteenStepsInFourParts() {
-        #expect(PrologueStep.count == 15)
+    @Test func hasSixteenStepsInFourParts() {
+        #expect(PrologueStep.count == 16)
         let parts = Dictionary(grouping: PrologueStep.allCases, by: \.part).mapValues(\.count)
-        #expect(parts == [.welcome: 1, .preparations: 7, .trials: 5, .finale: 2])
+        #expect(parts == [.welcome: 1, .preparations: 7, .trials: 6, .finale: 2])
         #expect(PrologueStep.greeting.number == 1)
-        #expect(PrologueStep.openSTools.number == 15)
+        #expect(PrologueStep.openSTools.number == 16)
+    }
+
+    /// The Timer trial is step 10, after Crosshair's, at the index `AppState` moves old saved steps across.
+    @Test func theTimerTrialIsStepTen() {
+        #expect(PrologueStep.timerTrial.number == 10)
+        #expect(PrologueStep.timerTrial.rawValue == AppState.timerTrialIndex)
+        #expect(PrologueStep.timerTrial.trial == .timerOverlay)
+        #expect(PrologueStep.timerTrial.part == .trials)
+        #expect(PrologueStep.backdropTrial.number == 11)
+        #expect(PrologueTrial.allCases == [.crosshair, .timerOverlay, .windowBackdrop, .nbbOverlay, .screenRecording, .keyRebinder])
+        #expect(PrologueStep.allCases.compactMap(\.trial) == PrologueTrial.allCases)
     }
 
     @Test func startsAtTheGreeting() {
@@ -18,12 +30,12 @@ struct PrologueFlowTests {
         #expect(flow.outcome == nil)
     }
 
-    @Test(arguments: [0, 3, 9, 14])
+    @Test(arguments: [0, 3, 9, 14, 15])
     func resumesAtASavedStep(index: Int) {
         #expect(PrologueFlow(resumingAt: index).step.rawValue == index)
     }
 
-    @Test(arguments: [-1, 15, 99])
+    @Test(arguments: [-1, 16, 99])
     func anUnknownSavedStepStartsAtTheGreeting(index: Int) {
         #expect(PrologueFlow(resumingAt: index).step == .greeting)
     }
@@ -82,7 +94,7 @@ struct PrologueFlowTests {
     }
 
     @Test func skippingTheLastStepFinishes() {
-        var flow = PrologueFlow(resumingAt: 14)
+        var flow = PrologueFlow(resumingAt: PrologueStep.openSTools.rawValue)
         flow.skipStep()
         #expect(flow.outcome == .finished)
     }
@@ -138,9 +150,9 @@ struct PrologueFlowTests {
         #expect(flow == PrologueFlow())
     }
 
-    @Test func progressFillsAFifteenthPerStep() {
-        #expect(PrologueFlow().progress == 1.0 / 15)
-        #expect(PrologueFlow(resumingAt: 14).progress == 1)
+    @Test func progressFillsASixteenthPerStep() {
+        #expect(PrologueFlow().progress == 1.0 / 16)
+        #expect(PrologueFlow(resumingAt: 15).progress == 1)
     }
 
     @Test func stepsKnowWhatTheySetUp() {

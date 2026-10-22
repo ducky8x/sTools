@@ -31,7 +31,7 @@ public struct PrologueFlow: Equatable, Sendable {
     public var canGoBack: Bool { !isEnded && !isConfirmingSkip && step != .greeting }
     public var canMoveOn: Bool { !isEnded && !isConfirmingSkip }
 
-    /// How much of the gold progress rule is filled: a fifteenth per step, full on the last.
+    /// How much of the gold progress rule is filled: a sixteenth per step, full on the last.
     public var progress: Double { Double(step.number) / Double(PrologueStep.count) }
 
     /// Continue: the next step, or the end after the last one.

@@ -49,4 +49,124 @@ import Testing
         #expect(store.load(GeneralSettings.self) == GeneralSettings.defaultValue)
         #expect(store.load(AppState.self) == AppState(prologueCompleted: false, prologueStep: 2))
     }
+
+    // MARK: The Timer trial's step 10 (spec 4)
+
+    /// `appState.json` as a build from before the Timer trial reads and writes it: 15 steps, version 1.
+    private struct AppStateBeforeTimerTrial: SettingsDocument {
+        static let name = "appState"
+        static let version = 1
+        static let defaultValue = AppStateBeforeTimerTrial(prologueCompleted: false, prologueStep: 0)
+
+        var prologueCompleted: Bool
+        var prologueStep: Int
+
+        init(prologueCompleted: Bool, prologueStep: Int) {
+            self.prologueCompleted = prologueCompleted
+            self.prologueStep = prologueStep
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case prologueCompleted, prologueStep
+        }
+
+        init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            prologueCompleted = try container.decodeIfPresent(Bool.self, forKey: .prologueCompleted) ?? false
+            prologueStep = try container.decodeIfPresent(Int.self, forKey: .prologueStep) ?? 0
+        }
+    }
+
+    private func files(in directory: URL) throws -> [String] {
+        try FileManager.default.contentsOfDirectory(atPath: directory.path).sorted()
+    }
+
+    /// An old file's steps before the Timer trial's place stay; from old step 10 (Window Backdrop's trial) on,
+    /// they move up by one.
+    @Test(arguments: [(0, 0), (1, 1), (8, 8), (9, 10), (10, 11), (13, 14), (14, 15)])
+    func anOldFilesStepMovesAcrossTheTimerTrial(old: Int, new: Int) async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try Data(#"{"version":1,"value":{"prologueCompleted":false,"prologueStep":\#(old)}}"#.utf8)
+            .write(to: directory.appending(path: "appState.json"))
+        let store = SettingsStore(directory: directory)
+        #expect(store.load(AppState.self) == AppState(prologueCompleted: false, prologueStep: new))
+        #expect(try files(in: directory) == ["appState.json"])
+    }
+
+    @Test func anOldFinishedIntroductionStaysFinished() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try Data(#"{"version":1,"value":{"prologueCompleted":true,"prologueStep":0}}"#.utf8)
+            .write(to: directory.appending(path: "appState.json"))
+        #expect(SettingsStore(directory: directory).load(AppState.self).prologueCompleted)
+    }
+
+    @Test(arguments: 0..<16)
+    func everyStepRoundTripsInTheNewFile(step: Int) async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = SettingsStore(directory: directory)
+        store.save(AppState(prologueCompleted: false, prologueStep: step))
+        await store.flush()
+        #expect(SettingsStore(directory: directory).load(AppState.self) == AppState(prologueCompleted: false, prologueStep: step))
+    }
+
+    @Test func theNewFileKeepsVersionOneAndTheOldKey() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = SettingsStore(directory: directory)
+        store.save(AppState(prologueCompleted: false, prologueStep: 12))
+        await store.flush()
+        let data = try Data(contentsOf: directory.appending(path: "appState.json"))
+        let json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let value = try #require(json["value"] as? [String: Any])
+        #expect(json["version"] as? Int == 1)
+        #expect(value["prologueStep"] as? Int == 11)
+        #expect(value["prologueStepWithTimerTrial"] as? Int == 12)
+    }
+
+    /// A build from before the Timer trial reads the new file without moving it aside, so a finished introduction
+    /// stays finished there.
+    @Test func anOlderBuildKeepsAFinishedIntroductionFinished() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = SettingsStore(directory: directory)
+        store.save(AppState(prologueCompleted: true, prologueStep: 0))
+        await store.flush()
+
+        let older = SettingsStore(directory: directory).load(AppStateBeforeTimerTrial.self)
+        #expect(older.prologueCompleted)
+        #expect(try files(in: directory) == ["appState.json"])
+    }
+
+    /// An unfinished introduction resumes in an older build at the same step, and the Timer trial at the step after
+    /// it there, Window Backdrop's trial; never back at the greeting.
+    @Test(arguments: [(0, 0), (8, 8), (9, 9), (10, 9), (11, 10), (15, 14)])
+    func anOlderBuildResumesAtTheSameStep(new: Int, old: Int) async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = SettingsStore(directory: directory)
+        store.save(AppState(prologueCompleted: false, prologueStep: new))
+        await store.flush()
+
+        let older = SettingsStore(directory: directory).load(AppStateBeforeTimerTrial.self)
+        #expect(older == AppStateBeforeTimerTrial(prologueCompleted: false, prologueStep: old))
+        #expect(try files(in: directory) == ["appState.json"])
+    }
+
+    /// What an older build saves after the new one comes back to the new one at the same step.
+    @Test func aStepSavedByAnOlderBuildComesBackAcrossTheTimerTrial() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = SettingsStore(directory: directory)
+        store.save(AppState(prologueCompleted: false, prologueStep: 12))
+        await store.flush()
+
+        let olderStore = SettingsStore(directory: directory)
+        olderStore.save(olderStore.load(AppStateBeforeTimerTrial.self))
+        await olderStore.flush()
+
+        #expect(SettingsStore(directory: directory).load(AppState.self) == AppState(prologueCompleted: false, prologueStep: 12))
+    }
 }

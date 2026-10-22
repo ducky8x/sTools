@@ -38,7 +38,18 @@ struct PrologueModelTests {
         await box.store.flush()
 
         let relaunched = PrologueModel(store: box.reopened(), host: FakeHost())
-        #expect(relaunched.step == .backdropTrial)
+        #expect(relaunched.step == .timerTrial)
+    }
+
+    /// A build from before the Timer trial saved Window Backdrop's trial as index 9; it resumes there, now step 11.
+    @Test func resumesAtTheSameStepSavedByABuildWithoutTheTimerTrial() async throws {
+        let box = StoreBox()
+        try FileManager.default.createDirectory(at: box.directory, withIntermediateDirectories: true)
+        let url = box.directory.appending(path: "appState.json")
+        try Data(#"{"version":1,"value":{"prologueCompleted":false,"prologueStep":9}}"#.utf8).write(to: url)
+        let model = PrologueModel(store: box.reopened(), host: FakeHost())
+        #expect(model.step == .backdropTrial)
+        #expect(model.step.number == 11)
     }
 
     @Test func replayStartsAtTheGreetingWhateverWasSaved() {

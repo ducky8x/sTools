@@ -1,3 +1,4 @@
+import Foundation
 import Prologue
 import STPlatform
 import Testing
@@ -70,6 +71,35 @@ struct AppModelPrologueTests {
         #expect(!harness.model.isOn(.crosshair))
         #expect(!harness.model.isOn(.windowBackdrop))
         #expect(harness.model.isOn(.nbbOverlay))
+    }
+
+    @Test func everyToolHasItsTrial() {
+        for tool in ToolID.allCases {
+            let trial = tool.trial
+            #expect(trial != nil)
+            if let trial { #expect(ToolID(trial) == tool) }
+        }
+        #expect(ToolID.timerOverlay.trial == .timerOverlay)
+    }
+
+    @Test func theFinaleSwitchesTheTimerOff() throws {
+        let harness = Harness()
+        harness.model.beginPrologue(at: .youreSet)
+        harness.model.setTool(.timerOverlay, on: true)
+        #expect(harness.model.toolsToSwitchOff() == [.timerOverlay])
+        let prologue = try #require(harness.model.prologue)
+        prologue.runFinale()
+        prologue.completeFinale()
+        #expect(!harness.model.isOn(.timerOverlay))
+    }
+
+    @Test func aLaunchMidwaySavedByABuildWithoutTheTimerTrialResumesAtTheSameStep() async throws {
+        let harness = Harness()
+        await harness.store.flush()
+        try Data(#"{"version":1,"value":{"prologueCompleted":false,"prologueStep":9}}"#.utf8)
+            .write(to: harness.directory.appending(path: "appState.json"))
+        harness.model.beginPrologue()
+        #expect(harness.model.prologue?.step == .backdropTrial)
     }
 
     @Test func skippingTheIntroductionSwitchesTrialToolsOff() throws {

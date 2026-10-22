@@ -14,10 +14,10 @@ public enum ProloguePart: Int, CaseIterable, Sendable {
     }
 }
 
-/// The tools tried in the Trials, simplest first (spec D2). The four with a switch are also what the Finale
+/// The tools tried in the Trials, simplest first (spec D2). The five with a switch are also what the Finale
 /// switches off.
 public enum PrologueTrial: String, CaseIterable, Sendable {
-    case crosshair, windowBackdrop, nbbOverlay, screenRecording, keyRebinder
+    case crosshair, timerOverlay, windowBackdrop, nbbOverlay, screenRecording, keyRebinder
 }
 
 /// The two companion apps set up in the Preparations (spec R6).
@@ -25,16 +25,17 @@ public enum PrologueCompanion: String, CaseIterable, Sendable {
     case ninjabrainBot, karabiner
 }
 
-/// The 15 steps, in order. The raw value is the index saved in `AppState.prologueStep`.
+/// The 16 steps, in order. The raw value is the index saved in `AppState.prologueStep`; the Timer trial is step 10
+/// (index `AppState.timerTrialIndex`), new after builds that had 15.
 public enum PrologueStep: Int, CaseIterable, Sendable, Identifiable {
     case greeting
     case accessibility, screenRecording, appAudio, microphone, camera, ninjabrainBot, karabiner
-    case crosshairTrial, backdropTrial, nbbOverlayTrial, recordingTrial, keyRebinderTrial
+    case crosshairTrial, timerTrial, backdropTrial, nbbOverlayTrial, recordingTrial, keyRebinderTrial
     case youreSet, openSTools
 
     public var id: Int { rawValue }
 
-    /// 1-based, as shown in "Step 4 of 15".
+    /// 1-based, as shown in "Step 4 of 16".
     public var number: Int { rawValue + 1 }
 
     public static let count = allCases.count
@@ -43,7 +44,7 @@ public enum PrologueStep: Int, CaseIterable, Sendable, Identifiable {
         switch self {
         case .greeting: .welcome
         case .accessibility, .screenRecording, .appAudio, .microphone, .camera, .ninjabrainBot, .karabiner: .preparations
-        case .crosshairTrial, .backdropTrial, .nbbOverlayTrial, .recordingTrial, .keyRebinderTrial: .trials
+        case .crosshairTrial, .timerTrial, .backdropTrial, .nbbOverlayTrial, .recordingTrial, .keyRebinderTrial: .trials
         case .youreSet, .openSTools: .finale
         }
     }
@@ -71,6 +72,7 @@ public enum PrologueStep: Int, CaseIterable, Sendable, Identifiable {
     public var trial: PrologueTrial? {
         switch self {
         case .crosshairTrial: .crosshair
+        case .timerTrial: .timerOverlay
         case .backdropTrial: .windowBackdrop
         case .nbbOverlayTrial: .nbbOverlay
         case .recordingTrial: .screenRecording

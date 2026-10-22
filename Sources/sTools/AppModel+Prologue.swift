@@ -116,6 +116,7 @@ extension ToolID {
     init(_ trial: PrologueTrial) {
         switch trial {
         case .crosshair: self = .crosshair
+        case .timerOverlay: self = .timerOverlay
         case .windowBackdrop: self = .windowBackdrop
         case .nbbOverlay: self = .nbbOverlay
         case .screenRecording: self = .screenRecording
@@ -123,7 +124,7 @@ extension ToolID {
         }
     }
 
-    /// The tool's trial in the introduction; nil for Timer Overlay, which has none yet.
+    /// The tool's trial in the introduction.
     var trial: PrologueTrial? {
         switch self {
         case .crosshair: .crosshair
@@ -131,7 +132,7 @@ extension ToolID {
         case .nbbOverlay: .nbbOverlay
         case .screenRecording: .screenRecording
         case .keyRebinder: .keyRebinder
-        case .timerOverlay: nil
+        case .timerOverlay: .timerOverlay
         }
     }
 }
