@@ -2,21 +2,21 @@ import STDesign
 import STPlatform
 import SwiftUI
 
-/// Home: an at-a-glance status of every tool and dependency.
+/// Home: the hotkeys first, then an at-a-glance status of every tool and dependency.
 struct HomePage: View {
     let model: AppModel
 
     var body: some View {
         PageContainer(anchor: Binding(get: { model.pendingPageAnchor }, set: { model.pendingPageAnchor = $0 })) {
             STPageHeader(title: "Home", tagline: "Every tool and what it needs, at a glance.") { EmptyView() }
+            HotkeysSection(model: model)
+                .id(PageAnchor.hotkeys)
             PageSectionTitle("Tools").padding(.top, 28).padding(.bottom, 4)
             ForEach(ToolID.allCases) { tool in
                 HomeToolRow(model: model, tool: tool)
             }
             PageSectionTitle("Dependencies").padding(.top, 28).padding(.bottom, 10)
             dependencies
-            HotkeysSection(model: model)
-                .id(PageAnchor.hotkeys)
         }
         .pollsPermissions(model.permissions)
     }

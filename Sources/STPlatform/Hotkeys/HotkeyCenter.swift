@@ -26,10 +26,20 @@ public enum HotkeyConflict: Equatable, Sendable {
     case noActions
 }
 
+/// Something in sTools listening for raw key presses, which pauses hotkeys while it lasts (spec 6.1).
+public enum HotkeyPause: Hashable, Sendable {
+    /// A hotkey or shortcut field is recording a key.
+    case recordingKey
+    /// A text field or text view in sTools is being edited.
+    case typing
+    /// The Key Rebinder is listening: Test keys, or choosing an output by pressing it.
+    case keyRebinder
+}
+
 /// The state of one binding.
 public enum HotkeyStatus: Equatable, Sendable {
-    /// Accepted by macOS, and live whenever sTools isn't in front. While hotkeys pause (sTools is the active app)
-    /// nothing is registered, but the status stays, so switching apps never changes it.
+    /// Accepted by macOS, and live in every app, sTools included. While a hotkey pauses (sTools is recording a key or
+    /// someone is typing in it) it isn't registered, but the status stays, so a pause never changes it.
     case registered
     /// Fine, but the master switch is off so nothing is registered.
     case inactive
@@ -43,10 +53,14 @@ public enum HotkeyStatus: Equatable, Sendable {
 /// one to claim a combination keeps it and later duplicates are flagged `.alreadyUsedByYou` (and registered
 /// automatically if the first one goes away). A flagged binding stays in the list so the user can fix it.
 ///
-/// Hotkeys pause while sTools is the active app (`isPaused`, Advanced setting on by default), so every key works
-/// in sTools itself: typing, recording a combination, testing keys. While paused nothing is registered and presses
-/// are ignored; a combination macOS hasn't accepted yet this run is still tried once (registered and released at
-/// once), so a refusal shows the moment a hotkey is added. When the pause ends everything registers for real.
+/// Hotkeys fire whichever app is in front, sTools included. They pause only while sTools itself listens for raw
+/// keys (`setPaused(_:for:)`): a field recording a key, a text field being edited, the Key Rebinder's Test keys or
+/// output capture; typing pauses only the hotkeys that would take a typed key. A paused hotkey isn't registered and
+/// its presses are ignored; a combination macOS hasn't accepted yet this run is still tried once (registered and
+/// released at once), so a refusal shows the moment a hotkey is added. When the pause ends it registers for real.
+///
+/// A registered hotkey's key that reaches sTools' own window as an ordinary key press (`handleKeyDown`) fires it
+/// too, through the same press rules, so a hotkey works in sTools even when macOS hands the key to the window.
 ///
 /// Presses count only for a binding registered right now, so a press macOS delivered just before an unregistration
 /// is ignored. With a registrar that reports releases, the center also keeps which keys are down: a press for a key
@@ -62,11 +76,9 @@ public final class HotkeyCenter {
     /// Assigned only when a status really changes, so app switches don't re-render the pages that show them.
     public private(set) var statuses: [UUID: HotkeyStatus] = [:]
 
-    /// Whether sTools is the active app. Only the app delegate sets it (and only it knows), so a center nobody
-    /// tells about activity (tests, previews) never pauses, and a pause can't outlast sTools being in front.
-    @ObservationIgnored public var appIsActive = false {
-        didSet { if appIsActive != oldValue { synchronize() } }
-    }
+    /// What in sTools is listening for raw keys right now; hotkeys pause while any is (`pauses(_:)` says which).
+    /// Only the app's watchers and the Key Rebinder set them, so a center nobody tells (tests, previews) never pauses.
+    @ObservationIgnored public private(set) var pauses: Set<HotkeyPause> = []
 
     /// Advice from the Key Rebinder: Minecraft cautions, where a hotkey's key is, selecting it. Held weakly; nil
     /// when there is no Key Rebinder.
@@ -82,9 +94,13 @@ public final class HotkeyCenter {
     @ObservationIgnored private var accepted: Set<HotkeyCombo> = []
     /// The registered bindings whose key is down: pressed, and not released or unregistered since. A press for one
     /// of them is a repeat. Each says whether its press sent Start timer, so its release sends `.startTimerReleased`.
-    /// Always empty with a registrar that doesn't report releases.
+    /// Always empty with a registrar that doesn't report releases, except for presses from sTools' own window.
     @ObservationIgnored private var keysDown: [UUID: Bool] = [:]
+    /// The keys in `keysDown` whose press came from sTools' own window, whose release comes from there too.
+    @ObservationIgnored private var appKeysDown: Set<UUID> = []
     @ObservationIgnored private let log = STLog.logger("Hotkeys")
+    /// Whether a hotkey's key has reached the window this run, logged once (spec 6.1's hardware check).
+    @ObservationIgnored private var reachedWindow = false
 
     /// - Parameters:
     ///   - toolStates: Reports which switchable tools are on right now. Read on every press.
@@ -126,22 +142,27 @@ public final class HotkeyCenter {
         }
     }
 
-    /// Advanced: whether hotkeys pause while sTools is the active app. On by default. Off, hotkeys also fire in
-    /// sTools, which then can't record, test or type their keys.
-    public var pausesWhileSToolsIsActive: Bool {
-        get { settings.pausesWhileSToolsIsActive }
-        set {
-            guard newValue != settings.pausesWhileSToolsIsActive else { return }
-            settings.pausesWhileSToolsIsActive = newValue
-            commit()
-        }
+    /// Hotkeys are on but paused, because something in sTools is listening for raw keys. While only typing pauses
+    /// them, just the hotkeys that would take a typed key step aside.
+    public var isPaused: Bool { settings.isEnabled && !pauses.isEmpty }
+
+    /// Starts or ends a pause for `reason`. Hotkeys come back when the last pause ends.
+    public func setPaused(_ paused: Bool, for reason: HotkeyPause) {
+        let before = pauses
+        if paused { pauses.insert(reason) } else { pauses.remove(reason) }
+        if pauses != before { synchronize() }
     }
 
-    /// Hotkeys are on but paused, because sTools is in front and the pause setting is on.
-    public var isPaused: Bool { settings.isEnabled && settings.pausesWhileSToolsIsActive && appIsActive }
+    /// Whether `combo` steps aside during the pauses in force: every hotkey while a key is recorded or the Key
+    /// Rebinder listens; while someone only types, just the ones that would take a typed character or editing key
+    /// (`interferesWithTyping`), so F-keys and ⌘ or ⌃ combinations keep working next to a focused text field.
+    private func pauses(_ combo: HotkeyCombo) -> Bool {
+        guard settings.isEnabled, !pauses.isEmpty else { return false }
+        return pauses == [.typing] ? combo.interferesWithTyping : true
+    }
 
     /// While the master switch is on, the bindings that take their key from other apps: valid, the first owner of
-    /// their combination, with actions, and accepted by macOS (live, or paused while sTools is in front). A binding
+    /// their combination, with actions, and accepted by macOS (live, or paused while sTools listens for keys). A binding
     /// macOS refused takes nothing, so it isn't here. Empty while the switch is off.
     public var activeBindings: [HotkeyBinding] {
         guard settings.isEnabled else { return [] }
@@ -194,6 +215,48 @@ public final class HotkeyCenter {
         return nil
     }
 
+    // MARK: Keys in sTools' own window
+
+    /// A key went down in sTools' own window: macOS handed it to the window instead of turning it into a hotkey
+    /// press. When a registered hotkey has exactly this key and these modifiers, it fires as a press from macOS would
+    /// (a repeat, or a press for a key already down, is ignored) and this returns true, so the window doesn't also
+    /// type it. False while hotkeys are off or paused, or when no hotkey has this combination.
+    @discardableResult
+    public func handleKeyDown(keyCode: UInt16, modifiers: HotkeyCombo.Modifiers, isRepeat: Bool) -> Bool {
+        let combo = HotkeyCombo(keyCode: keyCode, modifiers: modifiers)
+        // Only a live registration counts: a paused one is unregistered, so its key goes on to the field.
+        guard let id = registered.first(where: { $0.value == combo })?.key else { return false }
+        guard !isRepeat, keysDown[id] == nil else { return true }
+        if !reachedWindow {
+            reachedWindow = true
+            log.info("A hotkey's key reached sTools' window: \(combo.displayString, privacy: .public)")
+        }
+        appKeysDown.insert(id)
+        handlePress(id, tracksRelease: true)
+        return true
+    }
+
+    /// A key came up in sTools' own window. Ends the press of each hotkey on this key whose press came from the
+    /// window; true when there was one.
+    @discardableResult
+    public func handleKeyUp(keyCode: UInt16) -> Bool {
+        let ids = appKeysDown.filter { registered[$0]?.keyCode == keyCode }
+        for id in ids {
+            appKeysDown.remove(id)
+            handleRelease(id)
+        }
+        return !ids.isEmpty
+    }
+
+    /// sTools stopped being the active app, so the window won't see the release of a key pressed in it: ends those
+    /// presses now.
+    public func releaseWindowKeys() {
+        for id in appKeysDown {
+            handleRelease(id)
+        }
+        appKeysDown.removeAll()
+    }
+
     // MARK: Internals
 
     private func commit() {
@@ -210,9 +273,9 @@ public final class HotkeyCenter {
     /// repeat and is ignored until its release, so a held key never looks like a double press (which cancels the
     /// timer); separate presses still count. Whether macOS repeats held hotkeys at all is to be confirmed on
     /// hardware (spec 6.1); the rule is harmless if it doesn't.
-    private func handlePress(_ id: UUID) {
+    private func handlePress(_ id: UUID, tracksRelease: Bool = false) {
         guard registered[id] != nil, let binding = settings.bindings.first(where: { $0.id == id }) else { return }
-        if reportsReleases {
+        if reportsReleases || tracksRelease {
             guard keysDown[id] == nil else { return }
             keysDown[id] = binding.actions.contains(.startTimer)
         }
@@ -227,6 +290,7 @@ public final class HotkeyCenter {
     /// A release counts only for a key whose press counted, and sends an event only when that press sent Start
     /// timer.
     private func handleRelease(_ id: UUID) {
+        appKeysDown.remove(id)
         guard keysDown.removeValue(forKey: id) == true else { return }
         handler([.startTimerReleased])
     }
@@ -257,17 +321,17 @@ public final class HotkeyCenter {
             }
         }
 
-        let paused = isPaused
         var timerReleases = 0
-        for (id, combo) in registered where paused || wanted[id] != combo {
+        for (id, combo) in registered where pauses(combo) || wanted[id] != combo {
             registrar.unregister(id: id)
             registered[id] = nil
             // macOS can't report this key's release any more.
+            appKeysDown.remove(id)
             if keysDown.removeValue(forKey: id) == true { timerReleases += 1 }
         }
         for binding in settings.bindings {
             guard let combo = wanted[binding.id] else { continue }
-            if paused {
+            if pauses(combo) {
                 newStatuses[binding.id] = probe(combo, id: binding.id)
             } else if registered[binding.id] == combo {
                 newStatuses[binding.id] = .registered

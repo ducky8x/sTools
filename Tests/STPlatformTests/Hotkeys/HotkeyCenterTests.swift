@@ -425,11 +425,11 @@ struct HotkeyCenterTests {
         let h = await Harness()
         h.center.isEnabled = true
         let id = h.center.add(combo: f13, actions: [.startTimer])
-        h.center.appIsActive = true
+        h.center.setPaused(true, for: .recordingKey)
         h.registrar.press(id)
         h.registrar.release(id)
         h.registrar.press(id)
-        h.center.appIsActive = false
+        h.center.setPaused(false, for: .recordingKey)
         h.registrar.release(id)
         #expect(h.presses.isEmpty)
     }
@@ -441,12 +441,12 @@ struct HotkeyCenterTests {
         h.center.isEnabled = true
         let id = h.center.add(combo: f13, actions: [.startTimer])
         h.registrar.press(id)
-        h.center.appIsActive = true
+        h.center.setPaused(true, for: .recordingKey)
         #expect(h.presses == [[.startTimer], [.startTimerReleased]])
         #expect(h.registrar.active.isEmpty)
 
         h.registrar.release(id)
-        h.center.appIsActive = false
+        h.center.setPaused(false, for: .recordingKey)
         h.registrar.release(id)
         #expect(h.presses == [[.startTimer], [.startTimerReleased]])
     }
@@ -488,7 +488,7 @@ struct HotkeyCenterTests {
         h.center.isEnabled = true
         let id = h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
         h.registrar.press(id)
-        h.center.appIsActive = true
+        h.center.setPaused(true, for: .recordingKey)
         h.center.isEnabled = false
         #expect(h.presses == [[.setTool(.crosshair, isOn: true)]])
     }
@@ -504,7 +504,7 @@ struct HotkeyCenterTests {
         center.isEnabled = true
         let id = center.add(combo: f13, actions: [.startTimer])
         registrar.onPress?(id)
-        center.appIsActive = true
+        center.setPaused(true, for: .recordingKey)
         center.isEnabled = false
         #expect(h.presses == [[.startTimer]])
     }
@@ -570,8 +570,8 @@ struct HotkeyCenterTests {
         h.center.isEnabled = true
         let id = h.center.add(combo: f13, actions: [.startTimer])
         h.registrar.press(id)
-        h.center.appIsActive = true
-        h.center.appIsActive = false
+        h.center.setPaused(true, for: .recordingKey)
+        h.center.setPaused(false, for: .recordingKey)
         h.registrar.press(id)
         #expect(h.presses == [[.startTimer], [.startTimerReleased], [.startTimer]])
     }
@@ -649,74 +649,175 @@ struct HotkeyCenterTests {
         #expect(h.center.conflict(for: HotkeyCombo(keyCode: 49, modifiers: [])) == nil) // Space alone
     }
 
-    // MARK: Pause while sTools is in front
+    // MARK: Pausing only while sTools listens for keys
 
-    @Test func aNewCenterIsNotInFront() async {
+    /// The cause of "hotkeys don't work, not even in sTools": a new center used to pause whenever sTools was the
+    /// active app. Nothing pauses it now unless sTools listens for raw keys.
+    @Test func aNewCenterIsNotPaused() async {
         let h = await Harness()
         h.center.isEnabled = true
         let id = h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
-        #expect(!h.center.appIsActive)
+        #expect(h.center.pauses.isEmpty)
         #expect(!h.center.isPaused)
-        #expect(h.center.pausesWhileSToolsIsActive)
         #expect(h.registrar.active == [id: pad1])
+        h.registrar.tap(id)
+        #expect(h.events == [.setTool(.crosshair, isOn: true)])
     }
 
-    @Test func hotkeysPauseWhileSToolsIsInFront() async {
+    @Test func hotkeysPauseWhileSToolsListensForKeys() async {
         let h = await Harness()
         h.center.isEnabled = true
         let a = h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
         let b = h.center.add(combo: ctrlOptV, actions: [.toggle(.nbbOverlay)])
 
-        h.center.appIsActive = true
-        #expect(h.center.isPaused)
-        #expect(h.registrar.active.isEmpty)
-        #expect(h.center.status(of: a) == .registered)
-        #expect(h.center.status(of: b) == .registered)
+        for reason in [HotkeyPause.recordingKey, .keyRebinder] {
+            h.center.setPaused(true, for: reason)
+            #expect(h.center.isPaused)
+            #expect(h.registrar.active.isEmpty)
+            #expect(h.center.status(of: a) == .registered)
+            #expect(h.center.status(of: b) == .registered)
 
-        h.center.appIsActive = false
-        #expect(!h.center.isPaused)
-        #expect(h.registrar.active == [a: pad1, b: ctrlOptV])
-        #expect(h.center.status(of: a) == .registered)
-        #expect(h.center.status(of: b) == .registered)
+            h.center.setPaused(false, for: reason)
+            #expect(!h.center.isPaused)
+            #expect(h.registrar.active == [a: pad1, b: ctrlOptV])
+        }
     }
 
-    @Test func theSettingKeepsHotkeysLiveInFront() async {
+    /// Next to a focused text field only the hotkeys that would take a typed key step aside: a bare keypad key or
+    /// letter does, an F-key or a ⌘ or ⌃ combination keeps working.
+    @Test func typingPausesOnlyTheHotkeysThatTakeATypedKey() async {
+        let h = await Harness()
+        h.center.isEnabled = true
+        let pad = h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
+        let letter = h.center.add(combo: bareC, actions: [.toggle(.windowBackdrop)])
+        let ctrlOpt = h.center.add(combo: ctrlOptV, actions: [.toggle(.nbbOverlay)])
+        let function = h.center.add(combo: f13, actions: [.startTimer])
+
+        h.center.setPaused(true, for: .typing)
+        #expect(h.center.isPaused)
+        #expect(h.registrar.active == [ctrlOpt: ctrlOptV, function: f13])
+        #expect(h.center.status(of: pad) == .registered)
+        #expect(h.center.status(of: letter) == .registered)
+        h.registrar.tap(ctrlOpt)
+        #expect(h.presses == [[.setTool(.nbbOverlay, isOn: true)]])
+        // A typed key goes on to the field; an F-key reaching the window still fires.
+        #expect(!h.center.handleKeyDown(keyCode: bareC.keyCode, modifiers: [], isRepeat: false))
+        #expect(h.center.handleKeyDown(keyCode: f13.keyCode, modifiers: [], isRepeat: false))
+
+        // Recording a key on top of that pauses every hotkey.
+        h.center.setPaused(true, for: .recordingKey)
+        #expect(h.registrar.active.isEmpty)
+        h.center.setPaused(false, for: .recordingKey)
+        #expect(h.registrar.active == [ctrlOpt: ctrlOptV, function: f13])
+        h.center.setPaused(false, for: .typing)
+        #expect(h.registrar.active == [pad: pad1, letter: bareC, ctrlOpt: ctrlOptV, function: f13])
+    }
+
+    /// Recording a key while a text field still has focus: hotkeys come back only when both are over.
+    @Test func pausesOverlapAndEndWithTheLast() async {
         let h = await Harness()
         h.center.isEnabled = true
         let id = h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
-        h.center.appIsActive = true
-        #expect(h.registrar.active.isEmpty)
-
-        h.center.pausesWhileSToolsIsActive = false
-        #expect(!h.center.isPaused)
-        #expect(h.registrar.active == [id: pad1])
-        h.registrar.press(id)
-        #expect(h.events == [.setTool(.crosshair, isOn: true)])
-
-        h.center.pausesWhileSToolsIsActive = true
+        h.center.setPaused(true, for: .typing)
+        h.center.setPaused(true, for: .recordingKey)
+        h.center.setPaused(false, for: .typing)
         #expect(h.center.isPaused)
         #expect(h.registrar.active.isEmpty)
+        h.center.setPaused(false, for: .recordingKey)
+        #expect(!h.center.isPaused)
+        #expect(h.registrar.active == [id: pad1])
+        #expect(h.registrar.log == ["register Pad 1", "unregister Pad 1", "register Pad 1"])
     }
 
-    @Test func thePauseSettingPersists() async {
+    @Test func endingAPauseThatNeverBeganChangesNothing() async {
         let h = await Harness()
-        h.center.pausesWhileSToolsIsActive = false
-        await h.store.flush()
-        let relaunched = HotkeyCenter(store: SettingsStore(directory: h.directory), registrar: FakeRegistrar(),
-                                      toolStates: { [:] }, handler: { _ in })
-        #expect(!relaunched.pausesWhileSToolsIsActive)
+        h.center.isEnabled = true
+        h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
+        h.center.setPaused(false, for: .recordingKey)
+        h.center.setPaused(true, for: .recordingKey)
+        h.center.setPaused(true, for: .recordingKey)
+        h.center.setPaused(false, for: .recordingKey)
+        #expect(h.registrar.log == ["register Pad 1", "unregister Pad 1", "register Pad 1"])
+    }
+
+    // MARK: Keys in sTools' own window
+
+    @Test func aHotkeysKeyInTheWindowFiresIt() async {
+        let h = await Harness()
+        h.center.isEnabled = true
+        h.center.add(combo: ctrlOptC, actions: [.toggle(.crosshair)])
+        #expect(h.center.handleKeyDown(keyCode: 8, modifiers: [.control, .option], isRepeat: false))
+        #expect(h.presses == [[.setTool(.crosshair, isOn: true)]])
+        #expect(h.center.handleKeyUp(keyCode: 8))
+    }
+
+    /// Exactly its modifiers, as macOS matches them; anything else goes on to the window.
+    @Test func otherKeysAndModifiersGoOnToTheWindow() async {
+        let h = await Harness()
+        h.center.isEnabled = true
+        h.center.add(combo: ctrlOptC, actions: [.toggle(.crosshair)])
+        #expect(!h.center.handleKeyDown(keyCode: 8, modifiers: [.control], isRepeat: false))
+        #expect(!h.center.handleKeyDown(keyCode: 8, modifiers: [.control, .option, .shift], isRepeat: false))
+        #expect(!h.center.handleKeyDown(keyCode: 9, modifiers: [.control, .option], isRepeat: false))
+        #expect(!h.center.handleKeyUp(keyCode: 8))
+        #expect(h.presses.isEmpty)
+    }
+
+    @Test func theWindowsKeysDoNothingWhileOffOrPaused() async {
+        let h = await Harness()
+        let id = h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
+        #expect(!h.center.handleKeyDown(keyCode: 83, modifiers: [], isRepeat: false))
+        h.center.isEnabled = true
+        h.center.setPaused(true, for: .recordingKey)
+        #expect(!h.center.handleKeyDown(keyCode: 83, modifiers: [], isRepeat: false))
+        #expect(h.presses.isEmpty)
+        h.center.setPaused(false, for: .recordingKey)
+        #expect(h.center.handleKeyDown(keyCode: 83, modifiers: [], isRepeat: false))
+        #expect(h.presses == [[.setTool(.crosshair, isOn: true)]])
+        #expect(h.center.status(of: id) == .registered)
+    }
+
+    /// A held key's repeats are taken but don't fire, and one press reported both by macOS and by the window fires
+    /// once, whichever comes first.
+    @Test func theWindowsRepeatsAndDoubleReportsFireOnce() async {
+        let h = await Harness()
+        h.center.isEnabled = true
+        let id = h.center.add(combo: f13, actions: [.startTimer])
+        #expect(h.center.handleKeyDown(keyCode: 105, modifiers: [], isRepeat: false))
+        #expect(h.center.handleKeyDown(keyCode: 105, modifiers: [], isRepeat: true))
+        h.registrar.press(id)
+        h.registrar.release(id)
+        #expect(!h.center.handleKeyUp(keyCode: 105))
+        #expect(h.presses == [[.startTimer], [.startTimerReleased]])
+
+        h.registrar.press(id)
+        #expect(h.center.handleKeyDown(keyCode: 105, modifiers: [], isRepeat: false))
+        h.registrar.release(id)
+        #expect(h.presses == [[.startTimer], [.startTimerReleased], [.startTimer], [.startTimerReleased]])
+    }
+
+    @Test func leavingSToolsEndsThePressesOfItsWindow() async {
+        let h = await Harness()
+        h.center.isEnabled = true
+        h.center.add(combo: f13, actions: [.startTimer])
+        h.center.handleKeyDown(keyCode: 105, modifiers: [], isRepeat: false)
+        h.center.releaseWindowKeys()
+        #expect(h.presses == [[.startTimer], [.startTimerReleased]])
+        #expect(!h.center.handleKeyUp(keyCode: 105))
+        #expect(h.center.handleKeyDown(keyCode: 105, modifiers: [], isRepeat: false))
+        #expect(h.presses.count == 3)
     }
 
     @Test func aPressWhilePausedDoesNothing() async {
         let h = await Harness()
         h.center.isEnabled = true
         let id = h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
-        h.center.appIsActive = true
+        h.center.setPaused(true, for: .recordingKey)
         // A press macOS delivered just before the pause began.
         h.registrar.press(id)
         #expect(h.events.isEmpty)
 
-        h.center.appIsActive = false
+        h.center.setPaused(false, for: .recordingKey)
         h.registrar.press(id)
         #expect(h.events == [.setTool(.crosshair, isOn: true)])
     }
@@ -724,11 +825,11 @@ struct HotkeyCenterTests {
     @Test func pausingWhileOffChangesNothing() async {
         let h = await Harness()
         let id = h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
-        h.center.appIsActive = true
+        h.center.setPaused(true, for: .recordingKey)
         #expect(!h.center.isPaused)
         #expect(h.registrar.log.isEmpty)
         #expect(h.center.status(of: id) == .inactive)
-        h.center.appIsActive = false
+        h.center.setPaused(false, for: .recordingKey)
         #expect(h.registrar.log.isEmpty)
         #expect(h.center.status(of: id) == .inactive)
     }
@@ -736,7 +837,7 @@ struct HotkeyCenterTests {
     @Test func aComboAddedWhilePausedIsTriedOnce() async {
         let h = await Harness()
         h.center.isEnabled = true
-        h.center.appIsActive = true
+        h.center.setPaused(true, for: .recordingKey)
         let id = h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
         #expect(h.registrar.log == ["register Pad 1", "unregister Pad 1"])
         #expect(h.center.status(of: id) == .registered)
@@ -745,7 +846,7 @@ struct HotkeyCenterTests {
         h.center.update(id, actions: [.toggle(.crosshair), .toggle(.nbbOverlay)])
         #expect(h.registrar.log == ["register Pad 1", "unregister Pad 1"])
 
-        h.center.appIsActive = false
+        h.center.setPaused(false, for: .recordingKey)
         #expect(h.registrar.log == ["register Pad 1", "unregister Pad 1", "register Pad 1"])
         #expect(h.registrar.active == [id: pad1])
     }
@@ -754,7 +855,7 @@ struct HotkeyCenterTests {
         let h = await Harness()
         h.center.isEnabled = true
         let id = h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
-        h.center.appIsActive = true
+        h.center.setPaused(true, for: .recordingKey)
         h.center.update(id, actions: [.toggle(.nbbOverlay)])
         #expect(h.registrar.log == ["register Pad 1", "unregister Pad 1"])
         #expect(h.center.status(of: id) == .registered)
@@ -764,13 +865,13 @@ struct HotkeyCenterTests {
         let h = await Harness()
         h.registrar.refused = [pad1]
         h.center.isEnabled = true
-        h.center.appIsActive = true
+        h.center.setPaused(true, for: .recordingKey)
         let id = h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
         #expect(h.center.status(of: id) == .conflict(.systemRefused))
         #expect(h.registrar.active.isEmpty)
 
         h.registrar.refused = []
-        h.center.appIsActive = false
+        h.center.setPaused(false, for: .recordingKey)
         #expect(h.center.status(of: id) == .registered)
         #expect(h.registrar.active == [id: pad1])
     }
@@ -780,14 +881,14 @@ struct HotkeyCenterTests {
     @Test func aRefusalOnResumeIsForgottenAndTriedAgainNextPause() async {
         let h = await Harness()
         h.center.isEnabled = true
-        h.center.appIsActive = true
+        h.center.setPaused(true, for: .recordingKey)
         let id = h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
         h.registrar.refused = [pad1]
-        h.center.appIsActive = false
+        h.center.setPaused(false, for: .recordingKey)
         #expect(h.center.status(of: id) == .conflict(.systemRefused))
 
         h.registrar.refused = []
-        h.center.appIsActive = true
+        h.center.setPaused(true, for: .recordingKey)
         #expect(h.center.status(of: id) == .registered)
         #expect(h.registrar.log.suffix(2) == ["register Pad 1", "unregister Pad 1"])
         #expect(h.registrar.active.isEmpty)
@@ -796,7 +897,7 @@ struct HotkeyCenterTests {
     @Test func conflictsStillReportWhilePaused() async {
         let h = await Harness()
         h.center.isEnabled = true
-        h.center.appIsActive = true
+        h.center.setPaused(true, for: .recordingKey)
         let first = h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
         let duplicate = h.center.add(combo: pad1, actions: [.toggle(.nbbOverlay)])
         let reserved = h.center.add(combo: HotkeyCombo(keyCode: 12, modifiers: .command), actions: [.toggle(.crosshair)])
@@ -823,7 +924,7 @@ struct HotkeyCenterTests {
         h.center.isEnabled = true
         #expect(h.center.activeBindings.map(\.id) == [first, last])
 
-        h.center.appIsActive = true
+        h.center.setPaused(true, for: .recordingKey)
         #expect(h.center.isPaused)
         #expect(h.center.activeBindings.map(\.id) == [first, last])
 
@@ -839,9 +940,9 @@ struct HotkeyCenterTests {
 
         let changes = ChangeCounter()
         withObservationTracking { _ = h.center.statuses } onChange: { changes.increment() }
-        h.center.appIsActive = true
-        h.center.appIsActive = false
-        h.center.appIsActive = true
+        h.center.setPaused(true, for: .recordingKey)
+        h.center.setPaused(false, for: .recordingKey)
+        h.center.setPaused(true, for: .recordingKey)
         h.center.showsConfirmation = false
         #expect(changes.value == 0)
 

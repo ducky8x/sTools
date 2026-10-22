@@ -197,6 +197,28 @@ struct ShortcutModelTests {
 @Suite("STShortcutKeyMonitor")
 @MainActor
 struct ShortcutMonitorTests {
+    /// The app pauses its hotkeys while a field records, so the field gets every key (spec 6.1).
+    @Test func aRecordingFieldTellsTheAppItIsCapturingKeys() {
+        let previous = STKeyCapture.onChange
+        defer { STKeyCapture.onChange = previous }
+        var calls: [Bool] = []
+        STKeyCapture.onChange = { calls.append($0) }
+        // Another test's field may be recording at this moment; then only the count of listeners can be checked.
+        let wasCapturing = STKeyCapture.isCapturing
+        let first = STShortcutKeyMonitor(), second = STShortcutKeyMonitor()
+        first.start { _ in }
+        second.start { _ in }
+        #expect(STKeyCapture.isCapturing)
+        first.stop()
+        #expect(STKeyCapture.isCapturing)
+        second.stop()
+        second.stop()
+        if !wasCapturing {
+            #expect(!STKeyCapture.isCapturing)
+            #expect(calls == [true, false])
+        }
+    }
+
     @Test func monitorExistsOnlyBetweenStartAndStop() {
         let monitor = STShortcutKeyMonitor()
         #expect(!monitor.isActive)

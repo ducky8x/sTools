@@ -528,6 +528,33 @@ struct KeyRebinderHotkeyTests {
 
     // MARK: What shows
 
+    /// Every hotkey shows on its key while hotkeys are on, Test keys' pause included; while they're off, the line
+    /// under the plate says why no key is marked and offers Turn On. Show hotkeys is on by default.
+    @Test func everyHotkeyShowsOnItsKeyAndTheOffLineSaysWhyNot() async throws {
+        #expect(KeyRebinderSettings().showsHotkeys)
+        let harness = try await make()
+        defer { harness.remove() }
+        let center = try #require(harness.center)
+        let controller = harness.controller
+        let id = center.add(combo: HotkeyFixtures.combo("u", [.shift, .command]), actions: [.toggle(.crosshair)])
+        #expect(await eventually { controller.hotkeys(on: .key("u")).map(\.id) == [id] })
+        #expect(controller.hotkeyMark(for: .key("u")) == .working)
+        #expect(controller.hotkeyDescription(for: .key("u"))?.hasSuffix(": Crosshair.") == true)
+        #expect(controller.hotkeysOffText == nil)
+
+        controller.isTesting = true
+        #expect(center.isPaused)
+        #expect(controller.hotkeyMark(for: .key("u")) == .working)
+        controller.isTesting = false
+
+        center.isEnabled = false
+        #expect(await eventually { controller.derived.hotkeysByKey.isEmpty })
+        #expect(controller.hotkeysOffText == "sTools hotkeys are off, so their keys aren\u{2019}t marked: \u{21E7}\u{2318}U (Crosshair).")
+        controller.turnHotkeysOn()
+        #expect(await eventually { controller.hotkeyMark(for: .key("u")) == .working })
+        #expect(controller.hotkeysOffText == nil)
+    }
+
     @Test func withTheMasterSwitchOffNothingShows() async throws {
         let harness = try await make()
         defer { harness.remove() }
@@ -851,17 +878,24 @@ struct KeyRebinderHotkeyTests {
         let center = try #require(harness.center)
         let controller = harness.controller
         let id = center.add(combo: HotkeyFixtures.combo("f13"), actions: [.toggle(.crosshair)])
-        center.appIsActive = true
-        #expect(center.isPaused)
+        center.isEnabled = true
+        #expect(!center.isPaused)
+        // Test keys pauses hotkeys while it listens, so their keys arrive here.
         controller.isTesting = true
+        #expect(center.isPaused)
+        #expect(center.pauses == [.keyRebinder])
         controller.testerPressed(.key("f13"))
         #expect(controller.lastTrace?.hotkeys.map(\.id) == [id])
         #expect(controller.lastTrace?.hotkeysArePaused == true)
-        #expect(controller.lastTrace?.summary().hasSuffix("sTools hotkey on F13: F13 (Crosshair). It pauses while sTools is in front.") == true)
+        #expect(controller.lastTrace?.summary().hasSuffix("sTools hotkey on F13: F13 (Crosshair). It pauses while Test keys is on.") == true)
 
-        center.appIsActive = false
-        controller.testerPressed(.key("f13"))
-        #expect(controller.lastTrace?.hotkeysArePaused == false)
+        controller.isTesting = false
+        #expect(!center.isPaused)
+        controller.isCapturingOutput = true
+        #expect(center.pauses == [.keyRebinder])
+        controller.isCapturingOutput = false
+        #expect(center.pauses.isEmpty)
+        controller.isTesting = true
         controller.settings.showsHotkeys = false
         controller.testerPressed(.key("f13"))
         #expect(controller.lastTrace?.hotkeys.isEmpty == true)

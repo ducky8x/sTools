@@ -87,6 +87,17 @@ struct KeyboardPlate: View {
                     .stStyle(.caption)
                     .foregroundStyle(theme.inkSecondary)
             }
+            if showsHotkeys, let off = controller.hotkeysOffText {
+                HStack(spacing: 12) {
+                    Text(off)
+                        .stStyle(.caption)
+                        .foregroundStyle(theme.inkSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Turn On") { controller.turnHotkeysOn() }
+                        .buttonStyle(STButtonStyle(.quiet))
+                        .accessibilityLabel("Turn on hotkeys")
+                }
+            }
             if showsHotkeys, let unplaced = controller.unplacedHotkeysText {
                 Text(unplaced)
                     .stStyle(.caption)

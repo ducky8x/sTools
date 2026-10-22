@@ -161,18 +161,50 @@ struct AppModelHotkeysTests {
         #expect(harness.model.isOn(.crosshair))
     }
 
-    @Test func hotkeysPauseWhileSToolsIsInFront() throws {
+    /// The cause of "hotkeys don't work, not even in sTools": they paused whenever sTools was the active app. Now
+    /// they stay registered with sTools in front and pause only while sTools listens for raw keys.
+    @Test func hotkeysFireWithSToolsInFront() throws {
+        let harness = Harness(accessibility: .granted)
+        let fake = try #require(harness.hotkeyRegistrar as? FakeHotkeyRegistrar)
+        harness.model.hotkeys.isEnabled = true
+        let id = harness.model.hotkeys.add(combo: pad1, actions: [.toggle(.crosshair)])
+        #expect(!harness.model.hotkeys.isPaused)
+        #expect(fake.registered == [id: pad1])
+        fake.onPress?(id)
+        #expect(harness.model.isOn(.crosshair))
+
+        // The same key reaching sTools' own window as a key press fires it too.
+        #expect(harness.model.hotkeys.handleKeyDown(keyCode: pad1.keyCode, modifiers: [], isRepeat: false))
+        #expect(!harness.model.isOn(.crosshair))
+    }
+
+    /// Typing pauses hotkeys only while sTools is the active app and an editable text view (a text field's field
+    /// editor) has focus; ⌃ ⌥ ⇧ ⌘ are read the way a hotkey matches them.
+    @Test func theWatcherReadsTypingAndModifiers() {
+        let editable = NSTextView()
+        let readOnly = NSTextView()
+        readOnly.isEditable = false
+        #expect(HotkeyKeyWatcher.isTyping(appIsActive: true, firstResponder: editable))
+        #expect(!HotkeyKeyWatcher.isTyping(appIsActive: false, firstResponder: editable))
+        #expect(!HotkeyKeyWatcher.isTyping(appIsActive: true, firstResponder: readOnly))
+        #expect(!HotkeyKeyWatcher.isTyping(appIsActive: true, firstResponder: NSView()))
+        #expect(!HotkeyKeyWatcher.isTyping(appIsActive: true, firstResponder: nil))
+        #expect(HotkeyKeyWatcher.modifiers(of: [.control, .option, .capsLock, .function, .numericPad]) == [.control, .option])
+        #expect(HotkeyKeyWatcher.modifiers(of: [.shift, .command]) == [.shift, .command])
+    }
+
+    @Test func hotkeysPauseWhileSToolsListensForKeys() throws {
         let harness = Harness(accessibility: .granted)
         let fake = try #require(harness.hotkeyRegistrar as? FakeHotkeyRegistrar)
         harness.model.hotkeys.isEnabled = true
         let id = harness.model.hotkeys.add(combo: pad1, actions: [.toggle(.crosshair)])
 
-        harness.model.hotkeys.appIsActive = true
+        harness.model.hotkeys.setPaused(true, for: .recordingKey)
         #expect(fake.registered.isEmpty)
         fake.onPress?(id)
         #expect(!harness.model.isOn(.crosshair))
 
-        harness.model.hotkeys.appIsActive = false
+        harness.model.hotkeys.setPaused(false, for: .recordingKey)
         #expect(fake.registered == [id: pad1])
         fake.onPress?(id)
         #expect(harness.model.isOn(.crosshair))
@@ -334,13 +366,14 @@ struct HomeHotkeysRenderTests {
         #expect(Set([plain, placed, cautioned]).count == 3)
     }
 
-    @Test func thePauseCaptionFollowsTheSetting() {
+    @Test func homeNoLongerSaysHotkeysPauseInFront() {
         let harness = Harness(accessibility: .granted)
         harness.model.hotkeys.isEnabled = true
-        let paused = render(harness)
-        harness.model.hotkeys.pausesWhileSToolsIsActive = false
-        let live = render(harness)
-        #expect(paused.representation(using: .png, properties: [:]) != live.representation(using: .png, properties: [:]))
+        let before = render(harness)
+        harness.model.hotkeys.setPaused(true, for: .recordingKey)
+        let typing = render(harness)
+        // Nothing on Home depends on a pause any more.
+        #expect(before.representation(using: .png, properties: [:]) == typing.representation(using: .png, properties: [:]))
     }
 }
 

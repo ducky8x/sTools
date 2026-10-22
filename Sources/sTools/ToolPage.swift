@@ -6,8 +6,8 @@ import ScreenRecording
 import STDesign
 import SwiftUI
 
-/// One page for all five tools: header with the tool's switch, the Accessibility strip when needed,
-/// then the tool's own settings.
+/// One page for all five tools: header with the tool's switch, the Accessibility strip when needed, the tool's
+/// Hotkey row (not on the Key Rebinder, which sets hotkeys on its keys), then the tool's own settings.
 struct ToolPage: View {
     let model: AppModel
     let tool: ToolID
@@ -32,6 +32,9 @@ struct ToolPage: View {
                     actionTitle: "Allow\u{2026}",
                     action: { Task { await model.allowAccessibility() } })
                 .padding(.top, 18)
+            }
+            if let hotkey = ToolHotkeyRow(model: model, tool: tool) {
+                hotkey.padding(.top, 14)
             }
             ToolContent(model: model, tool: tool).padding(.top, 22)
         }

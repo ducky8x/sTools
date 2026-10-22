@@ -12,7 +12,7 @@ public enum KeyTester {
         public let minecraftActions: [String]
         /// The sTools hotkeys on `arrived`, whatever their modifiers, in list order.
         public var hotkeys: [HotkeyBinding] = []
-        /// Whether hotkeys were paused because sTools was in front, which is why a hotkey's own key could arrive.
+        /// Whether hotkeys were paused for Test keys, which is why a hotkey's own key could arrive.
         public var hotkeysArePaused = false
 
         /// The one line the plate shows. `showsHotkeys` false leaves out the sTools hotkeys on the key (the
@@ -35,7 +35,7 @@ public enum KeyTester {
                 let list = hotkeys.map(\.listing).joined(separator: ", ")
                 let one = hotkeys.count == 1
                 line += " sTools \(one ? "hotkey" : "hotkeys") on \(arrivedName): \(list)."
-                if hotkeysArePaused { line += one ? " It pauses while sTools is in front." : " They pause while sTools is in front." }
+                if hotkeysArePaused { line += one ? " It pauses while Test keys is on." : " They pause while Test keys is on." }
             }
             return line
         }
