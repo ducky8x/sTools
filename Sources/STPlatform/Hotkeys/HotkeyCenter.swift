@@ -38,8 +38,9 @@ public enum HotkeyPause: Hashable, Sendable {
 
 /// The state of one binding.
 public enum HotkeyStatus: Equatable, Sendable {
-    /// Accepted by macOS, and live in every app, sTools included. While a hotkey pauses (sTools is recording a key or
-    /// someone is typing in it) it isn't registered, but the status stays, so a pause never changes it.
+    /// Accepted by macOS, and live wherever hotkeys work (Where hotkeys work), sTools included. While a hotkey pauses
+    /// (sTools is recording a key or someone is typing in it) or another app is in front that it doesn't work in, it
+    /// isn't registered, but the status stays, so neither ever changes it.
     case registered
     /// Fine, but the master switch is off so nothing is registered.
     case inactive
@@ -53,11 +54,16 @@ public enum HotkeyStatus: Equatable, Sendable {
 /// one to claim a combination keeps it and later duplicates are flagged `.alreadyUsedByYou` (and registered
 /// automatically if the first one goes away). A flagged binding stays in the list so the user can fix it.
 ///
-/// Hotkeys fire whichever app is in front, sTools included. They pause only while sTools itself listens for raw
-/// keys (`setPaused(_:for:)`): a field recording a key, a text field being edited, the Key Rebinder's Test keys or
-/// output capture; typing pauses only the hotkeys that would take a typed key. A paused hotkey isn't registered and
-/// its presses are ignored; a combination macOS hasn't accepted yet this run is still tried once (registered and
-/// released at once), so a refusal shows the moment a hotkey is added. When the pause ends it registers for real.
+/// Where hotkeys work (`scope`): by default only while sTools or a Minecraft instance is the app in front, as the
+/// app's `HotkeyFrontAppWatcher` reports it (`setFrontApp(_:)`); in every other app nothing is registered, so its
+/// keys reach that app untouched. With Everywhere they work whichever app is in front.
+///
+/// Where they work, they pause only while sTools itself listens for raw keys (`setPaused(_:for:)`): a field
+/// recording a key, a text field being edited, the Key Rebinder's Test keys or output capture; typing pauses only
+/// the hotkeys that would take a typed key. A paused hotkey, like one in an app it doesn't work in, isn't registered
+/// and its presses are ignored; a combination macOS hasn't accepted yet this run is still tried once (registered and
+/// released at once), so a refusal shows the moment a hotkey is added. When the pause ends, or an app it works in
+/// comes to the front, it registers for real.
 ///
 /// A registered hotkey's key that reaches sTools' own window as an ordinary key press (`handleKeyDown`) fires it
 /// too, through the same press rules, so a hotkey works in sTools even when macOS hands the key to the window.
@@ -76,9 +82,13 @@ public final class HotkeyCenter {
     /// Assigned only when a status really changes, so app switches don't re-render the pages that show them.
     public private(set) var statuses: [UUID: HotkeyStatus] = [:]
 
-    /// What in sTools is listening for raw keys right now; hotkeys pause while any is (`pauses(_:)` says which).
+    /// What in sTools is listening for raw keys right now; hotkeys pause while any is (`stepsAside(_:)` says which).
     /// Only the app's watchers and the Key Rebinder set them, so a center nobody tells (tests, previews) never pauses.
     @ObservationIgnored public private(set) var pauses: Set<HotkeyPause> = []
+
+    /// The app in front, for Where hotkeys work. Only the app's `HotkeyFrontAppWatcher` sets it, so a center nobody
+    /// tells (tests, previews) acts as if sTools were in front. Not observed: app switches never re-render a page.
+    @ObservationIgnored public private(set) var frontApp: HotkeyFrontApp = .sTools
 
     /// Advice from the Key Rebinder: Minecraft cautions, where a hotkey's key is, selecting it. Held weakly; nil
     /// when there is no Key Rebinder.
@@ -142,6 +152,29 @@ public final class HotkeyCenter {
         }
     }
 
+    /// Where hotkeys work. Changing it registers or unregisters at once for the app in front.
+    public var scope: HotkeyScope {
+        get { settings.scope }
+        set {
+            guard newValue != settings.scope else { return }
+            settings.scope = newValue
+            commit()
+        }
+    }
+
+    /// Whether hotkeys work in the app in front: always with Everywhere; with In sTools and Minecraft, while sTools
+    /// or a Minecraft instance is in front.
+    public var worksInFrontApp: Bool { settings.scope == .everywhere || frontApp != .other }
+
+    /// Another app came to the front. Registers or unregisters everything only when that changes whether hotkeys
+    /// work there, so most app switches cost a comparison.
+    public func setFrontApp(_ app: HotkeyFrontApp) {
+        guard app != frontApp else { return }
+        let worked = worksInFrontApp
+        frontApp = app
+        if worksInFrontApp != worked { synchronize() }
+    }
+
     /// Hotkeys are on but paused, because something in sTools is listening for raw keys. While only typing pauses
     /// them, just the hotkeys that would take a typed key step aside.
     public var isPaused: Bool { settings.isEnabled && !pauses.isEmpty }
@@ -153,17 +186,21 @@ public final class HotkeyCenter {
         if pauses != before { synchronize() }
     }
 
-    /// Whether `combo` steps aside during the pauses in force: every hotkey while a key is recorded or the Key
-    /// Rebinder listens; while someone only types, just the ones that would take a typed character or editing key
-    /// (`interferesWithTyping`), so F-keys and ⌘ or ⌃ combinations keep working next to a focused text field.
-    private func pauses(_ combo: HotkeyCombo) -> Bool {
-        guard settings.isEnabled, !pauses.isEmpty else { return false }
+    /// Whether `combo` steps aside right now: every hotkey while the app in front is one hotkeys don't work in, while
+    /// a key is recorded or while the Key Rebinder listens; while someone only types, just the ones that would take a
+    /// typed character or editing key (`interferesWithTyping`), so F-keys and ⌘ or ⌃ combinations keep working next
+    /// to a focused text field.
+    private func stepsAside(_ combo: HotkeyCombo) -> Bool {
+        guard settings.isEnabled else { return false }
+        guard worksInFrontApp else { return true }
+        guard !pauses.isEmpty else { return false }
         return pauses == [.typing] ? combo.interferesWithTyping : true
     }
 
-    /// While the master switch is on, the bindings that take their key from other apps: valid, the first owner of
-    /// their combination, with actions, and accepted by macOS (live, or paused while sTools listens for keys). A binding
-    /// macOS refused takes nothing, so it isn't here. Empty while the switch is off.
+    /// While the master switch is on, the bindings that take their key from the apps they work in: valid, the first
+    /// owner of their combination, with actions, and accepted by macOS (live, or stepping aside while sTools listens
+    /// for keys or another app is in front). A binding macOS refused takes nothing, so it isn't here. Empty while the
+    /// switch is off.
     public var activeBindings: [HotkeyBinding] {
         guard settings.isEnabled else { return [] }
         return settings.bindings.filter { statuses[$0.id] == .registered }
@@ -176,7 +213,9 @@ public final class HotkeyCenter {
     public func notes(for combo: HotkeyCombo) -> [HotkeyNote] {
         let advice = advisor?.notes(for: combo) ?? []
         var notes = advice.filter { $0.tone == .caution }
-        if let typing = HotkeyWording.typingNote(for: combo) { notes.append(HotkeyNote(tone: .note, text: typing)) }
+        if let typing = HotkeyWording.typingNote(for: combo, scope: settings.scope) {
+            notes.append(HotkeyNote(tone: .note, text: typing))
+        }
         notes += advice.filter { $0.tone == .note }
         if let fn = HotkeyWording.functionKeyNote(for: combo) { notes.append(HotkeyNote(tone: .note, text: fn)) }
         return notes
@@ -201,6 +240,21 @@ public final class HotkeyCenter {
 
     public func remove(_ id: UUID) {
         settings.bindings.removeAll { $0.id == id }
+        commit()
+    }
+
+    // MARK: Key sets
+
+    /// The key set the tools' own hotkeys follow now, or nil when they follow none (Custom).
+    public var keySet: HotkeyKeySet? { HotkeyKeySet.current(in: settings.bindings) }
+
+    /// Picks `keySet`, in one change: each tool's own hotkey gets the set's key (one is added where a tool has none;
+    /// None, `noKeys`, removes them), and every other hotkey stays. Callers ask first when `keySet.replacedEdits(in:)` isn't
+    /// empty.
+    public func apply(_ keySet: HotkeyKeySet) {
+        let bindings = keySet.applied(to: settings.bindings)
+        guard bindings != settings.bindings else { return }
+        settings.bindings = bindings
         commit()
     }
 
@@ -296,9 +350,9 @@ public final class HotkeyCenter {
     }
 
     /// Brings registrations and statuses in line with the settings: unregisters what is no longer wanted,
-    /// registers what is new or changed, leaves unchanged registrations alone. While paused it unregisters
-    /// everything and only tries combinations macOS hasn't accepted yet. An unregistered key that was down gets its
-    /// release from here, once everything else is up to date.
+    /// registers what is new or changed, leaves unchanged registrations alone. While paused, or while an app hotkeys
+    /// don't work in is in front, it unregisters what steps aside and only tries combinations macOS hasn't accepted
+    /// yet. An unregistered key that was down gets its release from here, once everything else is up to date.
     private func synchronize() {
         var wanted: [UUID: HotkeyCombo] = [:]
         var newStatuses: [UUID: HotkeyStatus] = [:]
@@ -322,7 +376,7 @@ public final class HotkeyCenter {
         }
 
         var timerReleases = 0
-        for (id, combo) in registered where pauses(combo) || wanted[id] != combo {
+        for (id, combo) in registered where stepsAside(combo) || wanted[id] != combo {
             registrar.unregister(id: id)
             registered[id] = nil
             // macOS can't report this key's release any more.
@@ -331,7 +385,7 @@ public final class HotkeyCenter {
         }
         for binding in settings.bindings {
             guard let combo = wanted[binding.id] else { continue }
-            if pauses(combo) {
+            if stepsAside(combo) {
                 newStatuses[binding.id] = probe(combo, id: binding.id)
             } else if registered[binding.id] == combo {
                 newStatuses[binding.id] = .registered
@@ -346,8 +400,8 @@ public final class HotkeyCenter {
         for _ in 0..<timerReleases { handler([.startTimerReleased]) }
     }
 
-    /// While paused: a combination macOS accepted before is fine; anything else is registered and released in
-    /// the same turn, so a refusal still shows at once.
+    /// While stepping aside: a combination macOS accepted before is fine; anything else is registered and released
+    /// in the same turn, so a refusal still shows at once.
     private func probe(_ combo: HotkeyCombo, id: UUID) -> HotkeyStatus {
         if accepted.contains(combo) { return .registered }
         guard register(combo, id: id) else { return .conflict(.systemRefused) }

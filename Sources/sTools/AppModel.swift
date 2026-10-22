@@ -77,6 +77,9 @@ final class AppModel {
         store: services.settings, registrar: hotkeyRegistrar,
         toolStates: { [weak self] in self?.hotkeyToolStates() ?? [:] },
         handler: { [weak self] events in self?.handleHotkeyPress(events) })
+    /// Tells Hotkeys which app is in front, for Where hotkeys work (spec 6.1). Only the real app has one; a center
+    /// nobody tells acts as if sTools were in front.
+    @ObservationIgnored var hotkeyFrontApp: HotkeyFrontAppWatcher?
     /// Shows each press's confirmation over the game.
     @ObservationIgnored let hotkeyHUD: any HotkeyConfirmationPresenting
     /// The sidebar marker's glide and detents (spec 3.4); tests replace it with one on a fake player and clock.
@@ -145,6 +148,10 @@ final class AppModel {
         hotkeyRegistrar: CarbonHotkeyRegistrar(), hotkeyHUD: HotkeyHUD(theme: theme), loginItem: SystemLoginItem())
         minecraft.start()
         _ = hotkeys // starts registering any saved hotkeys immediately, matching the other services.
+        // From the first moment, hotkeys follow the app in front (Where hotkeys work), on each app switch.
+        let frontApp = HotkeyFrontAppWatcher(center: hotkeys, frontmost: WorkspaceFrontmostApp(), minecraft: minecraft)
+        frontApp.start()
+        hotkeyFrontApp = frontApp
         restoreToolsIfNeeded()
         systemMotion = SystemMotionWatcher(theme: theme)
     }

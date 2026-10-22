@@ -56,6 +56,7 @@ final class HotkeyViewRig {
         controller = KeyRebinderController(
             services: services, configURL: configURL,
             backupsDirectory: directory.appending(path: "backups", directoryHint: .isDirectory), cli: cli, probes: probes)
+        settings.save(HotkeySettings()) // an existing, empty list, rather than a new install's ⌘1–⌘5
         center = HotkeyCenter(store: settings, registrar: registrar, toolStates: { [:] }, handler: { _ in })
         if connected { controller.connect(hotkeys: center) }
     }

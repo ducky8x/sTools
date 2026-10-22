@@ -35,7 +35,9 @@ public struct HotkeyBinding: Codable, Hashable, Identifiable, Sendable {
 public struct HotkeySettings: SettingsDocument {
     public static let name = "hotkeys"
     public static let version = 1
-    public static let defaultValue = HotkeySettings()
+    /// A new install's (no `hotkeys.json` yet): ⌘1–⌘5, one per tool in sidebar order, with the master switch off.
+    /// A file that exists keeps what it has, even an empty list.
+    public static let defaultValue = HotkeySettings(bindings: HotkeyKeySet.newInstall.bindings())
 
     /// The master switch. Off by default; while off, nothing is registered with the system.
     public var isEnabled: Bool
@@ -43,17 +45,23 @@ public struct HotkeySettings: SettingsDocument {
     /// Advanced: whether a press shows the on-screen confirmation (a seal and what changed). On by default;
     /// the sound plays either way.
     public var showsConfirmation: Bool
+    /// Where hotkeys work: in sTools and Minecraft only (the default), or everywhere.
+    public var scope: HotkeyScope
 
-    public init(isEnabled: Bool = false, bindings: [HotkeyBinding] = [], showsConfirmation: Bool = true) {
+    public init(isEnabled: Bool = false, bindings: [HotkeyBinding] = [], showsConfirmation: Bool = true,
+                scope: HotkeyScope = .sToolsAndMinecraft) {
         self.isEnabled = isEnabled
         self.bindings = bindings
         self.showsConfirmation = showsConfirmation
+        self.scope = scope
     }
 
     /// Files from builds that paused hotkeys whenever sTools was in front also carry `pausesWhileSToolsIsActive`.
     /// Hotkeys now pause only while sTools listens for raw keys, so that key is ignored and dropped on the next save.
-    private enum CodingKeys: String, CodingKey { case isEnabled, bindings, showsConfirmation }
+    private enum CodingKeys: String, CodingKey { case isEnabled, bindings, showsConfirmation, scope }
 
+    /// A file without `scope` (every file from before it existed) or with a scope this build doesn't know gets the
+    /// default, In sTools and Minecraft.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         func flag(_ key: CodingKeys, default value: Bool) -> Bool {
@@ -62,7 +70,8 @@ public struct HotkeySettings: SettingsDocument {
         let bindings = try? container.decodeIfPresent([LossyElement<HotkeyBinding>].self, forKey: .bindings)
         self.init(isEnabled: flag(.isEnabled, default: false),
                   bindings: bindings?.compactMap(\.value) ?? [],
-                  showsConfirmation: flag(.showsConfirmation, default: true))
+                  showsConfirmation: flag(.showsConfirmation, default: true),
+                  scope: (try? container.decodeIfPresent(HotkeyScope.self, forKey: .scope)) ?? .sToolsAndMinecraft)
     }
 }
 

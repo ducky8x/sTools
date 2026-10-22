@@ -3,9 +3,10 @@ import STDesign
 import STPlatform
 import SwiftUI
 
-/// Home ▸ Hotkeys (spec 6.1), near the top of Home: the list of hotkeys (key and actions at a glance), Add Hotkey…,
-/// an add/edit editor for each, and Advanced (spec 2.4) with the press confirmation. While hotkeys are off, one strip
-/// says so with Turn On; while on, the master switch turns them off. Any key works, alone
+/// Home ▸ Hotkeys (spec 6.1), near the top of Home: Where hotkeys work, the Key set chooser, the list of hotkeys (key
+/// and actions at a glance), Add Hotkey…, an add/edit editor for each, and Advanced (spec 2.4) with the press
+/// confirmation. While hotkeys are off, one strip says so with Turn On; while on, the master switch turns them off. Any
+/// key works, alone
 /// or with modifiers. What the Key Rebinder knows (which key on the keyboard sends a hotkey's key, what Minecraft
 /// uses it for) arrives through `model.hotkeys.advisor`; without one, those lines are simply left out.
 struct HotkeysSection: View {
@@ -15,6 +16,8 @@ struct HotkeysSection: View {
     /// The actions a new hotkey's editor starts with: none for Add Hotkey…, Start timer for Set in Hotkeys….
     @State private var newHotkeyActions: Set<HotkeyAction> = []
     @State private var advancedIsOpen: Bool
+    /// The key set waiting for the answer to "Replace the keys you set?".
+    @State private var pendingKeySet: HotkeyKeySet?
 
     init(model: AppModel, advancedIsOpen: Bool = false, editingID: UUID? = nil) {
         self.model = model
@@ -41,11 +44,12 @@ struct HotkeysSection: View {
         // One way to turn hotkeys on while they're off; once on, the switch turns them off again.
         Group {
             if hotkeys.isEnabled {
-                STSettingsRow("Hotkeys", showsRule: !hotkeys.bindings.isEmpty) {
+                STSettingsRow("Hotkeys") {
                     STSwitch(isOn: enabledBinding, label: "Hotkeys")
                 }
             } else {
-                STRequirementStrip(kind: .warning, message: Self.offMessage(hasHotkeys: !hotkeys.bindings.isEmpty),
+                STRequirementStrip(kind: .warning,
+                                   message: Self.offMessage(hasHotkeys: !hotkeys.bindings.isEmpty, scope: hotkeys.scope),
                                    actionTitle: "Turn On", action: { model.hotkeys.isEnabled = true })
                     .padding(.top, 6)
                     .padding(.bottom, 4)
@@ -57,6 +61,34 @@ struct HotkeysSection: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await prepareAdvice() }
         }
+        STSettingsRow("Where hotkeys work", showsRule: Self.scopeNote(scope: hotkeys.scope,
+                                                                    accessibilityGranted: model.accessibilityGranted) == nil) {
+            HotkeysChoiceMenu(title: hotkeys.scope.title,
+                              options: HotkeyScope.allCases.map { STSegmentedOption($0, $0.title) },
+                              selection: hotkeys.scope, label: "Where hotkeys work") { model.hotkeys.scope = $0 }
+        }
+        if let note = Self.scopeNote(scope: hotkeys.scope, accessibilityGranted: model.accessibilityGranted) {
+            HotkeysCaption(note)
+                .padding(.bottom, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(STColor.rule).frame(height: 1).accessibilityHidden(true)
+                }
+        }
+        // One key per tool, in sidebar order; picking a set changes only those, and asks before a key set by hand goes.
+        STSettingsRow("Key set") {
+            HotkeysChoiceMenu(title: Self.keySetTitle(hotkeys.keySet),
+                              options: HotkeyKeySet.allCases.map { STSegmentedOption($0, $0.title) },
+                              selection: hotkeys.keySet, label: "Key set", choose: chooseKeySet)
+        }
+        .confirmationDialog(
+            pendingKeySet.map { Self.keySetQuestion($0) } ?? "", isPresented: keySetQuestionIsShown,
+            titleVisibility: .visible, presenting: pendingKeySet,
+            actions: { set in
+                Button(set == .noKeys ? "Remove" : "Replace", role: .destructive) { model.hotkeys.apply(set) }
+                Button("Cancel", role: .cancel) {}
+            },
+            message: { set in Text(Self.keySetWarning(set, bindings: hotkeys.bindings)) })
         VStack(alignment: .leading, spacing: 0) {
             ForEach(hotkeys.bindings) { binding in
                 HotkeyBindingRow(
@@ -98,10 +130,57 @@ struct HotkeysSection: View {
     }
 
     /// The strip's line while hotkeys are off.
-    static func offMessage(hasHotkeys: Bool) -> String {
-        hasHotkeys
-            ? "Hotkeys are off, so the keys below do nothing."
-            : "Hotkeys are off. Turn them on to switch tools with a key, from any app."
+    static func offMessage(hasHotkeys: Bool, scope: HotkeyScope) -> String {
+        guard !hasHotkeys else { return "Hotkeys are off, so the keys below do nothing." }
+        return switch scope {
+        case .sToolsAndMinecraft: "Hotkeys are off. Turn them on to switch tools with a key, in sTools and Minecraft."
+        case .everywhere: "Hotkeys are off. Turn them on to switch tools with a key, from any app."
+        }
+    }
+
+    /// The line under Where hotkeys work: sTools recognizes Minecraft by its windows, which takes Accessibility.
+    /// Nil when there is nothing to say.
+    static func scopeNote(scope: HotkeyScope, accessibilityGranted: Bool) -> String? {
+        guard scope == .sToolsAndMinecraft, !accessibilityGranted else { return nil }
+        return "Until Accessibility is allowed, sTools can't tell when Minecraft is in front, so hotkeys work only in sTools."
+    }
+
+    /// The chooser's label: the set the tools' own hotkeys follow, or Custom once a key was set by hand.
+    static func keySetTitle(_ set: HotkeyKeySet?) -> String { set?.title ?? "Custom" }
+
+    /// The confirmation's title before `set` replaces keys set by hand: "Use ⌃1–⌃5?", "Remove every tool's key?".
+    static func keySetQuestion(_ set: HotkeyKeySet) -> String {
+        set == .noKeys ? "Remove every tool's key?" : "Use \(set.title)?"
+    }
+
+    /// What picking `set` would take away: "This replaces the key you set for Crosshair (F6)." Other hotkeys stay.
+    static func keySetWarning(_ set: HotkeyKeySet, bindings: [HotkeyBinding]) -> String {
+        let edits = set.replacedEdits(in: bindings).map { binding in
+            "\(toolName(for: binding.actions.first)) (\(binding.combo.displayString))"
+        }
+        let list = edits.count > 1 ? edits.dropLast().joined(separator: ", ") + " and " + (edits.last ?? "") : (edits.first ?? "")
+        let verb = set == .noKeys ? "removes" : "replaces"
+        let keys = edits.count > 1 ? "keys" : "key"
+        return "This \(verb) the \(keys) you set for \(list). Your other hotkeys stay as they are."
+    }
+
+    /// The tool a key set's action belongs to: Start timer is Timer Overlay's.
+    private static func toolName(for action: HotkeyAction?) -> String {
+        guard let action else { return "" }
+        return action == .startTimer ? ToolID.timerOverlay.title : action.title
+    }
+
+    /// Picks `set` at once, or asks first when it would replace a key set by hand.
+    private func chooseKeySet(_ set: HotkeyKeySet) {
+        if set.replacedEdits(in: hotkeys.bindings).isEmpty {
+            model.hotkeys.apply(set)
+        } else {
+            pendingKeySet = set
+        }
+    }
+
+    private var keySetQuestionIsShown: Binding<Bool> {
+        Binding(get: { pendingKeySet != nil }, set: { if !$0 { pendingKeySet = nil } })
     }
 
     private func prepareAdvice() async {
@@ -305,6 +384,31 @@ struct HotkeyEditor: View {
         guard let existing else { return }
         model.hotkeys.remove(existing.id)
         onDone()
+    }
+}
+
+/// A pop-up menu that picks one of `options`, in the app's type (`STMenuLabel`), with a check beside the current one.
+/// `selection` may be nil when no option fits (a key set nobody picked), and `title` then says what the state is.
+struct HotkeysChoiceMenu<Value: Hashable>: View {
+    let title: String
+    let options: [STSegmentedOption<Value>]
+    let selection: Value?
+    let label: String
+    let choose: (Value) -> Void
+
+    var body: some View {
+        Menu {
+            ForEach(options) { option in
+                Button { choose(option.value) } label: {
+                    if option.value == selection { Label(option.title, systemImage: "checkmark") } else { Text(option.title) }
+                }
+            }
+        } label: {
+            STMenuLabel(title)
+        }
+        .stMenuStyle()
+        .accessibilityLabel(label)
+        .accessibilityValue(title)
     }
 }
 

@@ -85,6 +85,8 @@ private struct Harness {
             backupsDirectory: directory.appending(path: "backups", directoryHint: .isDirectory), cli: cli, probes: probes)
         registrar = FakeHotkeyRegistrar()
         if hotkeys {
+            // An existing, empty list, rather than a new install's ⌘1–⌘5.
+            settings.save(HotkeySettings())
             let center = HotkeyCenter(store: settings, registrar: registrar, toolStates: { [:] }, handler: { _ in })
             controller.connect(hotkeys: center)
             self.center = center

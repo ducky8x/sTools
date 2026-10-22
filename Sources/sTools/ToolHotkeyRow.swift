@@ -23,6 +23,12 @@ extension ToolID {
         default: hotkeyTool.map(HotkeyAction.toggle)
         }
     }
+
+    /// The action a key set's hotkey for this tool does (Home ▸ Hotkeys ▸ Key set): its toggle, or Start timer for
+    /// Timer Overlay; nil for the Key Rebinder.
+    var keySetAction: HotkeyAction? {
+        self == .timerOverlay ? .startTimer : hotkeyTool.map(HotkeyAction.toggle)
+    }
 }
 
 /// A tool's own hotkey in the app's one list (`HotkeyCenter`, spec 6.1): the first hotkey whose only action is the

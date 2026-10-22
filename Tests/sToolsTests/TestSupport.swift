@@ -130,9 +130,12 @@ final class Harness {
     /// `prologueCompleted: false` launches as a first launch, with the introduction showing. `withKeyRebinder`
     /// adds a Key Rebinder over the harness's folder, connected like the app's: Karabiner-Elements reads as not
     /// installed and `karabiner_cli` never runs, so nothing touches `~/.config/karabiner`.
+    ///
+    /// `hotkeys` is the `hotkeys.json` the launch finds: an existing, empty list by default; nil for a new install,
+    /// which starts with ⌘1–⌘5.
     init(accessibility: PermissionStatus = .granted, instances: [MinecraftInstance] = [],
          theme: STTheme = STTheme(), usesRealControllers: Bool = false, hotkeyRegistrar: any HotkeyRegistering = FakeHotkeyRegistrar(),
-         prologueCompleted: Bool = true, withKeyRebinder: Bool = false) {
+         prologueCompleted: Bool = true, withKeyRebinder: Bool = false, hotkeys: HotkeySettings? = HotkeySettings()) {
         self.hotkeyRegistrar = hotkeyRegistrar
         directory = FileManager.default.temporaryDirectory.appending(path: "sTools-app-\(UUID().uuidString)")
         karabinerConfigURL = directory.appending(path: "karabiner", directoryHint: .isDirectory).appending(path: "karabiner.json")
@@ -140,6 +143,7 @@ final class Harness {
         source = StaticMinecraftWindowSource(instances: instances)
         store = SettingsStore(directory: directory, debounce: .milliseconds(10))
         if prologueCompleted { store.save(AppState(prologueCompleted: true)) }
+        if let hotkeys { store.save(hotkeys) }
         var fakes: [ToolID: FakeController] = [:]
         if !usesRealControllers {
             for tool in ToolID.allCases where tool.hasSwitch && tool != .timerOverlay { fakes[tool] = FakeController() }
