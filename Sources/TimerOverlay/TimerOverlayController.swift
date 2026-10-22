@@ -6,8 +6,9 @@ import STPlatform
 /// What a Start-timer press did (spec 5.6.2), so the app can confirm it (plan decision 5).
 public enum TimerPressResult: Equatable, Sendable {
     /// It started, restarted, paused, resumed or cancelled the timer, or silenced the alarm; or, as the second press
-    /// of a double press, it cancelled and switched the tool off. The overlay itself confirms it: the app adds no sound
-    /// and no line.
+    /// of a double press, it cancelled and switched the tool off. The overlay itself confirms it, so the app adds no
+    /// sound or line, except for the switch-off: over the game the overlay leaving looks like a cancel, so the app
+    /// says "Timer Overlay off", as for any hotkey switch.
     case acted
     /// The press table says to ignore it here (as Advanced's "is ignored" does).
     case ignored
