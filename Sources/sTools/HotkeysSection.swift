@@ -3,8 +3,9 @@ import STDesign
 import STPlatform
 import SwiftUI
 
-/// Home ▸ Hotkeys (spec 6.1): a master switch, the list of bindings, an add/edit editor for each, and
-/// Advanced (spec 2.4) with the press confirmation. Any key works, alone
+/// Home ▸ Hotkeys (spec 6.1), near the top of Home: the list of hotkeys (key and actions at a glance), Add Hotkey…,
+/// an add/edit editor for each, and Advanced (spec 2.4) with the press confirmation. While hotkeys are off, one strip
+/// says so with Turn On; while on, the master switch turns them off. Any key works, alone
 /// or with modifiers. What the Key Rebinder knows (which key on the keyboard sends a hotkey's key, what Minecraft
 /// uses it for) arrives through `model.hotkeys.advisor`; without one, those lines are simply left out.
 struct HotkeysSection: View {
@@ -23,8 +24,18 @@ struct HotkeysSection: View {
 
     var body: some View {
         PageSectionTitle("Hotkeys").padding(.top, 28).padding(.bottom, 4)
-        STSettingsRow("Hotkeys", showsRule: hotkeys.isEnabled) {
-            STSwitch(isOn: enabledBinding, label: "Hotkeys")
+        // One way to turn hotkeys on while they're off; once on, the switch turns them off again.
+        Group {
+            if hotkeys.isEnabled {
+                STSettingsRow("Hotkeys", showsRule: !hotkeys.bindings.isEmpty) {
+                    STSwitch(isOn: enabledBinding, label: "Hotkeys")
+                }
+            } else {
+                STRequirementStrip(kind: .warning, message: Self.offMessage(hasHotkeys: !hotkeys.bindings.isEmpty),
+                                   actionTitle: "Turn On", action: { model.hotkeys.isEnabled = true })
+                    .padding(.top, 6)
+                    .padding(.bottom, 4)
+            }
         }
         // The Key Rebinder's advice reads karabiner.json and Minecraft's keybinds (never karabiner_cli): loaded
         // when hotkeys turn on and each time sTools comes back to the front, so it follows edits made elsewhere.
@@ -32,27 +43,29 @@ struct HotkeysSection: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await prepareAdvice() }
         }
-        if hotkeys.isEnabled {
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(hotkeys.bindings) { binding in
-                    HotkeyBindingRow(
-                        model: model, binding: binding, isEditing: editingID == binding.id,
-                        onToggleEdit: {
-                            isAddingNew = false
-                            editingID = editingID == binding.id ? nil : binding.id
-                        })
-                }
-                if isAddingNew {
-                    HotkeyEditor(model: model, existing: nil, onDone: { isAddingNew = false })
-                        .padding(.vertical, 10)
-                }
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(hotkeys.bindings) { binding in
+                HotkeyBindingRow(
+                    model: model, binding: binding, isEditing: editingID == binding.id,
+                    onToggleEdit: {
+                        isAddingNew = false
+                        editingID = editingID == binding.id ? nil : binding.id
+                    })
             }
-            Button("Add hotkey\u{2026}") {
+            if isAddingNew {
+                HotkeyEditor(model: model, existing: nil, onDone: { isAddingNew = false })
+                    .padding(.vertical, 10)
+            }
+        }
+        if !isAddingNew {
+            Button("Add Hotkey\u{2026}") {
                 editingID = nil
                 isAddingNew = true
             }
             .buttonStyle(STButtonStyle(.secondary))
-            .padding(.top, 8)
+            .padding(.top, 10)
+        }
+        if hotkeys.isEnabled {
             STAdvancedDisclosure(isExpanded: $advancedIsOpen) {
                 VStack(alignment: .leading, spacing: 0) {
                     STSettingsRow("Show a confirmation", showsRule: false) {
@@ -62,6 +75,13 @@ struct HotkeysSection: View {
             }
             .padding(.top, 14)
         }
+    }
+
+    /// The strip's line while hotkeys are off.
+    static func offMessage(hasHotkeys: Bool) -> String {
+        hasHotkeys
+            ? "Hotkeys are off, so the keys below do nothing."
+            : "Hotkeys are off. Turn them on to switch tools with a key, from any app."
     }
 
     private func prepareAdvice() async {
@@ -158,7 +178,7 @@ struct HotkeyBindingRow: View {
             HStack(alignment: .center, spacing: 10) {
                 Text(binding.combo.displayString)
                     .stStyle(.label)
-                    .foregroundStyle(theme.inkSecondary)
+                    .foregroundStyle(STColor.ink)
                 Spacer(minLength: 16)
                 Text(HotkeyWording.summary(binding.actions))
                     .stStyle(.body)
