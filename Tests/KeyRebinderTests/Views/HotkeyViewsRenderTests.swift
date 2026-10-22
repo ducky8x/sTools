@@ -472,6 +472,12 @@ struct KeyPanelHotkeyRenderTests {
         #expect(rig.center.bindings.isEmpty)
     }
 
+    /// Both editors name their action chips the same ("Does"), so the key panel's label is the one Home's editor gives
+    /// VoiceOver.
+    @Test func bothEditorsNameTheActionChipsTheSame() {
+        #expect(HotkeyWording.actionChipsLabel == "Does")
+    }
+
     /// "Hold" and "Does" stay on one line at every text size the app allows (Appearance ▸ Text size, 90–130%).
     @Test func theHoldAndDoesLabelsStayOnOneLineAtEveryTextSize() {
         _ = STFont.register()
@@ -481,7 +487,7 @@ struct KeyPanelHotkeyRenderTests {
                 NSHostingView(rootView: view.environment(\.stTheme, theme)).fittingSize.height
             }
             let line = height(Text("D").stStyle(.label))
-            for title in ["Hold", "Does"] {
+            for title in ["Hold", HotkeyWording.actionChipsLabel] {
                 #expect(abs(height(KeyHotkeysBlock.ChipsLabel(title)) - line) < 0.5, "\(title) at \(scale)")
             }
         }

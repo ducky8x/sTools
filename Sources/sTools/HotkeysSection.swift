@@ -371,7 +371,8 @@ struct HotkeyEditor: View {
                     }
                 }
             }
-            STChips(selection: $actions, options: HotkeyAction.allCases.map { STSegmentedOption($0, $0.title) }, label: "Actions")
+            STChips(selection: $actions, options: HotkeyAction.allCases.map { STSegmentedOption($0, $0.title) },
+                    label: HotkeyWording.actionChipsLabel)
             HStack(spacing: 14) {
                 Button("Save Hotkey") { save() }
                     .buttonStyle(STButtonStyle(.primary))
