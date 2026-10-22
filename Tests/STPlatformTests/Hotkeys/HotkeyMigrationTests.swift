@@ -79,8 +79,8 @@ private final class Folder {
 @MainActor
 @Suite("Hotkey list migration")
 struct HotkeyMigrationTests {
-    @Test func theFileIsAtVersionTwo() {
-        #expect(HotkeySettings.version == 2)
+    @Test func theFileIsAtVersionThree() {
+        #expect(HotkeySettings.version == 3)
     }
 
     // MARK: ducky's list stays exactly as it is
@@ -131,18 +131,71 @@ struct HotkeyMigrationTests {
         #expect(settings.scope == .everywhere)
     }
 
-    /// A ⌘1–⌘5 list in build 449's sidebar order (never launched, but a list like it is someone's own) stays as it is,
-    /// in either file version: it reads as Custom until someone picks a set.
-    @Test func aListInAnEarlierSidebarOrderStaysAsItIs() throws {
-        let entries = [entry(nbbID, keyCode: 18, ["toggle.nbbOverlay"]), entry(backdropID, keyCode: 19, ["toggle.windowBackdrop"]),
-                       entry(crosshairID, keyCode: 20, ["toggle.crosshair"]), entry(timerID, keyCode: 21, ["startTimer"]),
-                       entry(recordingID, keyCode: 23, ["startStopRecording"])]
-        for version in [1, 2] {
-            let settings = try Folder(file(version: version, entries)).load()
-            #expect(listing(settings.bindings) == build449Order, "version \(version)")
-            #expect(settings.bindings.map(\.id.uuidString) == [nbbID, backdropID, crosshairID, timerID, recordingID])
-            #expect(HotkeyKeySet.current(in: settings.bindings) == nil)
+    // MARK: Build 449's move is undone
+
+    /// Build 449's ⌘1–⌘5 default, as its version 2 file holds it.
+    private var build449Entries: [String] {
+        [entry(nbbID, keyCode: 18, ["toggle.nbbOverlay"]), entry(backdropID, keyCode: 19, ["toggle.windowBackdrop"]),
+         entry(crosshairID, keyCode: 20, ["toggle.crosshair"]), entry(timerID, keyCode: 21, ["startTimer"]),
+         entry(recordingID, keyCode: 23, ["startStopRecording"])]
+    }
+
+    /// Build 449 moved ducky's list to its own sidebar order as it launched (⌘1 NBB Overlay … ⌘5 Screen Recording) and
+    /// wrote it as version 2. That exact list moves back to the ⌘1–⌘5 key set, which is ducky's list again: the same
+    /// keys, ids and order as before 449. The switches and the scope stay.
+    @Test func build449sListMovesBackToDuckysKeys() throws {
+        let settings = try Folder(file(version: 2, build449Entries, isEnabled: false,
+                                       extra: #","showsConfirmation":false,"scope":"everywhere""#)).load()
+        #expect(listing(settings.bindings) == sidebarOrder)
+        #expect(settings.bindings.map(\.id.uuidString) == ownIDs, "each tool keeps its id")
+        #expect(HotkeyKeySet.current(in: settings.bindings) == .command)
+        #expect(!settings.isEnabled)
+        #expect(!settings.showsConfirmation)
+        #expect(settings.scope == .everywhere)
+        // In any order, and with Screen Recording under its former name.
+        let reversed = try Folder(file(version: 2, build449Entries.reversed().map {
+            $0.replacingOccurrences(of: "startStopRecording", with: "toggle.screenRecording")
+        })).load()
+        #expect(listing(reversed.bindings) == sidebarOrder)
+        #expect(reversed.bindings.map(\.id.uuidString) == ownIDs)
+    }
+
+    /// Only a version 2 file moves: the same list in a version 1 file was set by hand (no build wrote it), so it stays
+    /// as it is and reads as Custom. ducky's own version 1 list never takes part either.
+    @Test func aVersionOneFileInBuild449sOrderStaysAsItIs() throws {
+        let settings = try Folder(file(version: 1, build449Entries)).load()
+        #expect(listing(settings.bindings) == build449Order)
+        #expect(settings.bindings.map(\.id.uuidString) == [nbbID, backdropID, crosshairID, timerID, recordingID])
+        #expect(HotkeyKeySet.current(in: settings.bindings) == nil)
+    }
+
+    /// Anything but build 449's exact list stays as it is in a version 2 file: a changed key, an extra hotkey, another
+    /// modifier, a hotkey with two actions, one missing.
+    @Test func aChangedBuild449ListStaysAsItIs() throws {
+        var oneKeyChanged = build449Entries
+        oneKeyChanged[0] = entry(nbbID, keyCode: 97, modifiers: 0, ["toggle.nbbOverlay"])
+        let extra = build449Entries + [entry(secondRecordingID, keyCode: 8, modifiers: 6144, ["toggle.crosshair", "toggle.nbbOverlay"])]
+        let control = build449Entries.map { $0.replacingOccurrences(of: #""modifiers":256"#, with: #""modifiers":4096"#) }
+        var twoActions = build449Entries
+        twoActions[0] = entry(nbbID, keyCode: 18, ["toggle.nbbOverlay", "toggle.crosshair"])
+        let oneMissing = Array(build449Entries.dropLast())
+        for (name, entries) in [("one key changed", oneKeyChanged), ("an extra hotkey", extra), ("⌃ instead of ⌘", control),
+                                ("two actions", twoActions), ("one missing", oneMissing)] {
+            let raw = try JSONDecoder().decode(HotkeySettings.self, from: Data(#"{"isEnabled":true,"bindings":[\#(entries.joined(separator: ","))]}"#.utf8))
+            #expect(try Folder(file(version: 2, entries)).load().bindings == raw.bindings, "\(name)")
         }
+    }
+
+    /// The center writes the moved list back as version 3 as it starts, so it happens once; afterwards build 449's
+    /// order, set again by hand, stays.
+    @Test func theCenterWritesTheMoveBackOnce() async throws {
+        let folder = try Folder(file(version: 2, build449Entries))
+        let store = folder.store
+        let center = HotkeyCenter(store: store, registrar: MigrationRegistrar(), toolStates: { [:] }, handler: { _ in })
+        #expect(listing(center.bindings) == sidebarOrder)
+        await store.flush()
+        #expect(try folder.stored().version == 3)
+        #expect(listing(try Folder(file(version: 3, build449Entries)).load().bindings) == build449Order)
     }
 
     /// Earlier builds started everyone with no hotkeys at all: that list becomes a new install's ⌘1–⌘5 too, with the
@@ -190,11 +243,14 @@ struct HotkeyMigrationTests {
         }
     }
 
-    /// Once a file is version 2, its list is the person's own: the old order, or no hotkeys at all (the None key set),
+    /// Once a file is version 2 or later, its list is the person's own: the old order, or no hotkeys at all (the None key set),
     /// stays as it is.
     @Test func aVersionTwoFileIsNeverMigrated() throws {
-        #expect(listing(try Folder(file(version: 2, oldList())).load().bindings) == sidebarOrder)
-        #expect(try Folder(file(version: 2, [])).load().bindings.isEmpty)
+        for version in [2, 3] {
+            #expect(listing(try Folder(file(version: version, oldList())).load().bindings) == sidebarOrder)
+            #expect(try Folder(file(version: version, [])).load().bindings.isEmpty)
+            #expect(listing(try Folder(file(version: version, oldList().reversed())).load().bindings) == sidebarOrder.reversed())
+        }
     }
 
     // MARK: Screen Recording's two former keys become one
@@ -271,7 +327,7 @@ struct HotkeyMigrationTests {
         #expect(registrar.active.count == 1)
         await store.flush()
         let stored = try folder.stored()
-        #expect(stored.version == 2)
+        #expect(stored.version == 3)
         #expect((stored.value["bindings"] as? [Any])?.count == 1)
     }
 
@@ -289,7 +345,7 @@ struct HotkeyMigrationTests {
         await store.flush()
 
         let stored = try folder.stored()
-        #expect(stored.version == 2)
+        #expect(stored.version == 3)
         #expect(stored.value["isEnabled"] as? Bool == true)
         #expect((stored.value["bindings"] as? [[String: Any]])?.compactMap { $0["id"] as? String } == ownIDs)
         let relaunched = HotkeyCenter(store: folder.store, registrar: MigrationRegistrar(), toolStates: { [:] }, handler: { _ in })
@@ -298,14 +354,14 @@ struct HotkeyMigrationTests {
 
     /// A current file isn't written again at launch.
     @Test func aCurrentFileIsntRewritten() async throws {
-        let folder = try Folder(file(version: 2, oldList()))
+        let folder = try Folder(file(version: 3, oldList()))
         let store = folder.store
         _ = HotkeyCenter(store: store, registrar: MigrationRegistrar(), toolStates: { [:] }, handler: { _ in })
         await store.flush()
         #expect(store.writeCount == 0)
     }
 
-    /// A list someone changed is only brought up to version 2, as it is.
+    /// A list someone changed is only brought up to version 3, as it is.
     @Test func aChangedListIsWrittenBackAsItIs() async throws {
         var entries = oldList()
         entries[1] = entry(timerID, keyCode: 22, ["startTimer"])
@@ -313,7 +369,7 @@ struct HotkeyMigrationTests {
         let store = folder.store
         let center = HotkeyCenter(store: store, registrar: MigrationRegistrar(), toolStates: { [:] }, handler: { _ in })
         await store.flush()
-        #expect(try folder.stored().version == 2)
+        #expect(try folder.stored().version == 3)
         #expect(listing(center.bindings) == ["⌘1 Crosshair", "⌘6 Start timer", "⌘3 NBB Overlay", "⌘4 Screen Recording", "⌘5 Window Backdrop"])
         #expect(folder.load().bindings == center.bindings)
     }

@@ -141,7 +141,8 @@ public final class HotkeyCenter {
         self.handler = handler
         self.settings = store.load(HotkeySettings.self)
         // A file from an earlier version was upgraded as it loaded (an empty version 1 list becomes ⌘1–⌘5 in sidebar
-        // order; any other list is kept as it is): writing it back makes that happen once.
+        // order, and build 449's version 2 list goes back to ducky's keys; any other list is kept as it is): writing it
+        // back makes that happen once.
         if let stored = store.storedVersion(HotkeySettings.self), stored < HotkeySettings.version {
             store.save(settings)
         }

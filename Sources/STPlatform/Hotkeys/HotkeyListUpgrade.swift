@@ -48,6 +48,58 @@ enum HotkeyListUpgrade {
         return result
     }
 
+    // MARK: Version 2 to 3
+
+    /// The key the version 1 to 2 step leaves in a file that started at version 1, so the next step leaves its list
+    /// alone; the next step removes it, so it is never stored.
+    private static let fromVersionOneKey = "upgradedFromVersion1"
+
+    /// `raw`, as the version 1 to 2 step leaves it, marked for `undoingBuild449` to pass over.
+    static func markedAsFromVersionOne(_ raw: [String: Any]) -> [String: Any] {
+        var result = raw
+        result[fromVersionOneKey] = true
+        return result
+    }
+
+    /// Build 449's ⌘1–⌘5 list, in its sidebar order: ⌘1 NBB Overlay, ⌘2 Window Backdrop, ⌘3 Crosshair, ⌘4 Start timer,
+    /// ⌘5 Screen Recording.
+    private static let build449List: Set<Entry> = {
+        let command = HotkeyCombo.Modifiers.command
+        return [Entry(combo: HotkeyCombo(keyCode: 18, modifiers: command), actions: [.toggle(.nbbOverlay)]),
+                Entry(combo: HotkeyCombo(keyCode: 19, modifiers: command), actions: [.toggle(.windowBackdrop)]),
+                Entry(combo: HotkeyCombo(keyCode: 20, modifiers: command), actions: [.toggle(.crosshair)]),
+                Entry(combo: HotkeyCombo(keyCode: 21, modifiers: command), actions: [.startTimer]),
+                Entry(combo: HotkeyCombo(keyCode: 23, modifiers: command), actions: [.startStopRecording])]
+    }()
+
+    /// Version 2 to 3 (revision 10; ducky: "the hotkeys stay the same, but the order in the sidebar changes"). Build 449
+    /// moved ducky's own list (⌘1 Crosshair, ⌘2 Start timer, ⌘3 NBB Overlay, ⌘4 Screen Recording, ⌘5 Window Backdrop)
+    /// to its sidebar order and wrote it as version 2. A version 2 list that is exactly build 449's, matched by key and
+    /// actions whatever its order, goes back to the ⌘1–⌘5 key set in today's sidebar order, which is ducky's list: each
+    /// tool keeps its hotkey's id, so ducky gets back the same keys, ids and order. Anything else stays as it is, and
+    /// so does every list from a file that was version 1 on disk (marked by `markedAsFromVersionOne`): nothing wrote
+    /// build 449's order there, so it is someone's own.
+    static func undoingBuild449(_ raw: [String: Any]) -> [String: Any] {
+        var raw = raw
+        if raw.removeValue(forKey: fromVersionOneKey) != nil { return raw }
+        guard let stored = raw["bindings"] as? [Any], let strict = read(stored) else { return raw }
+        let hotkeys = withOneScreenRecordingKey(strict.map { HotkeyBinding(id: $0.id, combo: $0.combo, actions: $0.actions) })
+        let entries = hotkeys.map { Entry(combo: $0.combo, actions: $0.actions) }
+        guard Set(entries).count == entries.count, Set(entries) == build449List else { return raw }
+
+        var ids: [HotkeyAction: UUID] = [:]
+        for hotkey in hotkeys { ids[hotkey.actions[0]] = hotkey.id }
+        let bindings = HotkeyKeySet.command.bindings().map { binding in
+            HotkeyBinding(id: ids[binding.actions[0]] ?? binding.id, combo: binding.combo, actions: binding.actions)
+        }
+        guard let data = try? JSONEncoder().encode(bindings),
+              let moved = try? JSONSerialization.jsonObject(with: data) else { return raw }
+        raw["bindings"] = moved
+        return raw
+    }
+
+    // MARK: Screen Recording's keys
+
     /// The keys earlier builds' key sets gave Screen Recording, fifth in their sidebar order: ⌘5, ⌃5, ⌥5 and F17.
     private static let earlierKeySetRecordingKeys: Set<HotkeyCombo> = [
         HotkeyCombo(keyCode: 23, modifiers: .command), HotkeyCombo(keyCode: 23, modifiers: .control),
