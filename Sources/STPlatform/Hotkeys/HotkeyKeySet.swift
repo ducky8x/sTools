@@ -21,9 +21,10 @@ public enum HotkeyKeySet: String, CaseIterable, Hashable, Sendable {
     public static let newInstall: HotkeyKeySet = .command
 
     /// Each tool's main action, in sidebar order: NBB Overlay, Window Backdrop, Crosshair, Timer Overlay (Start
-    /// timer: it has no toggle), Screen Recording. Key Rebinder has no switch, so it gets no key.
+    /// timer) and Screen Recording (its one action, which starts and stops a recording); those two have no toggle.
+    /// Key Rebinder has no switch, so it gets no key. The app's `ToolID.hotkeyAction` gives the same actions.
     public static let toolActions: [HotkeyAction] = [
-        .toggle(.nbbOverlay), .toggle(.windowBackdrop), .toggle(.crosshair), .startTimer, .toggle(.screenRecording),
+        .toggle(.nbbOverlay), .toggle(.windowBackdrop), .toggle(.crosshair), .startTimer, .startStopRecording,
     ]
 
     /// The set's name in the chooser.

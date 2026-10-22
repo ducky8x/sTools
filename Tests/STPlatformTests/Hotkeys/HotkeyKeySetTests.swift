@@ -14,7 +14,8 @@ private final class KeySetRegistrar: HotkeyRegistering {
 private let nbb = HotkeyAction.toggle(.nbbOverlay)
 private let backdrop = HotkeyAction.toggle(.windowBackdrop)
 private let crosshair = HotkeyAction.toggle(.crosshair)
-private let recording = HotkeyAction.toggle(.screenRecording)
+/// Screen Recording's one action: it has no toggle.
+private let recording = HotkeyAction.startStopRecording
 private let timer = HotkeyAction.startTimer
 
 private func combo(_ keyCode: UInt16, _ modifiers: HotkeyCombo.Modifiers = []) -> HotkeyCombo {
@@ -59,7 +60,12 @@ struct HotkeyKeySetTests {
             #expect(HotkeyKeySet.current(in: bindings) == set)
         }
         #expect(HotkeyKeySet.noKeys.bindings().isEmpty)
-        #expect(HotkeyKeySet.command.combo(for: .startStopRecording) == nil, "no tool's main action")
+        // A new install's keys, as the hotkey list names them: Timer Overlay's is Start timer, and Screen Recording's
+        // is its one action, the one its page's Hotkey row sets.
+        #expect(HotkeyKeySet.command.bindings().map { "\($0.combo.displayString) \(HotkeyWording.summary($0.actions))" }
+            == ["⌘1 NBB Overlay", "⌘2 Window Backdrop", "⌘3 Crosshair", "⌘4 Start timer", "⌘5 Screen Recording"])
+        #expect(HotkeyKeySet.command.combo(for: .startStopRecording)?.displayString == "⌘5")
+        #expect(HotkeyKeySet.functionKeys.combo(for: .startStopRecording)?.displayString == "F17")
     }
 
     // MARK: Which set the list follows
@@ -176,6 +182,21 @@ struct HotkeyKeySetTests {
         #expect(!center.isEnabled)
         #expect(center.scope == .sToolsAndMinecraft)
         #expect(registrar.active.isEmpty)
+    }
+
+    /// Turned on, each of a new install's keys does its tool's main action: ⌘4 sends Start timer, and ⌘5 starts or
+    /// stops a recording.
+    @MainActor
+    @Test func aNewInstallsKeysEachDoTheirToolsMainAction() {
+        let (store, directory) = temporaryStore()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let registrar = KeySetRegistrar()
+        var events: [[HotkeyEvent]] = []
+        let center = HotkeyCenter(store: store, registrar: registrar, toolStates: { [:] }, handler: { events.append($0) })
+        center.isEnabled = true
+        for binding in center.bindings { registrar.onPress?(binding.id) }
+        #expect(events == [[.setTool(.nbbOverlay, isOn: true)], [.setTool(.windowBackdrop, isOn: true)],
+                           [.setTool(.crosshair, isOn: true)], [.startTimer], [.toggleRecording]])
     }
 
     /// Existing files keep what they have: an empty list stays empty.
