@@ -19,7 +19,7 @@ struct AppModelTimerTests {
     @Test func itNeedsAccessibilityAndHasASwitch() {
         #expect(ToolID.timerOverlay.requiresAccessibility)
         #expect(ToolID.timerOverlay.hasSwitch)
-        #expect(ToolID.timerOverlay.trial == nil)
+        #expect(ToolID.timerOverlay.trial == .timerOverlay)
         #expect(ToolID.timerOverlay.hotkeyTool == nil)
         let denied = Harness(accessibility: .denied)
         #expect(denied.model.status(of: .timerOverlay) == .needsAccessibility)

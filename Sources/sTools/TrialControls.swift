@@ -3,6 +3,7 @@ import Combine
 import KeyRebinder
 import ScreenRecording
 import STDesign
+import STPlatform
 import SwiftUI
 
 /// A tool's real controls inside its trial: its switch (or, for the Key Rebinder, its profile menu), the
@@ -39,6 +40,71 @@ struct TrialToolControls: View {
                 .padding(.top, 18)
         }
         .pollsPermissions(model.permissions, showing: tool.permissionsShown, when: tool.requiresAccessibility)
+    }
+}
+
+/// The Timer trial's own Start-timer key (spec 5.6.9). The page's Set in Hotkeys\u{2026} is hidden in the trials, so
+/// the key is recorded right here as a Home \u{25B8} Hotkeys hotkey whose only action starts the timer.
+struct TrialStartTimerKeyRow: View {
+    let model: AppModel
+
+    private enum Copy {
+        static let title = "Start-timer key"
+    }
+
+    var body: some View {
+        STSettingsRow(Copy.title, showsRule: false) {
+            STShortcutRecorder(shortcut: shortcutBinding, label: Copy.title,
+                               validate: { TrialStartTimerKey.refusal(for: $0.hotkeyCombo, in: model.hotkeys) })
+                .frame(width: 200)
+        }
+    }
+
+    private var shortcutBinding: Binding<STShortcut?> {
+        Binding(
+            get: { TrialStartTimerKey.own(in: model.hotkeys.bindings)?.combo.asSTShortcut },
+            set: { TrialStartTimerKey.set($0?.hotkeyCombo, in: model) })
+    }
+}
+
+/// The Start-timer key the Timer trial sets: the first hotkey whose only action starts the timer.
+@MainActor
+enum TrialStartTimerKey {
+    static func own(in bindings: [HotkeyBinding]) -> HotkeyBinding? {
+        bindings.first { $0.actions == [.startTimer] }
+    }
+
+    /// Sets the key: changes that hotkey's key, or adds it at the end of the list. While Hotkeys are off it asks
+    /// before turning them on, and keeps nothing if the answer is no. Nil clears the key.
+    static func set(_ combo: HotkeyCombo?, in model: AppModel) {
+        let center = model.hotkeys
+        switch (combo, own(in: center.bindings)) {
+        case (let combo?, let own?):
+            guard turnOnHotkeys(model) else { return }
+            center.update(own.id, combo: combo)
+        case (let combo?, nil):
+            guard turnOnHotkeys(model) else { return }
+            center.add(combo: combo, actions: [.startTimer])
+        case (nil, let own?):
+            center.remove(own.id)
+        case (nil, nil):
+            break
+        }
+    }
+
+    /// Why the recorder refuses `combo`, with the same rules as Home's editor. Nil when it's fine.
+    static func refusal(for combo: HotkeyCombo, in center: HotkeyCenter) -> String? {
+        guard let conflict = center.conflict(for: combo, excluding: own(in: center.bindings)?.id), conflict != .noActions else {
+            return nil
+        }
+        return HotkeyWording.conflictText(conflict, combo: combo, inList: false)
+    }
+
+    private static func turnOnHotkeys(_ model: AppModel) -> Bool {
+        if model.hotkeys.isEnabled { return true }
+        guard model.confirmTurningOnHotkeys() else { return false }
+        model.hotkeys.isEnabled = true
+        return true
     }
 }
 
