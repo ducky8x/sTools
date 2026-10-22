@@ -957,7 +957,8 @@ struct HotkeyCenterTests {
         let advisor = FakeAdvisor()
         advisor.advice = [HotkeyNote(tone: .note, text: "Advisor note"), HotkeyNote(tone: .caution, text: "Advisor caution")]
         h.center.advisor = advisor
-        let typing = try #require(HotkeyWording.typingNote(for: bareC))
+        // Under the default, Where hotkeys work: In sTools and Minecraft.
+        let typing = try #require(HotkeyWording.typingNote(for: bareC, scope: .sToolsAndMinecraft))
         #expect(h.center.notes(for: bareC) == [HotkeyNote(tone: .caution, text: "Advisor caution"),
                                                HotkeyNote(tone: .note, text: typing),
                                                HotkeyNote(tone: .note, text: "Advisor note")])

@@ -50,6 +50,41 @@ struct HotkeySettingsTests {
         #expect(settings == .defaultValue)
     }
 
+    // MARK: Where hotkeys work
+
+    @Test func scopeDefaultsToSToolsAndMinecraft() {
+        #expect(HotkeySettings.defaultValue.scope == .sToolsAndMinecraft)
+        #expect(HotkeySettings().scope == .sToolsAndMinecraft)
+    }
+
+    /// Every file from before the setting existed has no `scope`; it gets the default and keeps everything else.
+    @Test func filesWithoutScopeGetTheDefault() throws {
+        let older = """
+        {"isEnabled":true,"showsConfirmation":false,"bindings":[{"id":"5B0C8B8E-6D0B-4F1E-9B7B-0B7C1C3D4E5F",
+         "combo":{"keyCode":8,"modifiers":6144},"actions":["toggle.crosshair"]}]}
+        """
+        let settings = try JSONDecoder().decode(HotkeySettings.self, from: Data(older.utf8))
+        #expect(settings.scope == .sToolsAndMinecraft)
+        #expect(settings.isEnabled)
+        #expect(!settings.showsConfirmation)
+        #expect(settings.bindings.count == 1)
+    }
+
+    @Test func anUnknownOrWrongScopeFallsBackToTheDefaultAlone() throws {
+        for scope in [#""somewhereNew""#, "3", "true", #"{"a":1}"#, "null"] {
+            let json = #"{"isEnabled":true,"bindings":[],"showsConfirmation":false,"scope":\#(scope)}"#
+            let settings = try JSONDecoder().decode(HotkeySettings.self, from: Data(json.utf8))
+            #expect(settings == HotkeySettings(isEnabled: true, bindings: [], showsConfirmation: false), "\(scope)")
+        }
+    }
+
+    @Test func everywhereRoundTrips() throws {
+        let value = HotkeySettings(isEnabled: true, bindings: [], scope: .everywhere)
+        let data = try JSONEncoder().encode(value)
+        #expect(String(decoding: data, as: UTF8.self).contains(#""scope":"everywhere""#))
+        #expect(try JSONDecoder().decode(HotkeySettings.self, from: data) == value)
+    }
+
     // MARK: The old pause setting
 
     /// Builds that paused hotkeys whenever sTools was in front saved `pausesWhileSToolsIsActive`, on by default.
@@ -62,7 +97,7 @@ struct HotkeySettingsTests {
         let data = try JSONEncoder().encode(settings)
         let json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
         #expect(json["pausesWhileSToolsIsActive"] == nil)
-        #expect(Set(json.keys) == ["isEnabled", "bindings", "showsConfirmation"])
+        #expect(Set(json.keys) == ["isEnabled", "bindings", "showsConfirmation", "scope"])
     }
 
     // MARK: Lossy decoding (one bad entry never costs the rest)
