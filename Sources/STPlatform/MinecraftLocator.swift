@@ -21,6 +21,10 @@ public final class MinecraftLocator {
 
     public var isRunning: Bool { task != nil }
 
+    /// The loop that follows the source's changes while running; it ends once the source's changes end. Tests await
+    /// it to know every change so far has been handled, instead of sleeping for a fixed time.
+    var changeLoop: Task<Void, Never>? { task }
+
     /// Takes a snapshot now, then again after every source change. Calling it twice is harmless.
     public func start() {
         guard task == nil else { return }
