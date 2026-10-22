@@ -47,13 +47,14 @@ struct TimerAdvancedSection: View {
     // MARK: - The overlay's look
 
     @ViewBuilder private var appearanceRows: some View {
+        let own = lookColors
         STSettingsRow("Font") { TimerFontMenu(family: $controller.settings.fontFamily) }
-        STSettingsRow("Plate color") { STColorWell(hex: hex(\.plateColorHex, own: lookHex(\.plateColor)), label: "Plate color") }
+        STSettingsRow("Plate color") { STColorWell(hex: hex(\.plateColorHex, own: own.plateColor), label: "Plate color") }
         STSettingsRow("Plate opacity") {
             STSlider(value: plateOpacityBinding, in: Double(TimerOverlaySettings.plateOpacityRange.lowerBound)...Double(TimerOverlaySettings.plateOpacityRange.upperBound),
                      label: "Plate opacity", valueText: { "\(Int($0))%" })
         }
-        STSettingsRow("Edge color") { STColorWell(hex: hex(\.edgeColorHex, own: lookHex(\.edgeColor)), label: "Edge color") }
+        STSettingsRow("Edge color") { STColorWell(hex: hex(\.edgeColorHex, own: own.edgeColor), label: "Edge color") }
         STSettingsRow("Edge width") {
             STSlider(value: edgeWidthBinding, in: TimerOverlaySettings.edgeWidthRange, step: 0.5, label: "Edge width",
                      valueText: { "\(Self.points($0)) pt" })
@@ -62,12 +63,12 @@ struct TimerAdvancedSection: View {
             STSlider(value: cornerRadiusBinding, in: TimerOverlaySettings.cornerRadiusRange, label: "Corner radius",
                      valueText: { "\(Int($0)) pt" })
         }
-        STSettingsRow("Digit color") { STColorWell(hex: hex(\.digitColorHex, own: lookHex(\.digitColor)), label: "Digit color") }
+        STSettingsRow("Digit color") { STColorWell(hex: hex(\.digitColorHex, own: own.digitColor), label: "Digit color") }
         STSettingsRow("Time\u{2019}s-up plate color") {
-            STColorWell(hex: hex(\.timesUpPlateColorHex, own: lookHex(\.timesUpPlateColor)), label: "Time\u{2019}s-up plate color")
+            STColorWell(hex: hex(\.timesUpPlateColorHex, own: own.timesUpPlateColor), label: "Time\u{2019}s-up plate color")
         }
         STSettingsRow("Time\u{2019}s-up digit color") {
-            STColorWell(hex: hex(\.timesUpDigitColorHex, own: lookHex(\.timesUpDigitColor)), label: "Time\u{2019}s-up digit color")
+            STColorWell(hex: hex(\.timesUpDigitColorHex, own: own.timesUpDigitColor), label: "Time\u{2019}s-up digit color")
         }
         STSettingsRow("Colors") {
             Button("Use the look\u{2019}s own") { useLookColors() }
@@ -308,8 +309,6 @@ struct TimerAdvancedSection: View {
             digitColor: counting.digitHex, timesUpPlateColor: timesUp.plate?.colorHex ?? STPalette.gold,
             timesUpDigitColor: timesUp.digitHex)
     }
-
-    private func lookHex(_ path: KeyPath<LookColors, String>) -> String { lookColors[keyPath: path] }
 
     private func hex(_ path: WritableKeyPath<TimerOverlaySettings, String?>, own: String) -> Binding<String> {
         Binding(get: { controller.settings[keyPath: path] ?? own }, set: { controller.settings[keyPath: path] = $0 })
