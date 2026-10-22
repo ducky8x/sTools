@@ -123,6 +123,8 @@ public final class HotkeyCenter {
     @ObservationIgnored private let log = STLog.logger("Hotkeys")
     /// Whether a hotkey's key has reached the window this run, logged once (spec 6.1's hardware check).
     @ObservationIgnored private var reachedWindow = false
+    /// Whether a key event with an unusable time has been logged this run (`usableTime(_:)`).
+    @ObservationIgnored private var reportedUnusableTime = false
 
     /// - Parameters:
     ///   - toolStates: Reports which switchable tools are on right now. Read on every press.
@@ -300,7 +302,7 @@ public final class HotkeyCenter {
         }
         if isRepeat {
             // Held in the window: it keeps its press alive and is never a new one.
-            keysDown[id]?.lastReport = time ?? uptime()
+            keysDown[id]?.lastReport = usableTime(time) ?? uptime()
             return true
         }
         handlePress(id, from: .window, at: time)
@@ -335,6 +337,12 @@ public final class HotkeyCenter {
     /// A press stamped this close to the last one that counted for its hotkey, or earlier, is that press again (macOS
     /// and sTools' window both reporting one tap) or a late report of an earlier one.
     static let sameKeyEventTolerance: TimeInterval = 0.005
+    /// A key event stamped longer ago than this, or ahead of now, carries a time that can't be its key's (0, or
+    /// another clock): it counts as unstamped.
+    static let oldestKeyEvent: TimeInterval = 60
+    /// How far ahead of now a key event may be stamped (two clocks a hair apart) and still be believed; it then
+    /// happened now.
+    static let futureKeyEventTolerance: TimeInterval = 0.1
 
     /// While the handler runs, how long ago the key event behind the call happened, read when asked: the time sTools
     /// took to get to it. 0 when its source didn't stamp it, for the releases the center sends itself, and outside a
@@ -393,7 +401,8 @@ public final class HotkeyCenter {
     /// so its press counts. A stamped press no later than the last counted one is a second or late report of a press
     /// that already counted. Whether macOS repeats held hotkeys or ever drops a release is to be confirmed on hardware
     /// (spec 6.1); the log says what happened.
-    private func handlePress(_ id: UUID, from source: KeySource, at stamped: TimeInterval?) {
+    private func handlePress(_ id: UUID, from source: KeySource, at stamp: TimeInterval?) {
+        let stamped = usableTime(stamp)
         guard let combo = registered[id], let binding = settings.bindings.first(where: { $0.id == id }) else {
             log.notice("A press from \(source.rawValue, privacy: .public) of a hotkey that isn't live now was ignored")
             return
@@ -430,7 +439,8 @@ public final class HotkeyCenter {
 
     /// A release counts only for a key whose press counted, and sends an event only when that press sent Start
     /// timer. A stamped release from before its key's press is a late report of an earlier release, so it ends nothing.
-    private func handleRelease(_ id: UUID, from source: KeySource, at stamped: TimeInterval?) {
+    private func handleRelease(_ id: UUID, from source: KeySource, at stamp: TimeInterval?) {
+        let stamped = usableTime(stamp)
         let key = Self.describe(registered[id], from: source, at: stamped)
         guard let down = keysDown[id] else {
             log.notice("\(key, privacy: .public) up: ignored, no press of it counted")
@@ -444,6 +454,21 @@ public final class HotkeyCenter {
         log.notice("\(key, privacy: .public) up: ends its press\(down.startsTimer ? ", Start timer released" : "", privacy: .public)")
         guard down.startsTimer else { return }
         send([.startTimerReleased], stampedAt: stamped)
+    }
+
+    /// A key event's own time when it's believable: no later than now (beyond a hair) and no older than
+    /// `oldestKeyEvent`. Anything else is a time that can't be its key's, so the event counts as unstamped, from when
+    /// sTools got to it; the first one is logged.
+    private func usableTime(_ stamp: TimeInterval?) -> TimeInterval? {
+        guard let stamp else { return nil }
+        let now = uptime()
+        if stamp > now - Self.oldestKeyEvent, stamp < now + Self.futureKeyEventTolerance { return stamp }
+        if !reportedUnusableTime {
+            reportedUnusableTime = true
+            let line = String(format: "A key event's time (%.3f) is too far from now (%.3f), so key events without a usable time count from when sTools gets to them", stamp, now)
+            log.notice("\(line, privacy: .public)")
+        }
+        return nil
     }
 
     /// Calls the handler with `events`, saying when their key event happened while it runs (`keyEventAge`).

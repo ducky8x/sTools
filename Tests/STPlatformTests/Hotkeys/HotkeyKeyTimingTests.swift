@@ -216,6 +216,22 @@ struct HotkeyKeyTimingTests {
         h.registrar.press(id, at: 10.01)
         #expect(h.ages == [0])
     }
+
+    /// A time that can't be a key's (0, far ahead, or an hour old, as from another clock) counts as unstamped: every
+    /// press still counts, none is taken for a second report of the last, and each happened when sTools got to it.
+    /// The Mac has been up a day here, as it usually has.
+    @Test(arguments: [0, -5, 186_400, 86_400 - 3_600] as [TimeInterval])
+    func aKeyEventWithAnUnusableTimeCountsFromNow(stamp: TimeInterval) async {
+        let h = await TimingHarness()
+        let id = h.addTimerKey()
+        h.now = 86_400
+        h.registrar.press(id, at: stamp)
+        h.registrar.release(id, at: stamp)
+        h.now = 86_400.25
+        h.registrar.press(id, at: stamp)
+        #expect(h.presses == [[.startTimer], [.startTimerReleased], [.startTimer]])
+        #expect(h.ages == [0, 0, 0])
+    }
 }
 
 /// The real registrar's delivery, without registering a hotkey: events are handed to it the way its Carbon handler
