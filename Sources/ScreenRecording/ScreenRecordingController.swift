@@ -209,6 +209,9 @@ public final class ScreenRecordingController: ToolController {
     /// What `rig` was built for (`captureSignature`): a later arming takes it over only while that still holds.
     @ObservationIgnored private var rigSignature: String?
     @ObservationIgnored private var session: RecordingSession?
+    /// Canceled starts' sessions still closing, whose files are removed once closed (`discardUnstartedSession`):
+    /// quitting waits for them, so no file of a canceled start outlives sTools.
+    @ObservationIgnored private var discards: [Task<Void, Never>] = []
     /// The latest arming: starting the sources when the tool switches on, or restarting them after a change. A start
     /// waits for it.
     @ObservationIgnored private var armTask: Task<Void, Never>?
@@ -770,7 +773,20 @@ public final class ScreenRecordingController: ToolController {
         guard let session else { return }
         self.session = nil
         session.stopTicking()
-        Task { RecordingFinisher.delete(await session.stop().files) }
+        let discard = Task { RecordingFinisher.delete(await session.stop().files) }
+        discards.append(discard)
+        Task { [weak self] in
+            await discard.value
+            self?.discards.removeAll { $0 == discard }
+        }
+    }
+
+    /// Returns once every canceled start's file is removed.
+    private func awaitDiscards() async {
+        while let discard = discards.first {
+            await discard.value
+            discards.removeAll { $0 == discard }
+        }
     }
 
     /// Opens the file and starts the frame clock. The recording has started once the writer reports its first frame
@@ -1000,6 +1016,8 @@ public final class ScreenRecordingController: ToolController {
         await waitWhile { phase == .finishing }
         if phase == .deciding { await save(name: nil) }
         await disarm()
+        // A start that was still waiting for its first frame ended above; its file goes before sTools does.
+        await awaitDiscards()
     }
 
     /// Follows `session`'s writer for as long as it's the one recording: its first frame starts the recording, and a

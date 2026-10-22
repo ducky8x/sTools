@@ -1143,6 +1143,24 @@ struct ScreenRecordingFirstFrameTests {
         #expect(!harness.factory.anyRunning)
     }
 
+    /// Quitting after the writer opened its file but before the first frame: the start ends like a canceled one, and
+    /// its file is gone by the time quitting returns, so no date-named file survives sTools.
+    @Test func quittingBeforeTheFirstFrameLeavesNoFileBehind() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        let driver = ManualTickDriver()
+        harness.controller.makeTickDriver = { driver }
+        harness.controller.toggleRecording()
+        #expect(await harness.waitUntil { driver.isRunning })
+        #expect(await harness.waitUntil { !harness.savedFileNames().isEmpty })
+        await harness.controller.finishForQuit()
+        #expect(harness.savedFileNames().isEmpty, "the canceled start's file is removed before quitting returns")
+        #expect(harness.controller.phase == .idle)
+        #expect(!driver.isRunning)
+        #expect(harness.presenter.presented.isEmpty)
+        #expect(!harness.factory.anyRunning)
+    }
+
     /// A disk too full to record on stops the writer at its first frame, so the recording never starts: the start
     /// ends with nothing left behind, the page says why, nothing is asked, and the tool is off. The key hears why, for
     /// its line over the game.
