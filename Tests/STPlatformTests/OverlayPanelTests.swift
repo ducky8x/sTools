@@ -251,3 +251,99 @@ struct OverlayPanelWindowServerTests {
         #expect(!panel.isVisible)
     }
 }
+
+/// Counts `capturableVisibilityDidChange` posts for one panel. Posts arrive synchronously on the main thread.
+@MainActor
+private final class VisibilityPosts {
+    private(set) var count = 0
+    private var token: NSObjectProtocol?
+
+    init(for panel: OverlayPanel) {
+        token = NotificationCenter.default.addObserver(
+            forName: OverlayPanel.capturableVisibilityDidChange, object: panel, queue: nil
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.count += 1 }
+        }
+    }
+
+    func stop() {
+        if let token { NotificationCenter.default.removeObserver(token) }
+        token = nil
+    }
+}
+
+/// Screen Recording's base layer refreshes on these posts (plan decision 1). Panels are ordered in only far off
+/// every display.
+@Suite(
+    "OverlayPanel visibility posts",
+    .serialized,
+    .enabled(if: hasWindowServerDisplay)
+)
+@MainActor
+struct OverlayPanelVisibilityPostTests {
+    init() { prepareApplication() }
+
+    @Test func showingTwicePostsOnceAndHidingPostsOnce() throws {
+        let panel = OverlayPanel()
+        let posts = VisibilityPosts(for: panel)
+        defer { posts.stop(); panel.hide() }
+
+        panel.show(frame: try offScreenFrame())
+        #expect(posts.count == 1)
+        panel.show(frame: try offScreenFrame(dx: 20))
+        #expect(posts.count == 1)
+
+        panel.hide()
+        #expect(posts.count == 2)
+        panel.hide()
+        #expect(posts.count == 2)
+
+        panel.show(frame: try offScreenFrame())
+        #expect(posts.count == 3)
+    }
+
+    @Test func movesAndReordersPostNothing() throws {
+        let panel = OverlayPanel()
+        let other = OverlayPanel()
+        let posts = VisibilityPosts(for: panel)
+        defer { posts.stop(); panel.hide(); other.hide() }
+
+        panel.show(frame: try offScreenFrame())
+        other.show(frame: try offScreenFrame(dx: 140))
+        #expect(posts.count == 1)
+        panel.moveTo(frame: try offScreenFrame(dy: 30))
+        panel.showBelow(frame: try offScreenFrame(dy: 30), windowNumber: other.windowNumber)
+        panel.orderFrontRegardless()
+        #expect(posts.count == 1)
+    }
+
+    @Test func closingAShownPanelPostsItsHiding() throws {
+        let panel = OverlayPanel()
+        let posts = VisibilityPosts(for: panel)
+        defer { posts.stop() }
+        panel.show(frame: try offScreenFrame())
+        panel.close()
+        #expect(posts.count == 2)
+    }
+
+    @Test func aPanelExcludedFromCaptureNeverPosts() throws {
+        let panel = OverlayPanel(isExcludedFromCapture: true)
+        let posts = VisibilityPosts(for: panel)
+        defer { posts.stop(); panel.hide() }
+        panel.show(frame: try offScreenFrame())
+        panel.hide()
+        #expect(posts.count == 0)
+    }
+
+    @Test func aBackdropPostsLikeAnOverlay() throws {
+        let anchor = OverlayPanel()
+        let backdrop = OverlayPanel(role: .backdrop)
+        let posts = VisibilityPosts(for: backdrop)
+        defer { posts.stop(); backdrop.hide(); anchor.hide() }
+        anchor.show(frame: try offScreenFrame())
+        backdrop.showBelow(frame: try offScreenFrame(), windowNumber: anchor.windowNumber)
+        #expect(posts.count == 1)
+        backdrop.hide()
+        #expect(posts.count == 2)
+    }
+}

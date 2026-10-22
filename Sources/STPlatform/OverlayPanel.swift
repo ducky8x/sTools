@@ -85,6 +85,61 @@ public final class OverlayPanel: NSPanel {
             .map { UInt32($0.windowNumber) }
     }
 
+    // MARK: Visibility for recordings
+
+    /// Posted on the main thread, with the panel as its object, when a panel that recordings include is shown
+    /// while it was hidden, or hidden while it was shown. Screen Recording's base layer then reads
+    /// `visibleWindowNumbers()` again at once instead of at its next sweep, so a panel built per pop-up (Timer
+    /// Overlay's) is in the recording from its first frames. Moves and re-orders post nothing: the NBB Overlay
+    /// shows its panel on every update and the backdrop re-orders on every Minecraft activation. Panels excluded
+    /// from capture never post.
+    nonisolated public static let capturableVisibilityDidChange =
+        Notification.Name("sTools.OverlayPanel.capturableVisibilityDidChange")
+
+    /// Whether the panel was on screen when its visibility was last checked.
+    private var wasVisible = false
+
+    /// Posts `capturableVisibilityDidChange` when the panel's visibility differs from the last check.
+    private func noteVisibility() {
+        let visible = isVisible
+        guard visible != wasVisible else { return }
+        wasVisible = visible
+        guard !isExcludedFromCapture else { return }
+        NotificationCenter.default.post(name: Self.capturableVisibilityDidChange, object: self)
+    }
+
+    // Every way a panel is ordered in or out checks. AppKit may route one through another, and the check posts
+    // only on a change, so a show still posts once.
+    override public func orderFront(_ sender: Any?) {
+        super.orderFront(sender)
+        noteVisibility()
+    }
+
+    override public func orderFrontRegardless() {
+        super.orderFrontRegardless()
+        noteVisibility()
+    }
+
+    override public func orderBack(_ sender: Any?) {
+        super.orderBack(sender)
+        noteVisibility()
+    }
+
+    override public func order(_ place: NSWindow.OrderingMode, relativeTo otherWin: Int) {
+        super.order(place, relativeTo: otherWin)
+        noteVisibility()
+    }
+
+    override public func orderOut(_ sender: Any?) {
+        super.orderOut(sender)
+        noteVisibility()
+    }
+
+    override public func close() {
+        super.close()
+        noteVisibility()
+    }
+
     override public var canBecomeKey: Bool { false }
     override public var canBecomeMain: Bool { false }
 
