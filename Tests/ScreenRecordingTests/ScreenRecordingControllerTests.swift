@@ -765,11 +765,9 @@ struct ScreenRecordingKeyTests {
         defer { harness.remove() }
         harness.addCameraAndMicrophone()
         #expect(harness.controller.toggleRecording() == .starting(waitsForSources: true))
-        try await Task.sleep(for: .milliseconds(50))
+        #expect(await harness.waitUntil { harness.factory.videoCaptures.count == 2 && harness.factory.audioCaptures.count == 2 })
         #expect(harness.controller.toggleRecording() == .canceled)
         try await Task.sleep(for: .milliseconds(700))
-        #expect(harness.factory.videoCaptures.count == 2)
-        #expect(harness.factory.audioCaptures.count == 2)
         #expect(!harness.factory.anyRunning)
         #expect(!harness.controller.isEnabled)
     }
@@ -780,10 +778,9 @@ struct ScreenRecordingKeyTests {
         defer { harness.remove() }
         harness.addCameraAndMicrophone()
         harness.controller.setEnabled(true)
-        try await Task.sleep(for: .milliseconds(50))
+        #expect(await harness.waitUntil { harness.factory.videoCaptures.count == 2 })
         harness.controller.setEnabled(false)
         try await Task.sleep(for: .milliseconds(700))
-        #expect(!harness.factory.videoCaptures.isEmpty)
         #expect(!harness.factory.anyRunning)
     }
 
@@ -799,11 +796,13 @@ struct ScreenRecordingKeyTests {
         let firstAudio = harness.factory.audioCaptures
         harness.controller.options.showCursor.toggle()
         #expect(await harness.waitUntil { harness.factory.videoCaptures.count == 4 })
-        try await Task.sleep(for: .milliseconds(700))
+        #expect(await harness.waitUntil {
+            harness.factory.videoCaptures.suffix(2).allSatisfy { $0.isRunning }
+                && harness.factory.audioCaptures.suffix(2).allSatisfy { $0.isRunning }
+        })
+        try await Task.sleep(for: .milliseconds(300))
         #expect(firstVideo.allSatisfy { !$0.isRunning })
         #expect(firstAudio.allSatisfy { !$0.isRunning })
-        #expect(harness.factory.videoCaptures.suffix(2).allSatisfy { $0.isRunning })
-        #expect(harness.factory.audioCaptures.suffix(2).allSatisfy { $0.isRunning })
         harness.controller.setEnabled(false)
         #expect(await harness.waitUntil { !harness.factory.anyRunning })
     }

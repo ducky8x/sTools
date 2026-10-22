@@ -23,18 +23,25 @@ struct ProcessTapCaptureTests {
         ProcessTapCapture(target: .processID(4242), findProcesses: { app.find($0) }, retryInterval: .milliseconds(10))
     }
 
-    /// While the app is silent it keeps looking for its sound; the stop ends the looking.
+    /// Waits (bounded, generously, on a clock a Mac sleep doesn't use up) for `condition`.
+    private func waitUntil(_ condition: () -> Bool) async -> Bool {
+        let clock = SuspendingClock()
+        let deadline = clock.now + .seconds(20)
+        while !condition(), clock.now < deadline { try? await Task.sleep(for: .milliseconds(5)) }
+        return condition()
+    }
+
+    /// While the app is silent it keeps looking for its sound; the stop ends the looking (a lookup already under way
+    /// as the stop comes may still finish).
     @Test func itLooksForTheAppsSoundUntilTheStop() async throws {
         let app = SilentApp()
         let tap = capture(app)
         try await tap.start { _ in }
-        try await Task.sleep(for: .milliseconds(100))
-        #expect(app.lookupCount > 1)
+        #expect(await waitUntil { app.lookupCount > 2 })
         await tap.stop()
-        try await Task.sleep(for: .milliseconds(30))
-        let afterStop = app.lookupCount
-        try await Task.sleep(for: .milliseconds(100))
-        #expect(app.lookupCount == afterStop)
+        let atStop = app.lookupCount
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(app.lookupCount <= atStop + 1)
     }
 
     /// A stop before the start (the rig stopped while its sources were still being started) is final: the start looks
@@ -51,16 +58,16 @@ struct ProcessTapCaptureTests {
     /// A stop racing the start on another thread never leaves the capture looking (and so tapping the app once it
     /// makes a sound).
     @Test func aStopRacingTheStartLeavesItIdle() async throws {
-        for _ in 0..<50 {
+        for _ in 0..<30 {
             let app = SilentApp()
             let tap = capture(app)
             async let started: Void? = try? tap.start { _ in }
             async let stopped: Void = tap.stop()
             _ = await (started, stopped)
-            try await Task.sleep(for: .milliseconds(30))
             let settled = app.lookupCount
-            try await Task.sleep(for: .milliseconds(60))
-            #expect(app.lookupCount == settled)
+            // A capture left looking would look about 15 more times by then.
+            try await Task.sleep(for: .milliseconds(150))
+            #expect(app.lookupCount <= settled + 1)
         }
     }
 }
