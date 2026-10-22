@@ -8,7 +8,8 @@ private let intendedDuration: [STSound: Double] = [
     .chime: 0.900, .recordStart: 0.160, .recordStop: 0.160,
 ]
 
-private struct WAV {
+/// A 16-bit PCM WAV file read back into samples. Shared with `AlarmSoundResourceTests`.
+struct WAV {
     let channels: Int
     let sampleRate: Int
     let bitsPerSample: Int
@@ -100,11 +101,18 @@ func bundledSoundHasNoSampleJumps(_ sound: STSound) throws {
         try #require(process.terminationStatus == 0, "generator run \(run) failed")
     }
 
-    for sound in STSound.allCases {
-        let first = try Data(contentsOf: root.appendingPathComponent("a/\(sound.rawValue).wav"))
-        let second = try Data(contentsOf: root.appendingPathComponent("b/\(sound.rawValue).wav"))
-        #expect(first == second, "\(sound) differs between runs")
+    // The UI sounds, then the alarms in their subfolder: the same bytes on every run, and the same bytes as the
+    // bundled files, so nothing bundled is out of date with the script.
+    let generated: [(path: String, bundled: URL?)] =
+        STSound.allCases.map { ("\($0.rawValue).wav", $0.resourceURL) }
+        + STAlarmSound.allCases.map { ("Alarms/\($0.rawValue).wav", $0.resourceURL) }
+    for file in generated {
+        let first = try Data(contentsOf: root.appendingPathComponent("a/\(file.path)"))
+        let second = try Data(contentsOf: root.appendingPathComponent("b/\(file.path)"))
+        #expect(first == second, "\(file.path) differs between runs")
         #expect(!first.isEmpty)
+        let bundled = try #require(file.bundled, "\(file.path) isn't bundled")
+        #expect(try Data(contentsOf: bundled) == first, "the bundled \(file.path) isn't what the script makes")
     }
 }
 
@@ -154,4 +162,15 @@ func shouldPlayRequiresAllThree(_ soundsEnabled: Bool, _ volume: Double, _ syste
     #expect(player.loadedCount == 0)
     player.play(.click)
     #expect(player.loadedCount == 0, "sounds off: nothing to load")
+}
+
+/// Code that plays a UI sound at its own volume (Timer Overlay's cues) finds the same bundled file the player
+/// loads, without loading anything.
+@Test(arguments: STSound.allCases)
+func publicResourceURLIsTheBundledFile(_ sound: STSound) throws {
+    let url = try #require(sound.resourceURL)
+    #expect(url.lastPathComponent == "\(sound.rawValue).wav")
+    #expect(url.deletingLastPathComponent().lastPathComponent == "Sounds")
+    #expect(url == STSoundPlayer.resourceURL(for: sound))
+    #expect(FileManager.default.fileExists(atPath: url.path))
 }

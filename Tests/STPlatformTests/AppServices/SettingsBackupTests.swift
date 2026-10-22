@@ -304,4 +304,139 @@ private let known = ["general": 1, "appState": 1, "crosshair": 2]
         #expect(box.text("appState.json", in: fresh) != nil)
         #expect(box.text("Images/p/q.png", in: fresh) != nil)
     }
+
+    // MARK: The owner's sounds (Timer Overlay's alarm files)
+
+    @Test func theSoundsFolderIsNamedOnce() {
+        #expect(SettingsLayout.soundsFolderName == "Sounds")
+        #expect(SettingsFolder(url: URL(filePath: "/x")).soundsURL.path == "/x/Sounds")
+    }
+
+    @Test(arguments: [
+        ("Alarm.mp3", true), ("Bell 2.wav", true), ("a:b.m4a", true), ("no extension", true),
+        ("", false), (".", false), ("..", false), (".hidden.mp3", false), ("a/b.mp3", false), ("../up.mp3", false),
+        ("/abs.mp3", false), ("back\\slash.mp3", false), ("nul\0.mp3", false), (String(repeating: "x", count: 256), false),
+    ])
+    func soundNamesArePlainVisibleFileNames(_ name: String, _ valid: Bool) {
+        #expect(SettingsLayout.isValidSoundFileName(name) == valid)
+    }
+
+    @Test func exportCarriesTheSoundsFolderFlat() async throws {
+        let box = try Sandbox()
+        try box.doc("general", value: "{}", in: box.source)
+        let mp3 = Data([0x49, 0x44, 0x33, 0x04, 0x00, 0xFF])
+        try FileManager.default.createDirectory(at: box.source.appending(path: "Sounds/nested"), withIntermediateDirectories: true)
+        try mp3.write(to: box.source.appending(path: "Sounds/Alarm.mp3"))
+        try Data(mp3.reversed()).write(to: box.source.appending(path: "Sounds/Bell 2.wav"))
+        try mp3.write(to: box.source.appending(path: "Sounds/nested/deep.mp3"))
+        try mp3.write(to: box.source.appending(path: "Sounds/.DS_Store"))
+
+        let summary = try await SettingsBackup(directory: box.source).export(to: box.file)
+
+        #expect(summary.soundCount == 2)
+        let sounds = try #require(try box.jsonObject(box.file)["sounds"] as? [String: String])
+        #expect(Set(sounds.keys) == ["Alarm.mp3", "Bell 2.wav"])
+        #expect(sounds["Alarm.mp3"] == mp3.base64EncodedString())
+        #expect(sounds["Bell 2.wav"] == Data(mp3.reversed()).base64EncodedString())
+    }
+
+    @Test func exportWithoutSoundsWritesAnEmptyList() async throws {
+        let box = try Sandbox()
+        try box.doc("general", value: "{}", in: box.source)
+        let summary = try await SettingsBackup(directory: box.source).export(to: box.file)
+        #expect(summary.soundCount == 0)
+        #expect((try box.jsonObject(box.file)["sounds"] as? [String: String])?.isEmpty == true)
+    }
+
+    @Test func roundTripRestoresTheSoundsAndCountsThem() async throws {
+        let box = try Sandbox()
+        try box.doc("general", value: #"{"restoreToolsAtQuit":true}"#, in: box.source)
+        let wav = Data([0x52, 0x49, 0x46, 0x46, 0x00, 0x80])
+        try box.put("png", "Images/logo.png", in: box.source)
+        try FileManager.default.createDirectory(at: box.source.appending(path: "Sounds"), withIntermediateDirectories: true)
+        try wav.write(to: box.source.appending(path: "Sounds/Ding.wav"))
+        try Data(wav.reversed()).write(to: box.source.appending(path: "Sounds/Dong 2.wav"))
+        _ = try await SettingsBackup(directory: box.source).export(to: box.file)
+
+        let report = try await SettingsBackup(directory: box.target, now: { fixedDate })
+            .importSettings(from: box.file, knownVersions: known)
+
+        #expect(report.sounds == [.init(name: "Ding.wav", outcome: .applied), .init(name: "Dong 2.wav", outcome: .applied)])
+        #expect(report.appliedCount == 4, "one document, one image and two sounds")
+        #expect(report.skippedCount == 0)
+        #expect(try Data(contentsOf: box.target.appending(path: "Sounds/Ding.wav")) == wav)
+        #expect(try Data(contentsOf: box.target.appending(path: "Sounds/Dong 2.wav")) == Data(wav.reversed()))
+    }
+
+    @Test func importingSoundsDeletesNothingAndReplacesASameNamedFile() async throws {
+        let box = try Sandbox()
+        try box.put("keep", "Sounds/keep.mp3", in: box.target)
+        try box.put("old", "Sounds/same.mp3", in: box.target)
+        try box.writeEnvelope(#"{"format":1,"app":"sTools","createdAt":"x","documents":{},"sounds":{"same.mp3":"AQID","new.mp3":"BAUG"}}"#)
+
+        let report = try await SettingsBackup(directory: box.target, now: { fixedDate })
+            .importSettings(from: box.file, knownVersions: known)
+
+        #expect(report.appliedCount == 2)
+        #expect(report.backupURL != nil, "a file with only sounds is still applied, after a backup")
+        #expect(box.text("Sounds/keep.mp3", in: box.target) == "keep")
+        #expect(try Data(contentsOf: box.target.appending(path: "Sounds/same.mp3")) == Data([1, 2, 3]))
+        #expect(try Data(contentsOf: box.target.appending(path: "Sounds/new.mp3")) == Data([4, 5, 6]))
+        let backup = try #require(report.backupURL)
+        #expect(box.text("Sounds/same.mp3", in: backup) == "old")
+    }
+
+    @Test func soundsWithUnsafeNamesOrBadDataAreSkipped() async throws {
+        let box = try Sandbox()
+        try box.writeEnvelope("""
+        {"format":1,"app":"sTools","createdAt":"x","documents":{},"sounds":{
+          "ok.mp3":"AQID","../evil.mp3":"AQID","sub/dir.mp3":"AQID","/abs.mp3":"AQID",".hidden.mp3":"AQID",
+          "bad.mp3":"%%%","number.mp3":7
+        }}
+        """)
+
+        let report = try await SettingsBackup(directory: box.target).importSettings(from: box.file, knownVersions: known)
+
+        func outcome(_ name: String) -> SettingsBackup.Outcome? { report.sounds.first { $0.name == name }?.outcome }
+        #expect(outcome("ok.mp3") == .applied)
+        #expect(outcome("../evil.mp3") == .skipped(.invalidName))
+        #expect(outcome("sub/dir.mp3") == .skipped(.invalidName))
+        #expect(outcome("/abs.mp3") == .skipped(.invalidName))
+        #expect(outcome(".hidden.mp3") == .skipped(.invalidName))
+        #expect(outcome("bad.mp3") == .skipped(.invalidEntry))
+        #expect(outcome("number.mp3") == .skipped(.invalidEntry))
+        #expect(report.appliedCount == 1)
+        #expect(report.skippedCount == 6)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: box.target.appending(path: "Sounds").path) == ["ok.mp3"])
+        #expect(!FileManager.default.fileExists(atPath: box.target.appending(path: "evil.mp3").path))
+        #expect(!FileManager.default.fileExists(atPath: box.root.appending(path: "evil.mp3").path))
+    }
+
+    @Test func aFailedSoundWriteRestoresEverything() async throws {
+        let box = try Sandbox()
+        try box.doc("general", value: #"{"restoreToolsAtQuit":false}"#, in: box.target)
+        // A directory squatting on "Sounds/zz.mp3" makes that write fail after the document and "aa.mp3" were written.
+        try FileManager.default.createDirectory(at: box.target.appending(path: "Sounds/zz.mp3"), withIntermediateDirectories: true)
+        try box.writeEnvelope("""
+        {"format":1,"app":"sTools","createdAt":"x","documents":{"general":{"version":1,"value":{"restoreToolsAtQuit":true}}},
+         "sounds":{"aa.mp3":"AQID","zz.mp3":"AQID"}}
+        """)
+
+        do {
+            _ = try await SettingsBackup(directory: box.target, now: { fixedDate }).importSettings(from: box.file, knownVersions: known)
+            Issue.record("the import should have failed")
+        } catch SettingsBackupError.writeFailed {
+        }
+
+        #expect(box.text("general.json", in: box.target)?.contains("false") == true)
+        #expect(!FileManager.default.fileExists(atPath: box.target.appending(path: "Sounds/aa.mp3").path))
+    }
+
+    @Test func aFileFromBeforeSoundsStillImports() async throws {
+        let box = try Sandbox()
+        try box.writeEnvelope(#"{"format":1,"app":"sTools","createdAt":"x","documents":{"general":{"version":1,"value":{}}},"images":{}}"#)
+        let report = try await SettingsBackup(directory: box.target).importSettings(from: box.file, knownVersions: known)
+        #expect(report.sounds.isEmpty)
+        #expect(report.appliedCount == 1)
+    }
 }

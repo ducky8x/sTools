@@ -62,6 +62,21 @@ private let fixedDate = Date(timeIntervalSince1970: 1_800_000_000)
         #expect(fresh.load(GeneralSettings.self) == GeneralSettings.defaultValue)
     }
 
+    /// Timer Overlay's own sound files live in `Sounds/`, and Reset sTools moves them aside with everything else.
+    @Test func resetMovesTheOwnersSoundsAside() async throws {
+        let box = try Sandbox()
+        try box.put("{}", "timerOverlay.json")
+        try box.put("mp3", "\(SettingsLayout.soundsFolderName)/Alarm.mp3")
+        try box.put("wav", "\(SettingsLayout.soundsFolderName)/Bell 2.wav")
+
+        let backup = try #require(try await ResetService(directory: box.directory, now: { fixedDate }).reset(confirmed: true))
+
+        #expect(box.names() == ["Backups"])
+        #expect(box.exists("Sounds/Alarm.mp3", in: backup))
+        #expect(box.exists("Sounds/Bell 2.wav", in: backup))
+        #expect(box.exists("timerOverlay.json", in: backup))
+    }
+
     @Test func resetFlushesPendingWritesSoTheyAreNotLost() async throws {
         let box = try Sandbox()
         let store = SettingsStore(directory: box.directory, debounce: .seconds(60))
