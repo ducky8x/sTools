@@ -355,6 +355,38 @@ struct STTextFieldRenderingTests {
     }
 }
 
+// MARK: - Field line height
+
+/// The editable AppKit field inside `view`.
+@MainActor
+private func appKitField(in view: NSView) -> NSTextField? {
+    if let field = view as? NSTextField, field.isEditable { return field }
+    return view.subviews.lazy.compactMap { appKitField(in: $0) }.first
+}
+
+@MainActor
+@Suite("Field line height")
+struct FieldLineHeightTests {
+    /// `stFieldLineHeight` holds a field to `STFont.textLineHeight`, so that has to be the height the real field's line
+    /// takes: for both field sizes (14 pt text, 13 pt figures) at every Text Size, in both weights the fields use. The
+    /// half points pin down which way the field rounds its font's size.
+    @Test(arguments: [Font.Weight.regular, .medium])
+    func isTheHeightOfTheRealFieldsLine(weight: Font.Weight) throws {
+        let textSizes = [13.0, 14.0].flatMap { base in stride(from: 0.9, through: 1.3001, by: 0.025).map { base * $0 } }
+        for size in textSizes + [12.5, 13.5, 14.5, 15.5, 16.5, 17.5] {
+            let host = hostingView(TextField("Name", text: .constant("Wolverine gypsy 01"))
+                .textFieldStyle(.plain)
+                .font(weight == .medium ? STFont.figures(size) : STFont.text(size))
+                .frame(width: 200))
+            host.frame = CGRect(x: 0, y: 0, width: 200, height: 40)
+            host.layoutSubtreeIfNeeded()
+            let field = try #require(appKitField(in: host))
+            let cell = try #require(field.cell)
+            #expect(cell.cellSize.height == STFont.textLineHeight(size, weight: weight), "\(size) pt \(weight)")
+        }
+    }
+}
+
 // MARK: - Typing renderer
 
 @MainActor

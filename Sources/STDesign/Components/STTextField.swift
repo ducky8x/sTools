@@ -226,6 +226,23 @@ struct STTypingText: View {
     }
 }
 
+// MARK: - Field line height
+
+extension View {
+    /// Holds a plain `TextField` to one line of its font (`STFont.textLineHeight`), the field at the top.
+    ///
+    /// Now and then SwiftUI sizes a field's AppKit view to another font's line instead of its own (20 pt for a
+    /// 13 pt field's 17 pt line, 17 pt for a 14 pt field's 20 pt line), and in some processes keeps doing it for
+    /// every field in that font; the field's own cell still measures its line right. Centered in its row, such a
+    /// field sat half the difference off and moved the rows around it. In a slot of its own line's height the
+    /// layout holds whatever height SwiftUI picks, and as an AppKit field draws its line from its top edge, the
+    /// glyphs stay where they belong too; a view shorter than its line still cuts off the bottom of glyphs the
+    /// field draws itself. Pass the field's font size and weight (`STFont.text` is regular, `figures` medium).
+    public func stFieldLineHeight(_ size: CGFloat, weight: Font.Weight = .regular) -> some View {
+        frame(height: STFont.textLineHeight(size, weight: weight), alignment: .top)
+    }
+}
+
 // MARK: - Text field
 
 /// A borderless single-line field: `surface` fill, a `stroke` baseline that becomes an accent
@@ -265,7 +282,8 @@ public struct STTextField: View {
     /// An empty string has no line to measure, so the overlay draws a space.
     static func displayString(_ text: String) -> String { text.isEmpty ? " " : text }
 
-    private var bodyFont: Font { STFont.text(14 * theme.textScale) }
+    private var bodySize: CGFloat { 14 * theme.textScale }
+    private var bodyFont: Font { STFont.text(bodySize) }
 
     private var showsNativeText: Bool {
         revealsNativeText
@@ -275,7 +293,8 @@ public struct STTextField: View {
 
     /// At some font sizes the real field draws its line half a point lower than SwiftUI's `Text`;
     /// those are exactly the sizes where the field's frame is a point shorter than the Text's.
-    /// Half the height difference closes the gap (verified for 12 to 18.2 pt in the tests).
+    /// Half the height difference closes the gap (verified for 12 to 18.2 pt in the tests). The
+    /// field's height here is its slot's, its line height (`stFieldLineHeight`).
     private var baselineCorrection: CGFloat {
         guard fieldSize.height > 0, textSize.height > 0 else { return 0 }
         let raw = max(0, min(1, (textSize.height - fieldSize.height) / 2))
@@ -305,6 +324,7 @@ public struct STTextField: View {
                 .font(bodyFont)
                 .foregroundStyle(showsNativeText ? STColor.ink : Color.clear)
                 .tint(theme.accent)
+                .stFieldLineHeight(bodySize)
                 .frame(minWidth: 0, idealWidth: 220, maxWidth: .infinity, alignment: .leading)
                 .focused($isFocused)
                 .focusEffectDisabled()
