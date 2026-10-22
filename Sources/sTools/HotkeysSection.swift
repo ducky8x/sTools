@@ -188,13 +188,15 @@ struct HotkeysSection: View {
     static func keySetTitle(_ set: HotkeyKeySet?) -> String { HotkeyKeySet.name(of: set) }
 
     /// The line under the key sets: what the current set gives each tool, in sidebar order ("⌘1 Crosshair · ⌘2
-    /// Timer Overlay · …", each key and tool held together by no-break spaces so a narrow column wraps between
-    /// them), that None gives none a key, or, while the keys are Custom, whose keys they are.
+    /// Start timer · …", each key and action held together by no-break spaces so a narrow column wraps between
+    /// them), that None gives none a key, or, while the keys are Custom, whose keys they are. Each key is named by its
+    /// action, as the hotkey rows and the editors' chips name it (`HotkeyAction.title`), so one key reads the same
+    /// everywhere.
     static func keySetCaption(_ set: HotkeyKeySet?) -> String {
         guard let set else { return "Custom: keys you set yourself. Pick a set for one key per tool, in sidebar order." }
         let keys = HotkeyKeySet.toolActions.compactMap { action in
             set.combo(for: action).map { combo in
-                "\(combo.displayString) \(toolName(for: action))".replacingOccurrences(of: " ", with: "\u{00A0}")
+                "\(combo.displayString) \(action.title)".replacingOccurrences(of: " ", with: "\u{00A0}")
             }
         }
         return keys.isEmpty ? "No tool has a key of its own." : keys.joined(separator: " · ")

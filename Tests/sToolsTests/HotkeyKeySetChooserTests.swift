@@ -86,22 +86,23 @@ struct HotkeyKeySetChooserTests {
     }
 
     /// Under the sets, one line says what the current set gives each tool, in sidebar order, or whose keys they are.
-    /// Each key stays on one line with its tool (no-break spaces), so a narrow column wraps only between them.
+    /// Each key stays on one line with its action (no-break spaces), so a narrow column wraps only between them, and is
+    /// named as the hotkey rows and chips name it: ⌘2 is "Start timer" there too.
     @Test func theCaptionSaysWhatTheSetGivesEachTool() {
         func caption(_ set: HotkeyKeySet?) -> String {
             HotkeysSection.keySetCaption(set).replacingOccurrences(of: "\u{00A0}", with: " ")
         }
         #expect(caption(.command)
-            == "⌘1 Crosshair · ⌘2 Timer Overlay · ⌘3 NBB Overlay · ⌘4 Screen Recording · ⌘5 Window Backdrop")
+            == "⌘1 Crosshair · ⌘2 Start timer · ⌘3 NBB Overlay · ⌘4 Screen Recording · ⌘5 Window Backdrop")
         #expect(HotkeysSection.keySetCaption(.command).components(separatedBy: " · ")
-            == ["⌘1\u{00A0}Crosshair", "⌘2\u{00A0}Timer\u{00A0}Overlay", "⌘3\u{00A0}NBB\u{00A0}Overlay",
+            == ["⌘1\u{00A0}Crosshair", "⌘2\u{00A0}Start\u{00A0}timer", "⌘3\u{00A0}NBB\u{00A0}Overlay",
                 "⌘4\u{00A0}Screen\u{00A0}Recording", "⌘5\u{00A0}Window\u{00A0}Backdrop"])
         #expect(caption(.control)
-            == "⌃1 Crosshair · ⌃2 Timer Overlay · ⌃3 NBB Overlay · ⌃4 Screen Recording · ⌃5 Window Backdrop")
+            == "⌃1 Crosshair · ⌃2 Start timer · ⌃3 NBB Overlay · ⌃4 Screen Recording · ⌃5 Window Backdrop")
         #expect(caption(.option)
-            == "⌥1 Crosshair · ⌥2 Timer Overlay · ⌥3 NBB Overlay · ⌥4 Screen Recording · ⌥5 Window Backdrop")
+            == "⌥1 Crosshair · ⌥2 Start timer · ⌥3 NBB Overlay · ⌥4 Screen Recording · ⌥5 Window Backdrop")
         #expect(caption(.functionKeys)
-            == "F13 Crosshair · F14 Timer Overlay · F15 NBB Overlay · F16 Screen Recording · F17 Window Backdrop")
+            == "F13 Crosshair · F14 Start timer · F15 NBB Overlay · F16 Screen Recording · F17 Window Backdrop")
         #expect(HotkeysSection.keySetCaption(.noKeys) == "No tool has a key of its own.")
         #expect(HotkeysSection.keySetCaption(nil)
             == "Custom: keys you set yourself. Pick a set for one key per tool, in sidebar order.")
