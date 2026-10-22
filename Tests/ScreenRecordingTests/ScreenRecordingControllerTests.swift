@@ -762,7 +762,7 @@ struct ScreenRecordingKeyTests {
         #expect(!harness.controller.isEnabled)
     }
 
-    /// While the question waits, the key brings it back ("Save or delete the last recording first") and starts nothing:
+    /// While the question waits, the key brings it back ("Save or Delete the last recording first") and starts nothing:
     /// the tool stays off and no source starts, however long it waits. Once it's answered, the key records again.
     @Test func theKeyWhileTheQuestionWaitsStartsNothing() async throws {
         let harness = Harness()

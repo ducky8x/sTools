@@ -60,7 +60,7 @@ enum HotkeyConfirmation {
         case .recordingStopped: "Recording stopped \u{00B7} \(screenRecordingOff)"
         case .recordingCanceled: "Recording canceled \u{00B7} \(screenRecordingOff)"
         case .recordingFinishing: "Still finishing the last recording"
-        case .recordingAwaitingDecision: "Save or delete the last recording first"
+        case .recordingAwaitingDecision: "Save or Delete the last recording first"
         case .recordingNeedsPermission: "Screen Recording needs Screen & System Audio Recording"
         }
     }
