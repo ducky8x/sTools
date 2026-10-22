@@ -36,6 +36,24 @@ private final class FakeFactory: CaptureFactory {
     }
 }
 
+/// Records what the controller asked of the Save/Delete question instead of showing a panel.
+@MainActor
+final class FakeDecisionPresenter: RecordingDecisionPresenting {
+    private(set) var presented: [ScreenRecordingController.Finished] = []
+    private(set) var dismissals = 0
+    private(set) var isShowing = false
+
+    func present(for controller: ScreenRecordingController) {
+        if let finished = controller.finished { presented.append(finished) }
+        isShowing = true
+    }
+
+    func dismiss() {
+        dismissals += 1
+        isShowing = false
+    }
+}
+
 private struct Granted: PermissionProbing {
     func status(for permission: Permission) -> PermissionStatus { .granted }
     func request(_ permission: Permission) async -> PermissionStatus { .granted }
@@ -47,6 +65,7 @@ private struct Harness {
     let factory = FakeFactory()
     /// The harness's own feeds, so nothing leaks into or out of the app's.
     let audio = InProcessAudio()
+    let presenter = FakeDecisionPresenter()
     let controller: ScreenRecordingController
     let source: StaticMinecraftWindowSource
 
@@ -62,7 +81,8 @@ private struct Harness {
             displays: DisplayDirectory(), minecraft: locator, permissions: PermissionCenter(prober: Granted()))
         let factory = factory
         controller = ScreenRecordingController(
-            services: services, makeFactory: { _ in factory }, loadAvailable: { _ in AvailableSources() }, inProcessAudio: audio)
+            services: services, makeFactory: { _ in factory }, loadAvailable: { _ in AvailableSources() }, inProcessAudio: audio,
+            decisionPresenter: presenter)
         var options = controller.options
         options.folderPath = directory.appending(path: "Movies").path
         options.canvas = .custom(PixelSize(width: 320, height: 180))
@@ -80,10 +100,39 @@ private struct Harness {
 
     /// Records about `seconds` of a still base frame.
     func record(seconds: Double) async {
-        factory.bases[42]?.push(.frame(VideoFrame(pixelBuffer: WriterFixture.makeFrame(index: 1, size: PixelSize(width: 320, height: 180)), hostTime: HostMediaClock().now())))
+        pushFrame()
         await controller.startRecording()
         try? await Task.sleep(for: .seconds(seconds))
         await controller.stopRecording(explanation: nil)
+    }
+
+    /// One still frame from Minecraft's (fake) window.
+    func pushFrame() {
+        factory.bases[42]?.push(.frame(VideoFrame(pixelBuffer: WriterFixture.makeFrame(index: 1, size: PixelSize(width: 320, height: 180)), hostTime: HostMediaClock().now())))
+    }
+
+    /// Waits (bounded, generously: arming and starting can take seconds while the whole suite runs) for `condition`,
+    /// yielding between checks.
+    func waitUntil(_ condition: () -> Bool) async -> Bool {
+        let deadline = ContinuousClock.now + .seconds(20)
+        while !condition(), ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(5)) }
+        return condition()
+    }
+
+    /// Off, the key switches the tool on and records at once; pressed again after a moment, it stops and asks.
+    func recordByKey() async {
+        controller.toggleRecording()
+        _ = await waitUntil { controller.phase == .recording }
+        pushFrame()
+        try? await Task.sleep(for: .milliseconds(250))
+        controller.toggleRecording()
+        _ = await waitUntil { controller.phase == .deciding }
+    }
+
+    /// The recording folder's files, by name.
+    func savedFileNames() -> [String] {
+        let folder = URL(fileURLWithPath: controller.options.folderPath)
+        return ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).sorted()
     }
 
     func remove() { try? FileManager.default.removeItem(at: directory) }
@@ -171,6 +220,7 @@ struct ScreenRecordingControllerTests {
         #expect(saved.lastPathComponent == "Seed 1.mp4")
         #expect(FileManager.default.fileExists(atPath: saved.path))
         #expect(!FileManager.default.fileExists(atPath: finished.files[0].path))
+        #expect(harness.presenter.presented.count == 1 && harness.presenter.dismissals == 1)
         harness.controller.setEnabled(false)
     }
 
@@ -197,6 +247,8 @@ struct ScreenRecordingControllerTests {
         let saved = try #require(harness.controller.lastSaved?.files.first)
         #expect(saved.pathExtension == "mov")
         #expect(saved.lastPathComponent.range(of: #"^\d{4}-\d{2}-\d{2} \d{2}\.\d{2}\.\d{2}\.mov$"#, options: .regularExpression) != nil)
+        // Saved without the question.
+        #expect(harness.presenter.presented.isEmpty)
         harness.controller.setEnabled(false)
     }
 
@@ -210,6 +262,8 @@ struct ScreenRecordingControllerTests {
         #expect(saved)
         #expect(harness.controller.options.askSaveDelete)
         #expect(harness.controller.phase == .idle)
+        // The Prologue's test asks nothing.
+        #expect(harness.presenter.presented.isEmpty)
         let file = try #require(harness.controller.lastSaved?.files.first)
         #expect(FileManager.default.fileExists(atPath: file.path))
         harness.controller.setEnabled(false)
@@ -259,3 +313,4 @@ struct ScreenRecordingControllerTests {
         harness.controller.setEnabled(false)
     }
 }
+

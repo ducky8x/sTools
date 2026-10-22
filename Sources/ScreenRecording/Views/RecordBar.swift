@@ -44,10 +44,13 @@ struct RecordBar: View {
                 .buttonStyle(STButtonStyle(.secondary))
         case .finishing:
             Button("Finishing\u{2026}") {}.buttonStyle(STButtonStyle(.secondary)).disabled(true)
-        case .idle, .deciding:
+        case .deciding:
+            // The question is in a panel of its own; this brings it forward, over this window.
+            Button("Save or Delete\u{2026}") { controller.presentDecision() }
+                .buttonStyle(STButtonStyle(.secondary))
+        case .idle:
             Button("Record") { Task { await controller.startRecording() } }
                 .buttonStyle(STButtonStyle(.primary))
-                .disabled(controller.phase == .deciding)
         }
     }
 
@@ -67,54 +70,5 @@ struct RecordBar: View {
     static func clock(_ seconds: Double) -> String {
         let total = Int(seconds)
         return String(format: "%02d:%02d:%02d", total / 3600, (total / 60) % 60, total % 60)
-    }
-}
-
-/// On Stop: Save with an optional name, or Delete (spec 5.4.4).
-struct SaveDeleteSheet: View {
-    @Bindable var controller: ScreenRecordingController
-    @State private var name = ""
-    @State private var confirmsDelete = false
-    @Environment(\.stTheme) private var theme
-
-    var body: some View {
-        let finished = controller.finished
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Save this recording?").stStyle(.sectionTitle).foregroundStyle(STColor.ink)
-            if let finished {
-                Text("\(RecordBar.clock(finished.seconds)) long\(finished.files.count > 1 ? ", in \(finished.files.count) files" : "").")
-                    .stStyle(.body).foregroundStyle(theme.inkSecondary)
-                if let explanation = finished.explanation {
-                    Text(explanation).stStyle(.body).foregroundStyle(STColor.danger).fixedSize(horizontal: false, vertical: true)
-                }
-                if finished.droppedFrames > 0 {
-                    Text("\(finished.droppedFrames) frames were dropped. If Game Mode was on, macOS may have lowered sTools\u{2019} priority; lower the frame rate or output size if this keeps happening.")
-                        .stStyle(.caption).foregroundStyle(theme.inkTertiary).fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            STTextField("Name (optional)", text: $name)
-            Text(name.trimmingCharacters(in: .whitespaces).isEmpty
-                 ? (finished?.files.first.map { "Without a name it\u{2019}s saved as \($0.deletingPathExtension().lastPathComponent).\(controller.options.fileType.fileExtension)." }
-                    ?? "Without a name it\u{2019}s named by the date and time.")
-                 : "Saved as \(RecordingFinisher.sanitizedName(name) ?? name).\(controller.options.fileType.fileExtension) in \((controller.options.folderPath as NSString).abbreviatingWithTildeInPath).")
-                .stStyle(.caption).foregroundStyle(theme.inkTertiary)
-            HStack {
-                Button("Delete\u{2026}") { confirmsDelete = true }.buttonStyle(STButtonStyle(.quiet))
-                Spacer()
-                Button("Save") { Task { await controller.save(name: name) } }
-                    .buttonStyle(STButtonStyle(.primary))
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(controller.phase == .finishing)
-            }
-        }
-        .padding(24)
-        .frame(width: 440)
-        .background(STColor.background)
-        .interactiveDismissDisabled()
-        .confirmationDialog("Delete this recording?", isPresented: $confirmsDelete) {
-            Button("Delete", role: .destructive) { controller.delete() }
-        } message: {
-            Text("The file is removed for good.")
-        }
     }
 }

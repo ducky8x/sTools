@@ -104,7 +104,8 @@ final class AppModel {
         wasAccessibilityGranted = services.permissions.status(.accessibility) == .granted
         watchAccessibility()
         updateCenter.apply(updates)
-        (controllers[.screenRecording] as? ScreenRecordingController)?.requestEnable = { [weak self] in
+        let recording = controllers[.screenRecording] as? ScreenRecordingController
+        recording?.requestEnable = { [weak self] in
             guard let self else { return false }
             self.setTool(.screenRecording, on: true)
             return self.isOn(.screenRecording)
@@ -123,18 +124,21 @@ final class AppModel {
     /// The production wiring: real services, the live Accessibility source and the tool controllers.
     convenience init() {
         let theme = STTheme()
+        let sound = STSoundPlayer(theme: theme)
         let services = ToolServices(
             settings: SettingsStore(directory: SettingsStore.defaultDirectory()),
             displays: DisplayDirectory(),
             minecraft: MinecraftLocator(source: AXMinecraftSource()),
             permissions: PermissionCenter())
-        self.init(services: services, theme: theme, sound: STSoundPlayer(theme: theme), controllers: [
+        self.init(services: services, theme: theme, sound: sound, controllers: [
             .nbbOverlay: NBBOverlayController(services: services),
             .windowBackdrop: BackdropController(services: services),
             .crosshair: CrosshairController(services: services),
             // The app's own theme, so the overlay follows Reduce animations even while the window is closed.
             .timerOverlay: TimerOverlayController(services: services, theme: theme),
-            .screenRecording: ScreenRecordingController(services: services),
+            // The Save/Delete question after a stop floats in a panel of its own, so it shows over Minecraft too.
+            .screenRecording: ScreenRecordingController(
+                services: services, decisionPresenter: RecordingDecisionPanel(theme: theme, sound: sound)),
         ], keyRebinder: KeyRebinderController(services: services), updater: AppUpdater(),
         hotkeyRegistrar: CarbonHotkeyRegistrar(), hotkeyHUD: HotkeyHUD(theme: theme), loginItem: SystemLoginItem())
         minecraft.start()
@@ -152,10 +156,8 @@ final class AppModel {
         case .alertFirstButtonReturn:
             break
         case .alertSecondButtonReturn:
-            Task {
-                await recording.stopRecording(explanation: nil)
-                if recording.phase == .deciding { await recording.save(name: nil) }
-            }
+            // Saved under its date-and-time name without the question.
+            Task { await recording.stopRecording(explanation: nil, savesWithoutAsking: true) }
         default:
             DispatchQueue.main.async { [weak self] in self?.openMainWindow?() }
         }
