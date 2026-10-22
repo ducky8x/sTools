@@ -28,7 +28,7 @@ sTools puts the tools around a speedrun into one native Mac app: a crosshair pla
 It's built for the game first. Overlays are click-through and never take focus from Minecraft, and anything with a reasonable alternative is a setting. The app itself is always dark, set in serif type with gold accents.
 
 <p align="center">
-  <img src="docs/images/key-rebinder.png" alt="The Key Rebinder page: a drawn keyboard and mouse with Caps Lock rebound to F3 in gold and Minecraft's keybinds in small capitals under each key">
+  <img src="docs/images/key-rebinder.png" alt="The Key Rebinder page: the sidebar with its six tools, and a drawn keyboard and mouse with Caps Lock rebound to F3 in gold, Minecraft's keybinds in small capitals under each key and gold rings on the keys of sTools hotkeys">
 </p>
 
 ## The tools
@@ -49,7 +49,7 @@ Each tool has its own page: a live preview where it helps, then its settings, wi
 Draws a click-through crosshair at the exact center of Minecraft's display, above everything, a full-screen game included. Pick a plus, dot, circle or X, or use your own image, SVG or PDF with one of five anchor points. Set its color and outline, and its size, thickness, gap and offset in real pixels. Out of the box it sits exactly on Minecraft's own crosshair at GUI scale 3 on a 1920 × 1080 display, with Minecraft filling the screen.
 
 <p align="center">
-  <img src="docs/images/crosshair.png" width="640" alt="The Crosshair page: a preview plate with a white plus outlined in black, and rows for shape, fill color and outline">
+  <img src="docs/images/crosshair.png" width="640" alt="The Crosshair page: its Hotkey row with ⌘1, a preview plate with a white plus outlined in black, and the Shape row">
 </p>
 
 ### Timer Overlay
