@@ -5,11 +5,11 @@ import STPlatform
 
 /// What a Start-timer press did (spec 5.6.2), so the app can confirm it (plan decision 5).
 public enum TimerPressResult: Equatable, Sendable {
-    /// It started, restarted, paused, resumed or cancelled the timer, or silenced the alarm. The overlay itself
-    /// confirms it: the app adds no sound and no line.
+    /// It started, restarted, paused, resumed or cancelled the timer, or silenced the alarm; or, as the second press
+    /// of a double press, it cancelled and switched the tool off. The overlay itself confirms it: the app adds no sound
+    /// and no line.
     case acted
-    /// The press table says to ignore it here (as Advanced's "is ignored" does), or a double press found nothing to
-    /// cancel.
+    /// The press table says to ignore it here (as Advanced's "is ignored" does).
     case ignored
     /// The tool is off and couldn't be switched on: Accessibility is missing (R10). The app shows
     /// "Timer Overlay needs Accessibility" without the seal.
@@ -19,7 +19,9 @@ public enum TimerPressResult: Equatable, Sendable {
 /// Owns Timer Overlay (spec 5.6): one countdown, started by one key, that pops up over the game, counts down,
 /// rings and leaves by itself.
 ///
-/// - Presses become actions through `PressPolicy`, stamped with the controller's own clock.
+/// - Presses become actions through `PressPolicy`, stamped with the controller's own clock. The cancel gestures
+///   switch the tool off themselves (`setEnabled(false)`); the app reads `isEnabled` after each press and release,
+///   so its switch follows.
 /// - `TimerEngine` runs the countdown; the presenter shows the overlay, the alarm player rings it and plays the cues
 ///   before zero, at `AlarmSchedule`'s times.
 /// - Motion: every pop-in, pop-out and pulse hands the presenter `theme.reduceMotion` as it starts, so Reduce
@@ -249,7 +251,8 @@ public final class TimerOverlayController: ToolController {
 
     /// A Start-timer press, from the app's hotkey. Stamped with the controller's clock, so the 0.4 s double press
     /// and the 1 s hold are measured on the countdown's own clock. While the tool is off it asks `requestEnable`
-    /// first, as the key turns the tool on (spec 5.6.2).
+    /// first, as the key turns the tool on (spec 5.6.2). A double press cancels and switches the tool off, so the next
+    /// press switches it back on and starts a countdown.
     @discardableResult
     public func press() -> TimerPressResult {
         let now = clock.now()
@@ -258,7 +261,7 @@ public final class TimerOverlayController: ToolController {
         return perform(action) ? .acted : .ignored
     }
 
-    /// The Start-timer key is up again, for the hold-to-cancel gesture.
+    /// The Start-timer key is up again, for the hold-to-cancel gesture, which cancels and switches the tool off.
     public func release() {
         let now = clock.now()
         guard isEnabled else { return }
@@ -275,6 +278,11 @@ public final class TimerOverlayController: ToolController {
         case .cancel, .silenceAndHide:
             guard phase != .idle, phase != .leaving else { return false }
             endRun()
+            return true
+        case .cancelAndSwitchOff:
+            // The cancel gestures (spec 5.6.2): switching off ends the run, so the overlay leaves the way it came and
+            // the alarm stops. The press that follows switches the tool back on.
+            setEnabled(false)
             return true
         case .pause:
             return pauseRun()

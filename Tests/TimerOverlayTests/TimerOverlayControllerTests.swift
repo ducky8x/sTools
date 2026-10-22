@@ -17,6 +17,32 @@ private final class Flag: @unchecked Sendable {
     }
 }
 
+/// Brings a run of the rig's saved duration to `phase`: counting 3 s in, paused there, ringing, or lingering after
+/// the alarm. Idle and leaving start nothing.
+@MainActor
+private func reach(_ phase: TimerPhase, on rig: TimerRig) {
+    switch phase {
+    case .idle, .leaving:
+        return
+    case .counting, .paused, .ringing, .lingering:
+        rig.controller.start()
+    }
+    switch phase {
+    case .counting:
+        rig.scheduler.advance(by: 3)
+    case .paused:
+        rig.scheduler.advance(by: 3)
+        rig.controller.pause()
+    case .ringing:
+        rig.runToZero()
+    case .lingering:
+        rig.runToZero()
+        while rig.controller.phase == .ringing, rig.scheduler.fireNext() {}
+    case .idle, .leaving:
+        break
+    }
+}
+
 @MainActor
 @Suite("Timer Overlay controller")
 struct TimerOverlayControllerTests {
@@ -155,9 +181,11 @@ struct TimerOverlayControllerTests {
         case .cancel:
             #expect(result == .acted && rig.controller.phase == .idle && rig.presenter.popOuts.count == 1)
             #expect(rig.isQuiet)
+            #expect(rig.controller.isEnabled && rig.controller.status == .ready, "a single press that cancels keeps the tool on")
         case .pauseOrResume:
             #expect(result == .acted && rig.controller.phase == .paused)
             #expect(rig.controller.status == .paused(secondsLeft: 145))
+            #expect(rig.controller.isEnabled, "pausing keeps the tool on")
             rig.clock.time += 1
             #expect(rig.controller.press() == .acted && rig.controller.phase == .counting)
         case .ignore:
@@ -195,6 +223,7 @@ struct TimerOverlayControllerTests {
         case .silenceAndHide:
             #expect(result == .acted && rig.controller.phase == .idle && !rig.alarm.isPlaying)
             #expect(rig.isQuiet)
+            #expect(rig.controller.isEnabled && rig.controller.status == .ready, "a single press that silences keeps the tool on")
         case .ignore:
             #expect(result == .ignored && rig.controller.phase == (lingering ? .lingering : .ringing))
             #expect(rig.alarm.isPlaying == !lingering)
@@ -217,13 +246,79 @@ struct TimerOverlayControllerTests {
 
     // MARK: - The cancel gestures
 
-    @Test func aDoublePressCancels() {
+    @Test func aDoublePressCancelsAndSwitchesOff() {
         let rig = TimerRig()
         rig.controller.setEnabled(true)
         #expect(rig.controller.press() == .acted)
         rig.clock.time += 0.3
         #expect(rig.controller.press() == .acted)
         #expect(rig.controller.phase == .idle && rig.presenter.popOuts.count == 1)
+        #expect(!rig.controller.isEnabled && rig.controller.status == .off && rig.isQuiet)
+    }
+
+    /// Spec 5.6.2: a double press while counting, paused, ringing or lingering cancels the run and switches the tool
+    /// off; the next press switches it back on and starts a fresh countdown.
+    @Test(arguments: [TimerPhase.counting, .paused, .ringing, .lingering])
+    func aDoublePressSwitchesOffAndTheNextPressStartsAfresh(from phase: TimerPhase) {
+        let rig = TimerRig { $0.durationSeconds = 10 }
+        rig.controller.setEnabled(true)
+        reach(phase, on: rig)
+        #expect(rig.controller.phase == phase && rig.presenter.isShowing)
+        #expect(rig.controller.press() == .acted)
+        rig.clock.time += 0.3
+        #expect(rig.controller.press() == .acted)
+        #expect(!rig.controller.isEnabled && rig.controller.status == .off)
+        #expect(rig.controller.phase == .idle && !rig.alarm.isPlaying && rig.isQuiet)
+        #expect(rig.presenter.popOuts.count == 1, "the overlay left the way it came")
+        let popIns = rig.presenter.popIns.count
+
+        var asked = 0
+        rig.controller.requestEnable = { [weak controller = rig.controller] in
+            asked += 1
+            controller?.setEnabled(true)
+            return true
+        }
+        rig.clock.time += 1
+        #expect(rig.controller.press() == .acted)
+        #expect(asked == 1, "the press switches the tool on through the app")
+        #expect(rig.controller.isEnabled && rig.controller.phase == .counting)
+        #expect(rig.controller.content.text == "00:10" && rig.controller.status == .counting(secondsLeft: 10))
+        #expect(rig.presenter.popIns.count == popIns + 1 && rig.presenter.popIns.last?.content.text == "00:10")
+        #expect(rig.announcer.announcements.last == .started(seconds: 10))
+    }
+
+    @Test func aDoublePressStopsTheAlarmEvenWhenAPressIsIgnored() {
+        let rig = TimerRig { $0.durationSeconds = 2; $0.pressWhileRinging = .ignore }
+        rig.controller.setEnabled(true)
+        rig.controller.start()
+        rig.runToZero()
+        #expect(rig.controller.press() == .ignored && rig.alarm.isPlaying)
+        rig.clock.time += 0.2
+        #expect(rig.controller.press() == .acted)
+        #expect(rig.alarm.stops == 1 && !rig.controller.isEnabled && rig.isQuiet)
+    }
+
+    @Test func aDoublePressSwitchesOffEvenWithNothingLeftToCancel() {
+        let rig = TimerRig { $0.durationSeconds = 2; $0.pressWhileRinging = .silenceAndHide }
+        rig.controller.setEnabled(true)
+        rig.controller.start()
+        rig.runToZero()
+        #expect(rig.controller.press() == .acted && rig.controller.phase == .idle && rig.controller.isEnabled)
+        rig.clock.time += 0.3
+        #expect(rig.controller.press() == .acted)
+        #expect(!rig.controller.isEnabled && rig.controller.status == .off && rig.isQuiet)
+    }
+
+    @Test func pausingKeepsTheToolOn() {
+        let rig = TimerRig { $0.pressWhileCounting = .pauseOrResume }
+        rig.controller.setEnabled(true)
+        rig.controller.press()
+        rig.clock.time += 2
+        #expect(rig.controller.press() == .acted && rig.controller.phase == .paused)
+        #expect(rig.controller.isEnabled && rig.controller.status == .paused(secondsLeft: 148))
+        rig.controller.resume()
+        rig.controller.pause()
+        #expect(rig.controller.isEnabled, "the page's Pause keeps it on too")
     }
 
     @Test func aSecondPressAfterTheWindowRestarts() {
@@ -241,13 +336,16 @@ struct TimerOverlayControllerTests {
         rig.controller.press()
         rig.clock.time += 0.2
         rig.controller.press()
-        #expect(rig.controller.phase == .idle)
+        #expect(rig.controller.phase == .idle && !rig.controller.isEnabled)
         rig.clock.time += 0.2
         #expect(rig.controller.press() == .acted)
-        #expect(rig.controller.phase == .counting)
+        #expect(rig.controller.isEnabled && rig.controller.phase == .counting)
+        rig.clock.time += 0.2
+        #expect(rig.controller.press() == .acted, "the press after a fresh start can make a new double press")
+        #expect(!rig.controller.isEnabled)
     }
 
-    @Test func holdingTheKeyASecondCancels() {
+    @Test func holdingTheKeyASecondCancelsAndSwitchesOff() {
         let rig = TimerRig { $0.cancelGesture = .hold }
         rig.controller.setEnabled(true)
         rig.controller.press()
@@ -260,7 +358,24 @@ struct TimerOverlayControllerTests {
         #expect(rig.controller.phase == .counting, "a quick second press restarts while holding is the gesture")
         rig.clock.time += 0.7
         rig.controller.release()
-        #expect(rig.controller.phase == .idle)
+        #expect(rig.controller.phase == .idle && !rig.controller.isEnabled && rig.controller.status == .off)
+        #expect(rig.isQuiet)
+        rig.clock.time += 1
+        #expect(rig.controller.press() == .acted)
+        #expect(rig.controller.isEnabled && rig.controller.phase == .counting && rig.controller.content.text == "02:30")
+        rig.clock.time += 0.2
+        rig.controller.release()
+        #expect(rig.controller.isEnabled, "a tap starts and stays on")
+    }
+
+    @Test func aReleaseWhileOffDoesNothing() {
+        let rig = TimerRig { $0.cancelGesture = .hold }
+        rig.controller.setEnabled(true)
+        rig.controller.press()
+        rig.controller.setEnabled(false)
+        rig.clock.time += 2
+        rig.controller.release()
+        #expect(!rig.controller.isEnabled && rig.controller.status == .off && rig.isQuiet)
     }
 
     @Test func withNoGestureADoublePressRestarts() {
@@ -269,7 +384,7 @@ struct TimerOverlayControllerTests {
         rig.controller.press()
         rig.clock.time += 0.2
         #expect(rig.controller.press() == .acted)
-        #expect(rig.controller.phase == .counting)
+        #expect(rig.controller.phase == .counting && rig.controller.isEnabled)
     }
 
     // MARK: - Zero, the alarm and the leave
@@ -787,6 +902,19 @@ struct TimerPlacementModeTests {
         let plate = rig.presenter.moves.last?.plateFrame
         #expect(plate.map { CGPoint(x: $0.midX, y: $0.midY) } == Self.ownersCenter)
         #expect(rig.presenter.isShowing && rig.controller.phase == .counting)
+    }
+
+    @Test func aDoublePressEndsPlacementModeWithTheTool() {
+        let rig = TimerRig()
+        rig.controller.setPlacementMode(true)
+        rig.controller.press()
+        rig.clock.time += 0.3
+        rig.controller.press()
+        #expect(!rig.controller.isEnabled && !rig.controller.settings.placementModeEnabled && !rig.presenter.isPlacing)
+        #expect(rig.isQuiet)
+        rig.clock.time += 1
+        rig.controller.press()
+        #expect(rig.controller.isEnabled && rig.controller.phase == .counting && !rig.controller.isPlacing)
     }
 
     @Test func turningTheToolOffEndsPlacementMode() {
