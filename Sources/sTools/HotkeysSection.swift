@@ -3,9 +3,10 @@ import STDesign
 import STPlatform
 import SwiftUI
 
-/// Home ▸ Hotkeys (spec 6.1), near the top of Home: the list of hotkeys (key and actions at a glance), Add Hotkey…,
-/// an add/edit editor for each, and Advanced (spec 2.4) with the press confirmation. While hotkeys are off, one strip
-/// says so with Turn On; while on, the master switch turns them off. Any key works, alone
+/// Home ▸ Hotkeys (spec 6.1), near the top of Home: Where hotkeys work, the Key set chooser, the list of hotkeys (key
+/// and actions at a glance), Add Hotkey…, an add/edit editor for each, and Advanced (spec 2.4) with the press
+/// confirmation. While hotkeys are off, one strip says so with Turn On; while on, the master switch turns them off. Any
+/// key works, alone
 /// or with modifiers. What the Key Rebinder knows (which key on the keyboard sends a hotkey's key, what Minecraft
 /// uses it for) arrives through `model.hotkeys.advisor`; without one, those lines are simply left out.
 struct HotkeysSection: View {
@@ -15,6 +16,8 @@ struct HotkeysSection: View {
     /// The actions a new hotkey's editor starts with: none for Add Hotkey…, Start timer for Set in Hotkeys….
     @State private var newHotkeyActions: Set<HotkeyAction> = []
     @State private var advancedIsOpen: Bool
+    /// The key set waiting for the answer to "Replace the keys you set?".
+    @State private var pendingKeySet: HotkeyKeySet?
 
     init(model: AppModel, advancedIsOpen: Bool = false, editingID: UUID? = nil) {
         self.model = model
@@ -71,6 +74,20 @@ struct HotkeysSection: View {
                     Rectangle().fill(STColor.rule).frame(height: 1).accessibilityHidden(true)
                 }
         }
+        // One key per tool, in sidebar order; picking a set changes only those, and asks before a key set by hand goes.
+        STSettingsRow("Key set") {
+            HotkeysChoiceMenu(title: Self.keySetTitle(hotkeys.keySet),
+                              options: HotkeyKeySet.allCases.map { STSegmentedOption($0, $0.title) },
+                              selection: hotkeys.keySet, label: "Key set", choose: chooseKeySet)
+        }
+        .confirmationDialog(
+            pendingKeySet.map { Self.keySetQuestion($0) } ?? "", isPresented: keySetQuestionIsShown,
+            titleVisibility: .visible, presenting: pendingKeySet,
+            actions: { set in
+                Button(set == .noKeys ? "Remove" : "Replace", role: .destructive) { model.hotkeys.apply(set) }
+                Button("Cancel", role: .cancel) {}
+            },
+            message: { set in Text(Self.keySetWarning(set, bindings: hotkeys.bindings)) })
         VStack(alignment: .leading, spacing: 0) {
             ForEach(hotkeys.bindings) { binding in
                 HotkeyBindingRow(
@@ -125,6 +142,44 @@ struct HotkeysSection: View {
     static func scopeNote(scope: HotkeyScope, accessibilityGranted: Bool) -> String? {
         guard scope == .sToolsAndMinecraft, !accessibilityGranted else { return nil }
         return "Until Accessibility is allowed, sTools can't tell when Minecraft is in front, so hotkeys work only in sTools."
+    }
+
+    /// The chooser's label: the set the tools' own hotkeys follow, or Custom once a key was set by hand.
+    static func keySetTitle(_ set: HotkeyKeySet?) -> String { set?.title ?? "Custom" }
+
+    /// The confirmation's title before `set` replaces keys set by hand: "Use ⌃1–⌃5?", "Remove every tool's key?".
+    static func keySetQuestion(_ set: HotkeyKeySet) -> String {
+        set == .noKeys ? "Remove every tool's key?" : "Use \(set.title)?"
+    }
+
+    /// What picking `set` would take away: "This replaces the key you set for Crosshair (F6)." Other hotkeys stay.
+    static func keySetWarning(_ set: HotkeyKeySet, bindings: [HotkeyBinding]) -> String {
+        let edits = set.replacedEdits(in: bindings).map { binding in
+            "\(toolName(for: binding.actions.first)) (\(binding.combo.displayString))"
+        }
+        let list = edits.count > 1 ? edits.dropLast().joined(separator: ", ") + " and " + (edits.last ?? "") : (edits.first ?? "")
+        let verb = set == .noKeys ? "removes" : "replaces"
+        let keys = edits.count > 1 ? "keys" : "key"
+        return "This \(verb) the \(keys) you set for \(list). Your other hotkeys stay as they are."
+    }
+
+    /// The tool a key set's action belongs to: Start timer is Timer Overlay's.
+    private static func toolName(for action: HotkeyAction?) -> String {
+        guard let action else { return "" }
+        return action == .startTimer ? ToolID.timerOverlay.title : action.title
+    }
+
+    /// Picks `set` at once, or asks first when it would replace a key set by hand.
+    private func chooseKeySet(_ set: HotkeyKeySet) {
+        if set.replacedEdits(in: hotkeys.bindings).isEmpty {
+            model.hotkeys.apply(set)
+        } else {
+            pendingKeySet = set
+        }
+    }
+
+    private var keySetQuestionIsShown: Binding<Bool> {
+        Binding(get: { pendingKeySet != nil }, set: { if !$0 { pendingKeySet = nil } })
     }
 
     private func prepareAdvice() async {
