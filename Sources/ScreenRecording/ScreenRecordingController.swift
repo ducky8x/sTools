@@ -116,8 +116,9 @@ public final class ScreenRecordingController: ToolController {
         public var droppedFrames: Int
         /// Why it stopped early, when it did.
         public var explanation: String?
-        /// The name it was written under, its date and time (`2026-10-13 21.04.37`): the name the question offers,
-        /// and the one it keeps when it's saved without one or the question is canceled.
+        /// The name it was written under, its date and time (`2026-10-13 21.04.37`, or `2026-10-13 21.04.37 2` when a
+        /// recording kept in the same second holds that): the name the question offers, and the one it keeps when it's
+        /// saved without one or the question is canceled.
         public var name: String
     }
 
@@ -145,6 +146,8 @@ public final class ScreenRecordingController: ToolController {
     /// canvas. ScreenCaptureKit sends a stream's first frame within a frame or two; past this, the recording starts
     /// and the game's picture joins as it comes.
     @ObservationIgnored var minecraftFrameWait: Duration = .milliseconds(500)
+    /// The time a recording's date-and-time name is taken from; tests hold it on one second.
+    @ObservationIgnored var now: @MainActor () -> Date = { Date() }
     public private(set) var phase = Phase.idle {
         didSet {
             guard phase != oldValue else { return }
@@ -782,7 +785,7 @@ public final class ScreenRecordingController: ToolController {
         notes = []
         lastSaved = nil
         let configuration = RecordingSession.Configuration(
-            layout: layout, options: options, canvas: canvas, baseName: RecordingFinisher.dateName(for: Date()),
+            layout: layout, options: options, canvas: canvas, baseName: RecordingFinisher.dateName(for: now()),
             feeds: inProcessAudio.feeds.filter(\.wantsRecording).map(\.name))
         do {
             let session = try RecordingSession(
@@ -831,7 +834,6 @@ public final class ScreenRecordingController: ToolController {
     static func startFailureReason(_ error: any Error) -> String {
         switch error {
         case is CompositorError: "sTools couldn\u{2019}t set up the video"
-        case RecordingWriterError.fileExists: "a recording with its name is already there"
         case RecordingWriterError.invalidConfiguration: "its settings can\u{2019}t be recorded"
         case is RecordingWriterError: "the file couldn\u{2019}t be written"
         case is CocoaError: "the recordings folder can\u{2019}t be written to"
@@ -916,8 +918,11 @@ public final class ScreenRecordingController: ToolController {
         var reason = explanation
         if result.stopReason == .lowDisk { reason = "The disk is almost full, so the recording was finished." }
         if case .failed(let message) = result.stopReason { reason = "The recording stopped: \(message)" }
+        // The name it was written under: its date and time, or the next free name when a recording kept in the same
+        // second holds that.
+        let written = result.files.first?.deletingPathExtension().lastPathComponent ?? session.configuration.baseName
         let done = Finished(files: result.files, seconds: session.elapsedSeconds, droppedFrames: session.droppedFrames,
-                            explanation: reason, name: session.configuration.baseName)
+                            explanation: reason, name: written)
         guard !result.files.isEmpty else {
             phase = .idle
             if let reason { note(reason) }
