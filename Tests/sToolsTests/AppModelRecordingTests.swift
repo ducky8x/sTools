@@ -49,6 +49,7 @@ private final class HandTickDriver: TickDriver, @unchecked Sendable {
 }
 
 private let startingLine = "Starting the recording\u{2026}"
+private let stoppedLine = "Recording stopped \u{00B7} Screen Recording off"
 
 /// The app with a real Screen Recording controller on fakes: no capture, no window, no sound, and the recordings go
 /// to a temporary folder.
@@ -243,7 +244,7 @@ struct AppModelRecordingTests {
         // Once it's allowed, the next press records.
         harness.prober.set(.screenRecording, .granted)
         #expect(await harness.recordByKey(id))
-        #expect(harness.hud.lines.suffix(3) == [startingLine, "Recording started", "Recording stopped"])
+        #expect(harness.hud.lines.suffix(3) == [startingLine, "Recording started", stoppedLine])
         harness.recording.delete()
     }
 
@@ -266,7 +267,7 @@ struct AppModelRecordingTests {
         let id = harness.addKey()
         #expect(await harness.recordByKey(id))
         #expect(harness.question.presented == 1)
-        #expect(harness.hud.lines == [startingLine, "Recording started", "Recording stopped"])
+        #expect(harness.hud.lines == [startingLine, "Recording started", stoppedLine])
         // Already off: the stop switched the tool off before the question came up.
         #expect(!harness.model.isOn(.screenRecording))
         #expect(harness.model.status(of: .screenRecording) == .off)

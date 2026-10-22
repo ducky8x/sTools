@@ -22,7 +22,8 @@ struct HotkeyConfirmationTests {
     @Test func recordingPhrases() {
         #expect(HotkeyConfirmation.phrase(.recordingStarting) == "Starting the recording\u{2026}")
         #expect(HotkeyConfirmation.phrase(.recordingStarted) == "Recording started")
-        #expect(HotkeyConfirmation.phrase(.recordingStopped) == "Recording stopped")
+        // The stop switches the tool off too, so the line says so, as Timer Overlay's cancel says "Timer Overlay off".
+        #expect(HotkeyConfirmation.phrase(.recordingStopped) == "Recording stopped \u{00B7} Screen Recording off")
         #expect(HotkeyConfirmation.phrase(.recordingCountdown(seconds: 3)) == "Recording starts in 3 seconds")
         #expect(HotkeyConfirmation.phrase(.recordingCanceled) == "Recording canceled")
     }
