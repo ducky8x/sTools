@@ -1,4 +1,5 @@
 import ScreenRecording
+import STPlatform
 
 /// What one hotkey press actually did, and the one line the confirmation shows for it (spec 6.1).
 enum HotkeyConfirmation {
@@ -12,7 +13,8 @@ enum HotkeyConfirmation {
         case recordingStarting
         /// The writer put the recording's first frame in the file. Shown then, not at the press.
         case recordingStarted
-        /// A start the key made ended after the press without a recording, for this reason ("the disk is almost full").
+        /// A start the key made ended after the press without a recording, for this reason ("the disk is almost full"),
+        /// and Screen Recording switched off, so the line says both, as the stop's does.
         case recordingCouldNotStart(String)
         /// Recording starts once the countdown (Screen Recording ▸ Advanced) runs out.
         case recordingCountdown(seconds: Int)
@@ -20,7 +22,7 @@ enum HotkeyConfirmation {
         /// cancel says "Timer Overlay off" (spec 5.4.4, 6.1).
         case recordingStopped
         /// A start was canceled before anything was written (the sources were starting, or the countdown ran), and
-        /// Screen Recording switched off.
+        /// Screen Recording switched off, so the line says both, as the stop's does.
         case recordingCanceled
         /// The last recording is still being finished, so the press changed nothing.
         case recordingFinishing
@@ -53,15 +55,18 @@ enum HotkeyConfirmation {
         case .needsAccessibility(let tool): "\(tool.title) needs Accessibility"
         case .recordingStarting: "Starting the recording\u{2026}"
         case .recordingStarted: "Recording started"
-        case .recordingCouldNotStart(let reason): "Recording couldn\u{2019}t start: \(reason)"
-        case .recordingCountdown(let seconds): "Recording starts in \(seconds) seconds"
-        case .recordingStopped: "Recording stopped \u{00B7} \(phrase(.tool(.screenRecording, isOn: false)))"
-        case .recordingCanceled: "Recording canceled"
+        case .recordingCouldNotStart(let reason): "Recording couldn\u{2019}t start: \(reason) \u{00B7} \(screenRecordingOff)"
+        case .recordingCountdown(let seconds): "Recording starts in \(CountText.of(seconds, "second"))"
+        case .recordingStopped: "Recording stopped \u{00B7} \(screenRecordingOff)"
+        case .recordingCanceled: "Recording canceled \u{00B7} \(screenRecordingOff)"
         case .recordingFinishing: "Still finishing the last recording"
         case .recordingAwaitingDecision: "Save or delete the last recording first"
         case .recordingNeedsPermission: "Screen Recording needs Screen & System Audio Recording"
         }
     }
+
+    /// The stop, a canceled start and a failed one all switch Screen Recording off, and their lines end saying so.
+    private static var screenRecordingOff: String { phrase(.tool(.screenRecording, isOn: false)) }
 
     /// The line for one press of Screen Recording's key, from what the press did (`toggleRecording()` says so as it
     /// returns, before the start or the stop has finished). A start never says "Recording started" here: that waits

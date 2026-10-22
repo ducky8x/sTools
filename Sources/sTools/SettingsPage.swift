@@ -143,7 +143,7 @@ struct SettingsPage: View {
         Task {
             do {
                 let summary = try await model.exportSettings(to: url)
-                dataMessage = "Exported \(summary.documentNames.count) setting groups."
+                dataMessage = Self.exportedMessage(groups: summary.documentNames.count)
             } catch {
                 dataMessage = "Couldn't export: \(error.localizedDescription)"
             }
@@ -158,11 +158,21 @@ struct SettingsPage: View {
         Task {
             do {
                 let report = try await model.importSettings(from: url)
-                dataMessage = "Imported \(report.appliedCount) item(s)" + (report.skippedCount > 0 ? ", skipped \(report.skippedCount)." : ".")
+                dataMessage = Self.importedMessage(applied: report.appliedCount, skipped: report.skippedCount)
             } catch {
                 dataMessage = "Couldn't import: \(error.localizedDescription)"
             }
         }
+    }
+
+    /// "Exported 7 setting groups."
+    static func exportedMessage(groups: Int) -> String {
+        "Exported \(CountText.of(groups, "setting group"))."
+    }
+
+    /// "Imported 5 items.", or "Imported 4 items, skipped 2." when some were skipped.
+    static func importedMessage(applied: Int, skipped: Int) -> String {
+        "Imported \(CountText.of(applied, "item"))" + (skipped > 0 ? ", skipped \(skipped)." : ".")
     }
 
     /// Relaunches so that no setting still held in memory is written back (spec 6.2: re-runs the Prologue).

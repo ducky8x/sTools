@@ -122,6 +122,37 @@ private final class ListingCount {
     var finished = 0
 }
 
+/// Add Source's listing as ScreenCaptureKit reads it: each read runs until the test lets it finish, whether or not the
+/// task that asked was canceled (`SCShareableContent` ignores cancellation).
+@MainActor
+private final class ListingGate {
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+
+    /// Reads under way.
+    var pending: Int { waiting.count }
+
+    func wait() async {
+        await withCheckedContinuation { waiting.append($0) }
+    }
+
+    /// Lets the oldest read still under way finish.
+    func finishOldest() {
+        guard !waiting.isEmpty else { return }
+        waiting.removeFirst().resume()
+    }
+
+    /// Lets the newest read still under way finish.
+    func finishNewest() {
+        guard !waiting.isEmpty else { return }
+        waiting.removeLast().resume()
+    }
+
+    /// Lets every read finish, so none is left waiting after a test.
+    func finishAll() {
+        while !waiting.isEmpty { finishOldest() }
+    }
+}
+
 @MainActor
 private struct Harness {
     let directory: URL
@@ -135,9 +166,11 @@ private struct Harness {
 
     /// `sourcesTake`: how long Minecraft's capture takes to start when the tool switches on, as ScreenCaptureKit's can
     /// on real hardware. `listingTakes`: how long Add Source's listing takes, and `listing` what it finds.
-    /// `permissions`: what the permission center reads; everything is granted by default.
+    /// `permissions`: what the permission center reads; everything is granted by default. `listingGate`: each listing
+    /// read waits for the test to finish it, canceled or not.
     init(minecraft: Bool = true, sourcesTake: Duration? = nil, listingTakes: Duration? = nil,
-         listing: AvailableSources = AvailableSources(), permissions: any PermissionProbing = Granted()) {
+         listing: AvailableSources = AvailableSources(), permissions: any PermissionProbing = Granted(),
+         listingGate: ListingGate? = nil) {
         directory = FileManager.default.temporaryDirectory.appending(path: "stools-recording-\(UUID().uuidString)", directoryHint: .isDirectory)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let window = MinecraftWindow(windowNumber: 42, processID: 4242, title: "Minecraft* 1.16.1", frame: CGRect(x: 0, y: 0, width: 800, height: 600))
@@ -155,6 +188,7 @@ private struct Harness {
             services: services, makeFactory: { _ in factory },
             loadAvailable: { _ in
                 if let listingTakes { try? await Task.sleep(for: listingTakes) }
+                if let listingGate { await listingGate.wait() }
                 listings.finished += 1
                 return listing
             },
@@ -187,6 +221,14 @@ private struct Harness {
         controller.updateLayout {
             $0.add(VideoSource(kind: .camera(CameraReference(uniqueID: "cam", name: "Cam")), frame: PixelRect(x: 0, y: 0, width: 50, height: 50), on: PixelSize(width: 320, height: 180)))
             $0.add(AudioSource(kind: .microphone(uniqueID: "mic"), name: "Mic"))
+        }
+    }
+
+    /// A window source on the canvas: arming reads Add Source's listing first, to find its window again.
+    func addWindowSource() {
+        controller.updateLayout {
+            $0.add(VideoSource(kind: .window(WindowReference(windowID: 9, appName: "Discord", bundleID: "com.hnc.Discord", title: "Call")),
+                               frame: PixelRect(x: 0, y: 0, width: 50, height: 50), on: PixelSize(width: 320, height: 180)))
         }
     }
 
@@ -1070,10 +1112,16 @@ struct ScreenRecordingFirstFrameTests {
         try Data().write(to: blocker)
         harness.controller.options.folderPath = blocker.appending(path: "Movies").path
         var outcomes: [ScreenRecordingController.KeyStartOutcome] = []
-        harness.controller.keyStartEnded = { outcomes.append($0) }
+        // The line over the game says the tool is off, so it already is when the failure is reported.
+        var onWhenReported: [Bool] = []
+        harness.controller.keyStartEnded = { [controller = harness.controller] in
+            outcomes.append($0)
+            onWhenReported.append(controller.isEnabled)
+        }
         harness.controller.toggleRecording()
         #expect(await harness.waitUntil { !outcomes.isEmpty })
         #expect(outcomes == [.failed("the recordings folder can\u{2019}t be written to")])
+        #expect(onWhenReported == [false])
         #expect(harness.controller.phase == .idle)
         #expect(!harness.controller.isEnabled)
         #expect(harness.controller.notes.count == 1)
@@ -1083,6 +1131,13 @@ struct ScreenRecordingFirstFrameTests {
 
     /// A first frame that never reaches the file (an encoder that never takes one) doesn't leave the start hanging:
     /// after a while it ends, says why, and leaves nothing behind.
+    /// The page's note for a first frame that never came counts the seconds in words that agree, one included.
+    @Test func theNoFrameNoteCountsItsSeconds() {
+        #expect(ScreenRecordingController.noFrameDetail(after: .seconds(5)) == "no frame reached the file in 5 seconds.")
+        #expect(ScreenRecordingController.noFrameDetail(after: .seconds(1)) == "no frame reached the file in 1 second.")
+        #expect(ScreenRecordingController.noFrameDetail(after: .milliseconds(300)) == "no frame reached the file in 0.3 seconds.")
+    }
+
     @Test func aFirstFrameThatNeverComesEndsTheStart() async throws {
         let harness = Harness()
         defer { harness.remove() }
@@ -1302,5 +1357,205 @@ struct ScreenRecordingStartTimingTests {
             switchedOn: false, countdownSeconds: 3, toSources: .milliseconds(0), toMinecraftFrame: .milliseconds(3001),
             toWriter: .milliseconds(3008), toFirstFrame: .milliseconds(3020))
         #expect(counted.summary == "Recording started 3020 ms after the press (armed, after a 3 s countdown): sources 0 ms, Minecraft\u{2019}s first frame 1 ms, writer 7 ms, first frame 12 ms.")
+    }
+}
+
+/// Arming, switching off and restarting can overlap: Add Source's listing and the sources' starts finish whenever they
+/// do, canceled or not, as ScreenCaptureKit's do. Each arming owns the sources it brings up, and a start only skips
+/// waiting once the latest arming's sources, Minecraft's capture included, are up (spec 5.4.4).
+@Suite("Screen Recording's armings", .serialized) @MainActor
+struct ScreenRecordingArmingTests {
+    /// Stops the recording the test made and checks that nothing is left running once the tool is off.
+    private func finish(_ harness: Harness) async {
+        if harness.controller.phase == .recording { await harness.controller.stopRecording(explanation: nil) }
+        harness.controller.delete()
+        harness.controller.setEnabled(false)
+        #expect(await harness.waitUntil { !harness.factory.anyRunning })
+    }
+
+    /// Switched on, off and on again while a window source's listing is read: the first arming's read ends after the
+    /// second switch-on, and brings up nothing. Only the latest arming starts the sources, so a press while Minecraft's
+    /// capture still starts waits for it (and for its first frame) instead of writing at once. `offRunsFirst`: the
+    /// switch-off finishes before the tool is switched on again, or the switch-on comes first.
+    @Test(arguments: [true, false])
+    func aStaleListingNeverArms(offRunsFirst: Bool) async throws {
+        let gate = ListingGate()
+        let harness = Harness(sourcesTake: .milliseconds(400), listingGate: gate)
+        defer { gate.finishAll(); harness.remove() }
+        harness.addWindowSource()
+        harness.controller.setEnabled(true)
+        #expect(await harness.waitUntil { gate.pending == 1 })
+        harness.controller.setEnabled(false)
+        if offRunsFirst { try await Task.sleep(for: .milliseconds(50)) }
+        harness.controller.setEnabled(true)
+        #expect(await harness.waitUntil { gate.pending == 2 })
+        gate.finishOldest()
+        try await Task.sleep(for: .milliseconds(50))
+        gate.finishOldest()
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(harness.factory.baseCount == 1)
+        #expect(harness.factory.bases[42]?.isRunning == false)
+        #expect(harness.controller.toggleRecording() == .starting(waitsForSources: true))
+        #expect(await harness.waitUntil { harness.controller.phase != .starting })
+        #expect(harness.controller.phase == .recording)
+        // The file opened on Minecraft's picture: its capture had started when the recording did.
+        #expect(harness.factory.bases[42]?.isRunning == true)
+        #expect(harness.factory.baseCount == 1)
+        await finish(harness)
+    }
+
+    /// The listing's reads can finish in either order; only the latest arming's sources come up either way.
+    @Test func aLaterListingFinishingFirstStillArmsOnce() async throws {
+        let gate = ListingGate()
+        let harness = Harness(sourcesTake: .milliseconds(200), listingGate: gate)
+        defer { gate.finishAll(); harness.remove() }
+        harness.addWindowSource()
+        harness.controller.setEnabled(true)
+        #expect(await harness.waitUntil { gate.pending == 1 })
+        harness.controller.setEnabled(false)
+        harness.controller.setEnabled(true)
+        #expect(await harness.waitUntil { gate.pending == 2 })
+        // The newer read is the one the second arming waits on; it finishes first here.
+        gate.finishNewest()
+        try await Task.sleep(for: .milliseconds(50))
+        gate.finishOldest()
+        #expect(await harness.waitUntil { harness.factory.bases[42]?.isRunning == true })
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(harness.factory.baseCount == 1)
+        #expect(harness.controller.toggleRecording() == .starting(waitsForSources: false))
+        #expect(await harness.waitUntil { harness.controller.phase == .recording })
+        await finish(harness)
+    }
+
+    /// A change that restarts the sources while the first arming still reads the listing: the first arming's read ends
+    /// late and brings up nothing, so the restart's sources are the only ones, and a press waits for them.
+    @Test func aRestartDuringTheListingArmsOnlyTheRestart() async throws {
+        let gate = ListingGate()
+        let harness = Harness(sourcesTake: .milliseconds(400), listingGate: gate)
+        defer { gate.finishAll(); harness.remove() }
+        harness.addWindowSource()
+        harness.controller.setEnabled(true)
+        #expect(await harness.waitUntil { gate.pending == 1 })
+        harness.controller.options.showCursor.toggle()
+        #expect(await harness.waitUntil { gate.pending == 2 })
+        gate.finishOldest()
+        try await Task.sleep(for: .milliseconds(50))
+        gate.finishOldest()
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(harness.factory.baseCount == 1)
+        #expect(harness.controller.toggleRecording() == .starting(waitsForSources: true))
+        #expect(await harness.waitUntil { harness.controller.phase != .starting })
+        #expect(harness.controller.phase == .recording)
+        #expect(harness.factory.bases[42]?.isRunning == true)
+        #expect(harness.factory.baseCount == 1)
+        await finish(harness)
+    }
+
+    /// Switched off and on again before the switch-off ran, the tool keeps the sources it was starting. The new arming
+    /// takes them over once they're up: a press meanwhile waits for Minecraft's capture rather than writing at once.
+    @Test func switchedBackOnWhileTheSourcesStartAPressWaitsForThem() async throws {
+        let harness = Harness(sourcesTake: .milliseconds(400))
+        defer { harness.remove() }
+        harness.controller.setEnabled(true)
+        #expect(await harness.waitUntil { harness.factory.bases[42] != nil })
+        harness.controller.setEnabled(false)
+        harness.controller.setEnabled(true)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(harness.factory.bases[42]?.isRunning == false)
+        #expect(harness.controller.toggleRecording() == .starting(waitsForSources: true))
+        #expect(await harness.waitUntil { harness.controller.phase != .starting })
+        #expect(harness.controller.phase == .recording)
+        #expect(harness.factory.bases[42]?.isRunning == true)
+        #expect(harness.factory.baseCount == 1)
+        await finish(harness)
+    }
+
+    /// Switched off, a capture setting changed and switched on again before the switch-off ran: the sources it kept
+    /// were started for the old setting, so the new arming replaces them instead of taking them over.
+    @Test func sourcesKeptAcrossAChangedSettingAreReplaced() async throws {
+        let harness = Harness(sourcesTake: .milliseconds(100))
+        defer { harness.remove() }
+        await harness.arm()
+        #expect(await harness.waitUntil { harness.factory.bases[42]?.isRunning == true })
+        let first = try #require(harness.factory.bases[42])
+        harness.controller.setEnabled(false)
+        harness.controller.options.showCursor.toggle()
+        harness.controller.setEnabled(true)
+        #expect(await harness.waitUntil { harness.factory.baseCount == 2 })
+        #expect(await harness.waitUntil { harness.factory.bases[42]?.isRunning == true && !first.isRunning })
+        // The rig's start returns a moment after its capture runs.
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(harness.controller.toggleRecording() == .starting(waitsForSources: false))
+        #expect(await harness.waitUntil { harness.controller.phase == .recording })
+        await finish(harness)
+    }
+
+    /// Switched off and on again before the switch-off ran, with nothing changed: the running sources are kept.
+    @Test func sourcesKeptWithNothingChangedStay() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        await harness.arm()
+        #expect(await harness.waitUntil { harness.factory.bases[42]?.isRunning == true })
+        harness.controller.setEnabled(false)
+        harness.controller.setEnabled(true)
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(harness.factory.baseCount == 1)
+        #expect(harness.factory.bases[42]?.isRunning == true)
+        #expect(harness.controller.toggleRecording() == .starting(waitsForSources: false))
+        #expect(await harness.waitUntil { harness.controller.phase == .recording })
+        await finish(harness)
+    }
+
+    /// A window source's window found again under a new number is saved in the layout, and the arming that found it
+    /// goes on with it: arming once, not restarting itself (which read the listing and started every source twice).
+    @Test func aWindowFoundAgainArmsOnce() async throws {
+        var listing = AvailableSources()
+        listing.windows = [WindowReference(windowID: 77, appName: "Discord", bundleID: "com.hnc.Discord", title: "Call")]
+        let harness = Harness(listing: listing)
+        defer { harness.remove() }
+        harness.addWindowSource()
+        await harness.arm()
+        #expect(await harness.waitUntil { harness.factory.bases[42]?.isRunning == true })
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(harness.factory.baseCount == 1)
+        #expect(harness.factory.capturedWindowIDs == [77])
+        #expect(harness.listings.finished == 1)
+        guard case .window(let found)? = harness.controller.layout.videoSources.first?.kind else {
+            Issue.record("the window source is gone")
+            return
+        }
+        #expect(found.windowID == 77)
+        #expect(harness.controller.toggleRecording() == .starting(waitsForSources: false))
+        #expect(await harness.waitUntil { harness.controller.phase == .recording })
+        await finish(harness)
+    }
+
+    /// Copy Diagnostics' line for an armed tool counts its sources in words that agree with each count.
+    @Test func theDiagnosticsLineCountsItsSources() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        await harness.arm()
+        #expect(harness.controller.diagnosticsSummary == "Armed, 0 video sources and 0 audio sources")
+        harness.addCameraAndMicrophone()
+        #expect(harness.controller.diagnosticsSummary == "Armed, 1 video source and 1 audio source")
+        harness.controller.setEnabled(false)
+        #expect(await harness.waitUntil { !harness.factory.anyRunning })
+    }
+
+    /// Switched off while a window source's listing is read, and left off: the read ends with the tool off and brings
+    /// up nothing.
+    @Test func aListingThatEndsAfterTheSwitchOffBringsUpNothing() async throws {
+        let gate = ListingGate()
+        let harness = Harness(listingGate: gate)
+        defer { gate.finishAll(); harness.remove() }
+        harness.addWindowSource()
+        harness.controller.setEnabled(true)
+        #expect(await harness.waitUntil { gate.pending == 1 })
+        harness.controller.setEnabled(false)
+        try await Task.sleep(for: .milliseconds(50))
+        gate.finishOldest()
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(harness.factory.baseCount == 0)
+        #expect(!harness.factory.anyRunning)
     }
 }

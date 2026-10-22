@@ -50,6 +50,7 @@ private final class HandTickDriver: TickDriver, @unchecked Sendable {
 
 private let startingLine = "Starting the recording\u{2026}"
 private let stoppedLine = "Recording stopped \u{00B7} Screen Recording off"
+private let canceledLine = "Recording canceled \u{00B7} Screen Recording off"
 
 /// The app with a real Screen Recording controller on fakes: no capture, no window, no sound, and the recordings go
 /// to a temporary folder.
@@ -175,7 +176,7 @@ struct AppModelRecordingTests {
         let id = harness.addKey()
         harness.press(id)
         #expect(await waitUntil(timeout: RecordingHarness.patience) { harness.hud.lines.count == 2 })
-        #expect(harness.hud.lines == [startingLine, "Recording couldn\u{2019}t start: the recordings folder can\u{2019}t be written to"])
+        #expect(harness.hud.lines == [startingLine, "Recording couldn\u{2019}t start: the recordings folder can\u{2019}t be written to \u{00B7} Screen Recording off"])
         #expect(harness.hud.presented.map(\.sealed) == [false, false])
         #expect(!harness.model.isOn(.screenRecording))
         #expect(harness.recording.phase == .idle)
@@ -211,7 +212,7 @@ struct AppModelRecordingTests {
         harness.press(id)
         #expect(harness.recording.phase == .idle)
         #expect(!harness.model.isOn(.screenRecording))
-        #expect(harness.hud.lines == [startingLine, "Recording canceled"])
+        #expect(harness.hud.lines == [startingLine, canceledLine])
         // Long after the sources would have come up, still nothing.
         try await Task.sleep(for: .milliseconds(700))
         #expect(harness.recording.phase == .idle)

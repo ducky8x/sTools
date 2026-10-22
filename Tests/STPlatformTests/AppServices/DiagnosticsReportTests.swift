@@ -76,6 +76,12 @@ private func makeReport(
         #expect(text.contains("12:00:00 [error] Crosshair: oops"))
     }
 
+    /// A settings file's size agrees with its count, one byte included.
+    @Test func aOneByteFileReadsInTheSingular() {
+        let text = makeReport(settingsFiles: [SettingsFileInfo(name: "tiny.json", bytes: 1)]).render()
+        #expect(text.contains("tiny.json (1 byte)"))
+    }
+
     @Test func emptyInputsReadAsNone() {
         let text = makeReport(displays: [], enabledTools: [], settingsFiles: []).render()
         #expect(text.contains("Displays: none"))

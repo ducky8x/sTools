@@ -195,7 +195,7 @@ public struct DiagnosticsReport: Sendable {
         out.append("Enabled tools: \(enabledTools.isEmpty ? "none" : enabledTools.joined(separator: ", "))")
         out.append("")
         out.append(settingsFiles.isEmpty ? "Settings files: none" : "Settings files (names and sizes only):")
-        out += settingsFiles.map { "  - \($0.name) (\($0.bytes) bytes)" }
+        out += settingsFiles.map { "  - \($0.name) (\(CountText.of($0.bytes, "byte")))" }
         out.append("")
         out.append("Recent sTools log (last \(Int(Self.logWindow / 60)) minutes, up to \(Self.logLineLimit) lines):")
         if let logError {

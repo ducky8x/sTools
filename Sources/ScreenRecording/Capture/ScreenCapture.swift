@@ -63,6 +63,8 @@ public final class ScreenCapture: NSObject, VideoCapture, SCStreamOutput, SCStre
         var lastRefresh = 0
         var appliedRefresh = 0
         var overlayDebounce = OverlayRefreshDebounce()
+        /// Whether the window was last said to be minimized.
+        var minimized = MinimizedWindow()
     }
 
     /// The base layer's clock for folding overlay posts, the one `Task.sleep(for:)` waits on.
@@ -270,23 +272,27 @@ public final class ScreenCapture: NSObject, VideoCapture, SCStreamOutput, SCStre
               let info = attachments.first,
               let rawStatus = info[.status] as? Int, let status = SCFrameStatus(rawValue: rawStatus) else { return }
         let deliver = state.withLock { $0.deliver }
-        switch status {
-        case .complete:
-            guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-            let bufferSize = PixelSize(width: CVPixelBufferGetWidth(pixelBuffer), height: CVPixelBufferGetHeight(pixelBuffer))
-            let metadata = FrameMetadata(info)
-            let frame = VideoFrame(
-                pixelBuffer: pixelBuffer, contentRect: metadata.contentRect(in: bufferSize),
-                hostTime: CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
-            deliver?(.frame(frame))
-            if let size = metadata.streamSize(for: bufferSize) { resize(to: size) }
-        case .suspended:
-            deliver?(.minimized(true))
-        case .started, .idle, .blank, .stopped:
-            break
-        @unknown default:
-            break
+        guard status == .complete else {
+            for event in events(for: status, frame: nil) { deliver?(event) }
+            return
         }
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        let bufferSize = PixelSize(width: CVPixelBufferGetWidth(pixelBuffer), height: CVPixelBufferGetHeight(pixelBuffer))
+        let metadata = FrameMetadata(info)
+        let frame = VideoFrame(
+            pixelBuffer: pixelBuffer, contentRect: metadata.contentRect(in: bufferSize),
+            hostTime: CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
+        for event in events(for: .complete, frame: frame) { deliver?(event) }
+        if let size = metadata.streamSize(for: bufferSize) { resize(to: size) }
+    }
+
+    /// What one frame status sends on, in order: a minimized window's change (`MinimizedWindow`) first, then the
+    /// frame, for a complete one. Kept apart from the sample buffer so it's tested without a stream.
+    func events(for status: SCFrameStatus, frame: VideoFrame?) -> [VideoCaptureEvent] {
+        var events: [VideoCaptureEvent] = []
+        if let minimized = state.withLock({ $0.minimized.change(for: status) }) { events.append(.minimized(minimized)) }
+        if status == .complete, let frame { events.append(.frame(frame)) }
+        return events
     }
 
     public func stream(_ stream: SCStream, didStopWithError error: any Error) {
@@ -294,6 +300,32 @@ public final class ScreenCapture: NSObject, VideoCapture, SCStreamOutput, SCStre
         deliver?(.ended(error.localizedDescription))
     }
 
+}
+
+/// Whether a window's stream shows it minimized. ScreenCaptureKit suspends the stream while the window is in the Dock
+/// and sends frames again once it's restored, which has no status of its own: the first complete frame after the
+/// suspension (or the stream starting its frames again) says the window is back, so "Show nothing" shows it again.
+/// Each change is reported once.
+struct MinimizedWindow: Equatable, Sendable {
+    private(set) var isMinimized = false
+
+    /// The change `status` brings: true as the window is minimized, false as it's restored, nil for none.
+    mutating func change(for status: SCFrameStatus) -> Bool? {
+        switch status {
+        case .suspended:
+            guard !isMinimized else { return nil }
+            isMinimized = true
+            return true
+        case .complete, .started:
+            guard isMinimized else { return nil }
+            isMinimized = false
+            return false
+        case .idle, .blank, .stopped:
+            return nil
+        @unknown default:
+            return nil
+        }
+    }
 }
 
 /// Folds a burst of overlay show and hide posts into one refresh of the base layer's window list, `delay` after the

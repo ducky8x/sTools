@@ -1,5 +1,6 @@
 import AppKit
 import STDesign
+import STPlatform
 import SwiftUI
 
 /// Record / Stop with elapsed time and file size (spec 5.4.4), and what the last recording was saved as.
@@ -64,7 +65,7 @@ struct RecordBar: View {
         switch controller.phase {
         case .recording:
             var parts = [ByteCountFormatter.string(fromByteCount: controller.fileSize, countStyle: .file)]
-            if controller.droppedFrames > 0 { parts.append("\(controller.droppedFrames) frames dropped") }
+            if controller.droppedFrames > 0 { parts.append(Self.droppedText(controller.droppedFrames)) }
             return parts.joined(separator: " \u{00B7} ")
         case .starting: return "Starting the sources."
         case .countingDown: return "Get ready."
@@ -79,6 +80,11 @@ struct RecordBar: View {
     }
 
     private var canRecord: Bool { controller.screenRecordingPermission == .granted }
+
+    /// "1 frame dropped", "3 frames dropped".
+    static func droppedText(_ count: Int) -> String {
+        "\(CountText.of(count, "frame")) dropped"
+    }
 
     static func clock(_ seconds: Double) -> String {
         let total = Int(seconds)

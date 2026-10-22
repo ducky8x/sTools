@@ -25,7 +25,11 @@ struct HotkeyConfirmationTests {
         // The stop switches the tool off too, so the line says so, as Timer Overlay's cancel says "Timer Overlay off".
         #expect(HotkeyConfirmation.phrase(.recordingStopped) == "Recording stopped \u{00B7} Screen Recording off")
         #expect(HotkeyConfirmation.phrase(.recordingCountdown(seconds: 3)) == "Recording starts in 3 seconds")
-        #expect(HotkeyConfirmation.phrase(.recordingCanceled) == "Recording canceled")
+        #expect(HotkeyConfirmation.phrase(.recordingCountdown(seconds: 1)) == "Recording starts in 1 second")
+        // A canceled start switches the tool off too, and says so the same way.
+        #expect(HotkeyConfirmation.phrase(.recordingCanceled) == "Recording canceled \u{00B7} Screen Recording off")
+        #expect(HotkeyConfirmation.phrase(.recordingCouldNotStart("the disk is almost full"))
+            == "Recording couldn\u{2019}t start: the disk is almost full \u{00B7} Screen Recording off")
     }
 
     @Test func toolsThenRecording() {
@@ -85,12 +89,14 @@ struct HotkeyConfirmationTests {
         #expect(HotkeyConfirmation.summary([effect]) == "Recording started")
     }
 
-    /// A start that fails after the press says why, without the seal: nothing was recorded.
+    /// A start that fails after the press says why, and that the tool switched off, without the seal: nothing was
+    /// recorded.
     @Test func aStartThatFailsSaysWhy() {
         let effect = HotkeyConfirmation.recordingStartEffect(.failed("the disk is almost full"))
         #expect(effect == .recordingCouldNotStart("the disk is almost full"))
         #expect(!HotkeyConfirmation.changedSomething([effect]))
-        #expect(HotkeyConfirmation.summary([effect]) == "Recording couldn\u{2019}t start: the disk is almost full")
+        #expect(HotkeyConfirmation.summary([effect])
+            == "Recording couldn\u{2019}t start: the disk is almost full \u{00B7} Screen Recording off")
     }
 
     /// Without Screen & System Audio Recording nothing starts, so the line names the permission and earns no seal.
