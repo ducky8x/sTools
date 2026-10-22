@@ -39,13 +39,29 @@ public final class ScreenCapture: NSObject, VideoCapture, SCStreamOutput, SCStre
         init(_ stream: SCStream) { self.stream = stream }
     }
 
+    /// A notification observer's token, which may be removed from any thread.
+    private final class ObserverBox: @unchecked Sendable {
+        let token: NSObjectProtocol
+        init(_ token: NSObjectProtocol) { self.token = token }
+    }
+
     private struct State {
         var stream: StreamBox?
         var deliver: (@Sendable (VideoCaptureEvent) -> Void)?
         var includedWindowIDs: Set<UInt32> = []
         /// The size the stream was last asked to run at.
         var requestedSize: PixelSize?
+        /// The base layer's observer of overlay panels showing and hiding.
+        var overlayObserver: ObserverBox?
+        /// Numbers the base layer's refreshes in the order they read the window list, so an older one that
+        /// finishes late never replaces a newer one's filter.
+        var lastRefresh = 0
+        var appliedRefresh = 0
+        var overlayDebounce = OverlayRefreshDebounce()
     }
+
+    /// The base layer's clock for folding overlay posts, the one `Task.sleep(for:)` waits on.
+    private let refreshOrigin = ContinuousClock.now
 
     public init(target: Target, showsCursor: Bool, frameRate: Int = 60) {
         self.target = target
@@ -108,10 +124,11 @@ public final class ScreenCapture: NSObject, VideoCapture, SCStreamOutput, SCStre
     public func stop() async {
         refresher?.cancel()
         refresher = nil
-        let box = state.withLock { state -> StreamBox? in
-            defer { state.stream = nil; state.deliver = nil }
-            return state.stream
+        let (box, observer) = state.withLock { state -> (StreamBox?, ObserverBox?) in
+            defer { state.stream = nil; state.deliver = nil; state.overlayObserver = nil }
+            return (state.stream, state.overlayObserver)
         }
+        if let observer { NotificationCenter.default.removeObserver(observer.token) }
         try? await box?.stream.stopCapture()
     }
 
@@ -149,20 +166,64 @@ public final class ScreenCapture: NSObject, VideoCapture, SCStreamOutput, SCStre
         }
     }
 
-    /// sTools' overlays come and go as tools are switched; the base layer's window list follows every 2 s.
+    /// sTools' overlays come and go as tools are switched and as Timer Overlay pops up. The base layer's window list
+    /// follows each panel that shows or hides (`OverlayPanel.capturableVisibilityDidChange`) about 50 ms later, and
+    /// every 2 s as a backstop (plan decision 1).
     private func startRefreshing() {
+        let observer = NotificationCenter.default.addObserver(
+            forName: OverlayPanel.capturableVisibilityDidChange, object: nil, queue: nil
+        ) { [weak self] _ in
+            self?.overlaysChanged()
+        }
+        let box = ObserverBox(observer)
+        state.withLock { $0.overlayObserver = box }
         refresher = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(2))
                 guard let self, !Task.isCancelled else { return }
-                let overlays = await MainActor.run { Set(OverlayPanel.visibleWindowNumbers()) }
-                guard let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false),
-                      let (filter, included) = try? self.makeFilter(content, overlays: overlays) else { continue }
-                let (box, changed) = self.state.withLock { ($0.stream, $0.includedWindowIDs != included) }
-                guard changed, let box else { continue }
-                try? await box.stream.updateContentFilter(filter)
-                self.state.withLock { $0.includedWindowIDs = included }
+                await self.refreshBaseLayer()
             }
+        }
+    }
+
+    /// An overlay showed or hid: refresh once the debounce's delay has passed, unless a refresh already waits.
+    private func overlaysChanged() {
+        let elapsed = ContinuousClock.now - refreshOrigin
+        let now = Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) * 1e-18
+        let delay: TimeInterval? = state.withLock { state in
+            guard state.stream != nil, state.overlayDebounce.noteChange(at: now) else { return nil }
+            return state.overlayDebounce.delay
+        }
+        guard let delay else { return }
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            await self?.refreshBaseLayer()
+        }
+    }
+
+    /// Reads the overlays on screen and gives the stream a new filter when the windows it includes changed.
+    private func refreshBaseLayer() async {
+        guard let refresh = state.withLock({ state -> Int? in
+            guard state.stream != nil else { return nil }
+            state.lastRefresh += 1
+            return state.lastRefresh
+        }) else { return }
+        let overlays = await MainActor.run { Set(OverlayPanel.visibleWindowNumbers()) }
+        guard let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false),
+              let (filter, included) = try? makeFilter(content, overlays: overlays) else { return }
+        let box: StreamBox? = state.withLock { state in
+            guard refresh > state.appliedRefresh, state.includedWindowIDs != included, let stream = state.stream else { return nil }
+            state.appliedRefresh = refresh
+            return stream
+        }
+        guard let box else { return }
+        do {
+            try await box.stream.updateContentFilter(filter)
+            state.withLock { state in
+                if state.appliedRefresh == refresh { state.includedWindowIDs = included }
+            }
+        } catch {
+            // The next post or sweep tries again.
         }
     }
 
@@ -198,6 +259,29 @@ public final class ScreenCapture: NSObject, VideoCapture, SCStreamOutput, SCStre
         deliver?(.ended(error.localizedDescription))
     }
 
+}
+
+/// Folds a burst of overlay show and hide posts into one refresh of the base layer's window list, `delay` after the
+/// first post (plan decision 1). A post while that refresh still waits joins it, since the refresh reads the window
+/// list after the post. A post once it's due needs a refresh of its own: the one before may have read the list
+/// already. Times are seconds on one clock; tests pass their own.
+struct OverlayRefreshDebounce: Equatable, Sendable {
+    static let standardDelay: TimeInterval = 0.05
+
+    let delay: TimeInterval
+    /// When the waiting refresh reads the window list, if one waits.
+    private(set) var dueTime: TimeInterval?
+
+    init(delay: TimeInterval = Self.standardDelay) {
+        self.delay = max(0, delay)
+    }
+
+    /// A post at `now`. True when it needs a refresh of its own, `delay` from now; false when it joins the waiting one.
+    mutating func noteChange(at now: TimeInterval) -> Bool {
+        if let dueTime, now < dueTime { return false }
+        dueTime = now + delay
+        return true
+    }
 }
 
 /// What ScreenCaptureKit says about where a frame's content is (WWDC22 "Take ScreenCaptureKit to the next level"),
