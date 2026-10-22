@@ -7,6 +7,10 @@ enum HotkeyConfirmation {
         case tool(ToolID, isOn: Bool)
         /// The tool was asked to switch on but stayed off: it needs Accessibility (rule R10).
         case needsAccessibility(ToolID)
+        /// A start is under way and its sources are still starting, so nothing is recorded yet; "Recording started"
+        /// follows once the first frame is in the file.
+        case recordingStarting
+        /// The writer put the recording's first frame in the file. Shown then, not at the press.
         case recordingStarted
         /// Recording starts once the countdown (Screen Recording ▸ Advanced) runs out.
         case recordingCountdown(seconds: Int)
@@ -28,7 +32,8 @@ enum HotkeyConfirmation {
         effects.contains { effect in
             switch effect {
             case .tool, .recordingStarted, .recordingCountdown, .recordingStopped, .recordingCanceled: true
-            case .needsAccessibility, .recordingFinishing, .recordingAwaitingDecision, .recordingNeedsPermission: false
+            case .needsAccessibility, .recordingStarting, .recordingFinishing, .recordingAwaitingDecision,
+                 .recordingNeedsPermission: false
             }
         }
     }
@@ -42,6 +47,7 @@ enum HotkeyConfirmation {
         switch effect {
         case .tool(let tool, let isOn): "\(tool.title) \(isOn ? "on" : "off")"
         case .needsAccessibility(let tool): "\(tool.title) needs Accessibility"
+        case .recordingStarting: "Starting the recording\u{2026}"
         case .recordingStarted: "Recording started"
         case .recordingCountdown(let seconds): "Recording starts in \(seconds) seconds"
         case .recordingStopped: "Recording stopped"
@@ -52,11 +58,13 @@ enum HotkeyConfirmation {
         }
     }
 
-    /// The line for one press of Screen Recording's key, from what the press did (`toggleRecording()` says so as
-    /// it returns, before the start or the stop has finished).
-    static func recordingEffect(_ press: ScreenRecordingController.KeyPress) -> Effect {
+    /// The line for one press of Screen Recording's key, from what the press did (`toggleRecording()` says so as it
+    /// returns, before the start or the stop has finished). A start never says "Recording started" here: that waits
+    /// for its first frame (`recordingStartEffect`). While its sources start, the press says the recording is
+    /// starting; with them already running, the first frame follows at once and the press has no line of its own.
+    static func recordingEffect(_ press: ScreenRecordingController.KeyPress) -> Effect? {
         switch press {
-        case .started: .recordingStarted
+        case .starting(let waitsForSources): waitsForSources ? .recordingStarting : nil
         case .countdown(let seconds): .recordingCountdown(seconds: seconds)
         case .stopped: .recordingStopped
         case .canceled: .recordingCanceled
@@ -64,6 +72,13 @@ enum HotkeyConfirmation {
         case .finishing: .recordingFinishing
         case .couldNotSwitchOn: .needsAccessibility(.screenRecording)
         case .needsPermission: .recordingNeedsPermission
+        }
+    }
+
+    /// The line once a start the key made has turned out: "Recording started" as its first frame is in the file.
+    static func recordingStartEffect(_ outcome: ScreenRecordingController.KeyStartOutcome) -> Effect {
+        switch outcome {
+        case .started: .recordingStarted
         }
     }
 }

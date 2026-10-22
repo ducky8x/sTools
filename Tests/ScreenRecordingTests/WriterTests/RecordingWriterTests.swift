@@ -146,6 +146,27 @@ struct RecordingWriterTests {
         #expect(info.videoSampleCount == 20)
     }
 
+    /// The writer says when its first frame is in the file, once: that's when a recording has really started (spec
+    /// 5.4.4). A frame the encoder couldn't take doesn't count, and neither do later files of a split recording.
+    @Test func reportsItsFirstWrittenFrameOnce() async throws {
+        let dir = try WriterFixture.makeDirectory()
+        let stalled = Flag(true)
+        let writer = RecordingWriter(
+            configuration: WriterFixture.configuration(dir, audio: [], split: 0.5),
+            freeSpace: FakeFreeSpace(.max),
+            readinessOverride: { !stalled.value })
+        try writer.start(at: .zero)
+        #expect(writer.append(frame: WriterFixture.makeFrame(index: 0), at: .zero) == .dropped)
+        stalled.value = false
+        await WriterFixture.feed(writer, frames: 30, from: 1, audioTracks: 0)
+        let result = await writer.finish()
+        #expect(result.files.count >= 2)
+        let events = await collect(writer.events)
+        #expect(events.filter { $0 == .firstFrameWritten }.count == 1)
+        let first = try #require(events.firstIndex(of: .firstFrameWritten))
+        #expect(events.firstIndex { if case .segmentStarted = $0 { true } else { false } }.map { $0 < first } == true)
+    }
+
     @Test func rejectsFramesOutOfOrderOrWrongSize() async throws {
         let dir = try WriterFixture.makeDirectory()
         let writer = RecordingWriter(configuration: WriterFixture.configuration(dir, audio: []))

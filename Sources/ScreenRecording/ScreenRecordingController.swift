@@ -16,11 +16,13 @@ import STPlatform
 public final class ScreenRecordingController: ToolController {
     public enum Phase: Equatable {
         case idle
-        /// A recording was asked for and nothing is written yet: the sources are starting (switching the tool on arms
-        /// them first, which can take a second or two). Writing begins as soon as they run, after the countdown when
-        /// one is set. The key, the page's Cancel or switching the tool off cancels it, and nothing is left behind.
+        /// A recording was asked for and nothing is in the file yet: the sources are starting (switching the tool on
+        /// arms them first, which can take a moment), or the writer is about to write its first frame. Writing begins
+        /// as soon as they run, after the countdown when one is set. The key, the page's Cancel or switching the tool
+        /// off cancels it, and nothing is left behind.
         case starting
         case countingDown(Int)
+        /// The writer has put the recording's first frame in the file.
         case recording
         /// A recording is being finished (its file closing, with the tool already off) or saved.
         case finishing
@@ -32,9 +34,11 @@ public final class ScreenRecordingController: ToolController {
     /// What one press of Screen Recording's key did (spec 5.4.4, 6.1), for the confirmation over the game. It's known
     /// as the press returns; the start and the stop carry on after it.
     public enum KeyPress: Equatable, Sendable {
-        /// A recording started, the tool switched on first when it was off. It writes as soon as the sources run.
-        case started
-        /// The countdown (Advanced) started; the recording starts when it runs out.
+        /// A start is under way, the tool switched on first when it was off; nothing is in the file yet. With
+        /// `waitsForSources`, its sources are still starting (switching the tool on starts them), which takes a moment;
+        /// otherwise they already run and the first frame follows at once. `keyStartEnded` reports when it's written.
+        case starting(waitsForSources: Bool)
+        /// The countdown (Advanced) started; the recording starts when it runs out, and `keyStartEnded` reports it.
         case countdown(seconds: Int)
         /// The recording stopped and the tool switched off; once the file is finished, the question asks for its name
         /// and Save or Delete.
@@ -50,6 +54,13 @@ public final class ScreenRecordingController: ToolController {
         case couldNotSwitchOn
         /// Screen & System Audio Recording isn't allowed, so nothing started and the tool stayed as it was.
         case needsPermission
+    }
+
+    /// How a start the key made turned out, once it has (spec 5.4.4): the line over the game says "Recording started"
+    /// only now. A start that was canceled reports nothing here; the press that canceled it said so.
+    public enum KeyStartOutcome: Equatable, Sendable {
+        /// The writer put the recording's first frame in the file.
+        case started
     }
 
     /// A finished recording waiting for its Save/Delete answer.
@@ -74,6 +85,13 @@ public final class ScreenRecordingController: ToolController {
     /// Asks Save or Delete once a recording stops, in front of whatever app is, Minecraft included. The app gives it a
     /// floating panel of its own; tests give it a fake or nothing.
     @ObservationIgnored public var decisionPresenter: (any RecordingDecisionPresenting)?
+    /// Told how each start the key made turned out, once it has: the app confirms it over the game.
+    @ObservationIgnored public var keyStartEnded: (@MainActor (KeyStartOutcome) -> Void)?
+    /// The frame clock's driver for each recording, nil for the real timer. Tests give one they fire by hand, so they
+    /// decide when the first frame is written.
+    @ObservationIgnored var makeTickDriver: @MainActor () -> (any TickDriver)? = { nil }
+    /// The recording disk's free space, as each recording's writer reads it; tests fake a full disk.
+    @ObservationIgnored var freeSpace: any FreeSpaceProvider = VolumeFreeSpaceProvider()
     public private(set) var phase = Phase.idle {
         didSet {
             guard phase != oldValue, !phaseWaiters.isEmpty else { return }
@@ -400,22 +418,24 @@ public final class ScreenRecordingController: ToolController {
         case .finishing:
             return .finishing
         case .idle:
-            let (press, start) = beginStart(isTest: false)
+            let (press, start) = beginStart(isTest: false, fromKey: true)
             if let start { Task { await run(start) } }
             return press
         }
     }
 
     /// Record on the page: starts a recording as the key does, switching the tool on first when it's off. Returns
-    /// once it writes, or once the start ended without a recording (canceled, refused or failed).
+    /// once its first frame is in the file, or once the start ended without a recording (canceled, refused or failed).
     public func startRecording() async {
         await startRecording(isTest: false)
     }
 
     private func startRecording(isTest: Bool) async {
         guard phase == .idle else { return }
-        let (_, start) = beginStart(isTest: isTest)
-        if let start { await run(start) }
+        let (_, start) = beginStart(isTest: isTest, fromKey: false)
+        guard let start else { return }
+        await run(start)
+        await waitWhile { isCurrent(start) }
     }
 
     /// One start, from the press until the first frame is written.
@@ -424,6 +444,8 @@ public final class ScreenRecordingController: ToolController {
         let countdown: Countdown
         /// The Prologue's 5-second test, which leaves the tool on whatever happens.
         let isTest: Bool
+        /// Made by the key, whose line over the game hears how it turned out (`keyStartEnded`).
+        let fromKey: Bool
     }
 
     /// The part of a start that can't wait: switches the tool on when it's off, then marks the start (`.starting`)
@@ -433,7 +455,7 @@ public final class ScreenRecordingController: ToolController {
     /// Without Screen & System Audio Recording nothing starts and the tool stays as it was: there would be nothing to
     /// record but a blank canvas, and arming could bring up macOS's prompt over the game. The page's Allow… is where
     /// it's given. It's read fresh here (a cheap check that never prompts), so a grant since counts at once.
-    private func beginStart(isTest: Bool) -> (KeyPress, Start?) {
+    private func beginStart(isTest: Bool, fromKey: Bool) -> (KeyPress, Start?) {
         services.permissions.refresh([.screenRecording])
         guard screenRecordingPermission == .granted else { return (.needsPermission, nil) }
         if !isEnabled {
@@ -442,8 +464,9 @@ public final class ScreenRecordingController: ToolController {
         startCount += 1
         phase = .starting
         let countdown = options.countdown
-        let start = Start(number: startCount, countdown: countdown, isTest: isTest)
-        return (countdown == .off ? .started : .countdown(seconds: countdown.seconds), start)
+        let start = Start(number: startCount, countdown: countdown, isTest: isTest, fromKey: fromKey)
+        let press: KeyPress = countdown == .off ? .starting(waitsForSources: !sourcesAreReady) : .countdown(seconds: countdown.seconds)
+        return (press, start)
     }
 
     /// The rest of a start: waits for the sources, runs the countdown, then writes. It leaves off as soon as the start
@@ -483,25 +506,36 @@ public final class ScreenRecordingController: ToolController {
         switchOff()
     }
 
-    /// Ends a start before anything was written, leaving the tool as it is. True when one was under way.
+    /// Ends a start before anything was written, leaving the tool as it is. True when one was under way. A writer it
+    /// had already opened (its first frame not in yet) is stopped and its file removed, so a canceled start never
+    /// leaves anything behind.
     @discardableResult
     private func endStart() -> Bool {
         switch phase {
         case .starting, .countingDown:
             phase = .idle
+            discardUnstartedSession()
             return true
         default:
             return false
         }
     }
 
+    /// The session of a start that ended before its first frame: its clock stops now, and its file goes once closed.
+    private func discardUnstartedSession() {
+        guard let session else { return }
+        self.session = nil
+        session.stopTicking()
+        Task { RecordingFinisher.delete(await session.stop().files) }
+    }
+
+    /// Opens the file and starts the frame clock. The recording has started once the writer reports its first frame
+    /// (`didStartWriting`); until then it's still a start, which a press cancels.
     private func beginWriting(_ start: Start) {
         guard isCurrent(start) else { return }
         // A recording can only begin from a start with its sources up, never over one already writing.
         guard session == nil, let rig else {
-            endStart()
-            note("The recording couldn\u{2019}t start: its sources didn\u{2019}t start.")
-            if !start.isTest { switchOff() }
+            failStart(start, note: "The recording couldn\u{2019}t start: its sources didn\u{2019}t start.")
             return
         }
         notes = []
@@ -510,23 +544,36 @@ public final class ScreenRecordingController: ToolController {
             layout: layout, options: options, canvas: canvas, baseName: RecordingFinisher.dateName(for: Date()),
             feeds: inProcessAudio.feeds.filter(\.wantsRecording).map(\.name))
         do {
-            let session = try RecordingSession(configuration: configuration, rig: rig)
+            let session = try RecordingSession(configuration: configuration, rig: rig, driver: makeTickDriver(), freeSpace: freeSpace)
             try session.start()
             self.session = session
-            phase = .recording
-            recordingDisplaySize = minecraftDisplaySize
-            elapsedSeconds = 0
-            fileSize = 0
-            droppedFrames = 0
-            watchWriter(session)
-            startReadouts(session)
-            watchScreens()
+            watchWriter(session, start: start)
         } catch {
-            phase = .idle
-            note("The recording couldn\u{2019}t start: \(error.localizedDescription)")
-            // Nothing was recorded, so the tool switches off as after a canceled start (the test leaves it on).
-            if !start.isTest { switchOff() }
+            failStart(start, note: "The recording couldn\u{2019}t start: \(error.localizedDescription)")
         }
+    }
+
+    /// A start that couldn't begin writing ends without a recording: a file it opened is removed, the page says why,
+    /// and the tool switches off as after a canceled start (the Prologue's test leaves it on).
+    private func failStart(_ start: Start, note text: String) {
+        guard isCurrent(start) else { return }
+        endStart()
+        note(text)
+        if !start.isTest { switchOff() }
+    }
+
+    /// The writer put `session`'s first frame in the file: the recording is under way, and the key's line over the
+    /// game can say so.
+    private func didStartWriting(_ session: RecordingSession, _ start: Start) {
+        guard self.session === session, isCurrent(start) else { return }
+        phase = .recording
+        recordingDisplaySize = minecraftDisplaySize
+        elapsedSeconds = 0
+        fileSize = 0
+        droppedFrames = 0
+        startReadouts(session)
+        watchScreens()
+        if start.fromKey { keyStartEnded?(.started) }
     }
 
     /// Records for `duration` and saves under the date-and-time name without asking: the Prologue's 5-second test
@@ -670,17 +717,29 @@ public final class ScreenRecordingController: ToolController {
         await disarm()
     }
 
-    private func watchWriter(_ session: RecordingSession) {
+    /// Follows `session`'s writer for as long as it's the one recording: its first frame starts the recording, and a
+    /// full disk or a failure stops it, or ends the start when it comes before the first frame.
+    private func watchWriter(_ session: RecordingSession, start: Start) {
         Task { [weak self] in
             for await event in session.writerEvents {
-                guard let self else { return }
+                guard let self, self.session === session else { return }
                 switch event {
+                case .firstFrameWritten:
+                    self.didStartWriting(session, start)
                 case .lowDiskWarning(let free):
                     self.note("Less than \(Self.gigabytes(free)) free on the recording disk.")
                 case .stoppedForLowDisk:
-                    await self.stopRecording(explanation: "The disk is almost full, so the recording was finished.")
+                    if self.isCurrent(start) {
+                        self.failStart(start, note: "The recording couldn\u{2019}t start: the disk is almost full.")
+                    } else {
+                        await self.stopRecording(explanation: "The disk is almost full, so the recording was finished.")
+                    }
                 case .failed(let message):
-                    await self.stopRecording(explanation: "The recording stopped: \(message)")
+                    if self.isCurrent(start) {
+                        self.failStart(start, note: "The recording couldn\u{2019}t start: \(message)")
+                    } else {
+                        await self.stopRecording(explanation: "The recording stopped: \(message)")
+                    }
                 default:
                     break
                 }

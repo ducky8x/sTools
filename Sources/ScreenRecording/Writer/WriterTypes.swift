@@ -99,6 +99,8 @@ public struct WriterResult: Sendable, Equatable {
 
 public enum WriterEvent: Sendable, Equatable {
     case segmentStarted(index: Int, url: URL)
+    /// The recording's first frame is in the file: it has really started (spec 5.4.4). Once per writer.
+    case firstFrameWritten
     case segmentFinished(index: Int, url: URL)
     case lowDiskWarning(freeBytes: Int64)
     /// Free space fell under the hard floor; the writer has stopped and is finalizing.

@@ -116,8 +116,12 @@ final class AppModel {
             self.setTool(.screenRecording, on: true)
             return self.isOn(.screenRecording)
         }
-        // Stopping a recording turns the tool off once it's saved or deleted (spec 5.4.4), through its switch.
+        // Stopping a recording turns the tool off right then (spec 5.4.4), through its switch.
         recording?.requestDisable = { [weak self] in self?.setTool(.screenRecording, on: false) }
+        // The key's start is confirmed over the game once the recording writes, not at the press.
+        recording?.keyStartEnded = { [weak self] outcome in
+            self?.confirm([HotkeyConfirmation.recordingStartEffect(outcome)])
+        }
         // Start, Test, placement mode and the Start-timer key switch the tool on through its switch, so rule R10 holds.
         (controllers[.timerOverlay] as? TimerOverlayController)?.requestEnable = { [weak self] in
             guard let self else { return false }

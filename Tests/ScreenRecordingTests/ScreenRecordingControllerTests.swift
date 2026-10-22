@@ -667,7 +667,7 @@ struct ScreenRecordingKeyTests {
     @Test func aSecondPressWhileItStartsCancelsItAndWritesNothing() async throws {
         let harness = Harness(armingTakes: .milliseconds(300))
         defer { harness.remove() }
-        #expect(harness.controller.toggleRecording() == .started)
+        #expect(harness.controller.toggleRecording() == .starting(waitsForSources: true))
         #expect(harness.controller.phase == .starting)
         #expect(harness.controller.isEnabled)
         #expect(harness.controller.isLayoutLocked)
@@ -688,7 +688,7 @@ struct ScreenRecordingKeyTests {
         let harness = Harness(armingTakes: .milliseconds(300))
         defer { harness.remove() }
         harness.controller.options.fileType = .mov
-        #expect(harness.controller.toggleRecording() == .started)
+        #expect(harness.controller.toggleRecording() == .starting(waitsForSources: true))
         #expect(await harness.waitUntil { harness.controller.phase == .recording })
         harness.pushFrame()
         try await Task.sleep(for: .milliseconds(250))
@@ -709,7 +709,7 @@ struct ScreenRecordingKeyTests {
         try await Task.sleep(for: .milliseconds(30))
         #expect(harness.controller.toggleRecording() == .canceled)
         try await Task.sleep(for: .milliseconds(100))
-        #expect(harness.controller.toggleRecording() == .started)
+        #expect(harness.controller.toggleRecording() == .starting(waitsForSources: true))
         #expect(await harness.waitUntil { harness.controller.phase == .recording })
         #expect(harness.controller.isEnabled)
         harness.pushFrame()
@@ -737,7 +737,7 @@ struct ScreenRecordingKeyTests {
     @Test func eachPressSaysWhatItDid() async throws {
         let harness = Harness()
         defer { harness.remove() }
-        #expect(harness.controller.toggleRecording() == .started)
+        #expect(harness.controller.toggleRecording() == .starting(waitsForSources: true))
         #expect(await harness.waitUntil { harness.controller.phase == .recording })
         harness.pushFrame()
         try await Task.sleep(for: .milliseconds(250))
@@ -795,7 +795,7 @@ struct ScreenRecordingKeyTests {
         defer { harness.remove() }
         #expect(harness.controller.toggleRecording() == .needsPermission)
         permission.set(.granted)
-        #expect(harness.controller.toggleRecording() == .started)
+        #expect(harness.controller.toggleRecording() == .starting(waitsForSources: true))
         #expect(await harness.waitUntil { harness.controller.phase == .recording })
         #expect(harness.controller.screenRecordingPermission == .granted)
         harness.pushFrame()
@@ -819,5 +819,131 @@ struct ScreenRecordingKeyTests {
         #expect(harness.presenter.presented.isEmpty)
         #expect(harness.savedFileNames().count == 1)
         #expect(!harness.controller.isEnabled)
+    }
+}
+
+/// "Recording started" means it: a start the key made is reported once the writer has put its first frame in the file,
+/// not at the press (spec 5.4.4). The session's clock is fired by hand here, so the test decides when that frame is
+/// written.
+@Suite("Screen Recording's first frame", .serialized) @MainActor
+struct ScreenRecordingFirstFrameTests {
+    /// Off, the press switches the tool on and its sources start, so it says the start waits for them. Nothing is
+    /// reported, and the recording isn't under way, until the first frame is in the file.
+    @Test func aStartIsReportedOnlyOnceItsFirstFrameIsInTheFile() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        let driver = ManualTickDriver()
+        harness.controller.makeTickDriver = { driver }
+        var outcomes: [ScreenRecordingController.KeyStartOutcome] = []
+        harness.controller.keyStartEnded = { outcomes.append($0) }
+        #expect(harness.controller.toggleRecording() == .starting(waitsForSources: true))
+        // The writer's clock runs once the sources do, but no frame is written until it ticks.
+        #expect(await harness.waitUntil { driver.isRunning })
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(harness.controller.phase == .starting)
+        #expect(!harness.controller.isRecording)
+        #expect(outcomes.isEmpty)
+        harness.pushFrame()
+        driver.fire()
+        #expect(await harness.waitUntil { harness.controller.phase == .recording })
+        #expect(outcomes == [.started])
+        await harness.controller.stopRecording(explanation: nil)
+        let file = try #require(harness.controller.finished?.files.first)
+        #expect(try await MovieInfo.load(file).videoSampleCount >= 1)
+        harness.controller.delete()
+        #expect(outcomes == [.started])
+    }
+
+    /// Already armed (switched on by hand), the press says writing begins at once; it's still reported only once the
+    /// first frame is in.
+    @Test func anArmedToolSaysItWritesAtOnce() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        let driver = ManualTickDriver()
+        harness.controller.makeTickDriver = { driver }
+        var outcomes: [ScreenRecordingController.KeyStartOutcome] = []
+        harness.controller.keyStartEnded = { outcomes.append($0) }
+        await harness.arm()
+        harness.pushFrame()
+        #expect(harness.controller.toggleRecording() == .starting(waitsForSources: false))
+        #expect(await harness.waitUntil { driver.isRunning })
+        #expect(outcomes.isEmpty)
+        driver.fire()
+        #expect(await harness.waitUntil { outcomes == [.started] })
+        #expect(harness.controller.phase == .recording)
+        await harness.controller.stopRecording(explanation: nil)
+        harness.controller.delete()
+    }
+
+    /// A press after the writer started but before its first frame cancels the start like any other: the file it
+    /// opened is removed, nothing is asked or reported, and the tool is off.
+    @Test func aPressBeforeTheFirstFrameCancelsAndLeavesNoFile() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        let driver = ManualTickDriver()
+        harness.controller.makeTickDriver = { driver }
+        var outcomes: [ScreenRecordingController.KeyStartOutcome] = []
+        harness.controller.keyStartEnded = { outcomes.append($0) }
+        harness.controller.toggleRecording()
+        #expect(await harness.waitUntil { driver.isRunning })
+        #expect(await harness.waitUntil { !harness.savedFileNames().isEmpty })
+        #expect(harness.controller.toggleRecording() == .canceled)
+        #expect(harness.controller.phase == .idle)
+        #expect(!harness.controller.isEnabled)
+        #expect(!driver.isRunning)
+        #expect(await harness.waitUntil { harness.savedFileNames().isEmpty })
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(harness.savedFileNames().isEmpty)
+        #expect(harness.presenter.presented.isEmpty)
+        #expect(outcomes.isEmpty)
+        #expect(!harness.factory.anyRunning)
+    }
+
+    /// A disk too full to record on stops the writer at its first frame, so the recording never starts: the start
+    /// ends with nothing left behind, the page says why, nothing is asked, and the tool is off.
+    @Test func aFullDiskEndsTheStartWithNothingLeftBehind() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        harness.controller.freeSpace = FakeFreeSpace(100 * 1_048_576)
+        harness.controller.toggleRecording()
+        #expect(harness.controller.phase == .starting)
+        #expect(await harness.waitUntil { harness.controller.phase == .idle && !harness.controller.isEnabled })
+        #expect(harness.controller.notes == ["The recording couldn\u{2019}t start: the disk is almost full."])
+        #expect(await harness.waitUntil { harness.savedFileNames().isEmpty })
+        #expect(harness.presenter.presented.isEmpty)
+        #expect(harness.controller.finished == nil)
+    }
+
+    /// With a countdown, the press says so, and the start is reported once the countdown has run and the first frame
+    /// is in.
+    @Test func aCountdownsStartIsReportedOnceItWrites() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        harness.controller.options.countdown = .threeSeconds
+        var outcomes: [ScreenRecordingController.KeyStartOutcome] = []
+        harness.controller.keyStartEnded = { outcomes.append($0) }
+        #expect(harness.controller.toggleRecording() == .countdown(seconds: 3))
+        #expect(await harness.waitUntil { harness.controller.phase == .countingDown(1) })
+        #expect(outcomes.isEmpty)
+        #expect(await harness.waitUntil { harness.controller.phase == .recording })
+        #expect(outcomes == [.started])
+        await harness.controller.stopRecording(explanation: nil)
+        harness.controller.delete()
+    }
+
+    /// Record on the page returns once the recording writes; nothing is reported for the game's line, which is the
+    /// key's.
+    @Test func thePagesRecordReturnsOnceItWritesAndReportsNothing() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        var outcomes: [ScreenRecordingController.KeyStartOutcome] = []
+        harness.controller.keyStartEnded = { outcomes.append($0) }
+        harness.controller.setEnabled(true)
+        await harness.controller.startRecording()
+        #expect(harness.controller.phase == .recording)
+        #expect(outcomes.isEmpty)
+        await harness.controller.stopRecording(explanation: nil)
+        harness.controller.delete()
+        #expect(outcomes.isEmpty)
     }
 }

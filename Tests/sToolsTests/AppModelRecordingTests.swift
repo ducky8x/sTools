@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import os
 import STDesign
 @testable import ScreenRecording
 @testable import STPlatform
@@ -26,6 +27,17 @@ private final class FakeQuestion: RecordingDecisionPresenting {
 }
 
 private let f5 = HotkeyCombo(keyCode: 96, modifiers: [])
+
+/// The recording's frame clock, fired by the test: no frame is written until it fires.
+private final class HandTickDriver: TickDriver, @unchecked Sendable {
+    private let handler = OSAllocatedUnfairLock<(@Sendable () -> Void)?>(initialState: nil)
+    func start(interval: Double, handler: @escaping @Sendable () -> Void) { self.handler.withLock { $0 = handler } }
+    func stop() { handler.withLock { $0 = nil } }
+    var isRunning: Bool { handler.withLock { $0 != nil } }
+    func fire() { handler.withLock { $0 }?() }
+}
+
+private let startingLine = "Starting the recording\u{2026}"
 
 /// The app with a real Screen Recording controller on fakes: no capture, no window, no sound, and the recordings go
 /// to a temporary folder.
@@ -103,15 +115,56 @@ private final class RecordingHarness {
 @MainActor
 @Suite("AppModel Screen Recording key", .serialized)
 struct AppModelRecordingTests {
+    /// Off, the press switches the tool on and its sources start: the line says the recording is starting, without the
+    /// seal, and "Recording started" follows with the seal once the recording writes.
     @Test func offTheKeySwitchesTheToolOnAndRecordsAtOnce() async throws {
         let harness = RecordingHarness()
         let id = harness.addKey()
         #expect(!harness.model.isOn(.screenRecording))
         harness.press(id)
+        #expect(harness.hud.lines == [startingLine])
+        #expect(harness.hud.presented.map(\.sealed) == [false])
         #expect(await waitUntil(timeout: RecordingHarness.patience) { harness.recording.phase == .recording })
         #expect(harness.model.isOn(.screenRecording))
         #expect(harness.model.status(of: .screenRecording) == .on)
+        #expect(harness.hud.lines == [startingLine, "Recording started"])
+        #expect(harness.hud.presented.map(\.sealed) == [false, true])
+        await harness.recording.stopRecording(explanation: nil)
+        harness.recording.delete()
+    }
+
+    /// "Recording started" (its line, the stamp and VoiceOver's announcement, all the confirmation's) shows when the
+    /// writer puts the first frame in the file, not at the press. Here the recording's clock is fired by hand.
+    @Test func recordingStartedShowsOnceTheFirstFrameIsInTheFile() async throws {
+        let harness = RecordingHarness()
+        let driver = HandTickDriver()
+        harness.recording.makeTickDriver = { driver }
+        let id = harness.addKey()
+        harness.press(id)
+        #expect(await waitUntil(timeout: RecordingHarness.patience) { driver.isRunning })
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(harness.hud.lines == [startingLine])
+        #expect(harness.recording.phase == .starting)
+        driver.fire()
+        #expect(await waitUntil(timeout: RecordingHarness.patience) { harness.hud.lines.count == 2 })
+        #expect(harness.hud.lines == [startingLine, "Recording started"])
+        #expect(harness.recording.phase == .recording)
+        await harness.recording.stopRecording(explanation: nil)
+        harness.recording.delete()
+    }
+
+    /// Switched on by hand, the sources already run, so the press shows nothing of its own: "Recording started" comes
+    /// a moment later, as the recording writes.
+    @Test func anArmedToolsKeyConfirmsOnlyOnceWritingBegins() async throws {
+        let harness = RecordingHarness()
+        let id = harness.addKey()
+        harness.model.setTool(.screenRecording, on: true)
+        try await Task.sleep(for: .milliseconds(200))
+        harness.press(id)
+        #expect(harness.hud.lines.isEmpty)
+        #expect(await waitUntil(timeout: RecordingHarness.patience) { harness.recording.phase == .recording })
         #expect(harness.hud.lines == ["Recording started"])
+        #expect(harness.hud.presented.map(\.sealed) == [true])
         await harness.recording.stopRecording(explanation: nil)
         harness.recording.delete()
     }
@@ -129,7 +182,7 @@ struct AppModelRecordingTests {
         harness.press(id)
         #expect(harness.recording.phase == .idle)
         #expect(!harness.model.isOn(.screenRecording))
-        #expect(harness.hud.lines == ["Recording started", "Recording canceled"])
+        #expect(harness.hud.lines == [startingLine, "Recording canceled"])
         // Long after the sources would have come up, still nothing.
         try await Task.sleep(for: .milliseconds(700))
         #expect(harness.recording.phase == .idle)
@@ -162,7 +215,7 @@ struct AppModelRecordingTests {
         // Once it's allowed, the next press records.
         harness.prober.set(.screenRecording, .granted)
         #expect(await harness.recordByKey(id))
-        #expect(harness.hud.lines.suffix(2) == ["Recording started", "Recording stopped"])
+        #expect(harness.hud.lines.suffix(3) == [startingLine, "Recording started", "Recording stopped"])
         harness.recording.delete()
     }
 
@@ -185,7 +238,7 @@ struct AppModelRecordingTests {
         let id = harness.addKey()
         #expect(await harness.recordByKey(id))
         #expect(harness.question.presented == 1)
-        #expect(harness.hud.lines == ["Recording started", "Recording stopped"])
+        #expect(harness.hud.lines == [startingLine, "Recording started", "Recording stopped"])
         // Already off: the stop switched the tool off before the question came up.
         #expect(!harness.model.isOn(.screenRecording))
         #expect(harness.model.status(of: .screenRecording) == .off)
