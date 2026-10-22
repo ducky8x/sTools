@@ -107,4 +107,11 @@ struct AppModelSettingsTests {
         #expect(harness.model.general.restoreToolsAtQuit, "General is untouched by the per-tool reset")
         #expect(harness.model.appearance.soundVolume == 0.1, "Appearance is untouched by the per-tool reset")
     }
+
+    @Test func resetAllToolsNamesEveryToolItResetsInSidebarOrder() {
+        #expect(AppModel.resetAllToolsMessage.hasPrefix(
+            "This sets the settings of Crosshair, Timer Overlay, NBB Overlay, Screen Recording, Window Backdrop and "
+                + "Key Rebinder back to their defaults."))
+        #expect(AppModel.resetAllToolsMessage.contains("Screen Recording's sources and layout"))
+    }
 }

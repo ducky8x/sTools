@@ -86,6 +86,17 @@ extension AppModel {
         keyRebinder?.resetToDefault()
     }
 
+    /// What Settings ▸ Reset All Tools… says it does, naming every tool `resetAllToolsToDefault()` resets, in sidebar
+    /// order. Screen Recording's sources and layout (`recordingLayout`) and the rebinds in Karabiner-Elements are
+    /// separate from those tools' settings, so they stay. Plain placeholder wording until M9.
+    static var resetAllToolsMessage: String {
+        let titles = ToolID.allCases.map(\.title)
+        let tools = titles.dropLast().joined(separator: ", ") + " and " + (titles.last ?? "")
+        return "This sets the settings of \(tools) back to their defaults. Screen Recording's sources and layout and "
+            + "your Karabiner-Elements rebinds stay as they are. General, Appearance and Hotkeys are untouched "
+            + "\u{2014} use Reset sTools below for those."
+    }
+
     // MARK: - Help ▸ Copy Diagnostics (spec 6.2)
 
     func copyDiagnostics(to clipboard: any ClipboardWriting = PasteboardClipboard()) {
