@@ -1,5 +1,6 @@
 import STDesign
 import STPlatform
+import ScreenRecording
 import SwiftUI
 import TimerOverlay
 
@@ -68,9 +69,9 @@ enum ToolHotkey {
 
 /// A tool page's Hotkey row, near the top (spec 6.1): the key for the tool's one action (it toggles an overlay tool,
 /// starts and stops Screen Recording, or starts the timer), set, changed or cleared right here by pressing a key
-/// (Delete clears, Esc cancels). Under it, Timer Overlay's one line on what its key does, what's wrong with that key,
-/// the notes both hotkey editors show, the other hotkeys that do the tool's action, where hotkeys work and the key set
-/// with Change… (Home ▸ Hotkeys), and, while hotkeys are off, Turn On.
+/// (Delete clears, Esc cancels). Under it, Timer Overlay's and Screen Recording's one line on what the key does, what's
+/// wrong with that key, the notes both hotkey editors show, the other hotkeys that do the tool's action, where hotkeys
+/// work and the key set with Change… (Home ▸ Hotkeys), and, while hotkeys are off, Turn On.
 struct ToolHotkeyRow: View {
     let model: AppModel
     let tool: ToolID
@@ -136,10 +137,24 @@ struct ToolHotkeyRow: View {
     }
 
     /// What the key does, where a page needs to say more than its title: Timer Overlay's key starts the timer, and its
-    /// cancel gesture switches the tool off. Nil for the other tools.
+    /// cancel gesture switches the tool off; Screen Recording's one key starts and stops a recording, asks Save or
+    /// Delete, and the stop switches the tool off. Nil for the overlay tools, whose key just toggles them.
     var purposeLine: String? {
-        guard tool == .timerOverlay else { return nil }
-        return TimerKeyLine.text(for: model.timerOverlay?.settings.cancelGesture ?? .doublePress)
+        switch tool {
+        case .timerOverlay: TimerKeyLine.text(for: model.timerOverlay?.settings.cancelGesture ?? .doublePress)
+        case .screenRecording:
+            Self.screenRecordingPurpose(asksSaveOrDelete: model.controller(
+                for: .screenRecording, as: ScreenRecordingController.self)?.options.askSaveDelete ?? true)
+        default: nil
+        }
+    }
+
+    /// Screen Recording's line under its Hotkey row (spec 5.4.4, 6.1), following its Advanced setting
+    /// Ask Save or Delete on stop.
+    static func screenRecordingPurpose(asksSaveOrDelete: Bool) -> String {
+        asksSaveOrDelete
+            ? "Starts a recording; press again to stop, name it and Save or Delete. Stopping switches Screen Recording off."
+            : "Starts a recording; press again to stop and save it under its date and time. Stopping switches Screen Recording off."
     }
 
     /// Change…: Home ▸ Hotkeys, where both are set.

@@ -110,8 +110,8 @@ enum TrialCopy {
         static let testDetail = "A 5-second run pops up, counts down, rings and leaves. Your saved duration stays as it is."
         static let place = "Drag it into place and see the rule guides"
         static let placeDetail = "Turn on \u{201C}Move by dragging\u{201D}, then drag the timer."
-        static let key = "Set a Start-timer key"
-        static let keyDetail = "It\u{2019}s saved as a hotkey in Home \u{25B8} Hotkeys."
+        static let key = "Set its hotkey"
+        static let keyDetail = "It starts the timer and is saved in Home \u{25B8} Hotkeys, as on the Timer page."
     }
 
     enum Backdrop {

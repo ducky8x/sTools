@@ -472,8 +472,8 @@ struct KeyPanelHotkeyRenderTests {
         #expect(rig.center.bindings.isEmpty)
     }
 
-    /// Both editors name their action chips the same ("Does"), so the key panel's label is the one Home's editor gives
-    /// VoiceOver.
+    /// Both editors name their action chips the same ("Does") and show it beside them (`STLabeledChips`); VoiceOver
+    /// reads it as the chips' group name.
     @Test func bothEditorsNameTheActionChipsTheSame() {
         #expect(HotkeyWording.actionChipsLabel == "Does")
     }
@@ -488,7 +488,7 @@ struct KeyPanelHotkeyRenderTests {
             }
             let line = height(Text("D").stStyle(.label))
             for title in ["Hold", HotkeyWording.actionChipsLabel] {
-                #expect(abs(height(KeyHotkeysBlock.ChipsLabel(title)) - line) < 0.5, "\(title) at \(scale)")
+                #expect(abs(height(STChipsLabel(title)) - line) < 0.5, "\(title) at \(scale)")
             }
         }
     }

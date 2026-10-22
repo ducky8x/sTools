@@ -245,6 +245,23 @@ struct PrologueTrialsTests {
         content.onDisappear()
     }
 
+    /// The trial names the key as the Timer page does: its row is Hotkey, its item says to set the tool's hotkey, and
+    /// the question before turning Hotkeys on calls it Timer Overlay's hotkey. "Start-timer key" is gone from all three.
+    @Test func theTimerTrialNamesItsKeyAsThePageDoes() {
+        let harness = Harness()
+        harness.model.beginPrologue(at: .timerTrial)
+        let content = harness.model.trialContent(.timerOverlay)
+        let item = content.items().first { $0.id == "key" }
+        #expect(item?.title == "Set its hotkey")
+        #expect(item?.isOptional == true)
+        #expect(TrialStartTimerKeyRow.Copy.title == "Hotkey")
+        #expect(TrialStartTimerKeyRow.Copy.recorderLabel == "Timer Overlay hotkey")
+        #expect(AppModel.turnOnHotkeysText
+            == "Hotkeys are off, so Timer Overlay\u{2019}s hotkey would do nothing. Turn them on to set it.")
+        let words = [item?.title ?? "", item?.detail ?? "", TrialStartTimerKeyRow.Copy.title, AppModel.turnOnHotkeysText]
+        #expect(!words.contains { $0.localizedCaseInsensitiveContains("start-timer key") })
+    }
+
     /// A key that starts the timer together with something else counts too.
     @Test func aSharedStartTimerKeyTicksTheKeyItem() {
         let harness = Harness()

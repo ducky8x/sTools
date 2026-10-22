@@ -252,10 +252,10 @@ struct KeyHotkeysBlock: View {
                 .foregroundStyle(theme.accent)
                 .accessibilityLabel(HotkeyWording.spokenName(for: combo))
             Group {
-                chipsRow("Hold") {
+                STLabeledChips("Hold") {
                     STChips(selection: holdSelection, options: HotkeyDraft.holdChoices, label: "Hold")
                 }
-                chipsRow(HotkeyWording.actionChipsLabel) {
+                STLabeledChips(HotkeyWording.actionChipsLabel) {
                     STChips(selection: doesSelection, options: HotkeyAction.allCases.map { STSegmentedOption($0, $0.title) },
                             label: HotkeyWording.actionChipsLabel)
                 }
@@ -288,35 +288,6 @@ struct KeyHotkeysBlock: View {
                     .buttonStyle(STButtonStyle(.quiet))
                     .disabled(!controls.cancels)
             }
-        }
-    }
-
-    /// A small-caps label beside its chips. The chips name their own group for VoiceOver.
-    private func chipsRow<Chips: View>(_ label: String, @ViewBuilder chips: () -> Chips) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            ChipsLabel(label)
-                .padding(.top, 6)
-                .accessibilityHidden(true)
-            chips()
-        }
-    }
-
-    /// "Hold" or "Does", in small caps, in a column as wide for both. The column grows with the text size, so the
-    /// label stays on one line up to 130%.
-    struct ChipsLabel: View {
-        let title: String
-        @Environment(\.stTheme) private var theme
-
-        init(_ title: String) {
-            self.title = title
-        }
-
-        var body: some View {
-            Text(title)
-                .stStyle(.label)
-                .foregroundStyle(theme.inkSecondary)
-                .lineLimit(1)
-                .frame(width: 44 * theme.textScale, alignment: .leading)
         }
     }
 
