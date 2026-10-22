@@ -79,7 +79,7 @@ extension KeyRebinderController {
     }
 
     /// What the tooltip and VoiceOver add to `key`: "sTools hotkey F18: Crosshair and NBB Overlay.", or "sTools
-    /// hotkeys: F18, Crosshair; Option F18, Start/stop recording, not working: Refused by macOS." Nil when it fires no
+    /// hotkeys: F18, Crosshair; Option F18, Screen Recording, not working: Refused by macOS." Nil when it fires no
     /// hotkey.
     public func hotkeyDescription(for key: KarabinerEvent) -> String? {
         let hotkeys = hotkeys(on: key)

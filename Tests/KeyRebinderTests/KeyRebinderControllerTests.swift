@@ -469,7 +469,7 @@ struct KeyRebinderHotkeyTests {
         #expect(await eventually { controller.hotkeys(on: .key("caps_lock")).count == 2 })
         #expect(controller.hotkeyMark(for: .key("caps_lock")) == .broken)
         #expect(controller.hotkeyDescription(for: .key("caps_lock"))
-            == "sTools hotkeys: F13, Crosshair; Option F13, Start/stop recording, not working: Refused by macOS. Some versions need \u{2318} or \u{2303}.")
+            == "sTools hotkeys: F13, Crosshair; Option F13, Screen Recording, not working: Refused by macOS. Some versions need \u{2318} or \u{2303}.")
     }
 
     // MARK: Editing

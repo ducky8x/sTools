@@ -1,0 +1,180 @@
+import Foundation
+import STDesign
+@testable import ScreenRecording
+@testable import STPlatform
+import Testing
+@testable import sTools
+
+/// No capture at all: a recording is a blank canvas, written to the harness's folder. Nothing asks for a permission.
+@MainActor
+private final class NoCapture: CaptureFactory {
+    func base(minecraftWindowID: UInt32, showsCursor: Bool) -> (any VideoCapture)? { nil }
+    func video(for source: VideoSource, canvas: PixelSize, showsCursor: Bool) -> (any VideoCapture)? { nil }
+    func audio(for source: AudioSource) -> (any AudioCapture)? { nil }
+    func minecraftAudio(processID: Int32) -> (any AudioCapture)? { nil }
+}
+
+/// Records what the controller asked of the Save/Delete question instead of showing the panel.
+@MainActor
+private final class FakeQuestion: RecordingDecisionPresenting {
+    private(set) var presented = 0
+    private(set) var dismissed = 0
+
+    func present(for controller: ScreenRecordingController) { presented += 1 }
+    func dismiss() { dismissed += 1 }
+}
+
+private let f5 = HotkeyCombo(keyCode: 96, modifiers: [])
+
+/// The app with a real Screen Recording controller on fakes: no capture, no window, no sound, and the recordings go
+/// to a temporary folder.
+@MainActor
+private final class RecordingHarness {
+    let directory = FileManager.default.temporaryDirectory.appending(path: "sTools-recording-app-\(UUID().uuidString)", directoryHint: .isDirectory)
+    let question = FakeQuestion()
+    let registrar = FakeHotkeyRegistrar()
+    let hud = FakeHotkeyHUD()
+    let recording: ScreenRecordingController
+    let model: AppModel
+    /// Arming and starting a recording can take seconds while the whole suite runs at once.
+    static let patience: Duration = .seconds(20)
+
+    init() {
+        let store = SettingsStore(directory: directory, debounce: .milliseconds(10))
+        store.save(AppState(prologueCompleted: true))
+        let services = ToolServices(
+            settings: store, displays: DisplayDirectory(screenProvider: { [harnessDisplay] }),
+            minecraft: MinecraftLocator(source: StaticMinecraftWindowSource(instances: [])),
+            permissions: PermissionCenter(prober: FakeProber(accessibility: .granted), openURL: { _ in }))
+        recording = ScreenRecordingController(
+            services: services, makeFactory: { _ in NoCapture() }, loadAvailable: { _ in AvailableSources() },
+            inProcessAudio: InProcessAudio(), decisionPresenter: question)
+        recording.options.folderPath = directory.appending(path: "Movies", directoryHint: .isDirectory).path
+        recording.options.canvas = .custom(PixelSize(width: 320, height: 180))
+        recording.options.frameRate = .fps30
+        recording.options.fileType = .mov
+        model = AppModel(services: services, theme: STTheme(), sound: .silent, controllers: [.screenRecording: recording],
+                         hotkeyRegistrar: registrar, hotkeyHUD: hud, loginItem: FakeLoginItem())
+    }
+
+    deinit {
+        try? FileManager.default.removeItem(at: directory)
+    }
+
+    /// Screen Recording's own hotkey, on and registered, as its page's Hotkey row sets it.
+    func addKey() -> UUID {
+        ToolHotkey.set(f5, for: .startStopRecording, in: model.hotkeys)
+        model.hotkeys.isEnabled = true
+        return model.hotkeys.bindings[0].id
+    }
+
+    func press(_ id: UUID) { registrar.onPress?(id) }
+
+    /// Off: the key switches Screen Recording on and records; a moment later the key stops it and the question comes up.
+    func recordByKey(_ id: UUID) async -> Bool {
+        press(id)
+        guard await waitUntil(timeout: Self.patience, { self.recording.phase == .recording }) else { return false }
+        try? await Task.sleep(for: .milliseconds(300))
+        press(id)
+        return await waitUntil(timeout: Self.patience) { self.recording.phase == .deciding }
+    }
+
+    func savedFileNames() -> [String] {
+        ((try? FileManager.default.contentsOfDirectory(atPath: recording.options.folderPath)) ?? []).sorted()
+    }
+}
+
+/// ducky's one Screen Recording key (spec 5.4.4, 6.1): it turns recording on and off; off asks for the name and Save
+/// or Delete; once that's answered, the tool is off, by the key or the page's Stop alike.
+@MainActor
+@Suite("AppModel Screen Recording key", .serialized)
+struct AppModelRecordingTests {
+    @Test func offTheKeySwitchesTheToolOnAndRecordsAtOnce() async throws {
+        let harness = RecordingHarness()
+        let id = harness.addKey()
+        #expect(!harness.model.isOn(.screenRecording))
+        harness.press(id)
+        #expect(await waitUntil(timeout: RecordingHarness.patience) { harness.recording.phase == .recording })
+        #expect(harness.model.isOn(.screenRecording))
+        #expect(harness.model.status(of: .screenRecording) == .on)
+        #expect(harness.hud.lines == ["Recording started"])
+        await harness.recording.stopRecording(explanation: nil)
+        harness.recording.delete()
+    }
+
+    @Test func whileRecordingTheKeyStopsAndAsks() async throws {
+        let harness = RecordingHarness()
+        let id = harness.addKey()
+        #expect(await harness.recordByKey(id))
+        #expect(harness.question.presented == 1)
+        #expect(harness.hud.lines == ["Recording started", "Recording stopped"])
+        // On until the question is answered.
+        #expect(harness.model.isOn(.screenRecording))
+        // The key while it waits brings the question back.
+        harness.press(id)
+        #expect(harness.question.presented == 2)
+        #expect(harness.recording.phase == .deciding)
+        harness.recording.delete()
+    }
+
+    @Test func savingKeepsTheFileAndTurnsTheToolOff() async throws {
+        let harness = RecordingHarness()
+        let id = harness.addKey()
+        #expect(await harness.recordByKey(id))
+        await harness.recording.save(name: "Seed 1")
+        #expect(harness.savedFileNames() == ["Seed 1.mov"])
+        #expect(harness.question.dismissed == 1)
+        #expect(!harness.model.isOn(.screenRecording))
+        #expect(!harness.recording.isEnabled)
+        #expect(harness.model.status(of: .screenRecording) == .off)
+    }
+
+    @Test func deletingRemovesTheFileAndTurnsTheToolOff() async throws {
+        let harness = RecordingHarness()
+        let id = harness.addKey()
+        #expect(await harness.recordByKey(id))
+        let file = try #require(harness.recording.finished?.files.first)
+        harness.recording.delete()
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+        #expect(harness.savedFileNames().isEmpty)
+        #expect(!harness.model.isOn(.screenRecording))
+    }
+
+    /// Canceling the naming saves it under the offered date-and-time name, so nothing is lost; the tool goes off.
+    @Test func cancelingSavesUnderTheOfferedName() async throws {
+        let harness = RecordingHarness()
+        let id = harness.addKey()
+        #expect(await harness.recordByKey(id))
+        let name = try #require(harness.recording.finished?.name)
+        await harness.recording.cancelDecision()
+        #expect(harness.savedFileNames() == ["\(name).mov"])
+        #expect(!harness.model.isOn(.screenRecording))
+    }
+
+    /// The page's Stop asks the same question, and the tool goes off after it too, even when it was switched on by hand.
+    @Test func thePagesStopTurnsTheToolOffToo() async throws {
+        let harness = RecordingHarness()
+        harness.model.setTool(.screenRecording, on: true)
+        await harness.recording.startRecording()
+        #expect(harness.recording.phase == .recording)
+        try await Task.sleep(for: .milliseconds(300))
+        await harness.recording.stopRecording(explanation: nil)
+        #expect(harness.recording.phase == .deciding)
+        #expect(harness.question.presented == 1)
+        await harness.recording.save(name: nil)
+        #expect(harness.savedFileNames().count == 1)
+        #expect(!harness.model.isOn(.screenRecording))
+    }
+
+    /// Closing the window mid-recording and choosing Stop and Save saves under the date and time, without the question.
+    @Test func stopAndSaveFromTheWindowAsksNothing() async throws {
+        let harness = RecordingHarness()
+        harness.model.setTool(.screenRecording, on: true)
+        await harness.recording.startRecording()
+        try await Task.sleep(for: .milliseconds(300))
+        await harness.recording.stopRecording(explanation: nil, savesWithoutAsking: true)
+        #expect(harness.question.presented == 0)
+        #expect(harness.savedFileNames().count == 1)
+        #expect(!harness.model.isOn(.screenRecording))
+    }
+}

@@ -3,14 +3,13 @@ import STPlatform
 import TimerOverlay
 
 extension AppModel {
-    /// `HotkeyCenter` only toggles four tools (`HotkeyTool`): Key Rebinder has no switch, and Timer Overlay's key
-    /// starts the timer instead (`.startTimer`).
+    /// `HotkeyCenter` only toggles three tools (`HotkeyTool`): Key Rebinder has no switch, Screen Recording's key
+    /// starts and stops a recording (`.startStopRecording`) and Timer Overlay's key starts the timer (`.startTimer`).
     private static func toolID(for hotkeyTool: HotkeyTool) -> ToolID {
         switch hotkeyTool {
         case .nbbOverlay: .nbbOverlay
         case .windowBackdrop: .windowBackdrop
         case .crosshair: .crosshair
-        case .screenRecording: .screenRecording
         }
     }
 

@@ -8,8 +8,7 @@ extension HotkeyAction {
         case .toggle(.nbbOverlay): "NBB Overlay"
         case .toggle(.windowBackdrop): "Window Backdrop"
         case .toggle(.crosshair): "Crosshair"
-        case .toggle(.screenRecording): "Screen Recording"
-        case .startStopRecording: "Start/stop recording"
+        case .startStopRecording: "Screen Recording"
         case .startTimer: "Start timer"
         }
     }
@@ -24,7 +23,7 @@ public enum HotkeyWording {
     }
 
     /// The actions as VoiceOver says them: "Crosshair", "Crosshair and NBB Overlay",
-    /// "Crosshair, NBB Overlay and Start/stop recording".
+    /// "Crosshair, NBB Overlay and Screen Recording".
     public static func spokenSummary(_ actions: [HotkeyAction]) -> String {
         let titles = actions.map(\.title)
         guard let last = titles.last else { return "" }

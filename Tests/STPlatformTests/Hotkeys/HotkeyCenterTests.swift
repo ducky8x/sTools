@@ -298,9 +298,9 @@ struct HotkeyCenterTests {
     @Test func recordingActionSendsToggleRecordingAfterTools() async {
         let h = await Harness()
         h.center.isEnabled = true
-        let id = h.center.add(combo: ctrlOptC, actions: [.startStopRecording, .toggle(.screenRecording)])
+        let id = h.center.add(combo: ctrlOptC, actions: [.startStopRecording, .toggle(.crosshair)])
         h.registrar.press(id)
-        #expect(h.events == [.setTool(.screenRecording, isOn: true), .toggleRecording])
+        #expect(h.events == [.setTool(.crosshair, isOn: true), .toggleRecording])
     }
 
     @Test func aPressArrivesAsOneHandlerCall() async {

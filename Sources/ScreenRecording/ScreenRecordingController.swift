@@ -6,6 +6,10 @@ import STPlatform
 /// Owns Screen Recording (spec 5.4). The tool's switch arms the recorder: the sources run, the plate shows the
 /// live composite, and Record starts writing at once. Layout edits are saved as they happen and are locked while
 /// recording.
+///
+/// Stopping a recording turns the tool off (spec 5.4.4): the Save/Delete question comes up (`decisionPresenter`), and
+/// once it's answered, or the recording is saved without asking, the tool switches off. A canceled countdown switches
+/// it off too. Only the Prologue's 5-second test leaves it on.
 @MainActor
 @Observable
 public final class ScreenRecordingController: ToolController {
@@ -25,12 +29,23 @@ public final class ScreenRecordingController: ToolController {
         public var droppedFrames: Int
         /// Why it stopped early, when it did.
         public var explanation: String?
+        /// The name it was written under, its date and time (`2026-10-13 21.04.37`): the name the question offers,
+        /// and the one it keeps when it's saved without one or the question is canceled.
+        public var name: String
+        /// The Prologue's 5-second test, which leaves the tool on once saved.
+        var isTest = false
     }
 
     public private(set) var isEnabled = false
     /// Switches the tool on through the app (its sidebar switch and the Accessibility rule, R10); returns whether
     /// it is on afterwards. Without it, the controller switches itself on.
     @ObservationIgnored public var requestEnable: (@MainActor () -> Bool)?
+    /// Switches the tool off through the app (its sidebar switch) once a stopped recording is saved or deleted.
+    /// Without it, the controller switches itself off.
+    @ObservationIgnored public var requestDisable: (@MainActor () -> Void)?
+    /// Asks Save or Delete once a recording stops, in front of whatever app is, Minecraft included. The app gives it a
+    /// floating panel of its own; tests give it a fake or nothing.
+    @ObservationIgnored public var decisionPresenter: (any RecordingDecisionPresenting)?
     public private(set) var phase = Phase.idle
     public private(set) var finished: Finished?
     public private(set) var lastSaved: RecordingFinisher.SaveResult?
@@ -79,10 +94,11 @@ public final class ScreenRecordingController: ToolController {
     public init(
         services: ToolServices, makeFactory: (@MainActor (Int) -> any CaptureFactory)? = nil,
         loadAvailable: (@MainActor (Set<Int32>) async -> AvailableSources)? = nil,
-        inProcessAudio: InProcessAudio = .shared
+        inProcessAudio: InProcessAudio = .shared, decisionPresenter: (any RecordingDecisionPresenting)? = nil
     ) {
         self.services = services
         self.inProcessAudio = inProcessAudio
+        self.decisionPresenter = decisionPresenter
         options = services.settings.load(RecordingOptions.self)
         layout = services.settings.load(RecordingLayout.self)
         self.makeFactory = makeFactory ?? { SystemCaptureFactory(frameRate: $0) }
@@ -115,6 +131,16 @@ public final class ScreenRecordingController: ToolController {
     }
 
     public var canvas: PixelSize { LayoutMath.canvasSize(options.canvas, minecraftDisplay: minecraftDisplaySize) }
+
+    /// Where the Save/Delete question goes when sTools' window isn't in front: Minecraft's display, else the main
+    /// display.
+    var decisionDisplay: DisplayInfo? {
+        let displays = services.displays.displays
+        if let id = services.minecraft.active?.displayID, let display = displays.first(where: { $0.id == id }) {
+            return display
+        }
+        return displays.first(where: \.isMain) ?? displays.first
+    }
 
     // MARK: ToolController
 
@@ -287,13 +313,15 @@ public final class ScreenRecordingController: ToolController {
 
     // MARK: Recording
 
-    /// The start/stop hotkey (spec 6.1): arms first when needed.
+    /// Screen Recording's hotkey (spec 6.1): starts a recording, switching the tool on first when it's off, and
+    /// stops one, which asks Save or Delete. While the question waits for its answer it brings it forward again.
     public func toggleRecording() {
         switch phase {
         case .recording: Task { await stopRecording(explanation: nil) }
         case .countingDown: cancelCountdown()
         case .idle: Task { await startRecording() }
-        case .finishing, .deciding: break
+        case .deciding: presentDecision()
+        case .finishing: break
         }
     }
 
@@ -314,8 +342,11 @@ public final class ScreenRecordingController: ToolController {
         beginWriting()
     }
 
+    /// The recording never began, so the tool switches off as after a stop.
     public func cancelCountdown() {
-        if case .countingDown = phase { phase = .idle }
+        guard case .countingDown = phase else { return }
+        phase = .idle
+        switchOff()
     }
 
     private func beginWriting() {
@@ -345,19 +376,24 @@ public final class ScreenRecordingController: ToolController {
 
     /// Records for `duration` and saves under the date-and-time name without asking: the Prologue's 5-second test
     /// (spec 4.2, D7: saved like any recording). Returns whether a file was saved.
+    /// The tool stays on afterwards, so the test can run again at once.
     @discardableResult
     public func recordTest(for duration: Duration) async -> Bool {
         await startRecording()
         guard phase == .recording else { return false }
         try? await Task.sleep(for: duration)
         guard phase == .recording else { return false }
-        await stopRecording(explanation: nil, savesWithoutAsking: true)
+        await stop(explanation: nil, savesWithoutAsking: true, isTest: true)
         return lastSaved != nil
     }
 
     /// Stops and finalizes; then asks Save or Delete, or saves straight away when that question is turned off (or
-    /// `savesWithoutAsking`).
+    /// `savesWithoutAsking`). Either way the tool switches off once the recording is saved or deleted.
     public func stopRecording(explanation: String?, savesWithoutAsking: Bool = false) async {
+        await stop(explanation: explanation, savesWithoutAsking: savesWithoutAsking, isTest: false)
+    }
+
+    private func stop(explanation: String?, savesWithoutAsking: Bool, isTest: Bool) async {
         guard phase == .recording, let session else { return }
         phase = .finishing
         readoutTask?.cancel()
@@ -368,33 +404,64 @@ public final class ScreenRecordingController: ToolController {
         var reason = explanation
         if result.stopReason == .lowDisk { reason = "The disk is almost full, so the recording was finished." }
         if case .failed(let message) = result.stopReason { reason = "The recording stopped: \(message)" }
-        let done = Finished(files: result.files, seconds: session.elapsedSeconds, droppedFrames: session.droppedFrames, explanation: reason)
+        let done = Finished(files: result.files, seconds: session.elapsedSeconds, droppedFrames: session.droppedFrames,
+                            explanation: reason, name: session.configuration.baseName, isTest: isTest)
         guard !result.files.isEmpty else {
             phase = .idle
             if let reason { note(reason) }
+            if !isTest { switchOff() }
             return
         }
         finished = done
         if options.askSaveDelete && !savesWithoutAsking {
             phase = .deciding
+            decisionPresenter?.present(for: self)
         } else {
             await save(name: nil)
         }
     }
 
+    /// Saves the finished recording under `name`, or under its date-and-time name when `name` is nil or empty. Then
+    /// the tool switches off.
     public func save(name: String?) async {
-        guard let finished else { return }
+        guard let finished = takeFinished() else { return }
         phase = .finishing
         lastSaved = await RecordingFinisher.save(finished.files, name: name, as: options.fileType)
-        self.finished = nil
         phase = .idle
+        if !finished.isTest { switchOff() }
     }
 
+    /// Removes the finished recording. Then the tool switches off.
     public func delete() {
-        guard let finished else { return }
+        guard let finished = takeFinished() else { return }
         RecordingFinisher.delete(finished.files)
-        self.finished = nil
         phase = .idle
+        if !finished.isTest { switchOff() }
+    }
+
+    /// Canceling the question (Esc) saves the recording under its date-and-time name, so nothing is ever lost.
+    public func cancelDecision() async {
+        await save(name: nil)
+    }
+
+    /// Brings the Save/Delete question forward again while it waits for its answer.
+    public func presentDecision() {
+        guard phase == .deciding else { return }
+        decisionPresenter?.present(for: self)
+    }
+
+    /// Takes the recording that waits for its answer, so a second answer (a double click, quitting while it saves)
+    /// finds nothing to do; the question goes away.
+    private func takeFinished() -> Finished? {
+        guard let finished else { return nil }
+        self.finished = nil
+        if phase == .deciding { decisionPresenter?.dismiss() }
+        return finished
+    }
+
+    /// Stopping a recording turns the tool off (spec 5.4.4), through the app's switch when there is one.
+    private func switchOff() {
+        if let requestDisable { requestDisable() } else { setEnabled(false) }
     }
 
     public func revealLastSaved() {
@@ -402,9 +469,10 @@ public final class ScreenRecordingController: ToolController {
         NSWorkspace.shared.activateFileViewerSelecting(files)
     }
 
-    /// For quitting mid-recording: stop and keep the file under its date-and-time name, no questions.
+    /// For quitting mid-recording: stop and keep the file under its date-and-time name, no questions. A question
+    /// still waiting is answered the same way.
     public func finishForQuit() async {
-        if phase == .recording { await stopRecording(explanation: nil) }
+        if phase == .recording { await stopRecording(explanation: nil, savesWithoutAsking: true) }
         if phase == .deciding { await save(name: nil) }
         await disarm()
     }
