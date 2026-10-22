@@ -65,7 +65,8 @@ enum ToolHotkey {
 /// A tool page's Hotkey row, near the top (spec 6.1): the key for the tool's one action (it toggles an overlay tool,
 /// or starts and stops Screen Recording), set, changed or cleared right here by pressing a key (Delete clears, Esc
 /// cancels). Under it, what's wrong with that key, the notes both hotkey editors show, the hotkeys that do the tool's
-/// action with other things, and, while hotkeys are off, Turn On. Timer Overlay's page has its own Key row instead.
+/// action with other things, where hotkeys work and the key set with Change… (Home ▸ Hotkeys), and, while hotkeys are
+/// off, Turn On. Timer Overlay's page has its own Key row instead.
 struct ToolHotkeyRow: View {
     let model: AppModel
     let tool: ToolID
@@ -103,6 +104,12 @@ struct ToolHotkeyRow: View {
             if let shared = ToolHotkey.sharedText(for: action, in: hotkeys.bindings) {
                 caption(shared)
             }
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                caption(whereLine)
+                Button("Change\u{2026}") { changeWhereHotkeysWork() }
+                    .buttonStyle(STButtonStyle(.quiet))
+                    .accessibilityLabel("Change where hotkeys work and the key set")
+            }
             if !hotkeys.isEnabled, own != nil || ToolHotkey.sharedText(for: action, in: hotkeys.bindings) != nil {
                 HStack(spacing: 12) {
                     caption("Hotkeys are off, so this key does nothing yet.")
@@ -113,6 +120,13 @@ struct ToolHotkeyRow: View {
             }
         }
     }
+
+    /// Where hotkeys work and the key set the tools follow, as Home ▸ Hotkeys sets them: "Hotkeys work in sTools and
+    /// Minecraft · Key set: ⌘1–⌘5".
+    var whereLine: String { HotkeyWording.whereAndKeySet(scope: hotkeys.scope, keySet: hotkeys.keySet) }
+
+    /// Change…: Home ▸ Hotkeys, where both are set.
+    func changeWhereHotkeysWork() { model.openHotkeys() }
 
     private var shortcutBinding: Binding<STShortcut?> {
         Binding(

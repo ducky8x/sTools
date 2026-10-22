@@ -151,7 +151,7 @@ struct HotkeysSection: View {
     }
 
     /// The set's name: the set the tools' own hotkeys follow, or Custom once a key was set by hand.
-    static func keySetTitle(_ set: HotkeyKeySet?) -> String { set?.title ?? "Custom" }
+    static func keySetTitle(_ set: HotkeyKeySet?) -> String { HotkeyKeySet.name(of: set) }
 
     /// The line under the key sets: what the current set gives each tool, in sidebar order ("⌘1 NBB Overlay · ⌘2
     /// Window Backdrop · …", each key and tool held together by no-break spaces so a narrow column wraps between

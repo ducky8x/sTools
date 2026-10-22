@@ -804,6 +804,22 @@ struct KeyRebinderHotkeyTests {
             == "Karabiner turns Caps Lock into F18, so its hotkeys listen for F18 while Karabiner-Elements runs. The F18 key fires them too.")
     }
 
+    /// The key panel's Hotkeys part says where sTools hotkeys work and which key set the tools follow, as Home ▸
+    /// Hotkeys sets them; without a hotkey list there's nothing to say.
+    @Test func theKeyPanelSaysWhereHotkeysWork() async throws {
+        let harness = try await make()
+        defer { harness.remove() }
+        let center = try #require(harness.center)
+        #expect(harness.controller.hotkeyWhereLine == "Hotkeys work in sTools and Minecraft · Key set: None")
+        center.scope = .everywhere
+        center.apply(.functionKeys)
+        #expect(harness.controller.hotkeyWhereLine == "Hotkeys work in every app · Key set: F13–F17")
+
+        let unconnected = try Harness()
+        defer { unconnected.remove() }
+        #expect(unconnected.controller.hotkeyWhereLine == nil)
+    }
+
     // MARK: Advice for Home
 
     @Test func notesGiveTheGameCautionAndTheHeldModifierNote() async throws {

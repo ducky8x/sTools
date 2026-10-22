@@ -15,7 +15,8 @@ public struct KeyRebinderView: View {
     ///   - showsHotkeys: whether the page shows sTools hotkeys (spec 5.5.2, 5.5.3): rings on keys, the key panel's
     ///     Hotkeys part, hotkey findings and their dots, the tester's hotkey sentence, Advanced ▸ Show hotkeys.
     ///     False in the Prologue's trial.
-    ///   - openHotkeys: opens Home ▸ Hotkeys, from a key a rule drives; nil leaves that button out.
+    ///   - openHotkeys: opens Home ▸ Hotkeys, from the key panel's Change… and a key a rule drives; nil leaves those
+    ///     buttons out.
     public init(controller: KeyRebinderController, showsHotkeys: Bool = true, openHotkeys: (() -> Void)? = nil) {
         self.controller = controller
         self.showsHotkeys = showsHotkeys

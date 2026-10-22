@@ -38,6 +38,10 @@ public enum HotkeyKeySet: String, CaseIterable, Hashable, Sendable {
         }
     }
 
+    /// What the tools' own hotkeys follow, by name: the set's title, or Custom when they follow none (`current(in:)`
+    /// is nil) because a key was set by hand.
+    public static func name(of set: HotkeyKeySet?) -> String { set?.title ?? "Custom" }
+
     /// The digits 1 to 5 on the main row, and F13 to F17, as virtual key codes.
     private static let digitKeyCodes: [UInt16] = [18, 19, 20, 21, 23]
     private static let functionKeyCodes: [UInt16] = [105, 107, 113, 106, 64]

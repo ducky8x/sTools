@@ -1,10 +1,12 @@
 import STDesign
+import STPlatform
 import SwiftUI
 
 /// The key row (spec 5.6.2): the Start-timer key from Home ▸ Hotkeys ("Start timer: F13", or "No key yet"), any
-/// problem with it, whether Hotkeys are on, and **Set in Hotkeys…**, which shows only when the app passes
-/// `onSetInHotkeys` (the Prologue's trial records the key in place, so it passes nil). It shows only what it's
-/// given: the timer registers no key of its own (spec 5.6.10). The words are placeholder wording for M9.
+/// problem with it, whether Hotkeys are on, where they work and the key set (spec 6.1), and **Set in Hotkeys…**, which
+/// shows only when the app passes `onSetInHotkeys` (the Prologue's trial records the key in place, so it passes nil).
+/// It shows only what it's given: the timer registers no key of its own (spec 5.6.10). The words are placeholder
+/// wording for M9.
 struct TimerKeyRow: View {
     let status: TimerKeyStatus
     let onSetInHotkeys: (@MainActor () -> Void)?
@@ -33,6 +35,12 @@ struct TimerKeyRow: View {
         return notes
     }
 
+    /// Where hotkeys work and the key set, as Home ▸ Hotkeys sets them, under the notes: "Hotkeys work in sTools and
+    /// Minecraft · Key set: ⌘1–⌘5".
+    static func whereLine(for status: TimerKeyStatus) -> String {
+        HotkeyWording.whereAndKeySet(scope: status.scope, keySet: status.keySet)
+    }
+
     var body: some View {
         let notes = Self.notes(for: status)
         VStack(alignment: .leading, spacing: 0) {
@@ -51,6 +59,10 @@ struct TimerKeyRow: View {
                 ForEach(notes) { note in
                     STNoteLine(note.text, tone: note.isCaution ? .caution : .note)
                 }
+                Text(Self.whereLine(for: status))
+                    .stStyle(.caption)
+                    .foregroundStyle(theme.inkTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.bottom, 12)

@@ -13,6 +13,8 @@ private let ctrlOptC = HotkeyCombo(keyCode: 8, modifiers: [.control, .option])
 @MainActor
 @Suite("Tool page Hotkey row")
 struct ToolHotkeyRowTests {
+    init() { _ = STFont.register() }
+
     @Test func everySwitchableToolHasARowAndTheKeyRebinderHasNone() {
         let harness = Harness(accessibility: .granted)
         #expect(ToolID.nbbOverlay.hotkeyAction == .toggle(.nbbOverlay))
@@ -104,6 +106,26 @@ struct ToolHotkeyRowTests {
         #expect(ToolHotkey.refusal(for: HotkeyCombo(keyCode: 12, modifiers: .command), action: .toggle(.crosshair), in: hotkeys) != nil)
         #expect(ToolHotkey.refusal(for: pad1, action: .toggle(.crosshair), in: hotkeys) == nil)
         #expect(ToolHotkey.refusal(for: f13, action: .toggle(.crosshair), in: hotkeys) == nil)
+    }
+
+    /// Under the key, the row says where hotkeys work and which key set the tools follow, with Change… to Home ▸
+    /// Hotkeys, so neither is set only where Home shows it.
+    @Test func theRowSaysWhereHotkeysWorkAndTheKeySet() throws {
+        let harness = Harness(accessibility: .granted, hotkeys: nil)
+        let hotkeys = harness.model.hotkeys
+        let row = try #require(ToolHotkeyRow(model: harness.model, tool: .crosshair))
+        #expect(row.whereLine == "Hotkeys work in sTools and Minecraft · Key set: ⌘1–⌘5")
+        let sToolsAndMinecraft = render(row, harness).representation(using: .png, properties: [:])
+
+        hotkeys.scope = .everywhere
+        ToolHotkey.set(pad1, for: .toggle(.crosshair), in: hotkeys)
+        #expect(row.whereLine == "Hotkeys work in every app · Key set: Custom")
+        #expect(render(row, harness).representation(using: .png, properties: [:]) != sToolsAndMinecraft)
+
+        harness.model.navigate(to: .tool(.crosshair))
+        row.changeWhereHotkeysWork()
+        #expect(harness.model.route == .home)
+        #expect(harness.model.pendingPageAnchor == .hotkeys)
     }
 
     @Test func theRowRendersItsKeyAndTurnOnWhileOff() throws {
