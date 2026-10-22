@@ -100,6 +100,97 @@ struct AppModelTimerTests {
         #expect(!off.model.isOn(.timerOverlay))
     }
 
+    /// Spec 5.6.2: a double tap of the key cancels the run and switches Timer Overlay off, its switch with it, from
+    /// any phase; the next press switches it back on with a fresh countdown.
+    @Test(arguments: [TimerPhase.counting, .paused, .ringing, .lingering])
+    func aDoubleTapSwitchesTheToolOffAndTheNextPressBringsItBack(from phase: TimerPhase) {
+        let harness = Harness()
+        harness.model.hotkeys.showsConfirmation = true
+        harness.timer.settings.durationSeconds = 10
+        harness.model.handleHotkeyPress([.startTimer])
+        harness.timerFakes.clock.time += 3
+        switch phase {
+        case .paused:
+            harness.timer.pause()
+        case .ringing, .lingering:
+            harness.timerFakes.scheduler.fire(until: { harness.timer.phase == .ringing })
+            if phase == .lingering {
+                // A Preview replaces the alarm, which then counts as ended, so the overlay lingers after it.
+                harness.timer.preview()
+                harness.timer.stopPreview()
+            }
+        case .counting, .idle, .leaving:
+            break
+        }
+        #expect(harness.timer.phase == phase && harness.timerFakes.presenter.isShowing)
+        harness.timerFakes.clock.time += 1
+
+        harness.model.handleHotkeyPress([.startTimer])
+        harness.timerFakes.clock.time += 0.3
+        harness.model.handleHotkeyPress([.startTimer])
+        #expect(!harness.model.isOn(.timerOverlay) && !harness.timer.isEnabled)
+        #expect(harness.model.status(of: .timerOverlay) == .off)
+        #expect(harness.timer.phase == .idle && !harness.timerFakes.presenter.isShowing)
+        #expect(!harness.timerFakes.alarm.isPlaying && harness.timerFakes.presenter.popOuts.count == 1)
+        #expect(!harness.model.isPollingForTools, "nothing that needs Accessibility is on")
+        #expect(harness.hotkeyHUD.presented.isEmpty, "the overlay's exit confirms it")
+
+        harness.timerFakes.clock.time += 1
+        harness.model.handleHotkeyPress([.startTimer])
+        #expect(harness.model.isOn(.timerOverlay) && harness.timer.isEnabled && harness.timer.phase == .counting)
+        #expect(harness.timer.content.text == "00:10")
+        #expect(harness.model.status(of: .timerOverlay) == .timer("0:10 left"))
+        #expect(harness.timerFakes.presenter.popIns.count == 2 && harness.hotkeyHUD.presented.isEmpty)
+    }
+
+    @Test func aDoubleTapThroughTheHotkeySwitchesTheToolOff() async {
+        let harness = Harness()
+        let id = harness.model.hotkeys.add(combo: HotkeyCombo(keyCode: 105, modifiers: []), actions: [.startTimer])
+        harness.model.hotkeys.isEnabled = true
+        await harness.model.settings.flush()
+        guard let fake = harness.hotkeyRegistrar as? FakeHotkeyRegistrar else {
+            Issue.record("expected FakeHotkeyRegistrar")
+            return
+        }
+        fake.onPress?(id)
+        #expect(harness.model.isOn(.timerOverlay) && harness.timer.phase == .counting)
+        harness.timerFakes.clock.time += 0.3
+        fake.onPress?(id)
+        #expect(!harness.model.isOn(.timerOverlay) && harness.timer.phase == .idle)
+        harness.timerFakes.clock.time += 0.2
+        fake.onPress?(id)
+        #expect(harness.model.isOn(.timerOverlay) && harness.timer.phase == .counting, "a third quick press starts again")
+        #expect(harness.timer.content.text == "02:30")
+    }
+
+    @Test func holdingTheKeySwitchesTheToolOffToo() {
+        let harness = Harness()
+        harness.timer.settings.cancelGesture = .hold
+        harness.model.handleHotkeyPress([.startTimer])
+        harness.timerFakes.clock.time += 0.3
+        harness.model.handleHotkeyPress([.startTimerReleased])
+        #expect(harness.model.isOn(.timerOverlay), "a tap only starts")
+        harness.timerFakes.clock.time += 2
+        harness.model.handleHotkeyPress([.startTimer])
+        harness.timerFakes.clock.time += 1.2
+        harness.model.handleHotkeyPress([.startTimerReleased])
+        #expect(!harness.model.isOn(.timerOverlay) && !harness.timer.isEnabled && harness.timer.phase == .idle)
+        #expect(harness.hotkeyHUD.presented.isEmpty)
+        harness.timerFakes.clock.time += 1
+        harness.model.handleHotkeyPress([.startTimer])
+        #expect(harness.model.isOn(.timerOverlay) && harness.timer.phase == .counting)
+    }
+
+    @Test func pausingWithTheKeyKeepsTheToolOn() {
+        let harness = Harness()
+        harness.timer.settings.pressWhileCounting = .pauseOrResume
+        harness.model.handleHotkeyPress([.startTimer])
+        harness.timerFakes.clock.time += 2
+        harness.model.handleHotkeyPress([.startTimer])
+        #expect(harness.timer.phase == .paused && harness.model.isOn(.timerOverlay))
+        #expect(harness.model.status(of: .timerOverlay) == .timer("Paused, 2:28"))
+    }
+
     @Test func aReducedMotionThemeReachesTheOverlay() {
         // macOS's Reduce motion, which the app's watcher keeps in its theme even while the window is closed.
         let harness = Harness(theme: STTheme(systemReduceMotion: true))
@@ -233,5 +324,17 @@ struct AppModelTimerTests {
         #expect(badges == [nil])
         harness.model.performTimerDockItem(.start)
         #expect(await waitUntil { badges.last == "2:30" })
+    }
+}
+
+private extension FakeTimerScheduler {
+    /// Fires the timer's wakes in time order, moving its clock forward to each, until `done` or none is left. A fired
+    /// wake counts as cancelled, so it never fires twice.
+    func fire(until done: () -> Bool) {
+        while !done(), let next = pending.min(by: { $0.due < $1.due }) {
+            next.isCancelled = true
+            if let clock, clock.time < next.due { clock.time = next.due }
+            next.action()
+        }
     }
 }
