@@ -6,27 +6,66 @@ import STPlatform
 import Testing
 @testable import ScreenRecording
 
+/// The order fake sources stopped in, by the names the test gave them.
+final class StopLog: @unchecked Sendable {
+    private let names = OSAllocatedUnfairLock(initialState: [String]())
+    func append(_ name: String) { names.withLock { $0.append(name) } }
+    var all: [String] { names.withLock { $0 } }
+}
+
 final class FakeVideoCapture: VideoCapture, @unchecked Sendable {
     private let handler = OSAllocatedUnfairLock<(@Sendable (VideoCaptureEvent) -> Void)?>(initialState: nil)
     let failsToStart: Bool
+    private let name: String
+    private let stops: StopLog?
 
-    init(failsToStart: Bool = false) { self.failsToStart = failsToStart }
+    init(failsToStart: Bool = false, name: String = "video", stops: StopLog? = nil) {
+        self.failsToStart = failsToStart
+        self.name = name
+        self.stops = stops
+    }
 
     func start(deliver: @escaping @Sendable (VideoCaptureEvent) -> Void) async throws {
         if failsToStart { throw CocoaError(.featureUnsupported) }
         handler.withLock { $0 = deliver }
     }
 
-    func stop() async { handler.withLock { $0 = nil } }
+    func stop() async {
+        let wasRunning = handler.withLock { handler in
+            defer { handler = nil }
+            return handler != nil
+        }
+        if wasRunning { stops?.append(name) }
+    }
+
+    /// Started and not stopped since: a real camera's light, or macOS's recording indicator for a screen, would be on.
+    var isRunning: Bool { handler.withLock { $0 != nil } }
 
     func push(_ event: VideoCaptureEvent) { handler.withLock { $0 }?(event) }
 }
 
 final class FakeAudioCapture: AudioCapture, @unchecked Sendable {
     private let handler = OSAllocatedUnfairLock<(@Sendable (AudioChunk) -> Void)?>(initialState: nil)
+    private let name: String
+    private let stops: StopLog?
+
+    init(name: String = "audio", stops: StopLog? = nil) {
+        self.name = name
+        self.stops = stops
+    }
 
     func start(deliver: @escaping @Sendable (AudioChunk) -> Void) async throws { handler.withLock { $0 = deliver } }
-    func stop() async { handler.withLock { $0 = nil } }
+
+    func stop() async {
+        let wasRunning = handler.withLock { handler in
+            defer { handler = nil }
+            return handler != nil
+        }
+        if wasRunning { stops?.append(name) }
+    }
+
+    /// Started and not stopped since: macOS's indicator for recording sound would be on.
+    var isRunning: Bool { handler.withLock { $0 != nil } }
 
     /// `frames` of a quiet tone at 48 kHz stereo, stamped `hostSeconds`.
     func push(frames: Int, at hostSeconds: Double, frequency: Double) {

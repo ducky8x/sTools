@@ -24,6 +24,8 @@ public final class CaptureRig: @unchecked Sendable {
     private let audio: [AudioTrackID: any AudioCapture]
     private let minimizedShowsNothing: Bool
     private let bus = OSAllocatedUnfairLock<AudioMixBus?>(initialState: nil)
+    /// Set once the video sources were stopped, so a full stop after `stopVideo()` doesn't stop them twice.
+    private let videoStopped = OSAllocatedUnfairLock(initialState: false)
 
     public init(video: [SourceKey: any VideoCapture], audio: [AudioTrackID: any AudioCapture], minimizedShowsNothing: Bool) {
         self.video = video
@@ -66,16 +68,37 @@ public final class CaptureRig: @unchecked Sendable {
         }
     }
 
+    /// Stops every source and lets go of their frames; the event stream ends.
     public func stop() async {
         attach(nil)
-        for capture in video.values { await capture.stop() }
+        await stopVideo()
         for capture in audio.values { await capture.stop() }
         hub.removeAll()
         continuation.finish()
     }
 
+    /// Stops the windows, displays, cameras, browser sources and Minecraft's capture, and leaves the sound running: a
+    /// recording that stops needs no more pictures, but its last samples are still on their way (spec 5.4.4). The
+    /// frames they left stay in the hub until `stop()`.
+    public func stopVideo() async {
+        let alreadyStopped = videoStopped.withLock { stopped in
+            defer { stopped = true }
+            return stopped
+        }
+        guard !alreadyStopped else { return }
+        for capture in video.values { await capture.stop() }
+    }
+
     /// Routes sound to `bus` (a starting recording) or nowhere (`nil`).
     public func attach(_ bus: AudioMixBus?) {
         self.bus.withLock { $0 = bus }
+    }
+
+    /// Stops routing sound to `bus`, if it's still the one sound goes to: a recording that's done never takes the
+    /// sound from one that started after it.
+    public func detach(_ bus: AudioMixBus) {
+        self.bus.withLock { attached in
+            if attached === bus { attached = nil }
+        }
     }
 }

@@ -93,10 +93,16 @@ public final class RecordingSession: @unchecked Sendable {
         frameClock.start(origin: origin)
     }
 
-    /// Stops ticking, writes the last of the sound, and finalizes the file(s).
-    public func stop() async -> WriterResult {
+    /// Stops the frame clock: no frame is drawn or written after this returns (a tick already running finishes first).
+    /// `stop()` does it too; calling it first ends the picture right at a press.
+    public func stopTicking() {
         frameClock?.stop()
         tickGate.withLock { isStopped = true }
+    }
+
+    /// Stops ticking, writes the last of the sound, and finalizes the file(s).
+    public func stop() async -> WriterResult {
+        stopTicking()
         let last = state.withLock { $0.lastTick }
         if let last, let bus {
             // Give late sound its lag's worth of time to arrive, then close every track at the last frame's end.
@@ -104,7 +110,7 @@ public final class RecordingSession: @unchecked Sendable {
             let end = CMTimeAdd(last.hostTime, CMTime(value: 1, timescale: CMTimeScale(configuration.options.frameRate.framesPerSecond)))
             if let block = bus.finish(at: end) { write(block) }
         }
-        rig.attach(nil)
+        if let bus { rig.detach(bus) }
         return await writer.finish()
     }
 

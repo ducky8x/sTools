@@ -186,13 +186,47 @@ struct AppModelRecordingTests {
         #expect(await harness.recordByKey(id))
         #expect(harness.question.presented == 1)
         #expect(harness.hud.lines == ["Recording started", "Recording stopped"])
-        // On until the question is answered.
-        #expect(harness.model.isOn(.screenRecording))
-        // The key while it waits brings the question back.
+        // Already off: the stop switched the tool off before the question came up.
+        #expect(!harness.model.isOn(.screenRecording))
+        #expect(harness.model.status(of: .screenRecording) == .off)
+        // The key while it waits brings the question back, says why without the seal, and starts nothing.
         harness.press(id)
         #expect(harness.question.presented == 2)
         #expect(harness.recording.phase == .deciding)
+        #expect(harness.hud.presented.last?.line == "Save or delete the last recording first")
+        #expect(harness.hud.presented.last?.sealed == false)
+        #expect(!harness.model.isOn(.screenRecording))
         harness.recording.delete()
+        #expect(!harness.model.isOn(.screenRecording))
+    }
+
+    /// The press that stops a recording turns the sidebar's switch off right then, not once the question is answered.
+    @Test func theSwitchGoesOffWithTheStopPress() async throws {
+        let harness = RecordingHarness()
+        let id = harness.addKey()
+        harness.press(id)
+        #expect(await waitUntil(timeout: RecordingHarness.patience) { harness.recording.phase == .recording })
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(harness.model.isOn(.screenRecording))
+        harness.press(id)
+        #expect(!harness.model.isOn(.screenRecording))
+        #expect(!harness.recording.isEnabled)
+        #expect(harness.question.presented == 0)
+        #expect(await waitUntil(timeout: RecordingHarness.patience) { harness.recording.phase == .deciding })
+        #expect(harness.question.presented == 1)
+        harness.recording.delete()
+    }
+
+    /// Quitting sTools while the question waits saves the recording under its date-and-time name.
+    @Test func quittingWhileTheQuestionWaitsSavesIt() async throws {
+        let harness = RecordingHarness()
+        let id = harness.addKey()
+        #expect(await harness.recordByKey(id))
+        let name = try #require(harness.recording.finished?.name)
+        await harness.model.shutDown()
+        #expect(harness.savedFileNames() == ["\(name).mov"])
+        #expect(harness.question.dismissed == 1)
+        #expect(harness.recording.phase == .idle)
     }
 
     @Test func savingKeepsTheFileAndTurnsTheToolOff() async throws {
