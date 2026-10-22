@@ -62,11 +62,11 @@ Draws a click-through crosshair at the exact center of Minecraft's display, abov
 
 ### Timer Overlay
 
-Press your Start-timer key and a countdown pops up over the game, 2:30 by default or any length you set. At zero it rings an alarm, pulses with each ring and leaves by itself; press again to restart, or twice quickly to cancel. Choose a look (a plate, digits only or a compact pill) and its colors, font and size, and an alarm from macOS's sounds, four sTools alarms or your own files. Drag it into place with guides that show when it covers the hotbar, chat, toasts or anything else the rules need visible. It can also count down on the Dock icon, and it shows in your sTools recordings, with the alarm on its own track if you want it.
+Press your Start-timer key and a countdown pops up over the game, 2:30 by default or any length you set. At zero it rings an alarm, pulses with each ring and leaves by itself; press again to restart, or twice quickly to cancel and switch Timer Overlay off (the next press switches it back on and starts again). Choose a look (a plate, digits only or a compact pill) and its colors, font and size, and an alarm from macOS's sounds, four sTools alarms or your own files. Drag it into place with guides that show when it covers the hotbar, chat, toasts or anything else the rules need visible. It can also count down on the Dock icon, and it shows in your sTools recordings, with the alarm on its own track if you want it.
 
 ### Screen Recording
 
-Records Minecraft with sTools' overlays and backdrop, plus any windows, displays, cameras and web pages you arrange on one canvas. Sources don't have to be visible on your real screen. Sound from Minecraft, other apps and microphones is saved as one mixed track plus a track per source. Choose .mp4 or .mov, H.264 or HEVC, 30 or 60 fps. Files are written crash-safe, and when you stop, you choose Save or Delete.
+Records Minecraft with sTools' overlays and backdrop, plus any windows, displays, cameras and web pages you arrange on one canvas. Sources don't have to be visible on your real screen. Sound from Minecraft, other apps and microphones is saved as one mixed track plus a track per source. Choose .mp4 or .mov, H.264 or HEVC, 30 or 60 fps. Files are written crash-safe. One key switches Screen Recording on and starts recording, and stops it when pressed again; a small panel, shown over the game too, then asks for a name and Save or Delete, and Screen Recording switches off.
 
 ### Key Rebinder
 
