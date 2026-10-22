@@ -62,16 +62,17 @@ extension AppModel {
             // The overlay confirms a start, restart, pause or cancel itself, so those add no sound or line (plan
             // decision 5). A press that couldn't switch the tool on (no Accessibility, R10) gets the click and its line,
             // without the seal.
+            // The press counts from when its key went down, so the double press measures the keys (spec 5.6.2).
             guard let timer = timerOverlay else { return nil }
             let wasOn = isOn(.timerOverlay)
-            let result = timer.press()
+            let result = timer.press(secondsAgo: hotkeys.keyEventAge)
             if let switchedOff = timerSwitchedOff(timer, wasOn: wasOn) { return switchedOff }
             return result == .couldNotStart ? .needsAccessibility(.timerOverlay) : nil
         case .startTimerReleased:
             // Can arrive from inside a `HotkeyCenter` change, so nothing here may change the hotkeys.
             guard let timer = timerOverlay else { return nil }
             let wasOn = isOn(.timerOverlay)
-            timer.release()
+            timer.release(secondsAgo: hotkeys.keyEventAge)
             return timerSwitchedOff(timer, wasOn: wasOn)
         }
     }

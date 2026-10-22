@@ -176,25 +176,7 @@ struct AppModelTimerTests {
         #expect(harness.model.handleHotkeyEvent(.startTimerReleased) == nil, "a release while off changes nothing")
     }
 
-    @Test func aDoubleTapThroughTheHotkeySwitchesTheToolOff() async {
-        let harness = Harness()
-        let id = harness.model.hotkeys.add(combo: HotkeyCombo(keyCode: 105, modifiers: []), actions: [.startTimer])
-        harness.model.hotkeys.isEnabled = true
-        await harness.model.settings.flush()
-        guard let fake = harness.hotkeyRegistrar as? FakeHotkeyRegistrar else {
-            Issue.record("expected FakeHotkeyRegistrar")
-            return
-        }
-        fake.onPress?(id)
-        #expect(harness.model.isOn(.timerOverlay) && harness.timer.phase == .counting)
-        harness.timerFakes.clock.time += 0.3
-        fake.onPress?(id)
-        #expect(!harness.model.isOn(.timerOverlay) && harness.timer.phase == .idle)
-        harness.timerFakes.clock.time += 0.2
-        fake.onPress?(id)
-        #expect(harness.model.isOn(.timerOverlay) && harness.timer.phase == .counting, "a third quick press starts again")
-        #expect(harness.timer.content.text == "02:30")
-    }
+    // The key driven through Hotkeys as real taps, with ducky's files, is in `TimerKeyTapTests`.
 
     @Test func holdingTheKeySwitchesTheToolOffToo() {
         let harness = Harness()

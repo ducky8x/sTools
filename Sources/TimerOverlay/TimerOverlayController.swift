@@ -20,9 +20,9 @@ public enum TimerPressResult: Equatable, Sendable {
 /// Owns Timer Overlay (spec 5.6): one countdown, started by one key, that pops up over the game, counts down,
 /// rings and leaves by itself.
 ///
-/// - Presses become actions through `PressPolicy`, stamped with the controller's own clock. The cancel gestures
-///   switch the tool off themselves (`setEnabled(false)`); the app reads `isEnabled` after each press and release,
-///   so its switch follows.
+/// - Presses become actions through `PressPolicy`, stamped with the controller's own clock at the moment their key
+///   moved, which the app passes as how long ago that was. The cancel gestures switch the tool off themselves
+///   (`setEnabled(false)`); the app reads `isEnabled` after each press and release, so its switch follows.
 /// - `TimerEngine` runs the countdown; the presenter shows the overlay, the alarm player rings it and plays the cues
 ///   before zero, at `AlarmSchedule`'s times.
 /// - Motion: every pop-in, pop-out and pulse hands the presenter `theme.reduceMotion` as it starts, so Reduce
@@ -250,23 +250,25 @@ public final class TimerOverlayController: ToolController {
 
     // MARK: - The key
 
-    /// A Start-timer press, from the app's hotkey. Stamped with the controller's clock, so the 0.4 s double press
-    /// and the 1 s hold are measured on the countdown's own clock. While the tool is off it asks `requestEnable`
-    /// first, as the key turns the tool on (spec 5.6.2). A double press cancels and switches the tool off, so the next
-    /// press switches it back on and starts a countdown.
+    /// A Start-timer press, from the app's hotkey, whose key went down `secondsAgo` (the time sTools took to get to
+    /// it). Stamped with the controller's clock at that moment, so the 0.4 s double press and the 1 s hold are measured
+    /// between the keys themselves, on the countdown's own clock. While the tool is off it asks `requestEnable` first,
+    /// as the key turns the tool on (spec 5.6.2). A double press cancels and switches the tool off, so the next press
+    /// switches it back on and starts a countdown.
     @discardableResult
-    public func press() -> TimerPressResult {
-        let now = clock.now()
+    public func press(secondsAgo: TimeInterval = 0) -> TimerPressResult {
+        let at = clock.now() - max(0, secondsAgo)
         guard isEnabled || switchOn() else { return .couldNotStart }
-        let action = policy.handle(.press, at: now, phase: phase, settings: settings)
+        let action = policy.handle(.press, at: at, phase: phase, settings: settings)
         return perform(action) ? .acted : .ignored
     }
 
-    /// The Start-timer key is up again, for the hold-to-cancel gesture, which cancels and switches the tool off.
-    public func release() {
-        let now = clock.now()
+    /// The Start-timer key came up `secondsAgo`, for the hold-to-cancel gesture, which cancels and switches the tool
+    /// off.
+    public func release(secondsAgo: TimeInterval = 0) {
+        let at = clock.now() - max(0, secondsAgo)
         guard isEnabled else { return }
-        perform(policy.handle(.release, at: now, phase: phase, settings: settings))
+        perform(policy.handle(.release, at: at, phase: phase, settings: settings))
     }
 
     /// Carries out what the press table decided. False when it did nothing.

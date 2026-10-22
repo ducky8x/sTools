@@ -4,8 +4,8 @@ import Foundation
 /// Advanced variant, plus the cancel gestures.
 ///
 /// A small value the controller keeps. It remembers only the last press, to tell a double press (0.4 s) and a
-/// hold (1 s), and reads no clock: the controller stamps each input with its own. A press always acts at once;
-/// a gesture cancels afterwards.
+/// hold (1 s), and reads no clock: the controller stamps each input with its own, at the moment the key moved. A
+/// press always acts at once; a gesture cancels afterwards.
 /// - Double press: a second press within 0.4 s of the last one cancels whatever is under way (counting, paused,
 ///   ringing or lingering) and switches the tool off. It switches the tool off even when the first press left
 ///   nothing to cancel, as when it silenced and hid the alarm. The next press switches the tool back on and starts
