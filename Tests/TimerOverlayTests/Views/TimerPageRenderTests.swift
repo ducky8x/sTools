@@ -272,11 +272,29 @@ struct TimerPageRenderTests {
         }
     }
 
-    @Test func theRuleNoticeHasADismissButton() {
-        // The notice shows only once the controller says it's due; at the API commit it never is.
+    @Test func theRuleNoticeShowsUntilDismissed() {
         let controller = makeController { $0.ruleNote = .lineAndNotice }
-        #expect(!controller.showsRuleNotice || !controller.settings.ruleNoticeDismissed)
-        render(page(controller), name: "page-rule-notice")
+        controller.setEnabled(true)
+        defer { controller.setEnabled(false) }
+        #expect(controller.showsRuleNotice)
+        let withNotice = render(page(controller), name: "page-rule-notice")
+        controller.dismissRuleNotice()
+        #expect(!controller.showsRuleNotice)
+        let without = render(page(controller))
+        #expect(withNotice.pixelsHigh > without.pixelsHigh, "the notice leaves the page; the line stays")
+    }
+
+    @Test func aRunShowsOnThePreviewAndItsButtons() {
+        let controller = makeController()
+        controller.setEnabled(true)
+        defer { controller.cancel(); controller.setEnabled(false) }
+        #expect(controller.start())
+        #expect(controller.phase == .counting)
+        render(page(controller), name: "page-counting")
+        controller.pause()
+        #expect(controller.phase == .paused)
+        #expect(controller.content.state == .paused)
+        render(page(controller), name: "page-paused")
     }
 
     @Test func withoutAccessibilityTheRunButtonsAreOff() {
