@@ -30,20 +30,24 @@ public struct TimerKeyStatus: Equatable, Sendable {
     public var scope: HotkeyScope
     /// The key set the tools' own hotkeys follow, the Start-timer key among them; nil when they follow none (Custom).
     public var keySet: HotkeyKeySet?
+    /// Whether Accessibility is allowed. Recognizing Minecraft needs it, so without it In sTools and Minecraft works
+    /// only in sTools, and the line under the key says so, as Home does.
+    public var accessibilityGranted: Bool
 
     /// `keySet` defaults to None, an empty list's.
     public init(keys: [Key] = [], hotkeysAreOn: Bool = false, scope: HotkeyScope = .sToolsAndMinecraft,
-                keySet: HotkeyKeySet? = .noKeys) {
+                keySet: HotkeyKeySet? = .noKeys, accessibilityGranted: Bool = true) {
         self.keys = keys
         self.hotkeysAreOn = hotkeysAreOn
         self.scope = scope
         self.keySet = keySet
+        self.accessibilityGranted = accessibilityGranted
     }
 
     /// The hotkeys among `bindings` that hold Start timer, in their order, each with the problem `status` reports, and
     /// the key set `bindings` follow.
     public init(bindings: [HotkeyBinding], hotkeysAreOn: Bool, scope: HotkeyScope = .sToolsAndMinecraft,
-                status: (UUID) -> HotkeyStatus?) {
+                accessibilityGranted: Bool = true, status: (UUID) -> HotkeyStatus?) {
         keys = bindings.filter { $0.actions.contains(.startTimer) }.map { binding in
             Key(id: binding.id, name: binding.combo.displayString,
                 problem: HotkeyWording.statusNote(status(binding.id), combo: binding.combo, inList: false))
@@ -51,13 +55,14 @@ public struct TimerKeyStatus: Equatable, Sendable {
         self.hotkeysAreOn = hotkeysAreOn
         self.scope = scope
         keySet = HotkeyKeySet.current(in: bindings)
+        self.accessibilityGranted = accessibilityGranted
     }
 
-    /// The key row for `hotkeys` as they are now.
+    /// The key row for `hotkeys` as they are now, with Accessibility allowed or not.
     @MainActor
-    public init(hotkeys: HotkeyCenter) {
+    public init(hotkeys: HotkeyCenter, accessibilityGranted: Bool = true) {
         self.init(bindings: hotkeys.bindings, hotkeysAreOn: hotkeys.isEnabled, scope: hotkeys.scope,
-                  status: { hotkeys.status(of: $0) })
+                  accessibilityGranted: accessibilityGranted, status: { hotkeys.status(of: $0) })
     }
 
     /// No Start-timer hotkey, with Hotkeys off.

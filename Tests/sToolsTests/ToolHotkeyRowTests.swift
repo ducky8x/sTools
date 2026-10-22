@@ -150,6 +150,21 @@ struct ToolHotkeyRowTests {
         #expect(harness.model.pendingPageAnchor == .hotkeys)
     }
 
+    /// Without Accessibility sTools can't tell when Minecraft is in front, so the row says hotkeys work only in
+    /// sTools, as Home does, and says In sTools and Minecraft again once Accessibility is allowed.
+    @Test func withoutAccessibilityTheRowSaysOnlyInSTools() throws {
+        let harness = Harness(accessibility: .denied, hotkeys: nil)
+        let row = try #require(ToolHotkeyRow(model: harness.model, tool: .crosshair))
+        #expect(row.whereLine == "Hotkeys work only in sTools until Accessibility is allowed · Key set: ⌘1–⌘5")
+        harness.model.hotkeys.scope = .everywhere
+        #expect(row.whereLine == "Hotkeys work in every app · Key set: ⌘1–⌘5")
+
+        harness.model.hotkeys.scope = .sToolsAndMinecraft
+        harness.prober.set(.accessibility, .granted)
+        harness.model.permissions.refresh()
+        #expect(row.whereLine == "Hotkeys work in sTools and Minecraft · Key set: ⌘1–⌘5")
+    }
+
     @Test func theRowRendersItsKeyAndTurnOnWhileOff() throws {
         let harness = Harness(accessibility: .granted)
         let hotkeys = harness.model.hotkeys

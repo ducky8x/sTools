@@ -74,7 +74,7 @@ Draws your keyboard (ANSI, ISO or JIS, laptop or full size) and mouse with every
 
 ## Around the tools
 
-- **Global hotkeys.** Your own shortcuts, set at the top of Home, on each tool's page or right on a key in the Key Rebinder: any key, alone or with ⌃ ⌥ ⇧ ⌘, that switches a set of tools on or off together, starts the timer, or starts and stops a recording. By default they work only while sTools or Minecraft is in front, so other apps keep their own shortcuts (a browser's ⌘1 still switches tabs); Where hotkeys work, on Home, can make them work everywhere. Out of the box each tool has a key in sidebar order, ⌘1–⌘5, and Key set, also on Home, swaps them all for ⌃1–⌃5, ⌥1–⌥5, F13–F17 or none; each tool's page says where its key works and which set it's from. Home lists them in sidebar order, and each tool keeps one key of its own: setting another asks whether to replace it. They need no permission and show a small confirmation over the game. A hotkey's key goes to sTools instead of the game, so sTools warns you when it's one Minecraft uses. Hotkeys are on from the first launch, and they pause only while sTools records a key or you type in it.
+- **Global hotkeys.** Your own shortcuts, set at the top of Home, on each tool's page or right on a key in the Key Rebinder: any key, alone or with ⌃ ⌥ ⇧ ⌘, that switches a set of tools on or off together, starts the timer, or starts and stops a recording. By default they work only while sTools or Minecraft is in front, so other apps keep their own shortcuts (a browser's ⌘1 still switches tabs); Where hotkeys work, on Home, can make them work everywhere. Out of the box each tool has a key in sidebar order, ⌘1–⌘5, and Key set, also on Home, swaps them all for ⌃1–⌃5, ⌥1–⌥5, F13–F17 or none; each tool's page says where its key works and which set it's from. Home lists them in sidebar order, and each tool keeps one key of its own: setting another asks whether to replace it. Recognizing Minecraft needs Accessibility, so until it's allowed they work only in sTools (Everywhere needs no permission). They show a small confirmation over the game. A hotkey's key goes to sTools instead of the game, so sTools warns you when it's one Minecraft uses. Hotkeys are on from the first launch, and they pause only while sTools records a key or you type in it.
 - **The Prologue.** On first launch, an animated welcome, then help with each permission, Ninjabrain Bot and Karabiner-Elements, then a hands-on try of every tool. Back and Skip work on every step, and Help ▸ Replay Introduction runs it again.
 - **Settings.** Open at login, sounds and volume, text size, accent color, update options, exporting and importing all your settings in one file, resetting the tools or all of sTools, and Copy Diagnostics for bug reports.
 - **Reduce animations.** sTools animates nearly everything: switches spring, numbers roll, successes stamp a gold seal, and the sidebar glides with a soft tick for each row it passes (and a tap on a Force Touch trackpad). One switch in Settings ▸ Appearance turns every animation off, and macOS's Reduce motion does the same.
@@ -104,13 +104,13 @@ The Prologue walks you through each one, and a tool's page offers **Allow…** w
 
 | Permission | Why | Used by |
 |------------|-----|---------|
-| Accessibility | Finds the Minecraft window and follows it: where it is, which display it's on, whether it has focus. | Crosshair, Timer Overlay, NBB Overlay, Screen Recording, Window Backdrop |
+| Accessibility | Finds the Minecraft window and follows it: where it is, which display it's on, whether it has focus. Hotkeys use it to recognize Minecraft in front. | Crosshair, Timer Overlay, NBB Overlay, Screen Recording, Window Backdrop, hotkeys in Minecraft |
 | Screen & System Audio Recording | Records Minecraft and the windows and displays you add. macOS may ask you to reopen sTools after you allow it. | Screen Recording |
 | App audio | Records the sound of Minecraft and other apps. | Screen Recording |
 | Microphone | Records your voice, once you add a microphone. | Screen Recording |
 | Camera | Puts your camera on the canvas, once you add one. | Screen Recording |
 
-Without Accessibility, the tools that need it stay off; the Key Rebinder works without it. sTools never asks for Input Monitoring: hotkeys go through macOS's own hotkey system, and the key tester only watches sTools' own window.
+Without Accessibility, the tools that need it stay off and hotkeys work only in sTools, unless Where hotkeys work is set to Everywhere; the Key Rebinder works without it. sTools never asks for Input Monitoring: hotkeys go through macOS's own hotkey system, and the key tester only watches sTools' own window.
 
 ## Install
 

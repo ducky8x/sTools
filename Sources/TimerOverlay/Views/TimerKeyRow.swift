@@ -36,9 +36,10 @@ struct TimerKeyRow: View {
     }
 
     /// Where hotkeys work and the key set, as Home ▸ Hotkeys sets them, under the notes: "Hotkeys work in sTools and
-    /// Minecraft · Key set: ⌘1–⌘5".
+    /// Minecraft · Key set: ⌘1–⌘5", or only in sTools while Accessibility is missing, as Home says.
     static func whereLine(for status: TimerKeyStatus) -> String {
-        HotkeyWording.whereAndKeySet(scope: status.scope, keySet: status.keySet)
+        HotkeyWording.whereAndKeySet(scope: status.scope, keySet: status.keySet,
+                                     accessibilityGranted: status.accessibilityGranted)
     }
 
     var body: some View {

@@ -58,9 +58,13 @@ extension KeyRebinderController {
     }
 
     /// What Home ▸ Hotkeys has set for every hotkey, for the key panel's Hotkeys part: "Hotkeys work in sTools and
-    /// Minecraft · Key set: ⌘1–⌘5". Nil without a hotkey list.
+    /// Minecraft · Key set: ⌘1–⌘5", or only in sTools while Accessibility is missing, as Home says. Nil without a
+    /// hotkey list.
     public var hotkeyWhereLine: String? {
-        hotkeyCenter.map { HotkeyWording.whereAndKeySet(scope: $0.scope, keySet: $0.keySet) }
+        let accessibilityGranted = services.permissions.status(.accessibility) == .granted
+        return hotkeyCenter.map {
+            HotkeyWording.whereAndKeySet(scope: $0.scope, keySet: $0.keySet, accessibilityGranted: accessibilityGranted)
+        }
     }
 
     /// What `key` can do for hotkeys, by what it sends now in the current scope (the preview while a change waits).

@@ -98,7 +98,7 @@ public final class KeyRebinderController {
         hotkeyCenter?.setPaused(isTesting || isCapturingOutput, for: .keyRebinder)
     }
 
-    @ObservationIgnored private let services: ToolServices
+    @ObservationIgnored let services: ToolServices
     @ObservationIgnored private let configURL: URL
     @ObservationIgnored private let backupsDirectory: URL
     @ObservationIgnored private let cli: KarabinerCLI

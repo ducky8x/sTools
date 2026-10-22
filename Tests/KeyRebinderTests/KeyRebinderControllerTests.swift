@@ -23,9 +23,11 @@ private final class RoutingCommandRunner: CommandRunner, @unchecked Sendable {
     }
 }
 
+/// Grants everything but Accessibility, which the test sets; never shows a system prompt.
 private struct AlwaysGranted: PermissionProbing {
-    func status(for permission: Permission) -> PermissionStatus { .granted }
-    func request(_ permission: Permission) async -> PermissionStatus { .granted }
+    var accessibility: PermissionStatus = .granted
+    func status(for permission: Permission) -> PermissionStatus { permission == .accessibility ? accessibility : .granted }
+    func request(_ permission: Permission) async -> PermissionStatus { status(for: permission) }
 }
 
 private let twoProfiles = """
@@ -52,7 +54,9 @@ private struct Harness {
     /// - Parameters:
     ///   - config: the starting `karabiner.json`; nil writes none.
     ///   - hotkeys: connects a real `HotkeyCenter` over the same settings folder, registering through a fake.
-    init(config: String? = twoProfiles, ready: Bool = true, symlink: Bool = false, hotkeys: Bool = false) throws {
+    ///   - accessibility: what the permission center reads for Accessibility.
+    init(config: String? = twoProfiles, ready: Bool = true, symlink: Bool = false, hotkeys: Bool = false,
+         accessibility: PermissionStatus = .granted) throws {
         directory = FileManager.default.temporaryDirectory.appending(path: "stools-rebinder-\(UUID().uuidString)", directoryHint: .isDirectory)
         let karabiner = directory.appending(path: "karabiner", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: karabiner, withIntermediateDirectories: true)
@@ -79,7 +83,7 @@ private struct Harness {
             settings: settings,
             displays: DisplayDirectory(),
             minecraft: MinecraftLocator(source: StaticMinecraftWindowSource()),
-            permissions: PermissionCenter(prober: AlwaysGranted()))
+            permissions: PermissionCenter(prober: AlwaysGranted(accessibility: accessibility)))
         controller = KeyRebinderController(
             services: services, configURL: configURL,
             backupsDirectory: directory.appending(path: "backups", directoryHint: .isDirectory), cli: cli, probes: probes)
@@ -414,9 +418,10 @@ private func profileP(_ pairs: [(String, String)] = [], simple: [String] = [], r
 struct KeyRebinderHotkeyTests {
     /// Profile "P" from `config`, Karabiner `ready` or not, hotkeys on and an ANSI keyboard chosen.
     private func make(
-        _ config: String? = capsToF13, ready: Bool = true, formFactor: KeyboardFormFactor = .laptop
+        _ config: String? = capsToF13, ready: Bool = true, formFactor: KeyboardFormFactor = .laptop,
+        accessibility: PermissionStatus = .granted
     ) async throws -> Harness {
-        let harness = try Harness(config: config, ready: ready, hotkeys: true)
+        let harness = try Harness(config: config, ready: ready, hotkeys: true, accessibility: accessibility)
         harness.runner.set("--list-profile-names", "P\n")
         harness.runner.set("--show-current-profile-name", "P\n")
         await harness.controller.refresh()
@@ -853,6 +858,18 @@ struct KeyRebinderHotkeyTests {
         let unconnected = try Harness()
         defer { unconnected.remove() }
         #expect(unconnected.controller.hotkeyWhereLine == nil)
+    }
+
+    /// Without Accessibility sTools can't tell when Minecraft is in front, so the key panel says hotkeys work only in
+    /// sTools, as Home does; Everywhere doesn't need Accessibility.
+    @Test func withoutAccessibilityTheKeyPanelSaysOnlyInSTools() async throws {
+        let harness = try await make(accessibility: .denied)
+        defer { harness.remove() }
+        let center = try #require(harness.center)
+        #expect(harness.controller.hotkeyWhereLine
+            == "Hotkeys work only in sTools until Accessibility is allowed · Key set: None")
+        center.scope = .everywhere
+        #expect(harness.controller.hotkeyWhereLine == "Hotkeys work in every app · Key set: None")
     }
 
     // MARK: Advice for Home
