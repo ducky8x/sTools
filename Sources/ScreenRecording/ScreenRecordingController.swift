@@ -325,7 +325,7 @@ public final class ScreenRecordingController: ToolController {
         let arming = armCount
         armTask = Task { [weak self] in
             guard let self else { return }
-            if restarting { await self.tearDownRig() }
+            if restarting, !self.rigIsRecording { await self.tearDownRig() }
             guard self.isLatest(arming) else { return }
             if self.layout.videoSources.contains(where: \.isWindow) {
                 await self.refreshAvailableSources()
@@ -356,6 +356,10 @@ public final class ScreenRecordingController: ToolController {
         guard isEnabled, rig != nil else { return }
         if displaysChangedWhileBusy || rigSignature != captureSignature { rearm() }
     }
+
+    /// A session writes from `rig` (a recording, or a start whose writer is open): the rig is never stopped or replaced
+    /// under it. A change that would replace it waits until the phase is idle again (`applyChangesSeenWhileBusy`).
+    private var rigIsRecording: Bool { rig != nil && session != nil }
 
     /// The latest arming's sources run (their starts, Minecraft's capture included, have finished) and nothing is
     /// restarting them, so a start can write at once, without waiting.
@@ -407,11 +411,13 @@ public final class ScreenRecordingController: ToolController {
 
     /// Brings up `arming`'s sources and marks them ready once they've all started. A rig an earlier arming left (the tool
     /// was switched off and on before the switch-off ran) is taken over instead, and ready once its start has finished,
-    /// unless it was built for other sources or settings (changed while the tool was off), which it's replaced for.
+    /// unless it was built for other sources or settings (changed while the tool was off), which it's replaced for. A
+    /// rig a recording writes from is taken over as it is (the tool switched off and on while recording): its change
+    /// waits for the recording to end.
     private func buildRig(arming: Int) async {
         guard isLatest(arming) else { return }
         if let rig {
-            if rigSignature == captureSignature {
+            if rigSignature == captureSignature || rigIsRecording {
                 await rigStart?.value
                 guard self.rig === rig, isLatest(arming) else { return }
                 markReady(arming)

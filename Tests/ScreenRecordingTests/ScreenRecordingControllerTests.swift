@@ -1790,4 +1790,75 @@ struct ScreenRecordingBusyChangeTests {
         harness.controller.setEnabled(false)
         #expect(await harness.waitUntil { !harness.factory.anyRunning })
     }
+
+    /// The tool switched off and on in one go while recording, after Minecraft made its window again: the switch-off
+    /// never ran, so the recording goes on, and the arming the switch-on made keeps the sources it records from
+    /// instead of replacing them under it. The change waits for the recording to end: the next switch-on captures the
+    /// new window.
+    @Test func switchedOffAndOnWhileRecordingTheSourcesStayUntilItEnds() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        await harness.arm()
+        #expect(await harness.waitUntil { harness.factory.bases[42]?.isRunning == true })
+        let recorded = try #require(harness.factory.bases[42])
+        harness.pushFrame()
+        harness.controller.toggleRecording()
+        #expect(await harness.waitUntil { harness.controller.phase == .recording })
+        harness.moveMinecraft(toWindow: 77)
+        try await Task.sleep(for: .milliseconds(100))
+
+        harness.controller.setEnabled(false)
+        harness.controller.setEnabled(true)
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(harness.controller.phase == .recording)
+        #expect(harness.controller.isEnabled)
+        #expect(recorded.isRunning, "the recording's sources are never replaced under it")
+        #expect(harness.factory.baseCount == 1)
+
+        harness.pushFrame()
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(harness.controller.toggleRecording() == .stopped)
+        #expect(await harness.waitUntil { harness.controller.phase == .deciding })
+        let file = try #require(harness.controller.finished?.files.first)
+        #expect(try await MovieInfo.load(file).videoSampleCount >= 2)
+        harness.controller.delete()
+        #expect(!harness.controller.isEnabled)
+        #expect(await harness.waitUntil { !harness.factory.anyRunning })
+
+        harness.controller.setEnabled(true)
+        #expect(await harness.waitUntil { harness.factory.bases[77]?.isRunning == true })
+        harness.controller.setEnabled(false)
+        #expect(await harness.waitUntil { !harness.factory.anyRunning })
+    }
+
+    /// The same during the Prologue's 5-second test, which keeps its sources and stays on: the sources stay while it
+    /// records, and the change is applied once it has saved.
+    @Test func switchedOffAndOnDuringTheTestRecordingTheChangeWaitsUntilItsSaved() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        await harness.arm()
+        #expect(await harness.waitUntil { harness.factory.bases[42]?.isRunning == true })
+        let recorded = try #require(harness.factory.bases[42])
+        try await Task.sleep(for: .milliseconds(100))
+        harness.pushFrame()
+        let saved = Task { await harness.controller.recordTest(for: .milliseconds(600)) }
+        #expect(await harness.waitUntil { harness.controller.phase == .recording })
+        harness.moveMinecraft(toWindow: 77)
+        try await Task.sleep(for: .milliseconds(50))
+
+        harness.controller.setEnabled(false)
+        harness.controller.setEnabled(true)
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(harness.controller.phase == .recording)
+        #expect(recorded.isRunning, "the recording's sources are never replaced under it")
+        #expect(harness.factory.baseCount == 1)
+
+        #expect(await saved.value)
+        #expect(harness.controller.phase == .idle)
+        #expect(await harness.waitUntil { harness.factory.bases[77]?.isRunning == true })
+        #expect(await harness.waitUntil { !recorded.isRunning })
+        #expect(harness.factory.baseCount == 2)
+        harness.controller.setEnabled(false)
+        #expect(await harness.waitUntil { !harness.factory.anyRunning })
+    }
 }
