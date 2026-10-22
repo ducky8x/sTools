@@ -27,7 +27,8 @@ public protocol AudioCapture: AnyObject, Sendable {
 public protocol CaptureFactory {
     /// Minecraft's window plus sTools' overlay and backdrop panels, on Minecraft's display.
     func base(minecraftWindowID: UInt32, showsCursor: Bool) -> (any VideoCapture)?
-    func video(for source: VideoSource, showsCursor: Bool) -> (any VideoCapture)?
+    /// `canvas` is the canvas's pixel size, for sources drawn at their size on it (a browser source's page).
+    func video(for source: VideoSource, canvas: PixelSize, showsCursor: Bool) -> (any VideoCapture)?
     func audio(for source: AudioSource) -> (any AudioCapture)?
     /// Minecraft's own sound.
     func minecraftAudio(processID: Int32) -> (any AudioCapture)?

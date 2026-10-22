@@ -50,7 +50,7 @@ struct RecordingSessionTests {
         let directory = try WriterFixture.makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let canvas = PixelSize(width: 320, height: 180)
-        let camera = VideoSource(kind: .camera(CameraReference(uniqueID: "cam", name: "Camera")), frame: PixelRect(x: 200, y: 100, width: 100, height: 60))
+        let camera = VideoSource(kind: .camera(CameraReference(uniqueID: "cam", name: "Camera")), frame: PixelRect(x: 200, y: 100, width: 100, height: 60), on: canvas)
         let mic = AudioSource(kind: .microphone(uniqueID: "mic"), name: "Microphone", volume: 0.5)
         var layout = RecordingLayout()
         layout.add(camera)

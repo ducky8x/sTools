@@ -48,7 +48,8 @@ public struct CropInsets: Codable, Equatable, Hashable, Sendable {
 
 /// A frame drawn around a source, inside its edge.
 public struct SourceBorder: Codable, Equatable, Hashable, Sendable {
-    /// Width in canvas pixels. 0 means no border.
+    /// Width as a fraction of the canvas's shorter side (`CanvasMapping.length`), so it keeps its look at any
+    /// canvas or output size. 0 means no border.
     public var width: Double
     /// `#RRGGBB` or `#RRGGBBAA`.
     public var colorHex: String
@@ -100,7 +101,7 @@ public enum VideoSourceKind: Equatable, Hashable, Sendable, Codable {
     case window(WindowReference)
     case display(DisplayReference)
     case camera(CameraReference)
-    /// A web page, rendered off-screen at the source's pixel size.
+    /// A web page, rendered off-screen at the size the source is drawn on the canvas.
     case browser(url: String)
 
     private enum CodingKeys: String, CodingKey { case type, window, display, camera, url }
@@ -140,12 +141,13 @@ public enum VideoSourceKind: Equatable, Hashable, Sendable, Codable {
 public struct VideoSource: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var id: UUID
     public var kind: VideoSourceKind
-    /// Where the source sits on the canvas, in canvas pixels (top-left origin).
-    public var frame: PixelRect
+    /// Where the source sits on the canvas, as fractions of the canvas's width and height (top-left origin), so
+    /// it keeps its place and size whatever the canvas's pixel size. Its content is fitted inside, aspect kept.
+    public var frame: CanvasRect
     public var crop: CropInsets
     /// 0...1.
     public var opacity: Double
-    /// In canvas pixels.
+    /// As a fraction of the canvas's shorter side (`CanvasMapping.length`).
     public var cornerRadius: Double
     public var border: SourceBorder
     /// Stack order: higher draws on top. Use the layout's reorder methods to change it.
@@ -154,7 +156,7 @@ public struct VideoSource: Codable, Equatable, Hashable, Identifiable, Sendable 
     public init(
         id: UUID = UUID(),
         kind: VideoSourceKind,
-        frame: PixelRect,
+        frame: CanvasRect,
         crop: CropInsets = .zero,
         opacity: Double = 1,
         cornerRadius: Double = 0,
@@ -169,6 +171,31 @@ public struct VideoSource: Codable, Equatable, Hashable, Identifiable, Sendable 
         self.cornerRadius = cornerRadius
         self.border = border
         self.zIndex = zIndex
+    }
+
+    /// A source placed in pixels of a `canvas`-sized canvas: `frame`, `cornerRadius` and the border's width are
+    /// canvas pixels, saved as fractions of that canvas.
+    public init(
+        id: UUID = UUID(),
+        kind: VideoSourceKind,
+        frame: PixelRect,
+        on canvas: PixelSize,
+        crop: CropInsets = .zero,
+        opacity: Double = 1,
+        cornerRadius: Double = 0,
+        border: SourceBorder = .none,
+        zIndex: Int = 0
+    ) {
+        let mapping = CanvasMapping(canvas)
+        var border = border
+        border.width = mapping.fraction(ofLength: border.width)
+        self.init(id: id, kind: kind, frame: mapping.canvasRect(frame), crop: crop, opacity: opacity,
+                  cornerRadius: mapping.fraction(ofLength: cornerRadius), border: border, zIndex: zIndex)
+    }
+
+    /// The frame in pixels of a `canvas`-sized canvas.
+    public func pixelFrame(on canvas: PixelSize) -> PixelRect {
+        CanvasMapping(canvas).rect(frame)
     }
 
     /// A short label for lists.
@@ -190,7 +217,7 @@ public struct VideoSource: Codable, Equatable, Hashable, Identifiable, Sendable 
         self.init(
             id: c.value(.id, UUID()),
             kind: try c.decode(VideoSourceKind.self, forKey: .kind),
-            frame: try c.decode(PixelRect.self, forKey: .frame),
+            frame: try c.decode(CanvasRect.self, forKey: .frame),
             crop: c.value(.crop, .zero),
             opacity: c.value(.opacity, 1),
             cornerRadius: c.value(.cornerRadius, 0),
@@ -272,9 +299,13 @@ public struct AudioSource: Codable, Equatable, Hashable, Identifiable, Sendable 
 
 /// The saved canvas layout: video sources, audio sources, and whether Minecraft's own sound is recorded.
 /// Stored as the `recordingLayout` settings document.
+///
+/// Version 2 saves every source's frame, corner radius and border width as fractions of the canvas, so the layout
+/// doesn't move or resize when the canvas's pixel size changes. Version 1 saved them in canvas pixels; such a file
+/// loads with `holdsLegacyPixels` set until `convertLegacyPixels(canvas:)` turns it into fractions, once.
 public struct RecordingLayout: SettingsDocument {
     public static let name = "recordingLayout"
-    public static let version = 1
+    public static let version = 2
     public static var defaultValue: RecordingLayout { RecordingLayout() }
 
     public var videoSources: [VideoSource]
@@ -282,6 +313,9 @@ public struct RecordingLayout: SettingsDocument {
     public var includesMinecraftAudio: Bool
     /// Volume of Minecraft's sound, 0...1.5.
     public var minecraftAudioVolume: Double
+    /// True for a layout read from a version-1 file: its frames, corner radii and border widths still hold the
+    /// canvas pixels that file saved. Saved along with them, so they're never mistaken for fractions.
+    public private(set) var holdsLegacyPixels = false
 
     public init(
         videoSources: [VideoSource] = [],
@@ -296,7 +330,7 @@ public struct RecordingLayout: SettingsDocument {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case videoSources, audioSources, includesMinecraftAudio, minecraftAudioVolume
+        case videoSources, audioSources, includesMinecraftAudio, minecraftAudioVolume, legacyPixels
     }
 
     public init(from decoder: Decoder) throws {
@@ -306,6 +340,54 @@ public struct RecordingLayout: SettingsDocument {
             audioSources: c.value(.audioSources, []),
             includesMinecraftAudio: c.value(.includesMinecraftAudio, true),
             minecraftAudioVolume: c.value(.minecraftAudioVolume, 1))
+        holdsLegacyPixels = c.value(.legacyPixels, false)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(videoSources, forKey: .videoSources)
+        try c.encode(audioSources, forKey: .audioSources)
+        try c.encode(includesMinecraftAudio, forKey: .includesMinecraftAudio)
+        try c.encode(minecraftAudioVolume, forKey: .minecraftAudioVolume)
+        if holdsLegacyPixels { try c.encode(true, forKey: .legacyPixels) }
+    }
+
+    /// Version 1 saved frames, corner radii and border widths in pixels of a canvas it didn't record. The file
+    /// alone can't say which canvas that was, so the values are marked here and converted by
+    /// `convertLegacyPixels(canvas:)` once the canvas is known.
+    public static func migrate(from oldVersion: Int, _ raw: [String: Any]) throws -> [String: Any] {
+        var raw = raw
+        if oldVersion == 1 { raw[CodingKeys.legacyPixels.rawValue] = true }
+        return raw
+    }
+
+    /// Turns a version-1 layout's canvas pixels into fractions of the canvas it was made on, then clears
+    /// `holdsLegacyPixels`. Lossy: that canvas is a best guess (see `legacyCanvas(holding:current:)`). Does nothing
+    /// to a layout already in fractions.
+    public mutating func convertLegacyPixels(canvas: PixelSize) {
+        guard holdsLegacyPixels else { return }
+        let pixelFrames = videoSources.map { PixelRect(x: $0.frame.x, y: $0.frame.y, width: $0.frame.width, height: $0.frame.height) }
+        let mapping = CanvasMapping(Self.legacyCanvas(holding: pixelFrames, current: canvas))
+        for i in videoSources.indices {
+            videoSources[i].frame = mapping.canvasRect(pixelFrames[i])
+            videoSources[i].cornerRadius = mapping.fraction(ofLength: videoSources[i].cornerRadius)
+            videoSources[i].border.width = mapping.fraction(ofLength: videoSources[i].border.width)
+        }
+        holdsLegacyPixels = false
+        sanitize()
+    }
+
+    /// The canvas a version-1 layout was most likely made on: `current` (the canvas sTools would use now), or, when
+    /// frames reach past it, the smallest whole multiple of it that holds them all. Every edit kept the frames
+    /// inside the canvas of the moment, so frames past `current` were laid out at a higher backing scale (a 2x
+    /// display since switched to 1x, say).
+    static func legacyCanvas(holding frames: [PixelRect], current: PixelSize) -> PixelSize {
+        for factor in 1...4 {
+            let canvas = PixelSize(width: current.width * factor, height: current.height * factor)
+            let fits = frames.allSatisfy { $0.maxX <= Double(canvas.width) + 0.5 && $0.maxY <= Double(canvas.height) + 0.5 }
+            if fits { return canvas }
+        }
+        return current
     }
 
     /// Video sources from the back of the stack to the front. Ties keep their saved order.
@@ -376,10 +458,13 @@ public struct RecordingLayout: SettingsDocument {
         }
     }
 
-    /// Pulls every value into its legal range for a canvas of `canvas` pixels.
-    public mutating func sanitize(canvas: PixelSize) {
+    /// Pulls every value into its legal range. None of it depends on the canvas's pixel size, so a change of
+    /// display, resolution or backing scale never alters a saved layout. A layout still holding version-1 pixels is
+    /// left alone until it's converted.
+    public mutating func sanitize() {
+        guard !holdsLegacyPixels else { return }
         for i in videoSources.indices {
-            videoSources[i].frame = LayoutMath.clamp(videoSources[i].frame, to: canvas)
+            videoSources[i].frame = videoSources[i].frame.clamped()
             videoSources[i].crop = videoSources[i].crop.clamped()
             let opacity = videoSources[i].opacity
             videoSources[i].opacity = opacity.isFinite ? min(1, max(0, opacity)) : 1

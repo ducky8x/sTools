@@ -4,6 +4,7 @@ import SwiftUI
 
 /// The page's plate (spec 5.4.3): the live composite, with every source's frame drawn over it. Drag a source to
 /// move it (snapping to edges, center and other sources), drag a corner or edge to resize, ⌥-drag to crop.
+/// Outlines and handles go through the same `CanvasMapping` as the compositor, so they sit exactly on the preview.
 struct RecordingCanvasEditor: View {
     @Bindable var controller: ScreenRecordingController
     @Binding var selection: UUID?
@@ -18,25 +19,30 @@ struct RecordingCanvasEditor: View {
         var start: VideoSource
     }
 
+    /// Where a source's outline is drawn on a plate `plate` big (points).
+    static func outlineRect(of source: VideoSource, on plate: CanvasMapping) -> CGRect {
+        plate.rect(source.frame).cgRect
+    }
+
     var body: some View {
         let canvas = controller.canvas
         GeometryReader { proxy in
-            let scale = proxy.size.width / CGFloat(max(1, canvas.width))
+            let plate = CanvasMapping(width: proxy.size.width, height: proxy.size.height)
             ZStack(alignment: .topLeading) {
                 previewLayer
                 ForEach(controller.layout.orderedVideoSources) { source in
-                    outline(source, scale: scale)
+                    outline(source, on: plate)
                 }
                 ForEach(Array(guides.enumerated()), id: \.offset) { _, guide in
-                    guideLine(guide, scale: scale, size: proxy.size)
+                    guideLine(guide, on: plate, canvas: canvas)
                 }
                 if let selected = selectedSource, !controller.isLayoutLocked {
-                    handles(for: selected, scale: scale)
+                    handles(for: selected, on: plate)
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
             .contentShape(Rectangle())
-            .gesture(editGesture(scale: scale, canvas: canvas))
+            .gesture(editGesture(plate: plate, canvas: canvas))
         }
         .aspectRatio(canvas.aspectRatio, contentMode: .fit)
         .background(Color.black)
@@ -77,8 +83,8 @@ struct RecordingCanvasEditor: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func outline(_ source: VideoSource, scale: CGFloat) -> some View {
-        let rect = source.frame.cgRect.applying(CGAffineTransform(scaleX: scale, y: scale))
+    private func outline(_ source: VideoSource, on plate: CanvasMapping) -> some View {
+        let rect = Self.outlineRect(of: source, on: plate)
         let isSelected = source.id == selection
         return ZStack(alignment: .topLeading) {
             Rectangle()
@@ -102,8 +108,8 @@ struct RecordingCanvasEditor: View {
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 
-    private func handles(for source: VideoSource, scale: CGFloat) -> some View {
-        let rect = source.frame.cgRect.applying(CGAffineTransform(scaleX: scale, y: scale))
+    private func handles(for source: VideoSource, on plate: CanvasMapping) -> some View {
+        let rect = Self.outlineRect(of: source, on: plate)
         let points = [
             CGPoint(x: rect.minX, y: rect.minY), CGPoint(x: rect.midX, y: rect.minY), CGPoint(x: rect.maxX, y: rect.minY),
             CGPoint(x: rect.minX, y: rect.midY), CGPoint(x: rect.maxX, y: rect.midY),
@@ -121,16 +127,18 @@ struct RecordingCanvasEditor: View {
         .accessibilityHidden(true)
     }
 
-    private func guideLine(_ guide: SnapGuide, scale: CGFloat, size: CGSize) -> some View {
-        let position = CGFloat(guide.position) * scale
-        return Path { path in
+    /// Guides come in canvas pixels.
+    private func guideLine(_ guide: SnapGuide, on plate: CanvasMapping, canvas: PixelSize) -> some View {
+        Path { path in
             switch guide.axis {
             case .vertical:
-                path.move(to: CGPoint(x: position, y: 0))
-                path.addLine(to: CGPoint(x: position, y: size.height))
+                let x = CGFloat(guide.position / Double(max(1, canvas.width)) * plate.width)
+                path.move(to: CGPoint(x: x, y: 0))
+                path.addLine(to: CGPoint(x: x, y: plate.height))
             case .horizontal:
-                path.move(to: CGPoint(x: 0, y: position))
-                path.addLine(to: CGPoint(x: size.width, y: position))
+                let y = CGFloat(guide.position / Double(max(1, canvas.height)) * plate.height)
+                path.move(to: CGPoint(x: 0, y: y))
+                path.addLine(to: CGPoint(x: plate.width, y: y))
             }
         }
         .stroke(theme.accent.opacity(0.9), lineWidth: 1)
@@ -140,13 +148,15 @@ struct RecordingCanvasEditor: View {
 
     // MARK: Dragging
 
-    private func editGesture(scale: CGFloat, canvas: PixelSize) -> some Gesture {
+    private func editGesture(plate: CanvasMapping, canvas: PixelSize) -> some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .local)
             .onChanged { value in
-                guard !controller.isLayoutLocked, scale > 0 else { return }
-                if drag == nil { beginDrag(at: value.startLocation, scale: scale) }
+                guard !controller.isLayoutLocked, plate.width > 0, plate.height > 0 else { return }
+                if drag == nil { beginDrag(at: value.startLocation, on: plate) }
                 guard let drag else { return }
-                let delta = (dx: Double(value.translation.width / scale), dy: Double(value.translation.height / scale))
+                // Points on the plate to pixels of the canvas, for the drag math.
+                let delta = (dx: Double(value.translation.width) / plate.width * Double(canvas.width),
+                             dy: Double(value.translation.height) / plate.height * Double(canvas.height))
                 let others = controller.layout.videoSources.filter { $0.id != drag.id }.map(\.frame)
                 let result = CanvasEditing.drag(
                     drag.handle, source: drag.start, by: delta, canvas: canvas, others: others,
@@ -165,17 +175,17 @@ struct RecordingCanvasEditor: View {
     }
 
     /// The selected source's handles win; otherwise the topmost source under the press is selected and moved.
-    private func beginDrag(at point: CGPoint, scale: CGFloat) {
-        let canvasPoint = (x: Double(point.x / scale), y: Double(point.y / scale))
-        let tolerance = Double(8 / scale)
+    /// Hit-testing runs in the plate's points, on the outlines as drawn.
+    private func beginDrag(at point: CGPoint, on plate: CanvasMapping) {
+        let press = (x: Double(point.x), y: Double(point.y))
         let cropping = NSEvent.modifierFlags.contains(.option)
         if let selected = selectedSource,
-           let handle = CanvasEditing.handle(at: canvasPoint, frame: selected.frame, tolerance: tolerance, cropping: cropping) {
+           let handle = CanvasEditing.handle(at: press, frame: plate.rect(selected.frame), tolerance: 8, cropping: cropping) {
             drag = DragState(id: selected.id, handle: handle == .body && cropping ? .body : handle, start: selected)
             return
         }
         for source in controller.layout.orderedVideoSources.reversed() {
-            guard CanvasEditing.handle(at: canvasPoint, frame: source.frame, tolerance: 0, cropping: false) != nil else { continue }
+            guard CanvasEditing.handle(at: press, frame: plate.rect(source.frame), tolerance: 0, cropping: false) != nil else { continue }
             selection = source.id
             drag = DragState(id: source.id, handle: .body, start: source)
             return

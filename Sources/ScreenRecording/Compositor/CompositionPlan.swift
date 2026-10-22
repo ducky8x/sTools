@@ -7,7 +7,10 @@ public struct CompositionPlan: Equatable, Sendable {
         /// The part of the source's buffer to show, in buffer pixels with a top-left origin. Already limited to
         /// the buffer's content rect and cropped.
         public let sourceRect: PixelRect
-        /// Where that part is drawn, in output pixels with a top-left origin.
+        /// The source's frame on the output (output pixels, top-left origin): the same fractions of the canvas
+        /// the editor draws its outline at. The whole output for the base layer.
+        public let frame: PixelRect
+        /// Where that part is drawn, in output pixels with a top-left origin: fitted inside `frame`, aspect kept.
         public let destination: PixelRect
         public let opacity: Double
         /// In output pixels.
@@ -47,25 +50,24 @@ public struct CompositionPlan: Equatable, Sendable {
     }
 
     /// Lays out `frames` for one tick. Sources without a frame are left out. The base layer is fitted into the
-    /// canvas (it fills it exactly when the canvas is Minecraft's display); each source's cropped content is
-    /// fitted into its frame. Everything is then scaled from canvas to output pixels.
+    /// canvas (it fills it exactly when the canvas is Minecraft's display). Each source's frame is placed on the
+    /// output through `CanvasMapping` (the editor's plate uses the same mapping), and its cropped content is fitted
+    /// into it. The canvas's pixel size matters only for the base layer's fit: a layout lands in the same place
+    /// whatever the canvas or output size.
     public static func make(
         layout: RecordingLayout, canvas: PixelSize, output: PixelSize, frames: [SourceKey: FrameGeometry]
     ) -> CompositionPlan {
-        let scaleX = Double(output.width) / Double(max(1, canvas.width))
-        let scaleY = Double(output.height) / Double(max(1, canvas.height))
-        func toOutput(_ rect: PixelRect) -> PixelRect {
-            PixelRect(x: rect.x * scaleX, y: rect.y * scaleY, width: rect.width * scaleX, height: rect.height * scaleY)
-        }
-        let scale = min(scaleX, scaleY)
-
+        let surface = CanvasMapping(output)
         var layers: [Layer] = []
         if let base = frames[.base] {
             let content = base.content
             let canvasRect = PixelRect(x: 0, y: 0, width: Double(canvas.width), height: Double(canvas.height))
             let placed = LayoutMath.fit(contentWidth: content.width, contentHeight: content.height, in: canvasRect)
+            // Canvas pixels to output pixels: the same fractions, scaled straight across.
+            let sx = surface.width / Double(max(1, canvas.width)), sy = surface.height / Double(max(1, canvas.height))
             layers.append(Layer(
-                key: .base, sourceRect: content, destination: toOutput(placed),
+                key: .base, sourceRect: content, frame: PixelRect(x: 0, y: 0, width: surface.width, height: surface.height),
+                destination: PixelRect(x: placed.x * sx, y: placed.y * sy, width: placed.width * sx, height: placed.height * sy),
                 opacity: 1, cornerRadius: 0, borderWidth: 0, borderColorHex: "#000000"))
         }
         for source in layout.orderedVideoSources {
@@ -74,13 +76,14 @@ public struct CompositionPlan: Equatable, Sendable {
             let contentSize = PixelSize(width: Int(content.width.rounded()), height: Int(content.height.rounded()))
             let visible = LayoutMath.cropRect(sourceSize: contentSize, crop: source.crop)
             let sourceRect = visible.offsetBy(dx: content.x, dy: content.y)
-            let placed = LayoutMath.fit(contentWidth: visible.width, contentHeight: visible.height, in: source.frame)
+            let frame = surface.rect(source.frame)
+            let placed = LayoutMath.fit(contentWidth: visible.width, contentHeight: visible.height, in: frame)
             guard !placed.isEmpty, source.opacity > 0 else { continue }
             layers.append(Layer(
-                key: .source(source.id), sourceRect: sourceRect, destination: toOutput(placed),
+                key: .source(source.id), sourceRect: sourceRect, frame: frame, destination: placed,
                 opacity: min(1, max(0, source.opacity)),
-                cornerRadius: max(0, source.cornerRadius) * scale,
-                borderWidth: max(0, source.border.width) * scale,
+                cornerRadius: surface.length(max(0, source.cornerRadius)),
+                borderWidth: surface.length(max(0, source.border.width)),
                 borderColorHex: source.border.colorHex))
         }
         return CompositionPlan(outputSize: output, layers: layers)

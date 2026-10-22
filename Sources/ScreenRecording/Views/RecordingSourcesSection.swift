@@ -69,7 +69,8 @@ struct RecordingSourcesSection: View {
     }
 }
 
-/// X, Y, W, H and crop as numbers (spec 5.4.3: every source has these fields), plus look and stack order.
+/// X, Y, W, H and crop as numbers (spec 5.4.3: every source has these fields), plus look and stack order. The
+/// layout saves fractions of the canvas; the fields show and take pixels of the canvas in use now.
 struct SourceInspector: View {
     @Bindable var controller: ScreenRecordingController
     let source: VideoSource
@@ -101,11 +102,11 @@ struct SourceInspector: View {
                 STSlider(value: binding(\.opacity, scale: 100), in: 5...100, label: "Opacity", valueText: { "\(Int($0))%" })
             }
             STSettingsRow("Corner radius") {
-                STSlider(value: binding(\.cornerRadius), in: 0...200, label: "Corner radius", valueText: { "\(Int($0)) px" })
+                STSlider(value: lengthBinding(\.cornerRadius), in: 0...200, label: "Corner radius", valueText: { "\(Int($0)) px" })
             }
             STSettingsRow("Border") {
                 HStack(spacing: 12) {
-                    STSlider(value: binding(\.border.width), in: 0...40, label: "Border width", valueText: { "\(Int($0)) px" })
+                    STSlider(value: lengthBinding(\.border.width), in: 0...40, label: "Border width", valueText: { "\(Int($0)) px" })
                     STColorWell(hex: Binding(get: { String(source.border.colorHex.prefix(7)) },
                                              set: { hex in edit { $0.border.colorHex = hex } }), label: "Border color")
                 }
@@ -137,9 +138,24 @@ struct SourceInspector: View {
         }
     }
 
+    /// One side of the frame in pixels of the current canvas.
     private func frameBinding(_ keyPath: WritableKeyPath<PixelRect, Double>) -> Binding<Int> {
-        Binding(get: { Int(source.frame[keyPath: keyPath].rounded()) },
-                set: { value in edit { $0.frame[keyPath: keyPath] = Double(value) } })
+        let canvas = CanvasMapping(controller.canvas)
+        return Binding(get: { Int(canvas.rect(source.frame)[keyPath: keyPath].rounded()) },
+                       set: { value in
+                           edit { source in
+                               var pixels = canvas.rect(source.frame)
+                               pixels[keyPath: keyPath] = Double(value)
+                               source.frame = canvas.canvasRect(pixels)
+                           }
+                       })
+    }
+
+    /// A length saved as a fraction of the canvas's shorter side, in pixels of the current canvas.
+    private func lengthBinding(_ keyPath: WritableKeyPath<VideoSource, Double>) -> Binding<Double> {
+        let canvas = CanvasMapping(controller.canvas)
+        return Binding(get: { canvas.length(source[keyPath: keyPath]) },
+                       set: { value in edit { $0[keyPath: keyPath] = canvas.fraction(ofLength: value) } })
     }
 
     private func binding(_ keyPath: WritableKeyPath<VideoSource, Double>, scale: Double = 1) -> Binding<Double> {
@@ -149,8 +165,9 @@ struct SourceInspector: View {
 
     /// Crop in pixels of the source's content (its latest frame, or its frame before the first one arrives).
     private func cropBinding(_ side: Int) -> Binding<Int> {
+        let frame = source.pixelFrame(on: controller.canvas)
         let size = controller.contentSize(of: source.id)
-            ?? PixelSize(width: Int(source.frame.width), height: Int(source.frame.height))
+            ?? PixelSize(width: Int(frame.width), height: Int(frame.height))
         return Binding(
             get: {
                 let pixels = source.crop.pixels(of: size)
