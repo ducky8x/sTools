@@ -17,13 +17,18 @@ public final class RecordingSession: @unchecked Sendable {
         public var baseName: String
         /// Where the .mov is written; the options' folder when nil.
         public var directory: URL?
+        /// The in-process feeds that wanted recording when it started (`InProcessAudioFeed.wantsRecording`), each a
+        /// track after the layout's sources for the whole recording.
+        public var feeds: [String]
 
-        public init(layout: RecordingLayout, options: RecordingOptions, canvas: PixelSize, baseName: String, directory: URL? = nil) {
+        public init(layout: RecordingLayout, options: RecordingOptions, canvas: PixelSize, baseName: String,
+                    directory: URL? = nil, feeds: [String] = []) {
             self.layout = layout
             self.options = options
             self.canvas = canvas
             self.baseName = baseName
             self.directory = directory
+            self.feeds = feeds
         }
 
         public var outputSize: PixelSize { LayoutMath.outputSize(options.outputSize, canvas: canvas) }
@@ -63,7 +68,8 @@ public final class RecordingSession: @unchecked Sendable {
         self.clock = clock
         self.driver = driver ?? DispatchTickDriver(queue: DispatchQueue(label: "sTools.recording.frames", qos: .userInteractive))
         let output = configuration.outputSize
-        tracks = AudioSourceTrack.tracks(for: configuration.layout).filter { rig.audioTracks.contains($0.id) }
+        tracks = AudioSourceTrack.tracks(for: configuration.layout, feeds: configuration.feeds)
+            .filter { rig.audioTracks.contains($0.id) }
         let trackNames = tracks.isEmpty ? [] : [AudioSourceTrack.mixTitle] + tracks.map(\.title)
         var writerConfiguration = WriterConfiguration(
             options: configuration.options, baseName: configuration.baseName, canvas: output,

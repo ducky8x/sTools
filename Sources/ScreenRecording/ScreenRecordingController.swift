@@ -60,6 +60,9 @@ public final class ScreenRecordingController: ToolController {
     @ObservationIgnored private let makeFactory: @MainActor (Int) -> any CaptureFactory
     /// Lists what Add Source can offer; replaced in tests so ScreenCaptureKit never asks for permission there.
     @ObservationIgnored private let loadAvailable: @MainActor (Set<Int32>) async -> AvailableSources
+    /// sTools' own sound, such as Timer Overlay's alarm: every feed is listened to while armed, and a recording
+    /// gets a track for each one that wants recording when it starts.
+    @ObservationIgnored private let inProcessAudio: InProcessAudio
     @ObservationIgnored private var rig: CaptureRig?
     @ObservationIgnored private var session: RecordingSession?
     @ObservationIgnored private var armTask: Task<Void, Never>?
@@ -75,9 +78,11 @@ public final class ScreenRecordingController: ToolController {
 
     public init(
         services: ToolServices, makeFactory: (@MainActor (Int) -> any CaptureFactory)? = nil,
-        loadAvailable: (@MainActor (Set<Int32>) async -> AvailableSources)? = nil
+        loadAvailable: (@MainActor (Set<Int32>) async -> AvailableSources)? = nil,
+        inProcessAudio: InProcessAudio = .shared
     ) {
         self.services = services
+        self.inProcessAudio = inProcessAudio
         options = services.settings.load(RecordingOptions.self)
         layout = services.settings.load(RecordingLayout.self)
         self.makeFactory = makeFactory ?? { SystemCaptureFactory(frameRate: $0) }
@@ -176,6 +181,9 @@ public final class ScreenRecordingController: ToolController {
         for source in layout.audioSources {
             if let capture = factory.audio(for: source) { audio[.source(source.id)] = capture }
         }
+        for feed in inProcessAudio.feeds {
+            audio[.feed(feed.name)] = FeedCapture(feed: feed)
+        }
         let rig = CaptureRig(video: video, audio: audio, minimizedShowsNothing: options.minimizedWindowBehavior == .showNothing)
         self.rig = rig
         listen(to: rig)
@@ -273,6 +281,7 @@ public final class ScreenRecordingController: ToolController {
         switch id {
         case .minecraft: "Minecraft\u{2019}s"
         case .source(let sourceID): "\(layout.audioSources.first { $0.id == sourceID }?.name ?? "A source")\u{2019}s"
+        case .feed(let name): "\(name)\u{2019}s"
         }
     }
 
@@ -314,7 +323,8 @@ public final class ScreenRecordingController: ToolController {
         notes = []
         lastSaved = nil
         let configuration = RecordingSession.Configuration(
-            layout: layout, options: options, canvas: canvas, baseName: RecordingFinisher.dateName(for: Date()))
+            layout: layout, options: options, canvas: canvas, baseName: RecordingFinisher.dateName(for: Date()),
+            feeds: inProcessAudio.feeds.filter(\.wantsRecording).map(\.name))
         do {
             let session = try RecordingSession(configuration: configuration, rig: rig)
             try session.start()

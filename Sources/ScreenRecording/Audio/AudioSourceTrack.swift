@@ -15,10 +15,11 @@ public struct AudioSourceTrack: Equatable, Sendable {
         self.volume = volume
     }
 
-    /// The tracks after the mix, in file order: Minecraft (when included), then the layout's audio sources.
-    /// Titles are the source names, trimmed; an empty name becomes "Audio" and a repeated title gets " 2", " 3", ...
-    /// so every track is distinguishable in a player's track menu.
-    public static func tracks(for layout: RecordingLayout) -> [AudioSourceTrack] {
+    /// The tracks after the mix, in file order: Minecraft (when included), then the layout's audio sources, then
+    /// sTools' own in-process feeds named in `feeds` (the ones that want recording, such as *Timer alarm*), each mixed
+    /// at volume 1. Titles are the source and feed names, trimmed; an empty name becomes "Audio" and a repeated title
+    /// gets " 2", " 3", ... so every track is distinguishable in a player's track menu.
+    public static func tracks(for layout: RecordingLayout, feeds: [String] = []) -> [AudioSourceTrack] {
         var tracks: [AudioSourceTrack] = []
         if layout.includesMinecraftAudio {
             tracks.append(AudioSourceTrack(id: .minecraft, title: minecraftTitle, volume: layout.minecraftAudioVolume))
@@ -26,6 +27,11 @@ public struct AudioSourceTrack: Equatable, Sendable {
         for source in layout.audioSources {
             let trimmed = source.name.trimmingCharacters(in: .whitespacesAndNewlines)
             tracks.append(AudioSourceTrack(id: .source(source.id), title: trimmed.isEmpty ? "Audio" : trimmed, volume: source.volume))
+        }
+        var seenFeeds: Set<String> = []
+        for name in feeds where seenFeeds.insert(name).inserted {
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            tracks.append(AudioSourceTrack(id: .feed(name), title: trimmed.isEmpty ? "Audio" : trimmed, volume: 1))
         }
         var used: Set<String> = [mixTitle.lowercased()]
         for i in tracks.indices {
