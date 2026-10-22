@@ -51,6 +51,13 @@ struct HotkeyKeySetTests {
         #expect(HotkeyKeySet.allCases.map(\.title) == ["⌘1–⌘5", "⌃1–⌃5", "⌥1–⌥5", "F13–F17", "None"])
     }
 
+    /// VoiceOver says each set's name in words, as it says a hotkey's keys, rather than reading its symbols.
+    @Test func eachSetHasASpokenName() {
+        #expect(HotkeyKeySet.allCases.map(\.spokenTitle) == [
+            "Command 1 to Command 5", "Control 1 to Control 5", "Option 1 to Option 5", "F13 to F17", "None",
+        ])
+    }
+
     @Test func eachSetsHotkeysDoTheToolsMainActions() {
         for set in HotkeyKeySet.allCases where set != .noKeys {
             let bindings = set.bindings()
