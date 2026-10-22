@@ -318,9 +318,16 @@ public final class ScreenRecordingController: ToolController {
     /// The sources run and nothing is restarting them, so a start can write at once, without waiting.
     private var sourcesAreReady: Bool { rig != nil && armedCount == armCount }
 
+    /// Switching off: a recording still going stops (and finishes its file) first, then the sources stop and what
+    /// `warmUp` readied goes. Switched back on by hand while that file finished, the tool stays on with the sources
+    /// the switch started (spec 5.4.4): once the tool has armed again, there is nothing left here to switch off.
     private func disarm() async {
         armTask?.cancel()
-        if phase == .recording { await stopRecording(explanation: nil) }
+        let armings = armCount
+        if phase == .recording {
+            await stopRecording(explanation: nil)
+            guard armCount == armings else { return }
+        }
         endStart()
         coolDown()
         await tearDownRig()

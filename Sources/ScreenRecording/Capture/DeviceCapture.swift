@@ -2,13 +2,15 @@
 import CoreMedia
 import Foundation
 import os
+import STPlatform
 
 /// A camera (Continuity Camera included), as a video source (spec 5.4.1).
 public final class CameraCapture: NSObject, VideoCapture, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
     private let uniqueID: String
     private let queue = DispatchQueue(label: "sTools.capture.camera", qos: .userInteractive)
     private let session = AVCaptureSession()
-    private let deliver = OSAllocatedUnfairLock<(@Sendable (VideoCaptureEvent) -> Void)?>(initialState: nil)
+    /// Called for every frame, so it sits in a `HandlerSlot`, never as a lock's own state.
+    private let deliver = HandlerSlot<VideoCaptureEvent>()
     private let observer = OSAllocatedUnfairLock<NSObjectProtocol?>(uncheckedState: nil)
     /// A stop while the camera starts wins (`CaptureStartGate`).
     private let gate = CaptureStartGate()
@@ -35,7 +37,7 @@ public final class CameraCapture: NSObject, VideoCapture, AVCaptureVideoDataOutp
         session.addInput(input)
         session.addOutput(output)
         session.commitConfiguration()
-        self.deliver.withLock { $0 = deliver }
+        self.deliver.set(deliver)
         let token = NotificationCenter.default.addObserver(forName: AVCaptureDevice.wasDisconnectedNotification, object: device, queue: nil) { _ in
             deliver(.ended("The camera was disconnected."))
         }
@@ -53,7 +55,7 @@ public final class CameraCapture: NSObject, VideoCapture, AVCaptureVideoDataOutp
 
     /// Lets go of the output and the disconnect observer, and stops the session behind any start queued before it.
     private func tearDown() async {
-        deliver.withLock { $0 = nil }
+        deliver.clear()
         if let token = observer.withLockUnchecked({ observer in defer { observer = nil }; return observer }) {
             NotificationCenter.default.removeObserver(token)
         }
@@ -69,7 +71,7 @@ public final class CameraCapture: NSObject, VideoCapture, AVCaptureVideoDataOutp
     public func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         let frame = VideoFrame(pixelBuffer: pixelBuffer, hostTime: CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
-        deliver.withLock { $0 }?(.frame(frame))
+        deliver(.frame(frame))
     }
 }
 
@@ -79,7 +81,8 @@ public final class MicrophoneCapture: NSObject, AudioCapture, AVCaptureAudioData
     private let uniqueID: String
     private let queue = DispatchQueue(label: "sTools.capture.microphone", qos: .userInteractive)
     private let session = AVCaptureSession()
-    private let deliver = OSAllocatedUnfairLock<(@Sendable (AudioChunk) -> Void)?>(initialState: nil)
+    /// Called for every buffer, so it sits in a `HandlerSlot`, never as a lock's own state.
+    private let deliver = HandlerSlot<AudioChunk>()
     /// A stop while the microphone starts wins (`CaptureStartGate`).
     private let gate = CaptureStartGate()
 
@@ -110,7 +113,7 @@ public final class MicrophoneCapture: NSObject, AudioCapture, AVCaptureAudioData
         session.addInput(input)
         session.addOutput(output)
         session.commitConfiguration()
-        self.deliver.withLock { $0 = deliver }
+        self.deliver.set(deliver)
         queue.async { [session, gate] in
             if !gate.isClosed { session.startRunning() }
         }
@@ -124,7 +127,7 @@ public final class MicrophoneCapture: NSObject, AudioCapture, AVCaptureAudioData
 
     /// Lets go of the output and stops the session behind any start queued before it.
     private func tearDown() async {
-        deliver.withLock { $0 = nil }
+        deliver.clear()
         let session = session
         await withCheckedContinuation { continuation in
             queue.async {
@@ -136,7 +139,7 @@ public final class MicrophoneCapture: NSObject, AudioCapture, AVCaptureAudioData
 
     public func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         guard let chunk = Self.chunk(from: sampleBuffer) else { return }
-        deliver.withLock { $0 }?(chunk)
+        deliver(chunk)
     }
 
     /// Interleaved Float32 samples out of a PCM sample buffer.

@@ -41,14 +41,15 @@ private let f5 = HotkeyCombo(keyCode: 96, modifiers: [])
 
 /// The recording's frame clock, fired by the test: no frame is written until it fires.
 private final class HandTickDriver: TickDriver, @unchecked Sendable {
-    private let handler = OSAllocatedUnfairLock<(@Sendable () -> Void)?>(initialState: nil)
-    func start(interval: Double, handler: @escaping @Sendable () -> Void) { self.handler.withLock { $0 = handler } }
-    func stop() { handler.withLock { $0 = nil } }
-    var isRunning: Bool { handler.withLock { $0 != nil } }
-    func fire() { handler.withLock { $0 }?() }
+    private let handler = HandlerSlot<Void>()
+    func start(interval: Double, handler: @escaping @Sendable () -> Void) { self.handler.set { handler() } }
+    func stop() { handler.clear() }
+    var isRunning: Bool { handler.isSet }
+    func fire() { handler(()) }
 }
 
 private let startingLine = "Starting the recording\u{2026}"
+private let stoppedLine = "Recording stopped \u{00B7} Screen Recording off"
 
 /// The app with a real Screen Recording controller on fakes: no capture, no window, no sound, and the recordings go
 /// to a temporary folder.
@@ -243,7 +244,7 @@ struct AppModelRecordingTests {
         // Once it's allowed, the next press records.
         harness.prober.set(.screenRecording, .granted)
         #expect(await harness.recordByKey(id))
-        #expect(harness.hud.lines.suffix(3) == [startingLine, "Recording started", "Recording stopped"])
+        #expect(harness.hud.lines.suffix(3) == [startingLine, "Recording started", stoppedLine])
         harness.recording.delete()
     }
 
@@ -266,7 +267,7 @@ struct AppModelRecordingTests {
         let id = harness.addKey()
         #expect(await harness.recordByKey(id))
         #expect(harness.question.presented == 1)
-        #expect(harness.hud.lines == [startingLine, "Recording started", "Recording stopped"])
+        #expect(harness.hud.lines == [startingLine, "Recording started", stoppedLine])
         // Already off: the stop switched the tool off before the question came up.
         #expect(!harness.model.isOn(.screenRecording))
         #expect(harness.model.status(of: .screenRecording) == .off)

@@ -16,6 +16,8 @@ enum HotkeyConfirmation {
         case recordingCouldNotStart(String)
         /// Recording starts once the countdown (Screen Recording ▸ Advanced) runs out.
         case recordingCountdown(seconds: Int)
+        /// The recording stopped, which switched Screen Recording off too, so the line says both, as Timer Overlay's
+        /// cancel says "Timer Overlay off" (spec 5.4.4, 6.1).
         case recordingStopped
         /// A start was canceled before anything was written (the sources were starting, or the countdown ran), and
         /// Screen Recording switched off.
@@ -53,7 +55,7 @@ enum HotkeyConfirmation {
         case .recordingStarted: "Recording started"
         case .recordingCouldNotStart(let reason): "Recording couldn\u{2019}t start: \(reason)"
         case .recordingCountdown(let seconds): "Recording starts in \(seconds) seconds"
-        case .recordingStopped: "Recording stopped"
+        case .recordingStopped: "Recording stopped \u{00B7} \(phrase(.tool(.screenRecording, isOn: false)))"
         case .recordingCanceled: "Recording canceled"
         case .recordingFinishing: "Still finishing the last recording"
         case .recordingAwaitingDecision: "Save or delete the last recording first"
