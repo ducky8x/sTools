@@ -98,8 +98,14 @@ private func rendered<V: View>(_ view: V, size: CGSize) -> some View {
 }
 
 /// An `NSHostingView` for `root`, in the dark appearance, with no window.
+///
+/// The bundled fonts are registered before the first host lays out any text, as the app does at launch. Text laid out
+/// before they are registered falls back to the system font, and SwiftUI moves later text to the bundled fonts only
+/// some time after they are registered. A page hosted across that moment keeps the fallback in the text that didn't
+/// change while a fresh render draws the bundled fonts, so their pixels would differ by when the move landed.
 @MainActor
 private func host<Root: View>(_ root: Root, size: CGSize) -> NSHostingView<Root> {
+    STFont.register()
     let host = NSHostingView(rootView: root)
     host.frame = CGRect(origin: .zero, size: size)
     host.appearance = NSAppearance(named: .darkAqua)
