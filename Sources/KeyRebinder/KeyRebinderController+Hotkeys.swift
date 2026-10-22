@@ -169,6 +169,14 @@ extension KeyRebinderController {
             gameKeys: HotkeyGameCheck.gameKeys(minecraftKeybinds: minecraftKeybinds), hotkeys: hotkeyCenter?.bindings ?? [])
     }
 
+    /// The line under the plate while hotkeys are off but the list has some, which is why no key wears a ring: "sTools
+    /// hotkeys are off, so their keys aren't marked: ⇧⌘U (Crosshair)." Nil while they're on, with none, or without the
+    /// hotkey layer.
+    public var hotkeysOffText: String? {
+        guard showsHotkeyLayer, !hotkeysAreOn, let center = hotkeyCenter, !center.bindings.isEmpty else { return nil }
+        return "sTools hotkeys are off, so their keys aren\u{2019}t marked: " + center.bindings.map(\.listing).joined(separator: ", ") + "."
+    }
+
     /// The line under the plate for hotkeys no drawn key or button sends: "Hotkeys no key here sends: F19
     /// (Crosshair), ⌥F20 (NBB Overlay)." Nil when there are none.
     public var unplacedHotkeysText: String? {

@@ -528,6 +528,33 @@ struct KeyRebinderHotkeyTests {
 
     // MARK: What shows
 
+    /// Every hotkey shows on its key while hotkeys are on, Test keys' pause included; while they're off, the line
+    /// under the plate says why no key is marked and offers Turn On. Show hotkeys is on by default.
+    @Test func everyHotkeyShowsOnItsKeyAndTheOffLineSaysWhyNot() async throws {
+        #expect(KeyRebinderSettings().showsHotkeys)
+        let harness = try await make()
+        defer { harness.remove() }
+        let center = try #require(harness.center)
+        let controller = harness.controller
+        let id = center.add(combo: HotkeyFixtures.combo("u", [.shift, .command]), actions: [.toggle(.crosshair)])
+        #expect(await eventually { controller.hotkeys(on: .key("u")).map(\.id) == [id] })
+        #expect(controller.hotkeyMark(for: .key("u")) == .working)
+        #expect(controller.hotkeyDescription(for: .key("u"))?.hasSuffix(": Crosshair.") == true)
+        #expect(controller.hotkeysOffText == nil)
+
+        controller.isTesting = true
+        #expect(center.isPaused)
+        #expect(controller.hotkeyMark(for: .key("u")) == .working)
+        controller.isTesting = false
+
+        center.isEnabled = false
+        #expect(await eventually { controller.derived.hotkeysByKey.isEmpty })
+        #expect(controller.hotkeysOffText == "sTools hotkeys are off, so their keys aren\u{2019}t marked: \u{21E7}\u{2318}U (Crosshair).")
+        controller.turnHotkeysOn()
+        #expect(await eventually { controller.hotkeyMark(for: .key("u")) == .working })
+        #expect(controller.hotkeysOffText == nil)
+    }
+
     @Test func withTheMasterSwitchOffNothingShows() async throws {
         let harness = try await make()
         defer { harness.remove() }
