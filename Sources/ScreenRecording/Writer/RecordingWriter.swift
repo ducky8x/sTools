@@ -38,6 +38,9 @@ public final class RecordingWriter: @unchecked Sendable {
     /// holds it (`RecordingNames`). Chosen at `start`.
     private var baseName = ""
     private var finishedFiles: [URL] = []
+    /// The parts finished so far, by number: each is finished once, whichever way the recording ends
+    /// (`finalize(_:endTime:)`).
+    private var finalizedParts: Set<Int> = []
     private var finalizers: [Task<Void, Never>] = []
     private var lastVideoTime: CMTime?
     private var lastAudioEnd: [Int: CMTime] = [:]
@@ -147,16 +150,20 @@ public final class RecordingWriter: @unchecked Sendable {
             if let closing, time - closing.cut >= Self.lateSoundAllowance { closeSplitOffPart() }
             if let interval = configuration.splitIntervalSeconds,
                (time - current.start).seconds >= interval {
+                // The old part is the split-off one from here on, never the current one too, so a next part that
+                // can't open (the folder gone, the drive unplugged or full) stops the writer without finishing the old
+                // part a second time.
+                splitOff(current, at: time)
+                segment = nil
+                segmentIndex += 1
                 do {
-                    splitOff(current, at: time)
-                    segmentIndex += 1
                     current = try makeSegment(index: segmentIndex, start: time)
-                    segment = current
-                    events.append(.segmentStarted(index: segmentIndex, url: current.url))
                 } catch {
-                    stop(.failed(String(describing: error)), events: &events)
+                    stop(.failed(Self.message(for: error)), events: &events)
                     return .stopped
                 }
+                segment = current
+                events.append(.segmentStarted(index: segmentIndex, url: current.url))
             }
             guard current.video.isReadyForMoreMediaData, readinessOverride?() ?? true else {
                 return countDroppedFrame()
@@ -173,6 +180,19 @@ public final class RecordingWriter: @unchecked Sendable {
         }
         for event in events { continuation.yield(event) }
         return disposition
+    }
+
+    /// Tests only: makes the part being written fail partway through, as a disk that fills or a drive that's unplugged
+    /// does. A frame from its start goes straight to its encoder again, which AVFoundation refuses when it writes the
+    /// part's next fragment: the part's writer fails, and the frames appended after that are refused.
+    func failCurrentPartForTesting() {
+        locked {
+            guard let segment else { return }
+            var copy: CVPixelBuffer?
+            CVPixelBufferCreate(nil, canvas.width, canvas.height, kCVPixelFormatType_32BGRA, nil, &copy)
+            guard let copy else { return }
+            _ = segment.adaptor.append(copy, withPresentationTime: segment.start)
+        }
     }
 
     // MARK: Audio
@@ -258,8 +278,9 @@ public final class RecordingWriter: @unchecked Sendable {
     private func makeResult() -> WriterResult {
         let reason: WriterStopReason
         if case .stopped(let stopReason) = phase { reason = stopReason } else { reason = .finished }
+        // A part whose folder went (removed, or its drive unplugged) went with it: only what's on disk is offered.
         return WriterResult(
-            files: finishedFiles,
+            files: finishedFiles.filter { FileManager.default.fileExists(atPath: $0.path) },
             framesWritten: framesWritten,
             droppedFrames: droppedFrames,
             droppedAudioChunks: droppedAudioChunks,
@@ -298,6 +319,11 @@ public final class RecordingWriter: @unchecked Sendable {
         let url = RecordingNames.freeURL(RecordingNames.partName(baseName, index: index), fileExtension: "mov", in: configuration.directory)
 
         let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
+        var opened = false
+        defer {
+            // A part that couldn't open leaves nothing behind: its name was free, so whatever is there now is its own.
+            if !opened, FileManager.default.fileExists(atPath: url.path) { try? FileManager.default.removeItem(at: url) }
+        }
         writer.movieFragmentInterval = Self.fragmentInterval
         writer.shouldOptimizeForNetworkUse = false
 
@@ -334,6 +360,7 @@ public final class RecordingWriter: @unchecked Sendable {
             throw RecordingWriterError.writerFailed(writer.error?.localizedDescription ?? "startWriting failed")
         }
         writer.startSession(atSourceTime: start)
+        opened = true
         return Segment(index: index, url: url, writer: writer, video: video, adaptor: adaptor, audio: audio, start: start)
     }
 
@@ -430,20 +457,38 @@ public final class RecordingWriter: @unchecked Sendable {
     }
 
     /// Closes the segment's inputs and finishes the file in the background; `finish()` awaits every such task.
+    ///
+    /// Each part is finished once, however the recording ends. AVFoundation ends sTools with an exception when a file
+    /// that's finishing or finished is ended or finished again, so only a part still writing is ended at `endTime`,
+    /// and only one still writing or failed (a full disk, an unplugged drive) is finished: a failed part keeps what
+    /// reached it.
     private func finalize(_ segment: Segment, endTime: CMTime) {
+        guard finalizedParts.insert(segment.index).inserted else { return }
         let writer = segment.writer
-        if !segment.videoIsFinished { segment.video.markAsFinished() }
-        for input in segment.audio { input.markAsFinished() }
-        writer.endSession(atSourceTime: endTime)
         let url = segment.url
         let index = segment.index
+        finishedFiles.append(url)
+        let status = writer.status
+        if status == .writing {
+            if !segment.videoIsFinished { segment.video.markAsFinished() }
+            for input in segment.audio { input.markAsFinished() }
+            writer.endSession(atSourceTime: endTime)
+        }
+        guard status == .writing || status == .failed else {
+            continuation.yield(.segmentFinished(index: index, url: url))
+            return
+        }
         let box = WriterBox(writer)
         let continuation = continuation
         finalizers.append(Task {
             await box.finish()
             continuation.yield(.segmentFinished(index: index, url: url))
         })
-        finishedFiles.append(url)
+    }
+
+    /// A few words on why a part couldn't open, for the page's note.
+    private static func message(for error: any Error) -> String {
+        (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
     }
 
     private func makeSampleBuffer(_ chunk: TrackAudio) -> CMSampleBuffer? {
