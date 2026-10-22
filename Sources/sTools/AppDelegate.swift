@@ -7,7 +7,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = AppModel()
     private var hotkeyKeys: HotkeyKeyWatcher?
 
-    // Hotkeys fire in every app, sTools included; they pause only while sTools listens for raw keys (spec 6.1).
+    // Hotkeys fire wherever they work (In sTools and Minecraft by default, or Everywhere; the model follows the app
+    // in front), sTools included; there they pause only while sTools listens for raw keys (spec 6.1).
     func applicationDidFinishLaunching(_ notification: Notification) {
         let watcher = HotkeyKeyWatcher(center: model.hotkeys)
         watcher.start()

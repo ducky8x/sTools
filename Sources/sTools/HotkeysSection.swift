@@ -41,11 +41,12 @@ struct HotkeysSection: View {
         // One way to turn hotkeys on while they're off; once on, the switch turns them off again.
         Group {
             if hotkeys.isEnabled {
-                STSettingsRow("Hotkeys", showsRule: !hotkeys.bindings.isEmpty) {
+                STSettingsRow("Hotkeys") {
                     STSwitch(isOn: enabledBinding, label: "Hotkeys")
                 }
             } else {
-                STRequirementStrip(kind: .warning, message: Self.offMessage(hasHotkeys: !hotkeys.bindings.isEmpty),
+                STRequirementStrip(kind: .warning,
+                                   message: Self.offMessage(hasHotkeys: !hotkeys.bindings.isEmpty, scope: hotkeys.scope),
                                    actionTitle: "Turn On", action: { model.hotkeys.isEnabled = true })
                     .padding(.top, 6)
                     .padding(.bottom, 4)
@@ -56,6 +57,19 @@ struct HotkeysSection: View {
         .task(id: hotkeys.isEnabled) { await prepareAdvice() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await prepareAdvice() }
+        }
+        STSettingsRow("Where hotkeys work", showsRule: Self.scopeNote(scope: hotkeys.scope,
+                                                                    accessibilityGranted: model.accessibilityGranted) == nil) {
+            HotkeysChoiceMenu(title: hotkeys.scope.title,
+                              options: HotkeyScope.allCases.map { STSegmentedOption($0, $0.title) },
+                              selection: hotkeys.scope, label: "Where hotkeys work") { model.hotkeys.scope = $0 }
+        }
+        if let note = Self.scopeNote(scope: hotkeys.scope, accessibilityGranted: model.accessibilityGranted) {
+            HotkeysCaption(note)
+                .padding(.bottom, 12)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(STColor.rule).frame(height: 1).accessibilityHidden(true)
+                }
         }
         VStack(alignment: .leading, spacing: 0) {
             ForEach(hotkeys.bindings) { binding in
@@ -98,10 +112,19 @@ struct HotkeysSection: View {
     }
 
     /// The strip's line while hotkeys are off.
-    static func offMessage(hasHotkeys: Bool) -> String {
-        hasHotkeys
-            ? "Hotkeys are off, so the keys below do nothing."
-            : "Hotkeys are off. Turn them on to switch tools with a key, from any app."
+    static func offMessage(hasHotkeys: Bool, scope: HotkeyScope) -> String {
+        guard !hasHotkeys else { return "Hotkeys are off, so the keys below do nothing." }
+        return switch scope {
+        case .sToolsAndMinecraft: "Hotkeys are off. Turn them on to switch tools with a key, in sTools and Minecraft."
+        case .everywhere: "Hotkeys are off. Turn them on to switch tools with a key, from any app."
+        }
+    }
+
+    /// The line under Where hotkeys work: sTools recognizes Minecraft by its windows, which takes Accessibility.
+    /// Nil when there is nothing to say.
+    static func scopeNote(scope: HotkeyScope, accessibilityGranted: Bool) -> String? {
+        guard scope == .sToolsAndMinecraft, !accessibilityGranted else { return nil }
+        return "Until Accessibility is allowed, sTools can't tell when Minecraft is in front, so hotkeys work only in sTools."
     }
 
     private func prepareAdvice() async {
@@ -305,6 +328,31 @@ struct HotkeyEditor: View {
         guard let existing else { return }
         model.hotkeys.remove(existing.id)
         onDone()
+    }
+}
+
+/// A pop-up menu that picks one of `options`, in the app's type (`STMenuLabel`), with a check beside the current one.
+/// `selection` may be nil when no option fits (a key set nobody picked), and `title` then says what the state is.
+struct HotkeysChoiceMenu<Value: Hashable>: View {
+    let title: String
+    let options: [STSegmentedOption<Value>]
+    let selection: Value?
+    let label: String
+    let choose: (Value) -> Void
+
+    var body: some View {
+        Menu {
+            ForEach(options) { option in
+                Button { choose(option.value) } label: {
+                    if option.value == selection { Label(option.title, systemImage: "checkmark") } else { Text(option.title) }
+                }
+            }
+        } label: {
+            STMenuLabel(title)
+        }
+        .stMenuStyle()
+        .accessibilityLabel(label)
+        .accessibilityValue(title)
     }
 }
 
