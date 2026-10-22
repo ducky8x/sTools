@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import STDesign
 @testable import ScreenRecording
@@ -34,23 +35,33 @@ private final class RecordingHarness {
     let question = FakeQuestion()
     let registrar = FakeHotkeyRegistrar()
     let hud = FakeHotkeyHUD()
+    let prober: FakeProber
     let recording: ScreenRecordingController
     let model: AppModel
     /// Arming and starting a recording can take seconds while the whole suite runs at once.
     static let patience: Duration = .seconds(20)
 
     /// `hotkeys` is the `hotkeys.json` the launch finds: an existing, empty list by default; nil for a new install,
-    /// which starts with ⌘1–⌘5.
-    init(hotkeys: HotkeySettings? = HotkeySettings()) {
+    /// which starts with ⌘1–⌘5. `armingTakes`: how long the sources take to come up when the tool switches on, as
+    /// ScreenCaptureKit's listing and the captures starting can on real hardware. `screenRecording`: Screen & System
+    /// Audio Recording, granted by default (Accessibility always is).
+    init(hotkeys: HotkeySettings? = HotkeySettings(), armingTakes: Duration? = nil,
+         screenRecording: PermissionStatus = .granted) {
         let store = SettingsStore(directory: directory, debounce: .milliseconds(10))
         store.save(AppState(prologueCompleted: true))
         if let hotkeys { store.save(hotkeys) }
+        prober = FakeProber(accessibility: .granted)
+        prober.set(.screenRecording, screenRecording)
         let services = ToolServices(
             settings: store, displays: DisplayDirectory(screenProvider: { [harnessDisplay] }),
             minecraft: MinecraftLocator(source: StaticMinecraftWindowSource(instances: [])),
-            permissions: PermissionCenter(prober: FakeProber(accessibility: .granted), openURL: { _ in }))
+            permissions: PermissionCenter(prober: prober, openURL: { _ in }))
         recording = ScreenRecordingController(
-            services: services, makeFactory: { _ in NoCapture() }, loadAvailable: { _ in AvailableSources() },
+            services: services, makeFactory: { _ in NoCapture() },
+            loadAvailable: { _ in
+                if let armingTakes { try? await Task.sleep(for: armingTakes) }
+                return AvailableSources()
+            },
             inProcessAudio: InProcessAudio(), decisionPresenter: question)
         recording.options.folderPath = directory.appending(path: "Movies", directoryHint: .isDirectory).path
         recording.options.canvas = .custom(PixelSize(width: 320, height: 180))
@@ -102,6 +113,56 @@ struct AppModelRecordingTests {
         #expect(harness.model.status(of: .screenRecording) == .on)
         #expect(harness.hud.lines == ["Recording started"])
         await harness.recording.stopRecording(explanation: nil)
+        harness.recording.delete()
+    }
+
+    /// Off, the first press starts the sources, which take a moment. A second press then cancels the start, as one
+    /// during a countdown does: nothing is written or asked, the tool is off and the line says so. (It used to start
+    /// a second recording, one of which kept writing unseen.)
+    @Test func aSecondPressWhileItStartsCancelsIt() async throws {
+        let harness = RecordingHarness(armingTakes: .milliseconds(300))
+        let id = harness.addKey()
+        harness.press(id)
+        #expect(harness.recording.phase == .starting)
+        #expect(harness.model.isOn(.screenRecording))
+        try await Task.sleep(for: .milliseconds(50))
+        harness.press(id)
+        #expect(harness.recording.phase == .idle)
+        #expect(!harness.model.isOn(.screenRecording))
+        #expect(harness.hud.lines == ["Recording started", "Recording canceled"])
+        // Long after the sources would have come up, still nothing.
+        try await Task.sleep(for: .milliseconds(700))
+        #expect(harness.recording.phase == .idle)
+        #expect(!harness.model.isOn(.screenRecording))
+        #expect(harness.savedFileNames().isEmpty)
+        #expect(harness.question.presented == 0)
+        // The next press records as usual.
+        #expect(await harness.recordByKey(id))
+        #expect(harness.savedFileNames().count == 1)
+        harness.recording.delete()
+        #expect(!harness.model.isOn(.screenRecording))
+    }
+
+    /// Without Screen & System Audio Recording the key starts nothing: no recording (it would be a blank canvas), the
+    /// tool stays off, nothing asks macOS for the permission over the game, and the line says what's missing, without
+    /// the seal. The page's Allow… is where it's given.
+    @Test func withoutScreenRecordingPermissionTheKeyStartsNothing() async throws {
+        let harness = RecordingHarness(screenRecording: .denied)
+        let id = harness.addKey()
+        harness.press(id)
+        #expect(harness.recording.phase == .idle)
+        #expect(!harness.model.isOn(.screenRecording))
+        #expect(harness.hud.lines == ["Screen Recording needs Screen & System Audio Recording"])
+        #expect(harness.hud.presented.map(\.sealed) == [false])
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(harness.recording.phase == .idle)
+        #expect(harness.savedFileNames().isEmpty)
+        #expect(harness.question.presented == 0)
+        #expect(!harness.prober.requested.contains(.screenRecording))
+        // Once it's allowed, the next press records.
+        harness.prober.set(.screenRecording, .granted)
+        #expect(await harness.recordByKey(id))
+        #expect(harness.hud.lines.suffix(2) == ["Recording started", "Recording stopped"])
         harness.recording.delete()
     }
 
@@ -193,5 +254,31 @@ struct AppModelRecordingTests {
         #expect(harness.question.presented == 0)
         #expect(harness.savedFileNames().count == 1)
         #expect(!harness.model.isOn(.screenRecording))
+    }
+}
+
+/// The recording question takes the keyboard over Minecraft without making sTools the active app (spec 5.4.4), yet
+/// typing a name in it still sets aside the hotkeys on typed keys, as typing in sTools' window does (spec 6.1).
+@MainActor
+@Suite("Typing in the recording question")
+struct RecordingQuestionTypingTests {
+    @Test func typingInAPanelThatHasTheKeyboardWithSToolsInTheBackgroundCounts() {
+        let editable = NSTextView()
+        let readOnly = NSTextView()
+        readOnly.isEditable = false
+        #expect(HotkeyKeyWatcher.isTyping(appIsActive: false, firstResponder: editable, keyWindowIsNonactivatingPanel: true))
+        #expect(!HotkeyKeyWatcher.isTyping(appIsActive: false, firstResponder: editable, keyWindowIsNonactivatingPanel: false))
+        #expect(!HotkeyKeyWatcher.isTyping(appIsActive: false, firstResponder: readOnly, keyWindowIsNonactivatingPanel: true))
+        #expect(!HotkeyKeyWatcher.isTyping(appIsActive: false, firstResponder: nil, keyWindowIsNonactivatingPanel: true))
+    }
+
+    /// Only a panel that takes the keyboard without activating sTools counts while sTools is in the background.
+    @Test func theQuestionsKindOfPanelIsTheOneThatCounts() {
+        let question = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+        let window = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: true)
+        #expect(HotkeyKeyWatcher.takesKeysWithoutActivating(question))
+        #expect(!HotkeyKeyWatcher.takesKeysWithoutActivating(window))
+        #expect(!HotkeyKeyWatcher.takesKeysWithoutActivating(nil))
+        #expect(!question.isVisible && !window.isVisible)
     }
 }

@@ -23,7 +23,7 @@ struct HotkeyConfirmationTests {
         #expect(HotkeyConfirmation.phrase(.recordingStarted) == "Recording started")
         #expect(HotkeyConfirmation.phrase(.recordingStopped) == "Recording stopped")
         #expect(HotkeyConfirmation.phrase(.recordingCountdown(seconds: 3)) == "Recording starts in 3 seconds")
-        #expect(HotkeyConfirmation.phrase(.countdownCanceled) == "Recording canceled")
+        #expect(HotkeyConfirmation.phrase(.recordingCanceled) == "Recording canceled")
     }
 
     @Test func toolsThenRecording() {
@@ -34,7 +34,7 @@ struct HotkeyConfirmationTests {
     @Test func onlyARealChangeEarnsTheSeal() {
         #expect(HotkeyConfirmation.changedSomething([.tool(.crosshair, isOn: false)]))
         #expect(HotkeyConfirmation.changedSomething([.needsAccessibility(.crosshair), .recordingStopped]))
-        #expect(HotkeyConfirmation.changedSomething([.countdownCanceled]))
+        #expect(HotkeyConfirmation.changedSomething([.recordingCanceled]))
         #expect(!HotkeyConfirmation.changedSomething([.needsAccessibility(.crosshair), .needsAccessibility(.nbbOverlay)]))
         #expect(!HotkeyConfirmation.changedSomething([.recordingFinishing]))
         #expect(!HotkeyConfirmation.changedSomething([.recordingAwaitingDecision]))
@@ -45,32 +45,35 @@ struct HotkeyConfirmationTests {
         #expect(HotkeyConfirmation.summary([]).isEmpty)
     }
 
-    @Test func recordingEffectFollowsThePhaseBeforeThePress() {
-        let cases: [(ScreenRecordingController.Phase, HotkeyConfirmation.Effect)] = [
-            (.recording, .recordingStopped),
-            (.countingDown(2), .countdownCanceled),
+    /// The line follows what the press did, which the controller reports as the press returns.
+    @Test func recordingEffectSaysWhatThePressDid() {
+        let cases: [(ScreenRecordingController.KeyPress, HotkeyConfirmation.Effect)] = [
+            (.started, .recordingStarted),
+            (.countdown(seconds: 5), .recordingCountdown(seconds: 5)),
+            (.stopped, .recordingStopped),
+            (.canceled, .recordingCanceled),
             (.finishing, .recordingFinishing),
-            (.deciding, .recordingAwaitingDecision),
-            (.idle, .recordingStarted),
+            (.awaitingDecision, .recordingAwaitingDecision),
+            (.couldNotSwitchOn, .needsAccessibility(.screenRecording)),
+            (.needsPermission, .recordingNeedsPermission),
         ]
-        for (phase, expected) in cases {
-            #expect(HotkeyConfirmation.recordingEffect(phase: phase, canStart: true, countdown: .off) == expected)
+        for (press, expected) in cases {
+            #expect(HotkeyConfirmation.recordingEffect(press) == expected)
         }
     }
 
-    @Test func startingWithACountdownSaysWhen() {
-        #expect(HotkeyConfirmation.recordingEffect(phase: .idle, canStart: true, countdown: .fiveSeconds)
-            == .recordingCountdown(seconds: 5))
+    /// A press that started nothing gets its line without the seal.
+    @Test func aStartThatCouldNotSwitchOnEarnsNoSeal() {
+        #expect(!HotkeyConfirmation.changedSomething([HotkeyConfirmation.recordingEffect(.couldNotSwitchOn)]))
+        #expect(HotkeyConfirmation.summary([HotkeyConfirmation.recordingEffect(.couldNotSwitchOn)])
+            == "Screen Recording needs Accessibility")
     }
 
-    @Test func startingWithoutAccessibilitySaysSo() {
-        #expect(HotkeyConfirmation.recordingEffect(phase: .idle, canStart: false, countdown: .off)
-            == .needsAccessibility(.screenRecording))
-    }
-
-    @Test func stoppingNeedsNothing() {
-        #expect(HotkeyConfirmation.recordingEffect(phase: .recording, canStart: false, countdown: .threeSeconds)
-            == .recordingStopped)
+    /// Without Screen & System Audio Recording nothing starts, so the line names the permission and earns no seal.
+    @Test func aStartWithoutScreenRecordingPermissionSaysWhatsMissing() {
+        #expect(HotkeyConfirmation.phrase(.recordingNeedsPermission) == "Screen Recording needs Screen & System Audio Recording")
+        #expect(!HotkeyConfirmation.changedSomething([.recordingNeedsPermission]))
+        #expect(HotkeyConfirmation.changedSomething([.tool(.crosshair, isOn: true), .recordingNeedsPermission]))
     }
 }
 

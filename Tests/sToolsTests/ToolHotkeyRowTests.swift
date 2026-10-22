@@ -49,6 +49,26 @@ struct ToolHotkeyRowTests {
         #expect(HotkeyWording.summary(own.actions) == "Screen Recording")
     }
 
+    /// Builds with two Screen Recording actions could leave one key for each: the old page row's "Toggle Screen
+    /// Recording" and a "Start/stop recording" key. Both read as the one action now, so the row shows the first as its
+    /// own and names the other under it: no key that records is hidden from the page.
+    @Test func aSecondKeyForScreenRecordingIsNamedUnderTheRow() throws {
+        let json = """
+            {"isEnabled": true, "showsConfirmation": true, "bindings": [
+              {"id": "\(UUID().uuidString)", "combo": {"keyCode": 15, "modifiers": 2048}, "actions": ["toggle.screenRecording"]},
+              {"id": "\(UUID().uuidString)", "combo": {"keyCode": 21, "modifiers": 256}, "actions": ["startStopRecording"]}
+            ]}
+            """
+        let bindings = try JSONDecoder().decode(HotkeySettings.self, from: Data(json.utf8)).bindings
+        #expect(bindings.map(\.actions) == [[.startStopRecording], [.startStopRecording]])
+        let own = try #require(ToolHotkey.own(for: .startStopRecording, in: bindings))
+        #expect(own.combo.displayString == "⌥R")
+        #expect(ToolHotkey.shared(for: .startStopRecording, in: bindings).map(\.combo.displayString) == ["⌘4"])
+        #expect(ToolHotkey.sharedText(for: .startStopRecording, in: bindings) == "Also: ⌘4 (Screen Recording).")
+        // A tool with one key has nothing to name.
+        #expect(ToolHotkey.sharedText(for: .startStopRecording, in: [own]) == nil)
+    }
+
     /// Setting, changing and clearing the key edit one hotkey in the list Home shows, and it registers like any other.
     @Test func setChangeAndClearEditTheToolsOwnHotkey() throws {
         let harness = Harness(accessibility: .granted)

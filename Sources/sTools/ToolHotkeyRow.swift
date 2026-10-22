@@ -35,9 +35,11 @@ enum ToolHotkey {
         HotkeyKeySet.ownBinding(for: action, in: bindings)
     }
 
-    /// The other hotkeys with the tool's action, together with something else.
+    /// The other hotkeys with the tool's action: together with something else, or alone on another key (an older list
+    /// can have one key for each of Screen Recording's two former actions, both the one action now).
     static func shared(for action: HotkeyAction, in bindings: [HotkeyBinding]) -> [HotkeyBinding] {
-        bindings.filter { $0.actions.contains(action) && $0.actions != [action] }
+        let own = own(for: action, in: bindings)
+        return bindings.filter { $0.actions.contains(action) && $0.id != own?.id }
     }
 
     /// Sets the tool's own hotkey to `combo`: changes its key, or adds it in its sidebar place among the tools' own
@@ -54,7 +56,7 @@ enum ToolHotkey {
         return HotkeyWording.conflictText(conflict, combo: combo, inList: false)
     }
 
-    /// "Also: ⌃⌥C (Crosshair + NBB Overlay)." for the hotkeys with the tool's action and other things; nil when none.
+    /// "Also: ⌃⌥C (Crosshair + NBB Overlay)." for the other hotkeys with the tool's action; nil when none.
     static func sharedText(for action: HotkeyAction, in bindings: [HotkeyBinding]) -> String? {
         let shared = shared(for: action, in: bindings)
         guard !shared.isEmpty else { return nil }
@@ -64,9 +66,9 @@ enum ToolHotkey {
 
 /// A tool page's Hotkey row, near the top (spec 6.1): the key for the tool's one action (it toggles an overlay tool,
 /// or starts and stops Screen Recording), set, changed or cleared right here by pressing a key (Delete clears, Esc
-/// cancels). Under it, what's wrong with that key, the notes both hotkey editors show, the hotkeys that do the tool's
-/// action with other things, where hotkeys work and the key set with Change… (Home ▸ Hotkeys), and, while hotkeys are
-/// off, Turn On. Timer Overlay's page has its own Key row instead.
+/// cancels). Under it, what's wrong with that key, the notes both hotkey editors show, the other hotkeys that do the
+/// tool's action, where hotkeys work and the key set with Change… (Home ▸ Hotkeys), and, while hotkeys are off, Turn
+/// On. Timer Overlay's page has its own Key row instead.
 struct ToolHotkeyRow: View {
     let model: AppModel
     let tool: ToolID
