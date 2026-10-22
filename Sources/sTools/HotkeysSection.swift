@@ -238,19 +238,23 @@ struct HotkeyEditor: View {
 
     @State private var shortcut: STShortcut?
     @State private var actions: Set<HotkeyAction>
+    private let initialActions: Set<HotkeyAction>
 
     /// `initialActions` chooses a new hotkey's actions up front (Timer Overlay's Set in Hotkeys…).
     init(model: AppModel, existing: HotkeyBinding?, initialActions: Set<HotkeyAction> = [], onDone: @escaping () -> Void) {
         self.model = model
         self.existing = existing
         self.onDone = onDone
+        self.initialActions = initialActions
         _shortcut = State(initialValue: existing?.combo.asSTShortcut)
         _actions = State(initialValue: existing.map { Set($0.actions) } ?? initialActions)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            STShortcutRecorder(shortcut: $shortcut, label: "Key or combination", validate: validate)
+            // A new hotkey opened with its actions chosen (Set in Hotkeys…) is ready for its key at once.
+            STShortcutRecorder(shortcut: $shortcut, label: "Key or combination",
+                               startsRecording: existing == nil && !initialActions.isEmpty, validate: validate)
                 .frame(maxWidth: 260)
             if let combo = shortcut?.hotkeyCombo {
                 let notes = model.hotkeys.notes(for: combo)
