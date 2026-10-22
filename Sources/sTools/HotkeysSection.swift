@@ -378,7 +378,9 @@ struct HotkeyBindingRow: View {
     }
 }
 
-/// Adds or edits one hotkey: record any key or combination, read what it would take away, pick its actions.
+/// Adds or edits one hotkey: record any key or combination, read what it would take away, pick its actions. A tool
+/// has one key of its own (spec 6.1), so a save that would add a second key for a tool's action alone asks first, and
+/// Replace gives the tool's own key the new one instead.
 struct HotkeyEditor: View {
     let model: AppModel
     let existing: HotkeyBinding?
@@ -386,8 +388,24 @@ struct HotkeyEditor: View {
 
     @State private var shortcut: STShortcut?
     @State private var actions: Set<HotkeyAction>
+    /// The tool's own hotkey a save would duplicate, with the key it would get instead: the question's subject.
+    @State private var replacing: Replacement?
     private let initialActions: Set<HotkeyAction>
     private let startsRecording: Bool
+
+    /// What Save did.
+    enum SaveResult: Equatable {
+        /// The hotkey was saved, in its sidebar place when it's a tool's own.
+        case saved
+        /// Nothing was saved: it would be a second key for this tool's own hotkey's action, so the editor asks first.
+        case asksToReplace(HotkeyBinding)
+    }
+
+    /// A tool's own hotkey and the key Replace would give it.
+    struct Replacement: Equatable {
+        let own: HotkeyBinding
+        let combo: HotkeyCombo
+    }
 
     /// `initialActions` chooses a new hotkey's actions up front (Timer Overlay's Set in Hotkeys…). `startsRecording`
     /// opens an existing hotkey recording a new key (Set in Hotkeys… for the timer's own key).
@@ -431,6 +449,39 @@ struct HotkeyEditor: View {
                 }
             }
         }
+        .confirmationDialog(
+            replacing.map { HotkeyWording.replaceOwnKeyQuestion($0.own, with: $0.combo) } ?? "",
+            isPresented: replaceQuestionIsShown, titleVisibility: .visible, presenting: replacing,
+            actions: { replacement in
+                Button("Replace", role: .destructive) { replace(replacement) }
+                Button("Cancel", role: .cancel) {}
+            },
+            message: { replacement in Text(HotkeyWording.replaceOwnKeyWarning(replacement.own, with: replacement.combo)) })
+    }
+
+    /// Saves `combo` and `actions` (kept in the chips' order) on `existing`, or as a new hotkey, unless that would add
+    /// a second key for one tool's action alone: then nothing changes, and the tool's own hotkey comes back for the
+    /// question (`HotkeyCenter.ownHotkeyReplaced(bySaving:editing:)`).
+    static func save(_ combo: HotkeyCombo, actions: Set<HotkeyAction>, existing: HotkeyBinding?, in hotkeys: HotkeyCenter) -> SaveResult {
+        let ordered = HotkeyAction.allCases.filter(actions.contains)
+        if let own = hotkeys.ownHotkeyReplaced(bySaving: ordered, editing: existing?.id) { return .asksToReplace(own) }
+        if let existing {
+            hotkeys.update(existing.id, combo: combo, actions: ordered)
+        } else {
+            hotkeys.add(combo: combo, actions: ordered)
+        }
+        return .saved
+    }
+
+    /// Replace: `own`, a tool's own hotkey, gets `combo`, and `existing`, the hotkey that was being edited into that
+    /// tool's action, goes.
+    static func replace(_ own: HotkeyBinding, with combo: HotkeyCombo, editing existing: HotkeyBinding?, in hotkeys: HotkeyCenter) {
+        guard let action = own.actions.first else { return }
+        hotkeys.replaceOwnHotkey(for: action, with: combo, removing: existing?.id)
+    }
+
+    private var replaceQuestionIsShown: Binding<Bool> {
+        Binding(get: { replacing != nil }, set: { if !$0 { replacing = nil } })
     }
 
     /// While recording, only real problems refuse a key: a duplicate, a combination macOS keeps, or a key sTools
@@ -444,12 +495,14 @@ struct HotkeyEditor: View {
     private func save() {
         guard let shortcut else { return }
         let combo = shortcut.hotkeyCombo
-        let orderedActions = HotkeyAction.allCases.filter { actions.contains($0) }
-        if let existing {
-            model.hotkeys.update(existing.id, combo: combo, actions: orderedActions)
-        } else {
-            model.hotkeys.add(combo: combo, actions: orderedActions)
+        switch Self.save(combo, actions: actions, existing: existing, in: model.hotkeys) {
+        case .saved: onDone()
+        case .asksToReplace(let own): replacing = Replacement(own: own, combo: combo)
         }
+    }
+
+    private func replace(_ replacement: Replacement) {
+        Self.replace(replacement.own, with: replacement.combo, editing: existing, in: model.hotkeys)
         onDone()
     }
 
