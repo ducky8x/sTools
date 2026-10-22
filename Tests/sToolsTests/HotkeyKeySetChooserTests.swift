@@ -17,7 +17,7 @@ struct HotkeyKeySetChooserTests {
     init() { _ = STFont.register() }
 
     /// A key set's hotkey does the tool's one action (`ToolID.hotkeyAction`), the one its page's Hotkey row or Timer
-    /// Overlay's Key row sets: Start timer for Timer Overlay, the one Screen Recording action for Screen Recording.
+    /// Overlay's Hotkey row sets: Start timer for Timer Overlay, the one Screen Recording action for Screen Recording.
     @Test func keySetsGiveTheToolsTheirKeysInSidebarOrder() {
         let tools = ToolID.allCases.filter { $0.hotkeyAction != nil }
         #expect(tools == [.crosshair, .timerOverlay, .nbbOverlay, .screenRecording, .windowBackdrop])

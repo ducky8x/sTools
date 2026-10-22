@@ -11,7 +11,7 @@ private final class SilentRegistrar: HotkeyRegistering {
     func unregister(id: UUID) {}
 }
 
-/// The Key row says where hotkeys work and which key set the tools follow (spec 6.1), as each tool page's Hotkey row
+/// Timer Overlay's Hotkey row says where hotkeys work and which key set the tools follow (spec 6.1), as each tool page's Hotkey row
 /// does, from what Home ▸ Hotkeys has set.
 @MainActor
 @Suite("Timer key row: where hotkeys work")

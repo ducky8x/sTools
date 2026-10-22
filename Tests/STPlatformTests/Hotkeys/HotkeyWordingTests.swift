@@ -119,7 +119,7 @@ struct HotkeyWordingTests {
 
     // MARK: Where hotkeys work and the key set
 
-    /// The line every other place that edits a hotkey shows (a tool page's Hotkey row, Timer Overlay's Key row, the
+    /// The line every other place that edits a hotkey shows (a tool page's Hotkey row, Timer Overlay's Hotkey row, the
     /// Key Rebinder's key panel), so what Home ▸ Hotkeys sets is in view there too.
     @Test func theLineSaysWhereHotkeysWorkAndTheKeySet() {
         #expect(HotkeyWording.whereAndKeySet(scope: .sToolsAndMinecraft, keySet: .command, accessibilityGranted: true)

@@ -2,7 +2,7 @@ import STDesign
 import STPlatform
 import SwiftUI
 
-/// The key row (spec 5.6.2): the Start-timer key from Home ▸ Hotkeys ("Start timer: F13", or "No key yet"), any
+/// The Hotkey row (spec 5.6.2), labeled as every tool page's is: the Start-timer key from Home ▸ Hotkeys ("Start timer: F13", or "No key yet"), any
 /// problem with it, whether Hotkeys are on, where they work and the key set (spec 6.1), and **Set in Hotkeys…**, which
 /// shows only when the app passes `onSetInHotkeys` (the Prologue's trial records the key in place, so it passes nil).
 /// It shows only what it's given: the timer registers no key of its own (spec 5.6.10). The words are placeholder
@@ -45,7 +45,7 @@ struct TimerKeyRow: View {
     var body: some View {
         let notes = Self.notes(for: status)
         VStack(alignment: .leading, spacing: 0) {
-            STSettingsRow("Key", showsRule: false) {
+            STSettingsRow("Hotkey", showsRule: false) {
                 HStack(spacing: 12) {
                     Text(status.title)
                         .stStyle(.body)

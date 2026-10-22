@@ -69,7 +69,7 @@ enum ToolHotkey {
 /// or starts and stops Screen Recording), set, changed or cleared right here by pressing a key (Delete clears, Esc
 /// cancels). Under it, what's wrong with that key, the notes both hotkey editors show, the other hotkeys that do the
 /// tool's action, where hotkeys work and the key set with Change… (Home ▸ Hotkeys), and, while hotkeys are off, Turn
-/// On. Timer Overlay's page has its own Key row instead.
+/// On. Timer Overlay's page has its own Hotkey row instead (`TimerKeyRow`).
 struct ToolHotkeyRow: View {
     let model: AppModel
     let tool: ToolID

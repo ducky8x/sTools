@@ -2,7 +2,7 @@ import Foundation
 
 extension HotkeyWording {
     /// What Home ▸ Hotkeys has set for every hotkey, in one line for the other places that edit one (a tool page's
-    /// Hotkey row, Timer Overlay's Key row, the Key Rebinder's key panel): "Hotkeys work in sTools and Minecraft · Key
+    /// Hotkey row, Timer Overlay's Hotkey row, the Key Rebinder's key panel): "Hotkeys work in sTools and Minecraft · Key
     /// set: ⌘1–⌘5", "Hotkeys work in every app · Key set: Custom". Recognizing Minecraft needs Accessibility
     /// (`HotkeyFrontAppWatcher`), so without it In sTools and Minecraft means sTools alone, as Home says under Where
     /// hotkeys work: "Hotkeys work only in sTools until Accessibility is allowed · Key set: ⌘1–⌘5".
