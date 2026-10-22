@@ -39,8 +39,61 @@ private struct BridgeRig {
     var feed: InProcessAudioFeed { audio.feed(named: "Timer alarm") }
 }
 
+/// An engine that plays nothing and only holds the tap the player installs.
+@MainActor
+private final class TapEngine: AlarmAudioEngine {
+    let soundFrameCount = 72_000
+    let sampleRate = 48_000.0
+    var onInterruption: (@MainActor () -> Void)?
+    private(set) var tap: (@Sendable (AlarmRenderedBuffer) -> Void)?
+
+    func play(_ items: [AlarmPlaybackItem], volume: Float, onItemPlayed: @escaping @MainActor (Int) -> Void) throws {}
+    func installTap(_ handler: @escaping @Sendable (AlarmRenderedBuffer) -> Void) { tap = handler }
+    func removeTap() { tap = nil }
+    func stop() {}
+}
+
+@MainActor
+private final class TapEngines: AlarmEngineMaking {
+    private(set) var engines: [TapEngine] = []
+    func makeEngine(for sound: URL) throws -> any AlarmAudioEngine {
+        let engine = TapEngine()
+        engines.append(engine)
+        return engine
+    }
+}
+
 @Suite("Alarm recording bridge") @MainActor
 struct AlarmRecordingBridgeTests {
+    /// With the live player: the tap exists only while the setting is on and the alarm plays, and what it renders
+    /// reaches the feed.
+    @Test func theLivePlayersTapExistsOnlyWhileOnAndPlaying() throws {
+        let clock = TestClock()
+        let engines = TapEngines()
+        let player = AlarmPlayer(engines: engines, clock: clock, scheduler: TestScheduler(clock: clock))
+        let feed = InProcessAudio().feed(named: AlarmRecordingBridge.feedName)
+        let received = FeedBuffers()
+        let token = feed.addListener { received.add($0) }
+        defer { feed.removeListener(token); player.stop() }
+        let bridge = AlarmRecordingBridge(alarm: player, feed: feed, isOn: true)
+        #expect(engines.engines.isEmpty)
+
+        let schedule = AlarmSchedule(soundLength: 1.5, settings: TimerOverlaySettings())
+        player.ring(URL(fileURLWithPath: "/nonexistent/alarm.wav"), volume: 0.8, schedule: schedule,
+                    onRing: { _ in }, onEnd: {})
+        let engine = try #require(engines.engines.last)
+        let tap = try #require(engine.tap)
+        tap(rendered)
+        #expect(received.all.map(\.hostTime) == [987_654_321])
+
+        bridge.isOn = false
+        #expect(engine.tap == nil)
+        bridge.isOn = true
+        #expect(engine.tap != nil)
+        player.stop()
+        #expect(engine.tap == nil)
+    }
+
     @Test func offItLeavesTheAlarmOutOfRecordings() {
         let alarm = TestAlarm(scheduler: TestScheduler(clock: TestClock()))
         let feed = InProcessAudio().feed(named: AlarmRecordingBridge.feedName)
