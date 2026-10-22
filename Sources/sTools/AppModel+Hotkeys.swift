@@ -59,20 +59,30 @@ extension AppModel {
             recording.toggleRecording()
             return effect
         case .startTimer:
-            // The overlay confirms what the press did, so it adds no sound or line (plan decision 5). Only a press
-            // that couldn't switch the tool on (no Accessibility, R10) gets the click and its line, without the seal.
+            // The overlay confirms a start, restart, pause or cancel itself, so those add no sound or line (plan
+            // decision 5). A press that couldn't switch the tool on (no Accessibility, R10) gets the click and its line,
+            // without the seal.
+            // The press counts from when its key went down, so the double press measures the keys (spec 5.6.2).
             guard let timer = timerOverlay else { return nil }
-            let result = timer.press()
-            // A double press cancels and switches the tool off itself (spec 5.6.2); its switch follows.
-            if !timer.isEnabled { setTool(.timerOverlay, on: false) }
+            let wasOn = isOn(.timerOverlay)
+            let result = timer.press(secondsAgo: hotkeys.keyEventAge)
+            if let switchedOff = timerSwitchedOff(timer, wasOn: wasOn) { return switchedOff }
             return result == .couldNotStart ? .needsAccessibility(.timerOverlay) : nil
         case .startTimerReleased:
             // Can arrive from inside a `HotkeyCenter` change, so nothing here may change the hotkeys.
             guard let timer = timerOverlay else { return nil }
-            timer.release()
-            // Holding the key cancels and switches the tool off, as the double press does; its switch follows.
-            if !timer.isEnabled { setTool(.timerOverlay, on: false) }
-            return nil
+            let wasOn = isOn(.timerOverlay)
+            timer.release(secondsAgo: hotkeys.keyEventAge)
+            return timerSwitchedOff(timer, wasOn: wasOn)
         }
+    }
+
+    /// A cancel gesture (a double press, or Advanced's hold) switched Timer Overlay off itself (spec 5.6.2): its switch
+    /// follows, and the press is confirmed like any hotkey's switch, "Timer Overlay off" with the seal, because over
+    /// the game the overlay leaving looks just like a cancel. Nil when the tool is still on, or was already off.
+    private func timerSwitchedOff(_ timer: TimerOverlayController, wasOn: Bool) -> HotkeyConfirmation.Effect? {
+        guard !timer.isEnabled else { return nil }
+        setTool(.timerOverlay, on: false)
+        return wasOn ? .tool(.timerOverlay, isOn: false) : nil
     }
 }

@@ -279,6 +279,17 @@ struct TimerPageRenderTests {
         #expect(notes.first?.text == "\u{21E7}\u{2318}2: Refused by macOS")
     }
 
+    /// Advanced ▸ Cancel gesture says what the gesture does now: it switches Timer Overlay off, and the next press
+    /// brings it back (spec 5.6.2).
+    @Test func theCancelGestureSaysWhatItDoes() {
+        #expect(TimerAdvancedSection.cancelGestureNote(for: .doublePress)
+            == "A second press within 0.4 s switches Timer Overlay off. The next press switches it back on and starts.")
+        #expect(TimerAdvancedSection.cancelGestureNote(for: .hold)
+            == "Holding the key for 1 s switches Timer Overlay off. The next press switches it back on and starts.")
+        #expect(TimerAdvancedSection.cancelGestureNote(for: .off)
+            == "The key never switches Timer Overlay off; its switch does.")
+    }
+
     @Test func setInHotkeysShowsOnlyWithItsAction() {
         let status = TimerKeyStatus(keys: [f13], hotkeysAreOn: true)
         let withButton = render(PageFrame(theme: STTheme(), content: TimerKeyRow(status: status, onSetInHotkeys: {})),

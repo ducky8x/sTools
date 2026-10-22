@@ -387,6 +387,52 @@ struct TimerOverlayControllerTests {
         #expect(rig.controller.phase == .counting && rig.controller.isEnabled)
     }
 
+    // MARK: - When the key moved
+
+    /// The gestures measure the keys, not when sTools got to them: a second press whose key went down 0.3 s after the
+    /// first is a double press even when sTools handles it 0.6 s after.
+    @Test func aPressHandledLateCountsFromWhenItsKeyWentDown() {
+        let rig = TimerRig()
+        rig.controller.setEnabled(true)
+        rig.controller.press()
+        rig.clock.time += 0.6
+        #expect(rig.controller.press(secondsAgo: 0.3) == .acted)
+        #expect(!rig.controller.isEnabled && rig.controller.phase == .idle)
+    }
+
+    @Test func aPressHandledLateAfterTheWindowStillRestarts() {
+        let rig = TimerRig()
+        rig.controller.setEnabled(true)
+        rig.controller.press(secondsAgo: 0.2)
+        rig.clock.time += 0.8
+        rig.controller.press(secondsAgo: 0.1)
+        #expect(rig.controller.isEnabled && rig.controller.phase == .counting && rig.announcer.announcements.count == 2)
+    }
+
+    @Test func aReleaseHandledLateCountsFromWhenItsKeyCameUp() {
+        let rig = TimerRig { $0.cancelGesture = .hold }
+        rig.controller.setEnabled(true)
+        rig.controller.press()
+        rig.clock.time += 1.3
+        rig.controller.release(secondsAgo: 0.5)
+        #expect(rig.controller.isEnabled, "held 0.8 s: a tap")
+        rig.clock.time += 2
+        rig.controller.press(secondsAgo: 0.2)
+        rig.clock.time += 0.9
+        rig.controller.release()
+        #expect(!rig.controller.isEnabled, "held 1.1 s, from when its key went down")
+    }
+
+    /// A key stamped later than now (two clocks a hair apart) counts as now, never later.
+    @Test func aKeyFromTheFutureCountsAsNow() {
+        let rig = TimerRig()
+        rig.controller.setEnabled(true)
+        rig.controller.press()
+        rig.clock.time += 0.3
+        rig.controller.press(secondsAgo: -0.2)
+        #expect(!rig.controller.isEnabled, "0.3 s after the first press: a double press")
+    }
+
     // MARK: - Zero, the alarm and the leave
 
     @Test(arguments: [1, 3, 10], TimerOverlaySettings.Leave.allCases)
