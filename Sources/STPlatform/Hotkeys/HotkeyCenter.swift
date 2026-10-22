@@ -38,8 +38,8 @@ public enum HotkeyPause: Hashable, Sendable {
 
 /// The state of one binding.
 public enum HotkeyStatus: Equatable, Sendable {
-    /// Accepted by macOS, and live in every app, sTools included. While hotkeys pause (sTools is recording a key or
-    /// someone is typing in it) nothing is registered, but the status stays, so a pause never changes it.
+    /// Accepted by macOS, and live in every app, sTools included. While a hotkey pauses (sTools is recording a key or
+    /// someone is typing in it) it isn't registered, but the status stays, so a pause never changes it.
     case registered
     /// Fine, but the master switch is off so nothing is registered.
     case inactive
@@ -55,9 +55,9 @@ public enum HotkeyStatus: Equatable, Sendable {
 ///
 /// Hotkeys fire whichever app is in front, sTools included. They pause only while sTools itself listens for raw
 /// keys (`setPaused(_:for:)`): a field recording a key, a text field being edited, the Key Rebinder's Test keys or
-/// output capture. While paused nothing is registered and presses are ignored; a combination macOS hasn't accepted
-/// yet this run is still tried once (registered and released at once), so a refusal shows the moment a hotkey is
-/// added. When the pause ends everything registers for real.
+/// output capture; typing pauses only the hotkeys that would take a typed key. A paused hotkey isn't registered and
+/// its presses are ignored; a combination macOS hasn't accepted yet this run is still tried once (registered and
+/// released at once), so a refusal shows the moment a hotkey is added. When the pause ends it registers for real.
 ///
 /// A registered hotkey's key that reaches sTools' own window as an ordinary key press (`handleKeyDown`) fires it
 /// too, through the same press rules, so a hotkey works in sTools even when macOS hands the key to the window.
@@ -76,8 +76,8 @@ public final class HotkeyCenter {
     /// Assigned only when a status really changes, so app switches don't re-render the pages that show them.
     public private(set) var statuses: [UUID: HotkeyStatus] = [:]
 
-    /// What in sTools is listening for raw keys right now. Hotkeys pause while any is. Only the app's watchers
-    /// (and the Key Rebinder) set them, so a center nobody tells (tests, previews) never pauses.
+    /// What in sTools is listening for raw keys right now; hotkeys pause while any is (`pauses(_:)` says which).
+    /// Only the app's watchers and the Key Rebinder set them, so a center nobody tells (tests, previews) never pauses.
     @ObservationIgnored public private(set) var pauses: Set<HotkeyPause> = []
 
     /// Advice from the Key Rebinder: Minecraft cautions, where a hotkey's key is, selecting it. Held weakly; nil
