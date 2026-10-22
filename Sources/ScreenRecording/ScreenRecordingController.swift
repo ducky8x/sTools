@@ -391,7 +391,12 @@ public final class ScreenRecordingController: ToolController {
         self.rig = rig
         listen(to: rig)
         await rig.start()
-        guard self.rig === rig else { return }
+        // Taken away while it started (the tool switched off, a canceled start, a restart): whoever took it stops it,
+        // and so does this, so a rig that's no longer the tool's never keeps a source running.
+        guard self.rig === rig else {
+            await rig.stop()
+            return
+        }
         startPreview()
     }
 
