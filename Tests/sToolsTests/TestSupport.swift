@@ -188,11 +188,16 @@ func fakeInstance(pid: Int32 = 100, version: String = "1.16.1", launched: TimeIn
 }
 
 /// Waits (bounded) for `condition`, yielding to the main actor between checks.
+///
+/// The bound counts only time the Mac is awake (`SuspendingClock`). `ContinuousClock` keeps running while the Mac
+/// sleeps, so a sleep in the middle of a test (an unattended run in Deep Idle with dark wakes) used up the whole bound
+/// at once, and the wait gave up right after wake although what it waited for came a moment later.
 @MainActor
 func waitUntil(timeout: Duration = .seconds(3), _ condition: @MainActor () -> Bool) async -> Bool {
-    let deadline = ContinuousClock.now + timeout
+    let clock = SuspendingClock()
+    let deadline = clock.now + timeout
     while !condition() {
-        if ContinuousClock.now > deadline { return false }
+        if clock.now > deadline { return false }
         try? await Task.sleep(for: .milliseconds(5))
     }
     return true
