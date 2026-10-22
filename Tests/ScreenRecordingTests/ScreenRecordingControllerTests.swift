@@ -784,6 +784,28 @@ struct ScreenRecordingKeyTests {
         harness.controller.delete()
     }
 
+    /// A recording kept under its date-and-time name never stops the next one starting in the same second: the next
+    /// takes the next free name, offers it, and keeps it.
+    @Test func twoRecordingsInTheSameSecondBothStartAndKeepTheirOwnNames() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        harness.controller.options.fileType = .mov
+        let second = Date(timeIntervalSince1970: 1_792_674_748)
+        harness.controller.now = { second }
+        let date = RecordingFinisher.dateName(for: second)
+        await harness.recordByKey()
+        #expect(harness.controller.finished?.name == date)
+        await harness.controller.save(name: nil)
+        await harness.recordByKey()
+        #expect(harness.controller.phase == .deciding)
+        #expect(harness.controller.notes.isEmpty)
+        let finished = try #require(harness.controller.finished)
+        #expect(finished.name == "\(date) 2")
+        #expect(finished.files.map(\.lastPathComponent) == ["\(date) 2.mov"])
+        await harness.controller.cancelDecision()
+        #expect(harness.savedFileNames() == ["\(date) 2.mov", "\(date).mov"])
+    }
+
     /// Quitting while the question waits keeps the recording under its date-and-time name, without asking.
     @Test func quittingWhileTheQuestionWaitsSavesUnderTheDateAndTime() async throws {
         let harness = Harness()

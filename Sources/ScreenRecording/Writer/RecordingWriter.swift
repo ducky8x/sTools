@@ -34,6 +34,9 @@ public final class RecordingWriter: @unchecked Sendable {
     /// ended there and the next part's has begun.
     private var closing: ClosingSegment?
     private var segmentIndex = 0
+    /// The name the files are written under: the configuration's, or the next free one when a recording in the folder
+    /// holds it (`RecordingNames`). Chosen at `start`.
+    private var baseName = ""
     private var finishedFiles: [URL] = []
     private var finalizers: [Task<Void, Never>] = []
     private var lastVideoTime: CMTime?
@@ -101,6 +104,7 @@ public final class RecordingWriter: @unchecked Sendable {
                 throw RecordingWriterError.invalidConfiguration("frame rate and canvas must be positive")
             }
             try FileManager.default.createDirectory(at: configuration.directory, withIntermediateDirectories: true)
+            baseName = RecordingNames.freeBase(configuration.baseName, in: configuration.directory)
             segmentIndex = 1
             segment = try makeSegment(index: 1, start: time)
             phase = .recording
@@ -290,9 +294,8 @@ public final class RecordingWriter: @unchecked Sendable {
     }
 
     private func makeSegment(index: Int, start: CMTime) throws -> Segment {
-        let name = index == 1 ? configuration.baseName : "\(configuration.baseName) part \(index)"
-        let url = configuration.directory.appendingPathComponent(name).appendingPathExtension("mov")
-        guard !FileManager.default.fileExists(atPath: url.path) else { throw RecordingWriterError.fileExists(url) }
+        // The name was free at the start; a part's name that turned up in the folder since takes the next free one.
+        let url = RecordingNames.freeURL(RecordingNames.partName(baseName, index: index), fileExtension: "mov", in: configuration.directory)
 
         let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
         writer.movieFragmentInterval = Self.fragmentInterval

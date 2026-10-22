@@ -154,9 +154,10 @@ struct RecordingDecisionView: View {
         "\(RecordBar.clock(finished.seconds)) long\(finished.files.count > 1 ? ", in \(finished.files.count) files" : "")."
     }
 
-    /// Where Save puts it: "Saved as Seed 1.mp4 in ~/Movies/sTools.", or, with the name cleared, the date and time.
+    /// Where Save puts it: "Saved as Seed 1.mp4 in ~/Movies/sTools.", or, with the name cleared, the date and time; the
+    /// next free name ("Seed 1 2.mp4") when a recording in the folder holds that one.
     static func savedAsLine(name: String, finished: ScreenRecordingController.Finished, options: RecordingOptions) -> String {
-        let fileName = "\(RecordingFinisher.sanitizedName(name) ?? finished.name).\(options.fileType.fileExtension)"
+        let fileName = plannedFileName(name: name, finished: finished, options: options)
         let folder = (options.folderPath as NSString).abbreviatingWithTildeInPath
         return RecordingFinisher.sanitizedName(name) == nil
             ? "Without a name it\u{2019}s saved as \(fileName) in \(folder)."
@@ -165,7 +166,14 @@ struct RecordingDecisionView: View {
 
     /// Canceling the question still keeps the recording.
     static func escapeLine(finished: ScreenRecordingController.Finished, options: RecordingOptions) -> String {
-        "Esc saves it as \(finished.name).\(options.fileType.fileExtension), so nothing is lost."
+        "Esc saves it as \(plannedFileName(name: nil, finished: finished, options: options)), so nothing is lost."
+    }
+
+    /// The first file's name as Save will make it (`RecordingFinisher.plannedFiles`).
+    private static func plannedFileName(name: String?, finished: ScreenRecordingController.Finished, options: RecordingOptions) -> String {
+        let planned = RecordingFinisher.plannedFiles(for: finished.files, name: name, as: options.fileType).first
+        return planned?.lastPathComponent
+            ?? "\(name.flatMap(RecordingFinisher.sanitizedName) ?? finished.name).\(options.fileType.fileExtension)"
     }
 }
 

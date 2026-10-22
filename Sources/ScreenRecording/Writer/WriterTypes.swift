@@ -21,7 +21,8 @@ public struct WriterConfiguration: Sendable {
     public static let defaultHardFloorBytes: Int64 = 512 * 1024 * 1024
 
     public var directory: URL
-    /// File name without extension. The first file is `<baseName>.mov`, later parts `<baseName> part 2.mov`.
+    /// File name without extension. The first file is `<baseName>.mov`, later parts `<baseName> part 2.mov`; when a
+    /// recording in the folder holds the name, the next free one, `<baseName> 2.mov` (`RecordingNames`).
     public var baseName: String
     /// Size of the composited frames. Odd sides are rounded down to even.
     public var canvas: PixelSize
@@ -121,7 +122,6 @@ public enum FrameDisposition: Sendable, Equatable {
 public enum RecordingWriterError: Error, Equatable {
     case alreadyStarted
     case invalidConfiguration(String)
-    case fileExists(URL)
     case writerFailed(String)
 }
 
@@ -131,7 +131,6 @@ extension RecordingWriterError: LocalizedError {
         switch self {
         case .alreadyStarted: "The recording had already started."
         case .invalidConfiguration(let detail): "Its settings can\u{2019}t be recorded (\(detail))."
-        case .fileExists(let url): "\(url.lastPathComponent) is already in the recordings folder."
         case .writerFailed(let detail): "The file couldn\u{2019}t be written (\(detail))."
         }
     }
