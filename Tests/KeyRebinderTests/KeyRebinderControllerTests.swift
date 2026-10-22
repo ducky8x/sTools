@@ -519,6 +519,40 @@ struct KeyRebinderHotkeyTests {
         #expect(center.bindings.count == 1)
     }
 
+    /// A tool has one key of its own (spec 6.1), as on Home: a second hotkey for a tool's action alone saves nothing
+    /// until the key panel's question is answered with Replace, which gives the tool's own key what this key sends.
+    @Test func aSecondKeyForAToolIsSavedOnlyAsAReplacement() async throws {
+        let harness = try await make()
+        defer { harness.remove() }
+        let center = try #require(harness.center)
+        let controller = harness.controller
+        let crosshairKey = center.add(combo: HotkeyFixtures.combo("f6"), actions: [.toggle(.crosshair)])
+        let nbbKey = center.add(combo: HotkeyFixtures.combo("f7"), actions: [.toggle(.nbbOverlay)])
+
+        #expect(controller.ownHotkeyReplaced(bySaving: [.toggle(.crosshair)], editing: nil)?.id == crosshairKey)
+        #expect(controller.saveHotkey(on: .key("caps_lock"), editing: nil, modifiers: [], actions: [.toggle(.crosshair)]) == nil)
+        #expect(center.bindings.map(\.id) == [nbbKey, crosshairKey], "nothing saved before the answer")
+        #expect(controller.saveHotkey(on: .key("caps_lock"), editing: nil, modifiers: [], actions: [.toggle(.crosshair)],
+                                      replacingOwnHotkey: true) == crosshairKey)
+        #expect(center.bindings.map(\.id) == [nbbKey, crosshairKey])
+        #expect(center.bindings.last?.combo == HotkeyFixtures.combo("f13"), "caps_lock sends F13")
+
+        // Editing a hotkey on this key into a tool's action alone asks too, and Replace removes it.
+        let mixed = try #require(controller.saveHotkey(
+            on: .key("caps_lock"), editing: nil, modifiers: .shift, actions: [.toggle(.crosshair), .startTimer]))
+        #expect(controller.ownHotkeyReplaced(bySaving: [.toggle(.nbbOverlay)], editing: mixed)?.id == nbbKey)
+        #expect(controller.saveHotkey(on: .key("caps_lock"), editing: mixed, modifiers: .shift, actions: [.toggle(.nbbOverlay)]) == nil)
+        #expect(controller.saveHotkey(on: .key("caps_lock"), editing: mixed, modifiers: .shift, actions: [.toggle(.nbbOverlay)],
+                                      replacingOwnHotkey: true) == nbbKey)
+        #expect(center.bindings.map(\.id) == [nbbKey, crosshairKey])
+        #expect(center.bindings.first?.combo == HotkeyFixtures.combo("f13", .shift))
+
+        // The tool's own key, edited on its key, needs no question.
+        #expect(controller.ownHotkeyReplaced(bySaving: [.toggle(.crosshair)], editing: crosshairKey) == nil)
+        #expect(controller.saveHotkey(on: .key("caps_lock"), editing: crosshairKey, modifiers: .control, actions: [.toggle(.crosshair)])
+            == crosshairKey)
+    }
+
     @Test func hotkeysCanBeEditedWithoutKarabinerReady() async throws {
         let harness = try await make(ready: false)
         defer { harness.remove() }
