@@ -75,6 +75,8 @@ public final class TimerOverlayController: ToolController {
     @ObservationIgnored let presenter: any TimerOverlayPresenting
     @ObservationIgnored let guides: any RuleGuidesPresenting
     @ObservationIgnored let alarm: any AlarmPlaying
+    /// Sends the alarm to sTools' recordings, the *Timer alarm* track, while "Alarm in sTools recordings" is on.
+    @ObservationIgnored let recordingBridge: AlarmRecordingBridge
     @ObservationIgnored let announcer: any TimerAnnouncing
     /// The owner's alarm files: `Sounds/` in the settings folder.
     @ObservationIgnored let ownSounds: OwnSounds
@@ -128,7 +130,7 @@ public final class TimerOverlayController: ToolController {
     /// `theme` is the app's: the overlay reads Reduce animations and Increase Contrast from it, because an overlay
     /// panel's own SwiftUI root only sees the fallback theme. The rest default to the live ones; tests pass fakes.
     /// The live presenter and alarm player share the controller's clock and scheduler, so one clock measures
-    /// everything.
+    /// everything. `inProcessAudio` holds the *Timer alarm* feed for Screen Recording; tests pass their own.
     public init(
         services: ToolServices,
         theme: STTheme,
@@ -139,7 +141,8 @@ public final class TimerOverlayController: ToolController {
         presenter: (any TimerOverlayPresenting)? = nil,
         guides: (any RuleGuidesPresenting)? = nil,
         alarm: (any AlarmPlaying)? = nil,
-        announcer: (any TimerAnnouncing)? = nil
+        announcer: (any TimerAnnouncing)? = nil,
+        inProcessAudio: InProcessAudio = .shared
     ) {
         self.services = services
         self.theme = theme
@@ -147,7 +150,8 @@ public final class TimerOverlayController: ToolController {
         self.scheduler = scheduler
         self.presenter = presenter ?? TimerOverlayPresenter(theme: theme, scheduler: scheduler, clock: clock)
         self.guides = guides ?? RuleGuidesPresenter(theme: theme)
-        self.alarm = alarm ?? AlarmPlayer(clock: clock, scheduler: scheduler)
+        let alarm = alarm ?? AlarmPlayer(clock: clock, scheduler: scheduler)
+        self.alarm = alarm
         self.announcer = announcer ?? TimerAnnouncer()
         ownSounds = OwnSounds(settingsDirectory: services.settings.directory)
         var loaded = services.settings.load(TimerOverlaySettings.self)
@@ -157,6 +161,8 @@ public final class TimerOverlayController: ToolController {
             services.settings.save(loaded)
         }
         settings = loaded
+        recordingBridge = AlarmRecordingBridge(
+            alarm: alarm, feed: inProcessAudio.feed(named: AlarmRecordingBridge.feedName), isOn: loaded.alarmInRecordings)
         engine = TimerEngine(duration: TimeInterval(loaded.durationSeconds), clock: clock, scheduler: scheduler,
                              activity: activity, wakeWatcher: wakeWatcher)
         content = TimerOverlayContent(text: "")
@@ -599,6 +605,7 @@ public final class TimerOverlayController: ToolController {
     // MARK: - Settings
 
     private func settingsChanged(from old: TimerOverlaySettings) {
+        recordingBridge.isOn = settings.alarmInRecordings
         engine.duration = TimeInterval(settings.durationSeconds)
         engine.showsTenths = settings.showsTenths
         engine.showsOvertime = settings.atZero == .overtime
