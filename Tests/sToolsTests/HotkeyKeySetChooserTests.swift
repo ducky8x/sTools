@@ -38,9 +38,8 @@ struct HotkeyKeySetChooserTests {
         #expect(hotkeys.isEnabled, "on from the first launch, in sTools and Minecraft only")
         #expect(hotkeys.scope == .sToolsAndMinecraft)
         #expect(ToolHotkey.own(for: .toggle(.crosshair), in: hotkeys.bindings)?.combo.displayString == "⌘1")
-        #expect(TimerKeyStatus(hotkeys: hotkeys).title == "Start timer: ⌘2")
-        // Each page's Hotkey row shows the set's key for its tool, Screen Recording's included.
-        for tool in [ToolID.crosshair, .nbbOverlay, .screenRecording, .windowBackdrop] {
+        // Each page's Hotkey row shows the set's key for its tool, Screen Recording's and Timer Overlay's included.
+        for tool in [ToolID.crosshair, .timerOverlay, .nbbOverlay, .screenRecording, .windowBackdrop] {
             let action = try #require(ToolHotkeyRow(model: harness.model, tool: tool)?.action)
             #expect(ToolHotkey.own(for: action, in: hotkeys.bindings)?.combo.displayString == "⌘\(tool.number)", "\(tool)")
         }

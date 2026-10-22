@@ -255,8 +255,9 @@ struct KeyHotkeysBlock: View {
                 chipsRow("Hold") {
                     STChips(selection: holdSelection, options: HotkeyDraft.holdChoices, label: "Hold")
                 }
-                chipsRow("Does") {
-                    STChips(selection: doesSelection, options: HotkeyAction.allCases.map { STSegmentedOption($0, $0.title) }, label: "Does")
+                chipsRow(HotkeyWording.actionChipsLabel) {
+                    STChips(selection: doesSelection, options: HotkeyAction.allCases.map { STSegmentedOption($0, $0.title) },
+                            label: HotkeyWording.actionChipsLabel)
                 }
             }
             .disabled(!controls.edits)

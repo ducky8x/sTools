@@ -25,12 +25,6 @@ final class AppModel {
     var history = NavigationHistory()
     /// Where the next page shown should scroll to; the page clears it once it has.
     var pendingPageAnchor: PageAnchor?
-    /// The actions of a new hotkey Home ▸ Hotkeys opens its editor with (Timer Overlay's Set in Hotkeys…); Home
-    /// clears it once the editor is open.
-    var pendingNewHotkeyActions: Set<HotkeyAction>?
-    /// The hotkey whose editor Home ▸ Hotkeys opens, recording (Set in Hotkeys… for the timer's own key); Home clears
-    /// it once the editor is open.
-    var pendingEditHotkeyID: UUID?
     var appearance: AppearanceSettings
     var general: GeneralSettings
     var updates: UpdateSettings
@@ -67,7 +61,7 @@ final class AppModel {
     @ObservationIgnored var lastKarabinerRequirement: KarabinerRequirement?
     /// What the Prologue's trials have seen so far; fresh each time the introduction starts.
     @ObservationIgnored var trials = TrialSession()
-    /// Asks before Set in Hotkeys… turns hotkeys on (plan decision 14); true to turn them on. Tests replace it, so no
+    /// Asks before the Timer trial's Start-timer key turns hotkeys on (plan decision 14); true to turn them on. Tests replace it, so no
     /// test shows an alert.
     @ObservationIgnored var confirmTurningOnHotkeys: @MainActor () -> Bool = AppModel.askToTurnOnHotkeys
     /// Follows macOS's Reduce motion into the theme. Only the real app has one; tests set the theme themselves.

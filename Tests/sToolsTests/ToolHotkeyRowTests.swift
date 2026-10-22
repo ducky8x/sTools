@@ -24,11 +24,9 @@ struct ToolHotkeyRowTests {
         #expect(ToolID.timerOverlay.hotkeyAction == .startTimer)
         #expect(ToolID.keyRebinder.hotkeyAction == nil)
         #expect(ToolID.screenRecording.hotkeyTool == nil)
-        for tool in [ToolID.crosshair, .nbbOverlay, .screenRecording, .windowBackdrop] {
+        for tool in [ToolID.crosshair, .timerOverlay, .nbbOverlay, .screenRecording, .windowBackdrop] {
             #expect(ToolHotkeyRow(model: harness.model, tool: tool)?.action == tool.hotkeyAction)
         }
-        // Timer Overlay's page has its own Hotkey row instead (`TimerKeyRow`).
-        #expect(ToolHotkeyRow(model: harness.model, tool: .timerOverlay) == nil)
         #expect(ToolHotkeyRow(model: harness.model, tool: .keyRebinder) == nil)
     }
 
@@ -163,6 +161,37 @@ struct ToolHotkeyRowTests {
         harness.prober.set(.accessibility, .granted)
         harness.model.permissions.refresh()
         #expect(row.whereLine == "Hotkeys work in sTools and Minecraft · Key set: ⌘1–⌘5")
+    }
+
+    /// Timer Overlay's row is the same row: it records the Start-timer key in place, as the timer's own key in its
+    /// sidebar place, and adds one line on what the key does, which follows Advanced ▸ Cancel gesture. No other tool's
+    /// row has that line.
+    @Test func timerOverlaysRowRecordsTheStartTimerKeyInPlace() throws {
+        let harness = Harness(accessibility: .granted)
+        let hotkeys = harness.model.hotkeys
+        hotkeys.isEnabled = true
+        let row = try #require(ToolHotkeyRow(model: harness.model, tool: .timerOverlay))
+        #expect(row.action == .startTimer)
+        #expect(row.purposeLine == "Starts the timer. A double press switches Timer Overlay off.")
+        #expect(ToolHotkeyRow(model: harness.model, tool: .crosshair)?.purposeLine == nil)
+        let timer = try #require(harness.model.timerOverlay)
+        timer.settings.cancelGesture = .hold
+        #expect(row.purposeLine == "Starts the timer. Holding it 1 s switches Timer Overlay off.")
+        timer.settings.cancelGesture = .off
+        #expect(row.purposeLine == "Starts the timer.")
+
+        // The key goes after the crosshair's and before NBB Overlay's, in the sidebar order.
+        ToolHotkey.set(pad1, for: .toggle(.crosshair), in: hotkeys)
+        ToolHotkey.set(ctrlOptC, for: .toggle(.nbbOverlay), in: hotkeys)
+        ToolHotkey.set(f13, for: .startTimer, in: hotkeys)
+        let own = try #require(ToolHotkey.own(for: .startTimer, in: hotkeys.bindings))
+        #expect(own.actions == [.startTimer])
+        #expect(hotkeys.bindings.map(\.combo) == [pad1, f13, ctrlOptC])
+        #expect(row.whereLine == "Hotkeys work in sTools and Minecraft · Key set: Custom")
+        let rendered = render(row, harness).representation(using: .png, properties: [:])
+        ToolHotkey.set(nil, for: .startTimer, in: hotkeys)
+        #expect(ToolHotkey.own(for: .startTimer, in: hotkeys.bindings) == nil)
+        #expect(render(row, harness).representation(using: .png, properties: [:]) != rendered)
     }
 
     @Test func theRowRendersItsKeyAndTurnOnWhileOff() throws {

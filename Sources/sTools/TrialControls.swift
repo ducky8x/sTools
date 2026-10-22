@@ -47,8 +47,8 @@ struct TrialToolControls: View {
     }
 }
 
-/// The Timer trial's own Start-timer key (spec 5.6.9). The page's Set in Hotkeys\u{2026} is hidden in the trials, so
-/// the key is recorded right here as a Home \u{25B8} Hotkeys hotkey whose only action starts the timer.
+/// The Timer trial's own Start-timer key (spec 5.6.9). The trials leave out the page's Hotkey row, so the key is
+/// recorded right here as a Home \u{25B8} Hotkeys hotkey whose only action starts the timer.
 struct TrialStartTimerKeyRow: View {
     let model: AppModel
 

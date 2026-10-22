@@ -117,12 +117,10 @@ private func sameImage(_ a: NSBitmapImageRep, _ b: NSBitmapImageRep) -> Bool {
 }
 
 @MainActor
-private func page(_ controller: TimerOverlayController, keyStatus: TimerKeyStatus = .noKey,
-                  onSetInHotkeys: (@MainActor () -> Void)? = {}, log: ActionLog = ActionLog(), showsAdvanced: Bool = false,
+private func page(_ controller: TimerOverlayController, log: ActionLog = ActionLog(), showsAdvanced: Bool = false,
                   theme: STTheme = STTheme()) -> PageFrame<TimerOverlaySettingsView> {
     PageFrame(theme: theme, content: TimerOverlaySettingsView(
-        controller: controller, keyStatus: keyStatus, onSetInHotkeys: onSetInHotkeys, actions: log.actions,
-        showsAdvanced: showsAdvanced))
+        controller: controller, actions: log.actions, showsAdvanced: showsAdvanced))
 }
 
 /// Renders `view` at `width` points and 2x, writing it as `name` when asked.
@@ -133,8 +131,6 @@ private func render<V: View>(_ view: V, width: CGFloat = 640, name: String? = ni
     if let name { dump(rep, name) }
     return rep
 }
-
-private let f13 = TimerKeyStatus.Key(id: UUID(), name: "F13")
 
 @Suite("Timer page", .serialized)
 @MainActor
@@ -267,16 +263,14 @@ struct TimerPageRenderTests {
         #expect(DurationPicker.choice(duration: 150, presets: [], customPicked: false) == .custom)
     }
 
-    // MARK: The key row
+    // MARK: The key
 
-    @Test func keyRowNotesNameProblemsAndTheHotkeysSwitch() {
-        #expect(TimerKeyRow.notes(for: .noKey) == [.init(text: "Hotkeys are off.", isCaution: false)])
-        #expect(TimerKeyRow.notes(for: TimerKeyStatus(keys: [f13], hotkeysAreOn: true))
-            == [.init(text: "Hotkeys are on.", isCaution: false)])
-        let refused = TimerKeyStatus.Key(id: UUID(), name: "\u{21E7}\u{2318}2", problem: "Refused by macOS")
-        let notes = TimerKeyRow.notes(for: TimerKeyStatus(keys: [f13, refused], hotkeysAreOn: false))
-        #expect(notes.map(\.isCaution) == [true, true])
-        #expect(notes.first?.text == "\u{21E7}\u{2318}2: Refused by macOS")
+    /// The page's Hotkey row is every tool page's (spec 6.1); its one Timer line says what the key does, with the
+    /// cancel gesture chosen in Advanced.
+    @Test func theKeyLineFollowsTheCancelGesture() {
+        #expect(TimerKeyLine.text(for: .doublePress) == "Starts the timer. A double press switches Timer Overlay off.")
+        #expect(TimerKeyLine.text(for: .hold) == "Starts the timer. Holding it 1 s switches Timer Overlay off.")
+        #expect(TimerKeyLine.text(for: .off) == "Starts the timer.")
     }
 
     /// Advanced ▸ Cancel gesture says what the gesture does now: it switches Timer Overlay off, and the next press
@@ -288,21 +282,6 @@ struct TimerPageRenderTests {
             == "Holding the key for 1 s switches Timer Overlay off. The next press switches it back on and starts.")
         #expect(TimerAdvancedSection.cancelGestureNote(for: .off)
             == "The key never switches Timer Overlay off; its switch does.")
-    }
-
-    @Test func setInHotkeysShowsOnlyWithItsAction() {
-        let status = TimerKeyStatus(keys: [f13], hotkeysAreOn: true)
-        let withButton = render(PageFrame(theme: STTheme(), content: TimerKeyRow(status: status, onSetInHotkeys: {})),
-                                width: 560, name: "key-row-f13")
-        let without = render(PageFrame(theme: STTheme(), content: TimerKeyRow(status: status, onSetInHotkeys: nil)),
-                             width: 560, name: "key-row-trial")
-        #expect(!sameImage(withButton, without))
-        render(PageFrame(theme: STTheme(), content: TimerKeyRow(status: .noKey, onSetInHotkeys: {})), width: 560,
-               name: "key-row-no-key")
-        let problem = TimerKeyStatus(keys: [TimerKeyStatus.Key(id: UUID(), name: "F13", problem: "Refused by macOS")],
-                                     hotkeysAreOn: false)
-        render(PageFrame(theme: STTheme(), content: TimerKeyRow(status: problem, onSetInHotkeys: {})), width: 560,
-               name: "key-row-problem")
     }
 
     // MARK: Motion
@@ -338,7 +317,7 @@ struct TimerPageRenderTests {
             .deletingLastPathComponent().deletingLastPathComponent().appending(path: "Sources/TimerOverlay/Views")
         let files = try FileManager.default.contentsOfDirectory(at: views, includingPropertiesForKeys: nil)
             .filter { $0.pathExtension == "swift" }
-        #expect(files.count == 6)
+        #expect(files.count == 5)
         let forbidden = ["TimelineView", "Timer.publish", "scheduledTimer", "CADisplayLink", "CVDisplayLink",
                          "repeatForever", "Task.sleep", "asyncAfter", "withAnimation"]
         for file in files {

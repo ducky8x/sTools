@@ -23,6 +23,10 @@ extension HotkeyAction {
 /// The words both hotkey editors use (Home ▸ Hotkeys and the Key Rebinder's key panel), so they always match.
 /// Plain placeholder wording until M9.
 public enum HotkeyWording {
+    /// The name of a hotkey editor's action chips, the same in both editors (Home ▸ Hotkeys and the Key Rebinder's
+    /// key panel), shown beside them in the key panel and read by VoiceOver in both. Placeholder wording for M9.
+    public static let actionChipsLabel = "Does"
+
     /// The actions in order, joined with " + ": "Crosshair + NBB Overlay".
     public static func summary(_ actions: [HotkeyAction]) -> String {
         actions.map(\.title).joined(separator: " + ")

@@ -244,48 +244,14 @@ struct AppModelTimerTests {
         #expect(harness.model.status(of: .timerOverlay) == .off)
     }
 
-    // MARK: - Set in Hotkeys…
+    // MARK: - The Hotkey row
 
-    @Test func setInHotkeysOpensHomesHotkeysWithANewStartTimerHotkey() {
-        let harness = Harness()
-        harness.model.hotkeys.isEnabled = true
-        var asked = false
-        harness.model.confirmTurningOnHotkeys = { asked = true; return true }
-        harness.model.navigate(to: .tool(.timerOverlay))
-        harness.model.openHotkeysForStartTimer()
-        #expect(!asked)
-        #expect(harness.model.route == .home)
-        #expect(harness.model.pendingPageAnchor == .hotkeys)
-        #expect(harness.model.pendingNewHotkeyActions == [.startTimer])
-    }
-
-    @Test func setInHotkeysAsksBeforeTurningHotkeysOn() {
-        let harness = Harness()
-        harness.model.hotkeys.isEnabled = false
-        harness.model.confirmTurningOnHotkeys = { true }
-        harness.model.openHotkeysForStartTimer()
-        #expect(harness.model.hotkeys.isEnabled)
-        #expect(harness.model.pendingNewHotkeyActions == [.startTimer])
-    }
-
-    @Test func decliningOpensHotkeysWithoutANewOne() {
-        let harness = Harness()
-        harness.model.hotkeys.isEnabled = false
-        harness.model.confirmTurningOnHotkeys = { false }
-        harness.model.navigate(to: .tool(.timerOverlay))
-        harness.model.openHotkeysForStartTimer()
-        #expect(!harness.model.hotkeys.isEnabled)
-        #expect(harness.model.pendingNewHotkeyActions == nil)
-        #expect(harness.model.route == .home)
-        #expect(harness.model.pendingPageAnchor == .hotkeys)
-    }
-
-    @Test func theKeyRowFollowsTheHotkeyList() {
+    @Test func theHotkeyRowFollowsTheHotkeyList() {
         let harness = Harness()
         let hotkeys = harness.model.hotkeys
-        #expect(!TimerKeyStatus(hotkeys: hotkeys).hasKey)
+        #expect(ToolHotkey.own(for: .startTimer, in: hotkeys.bindings) == nil)
         hotkeys.add(combo: HotkeyCombo(keyCode: 105, modifiers: []), actions: [.startTimer])
-        #expect(TimerKeyStatus(hotkeys: hotkeys).hasKey)
+        #expect(ToolHotkey.own(for: .startTimer, in: hotkeys.bindings)?.combo.displayString == "F13")
     }
 
     // MARK: - Settings

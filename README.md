@@ -58,7 +58,7 @@ Press your Start-timer key and a countdown pops up over the game, 2:30 by defaul
 
 ### NBB Overlay
 
-Reads Ninjabrain Bot's local API and shows its current result in a small plate over the game: predictions with certainty and distance, your eye throws, the boat state, and its blind, divine and all-advancements modes. It shows only what Ninjabrain Bot itself shows and fades out when you reset Ninjabrain Bot. Drag it into place with snapping or type its position, and set its size and opacity.
+Reads Ninjabrain Bot's local API and shows its current result in a small plate over the game: predictions with certainty and distance, your eye throws, the boat state, and its blind, divine and all-advancements modes. It shows only what Ninjabrain Bot itself shows. Drag it into place with snapping or type its position, and set its size and opacity.
 
 ### Screen Recording
 
