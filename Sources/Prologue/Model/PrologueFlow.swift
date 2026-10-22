@@ -53,7 +53,7 @@ public struct PrologueFlow: Equatable, Sendable {
     /// Back: the previous step, any number of times, back to the greeting.
     @discardableResult
     public mutating func back() -> Bool {
-        guard canGoBack, let previous = PrologueStep(rawValue: step.rawValue - 1) else { return false }
+        guard canGoBack, let previous = step.preceding else { return false }
         turn(to: previous, direction: .backward)
         return true
     }
@@ -80,7 +80,7 @@ public struct PrologueFlow: Equatable, Sendable {
     }
 
     private mutating func advance() -> Bool {
-        guard let following = PrologueStep(rawValue: step.rawValue + 1) else {
+        guard let following = step.following else {
             outcome = .finished
             return true
         }
