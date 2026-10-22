@@ -76,6 +76,13 @@ private func makeReport(
         #expect(text.contains("12:00:00 [error] Crosshair: oops"))
     }
 
+    @Test func aOneByteFileReadsAsOneByte() {
+        let text = makeReport(settingsFiles: [SettingsFileInfo(name: "a.json", bytes: 1), SettingsFileInfo(name: "b.json", bytes: 0)])
+            .render()
+        #expect(text.contains("a.json (1 byte)"))
+        #expect(text.contains("b.json (0 bytes)"))
+    }
+
     @Test func emptyInputsReadAsNone() {
         let text = makeReport(displays: [], enabledTools: [], settingsFiles: []).render()
         #expect(text.contains("Displays: none"))

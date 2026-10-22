@@ -133,6 +133,18 @@ struct SettingsPage: View {
         }
     }
 
+    // MARK: - Messages
+
+    /// The line after an export: "Exported 1 setting group.", "Exported 6 setting groups."
+    static func exportedMessage(groups: Int) -> String {
+        "Exported \(CountWording.counted(groups, "setting group"))."
+    }
+
+    /// The line after an import: "Imported 1 item.", "Imported 3 items, skipped 1."
+    static func importedMessage(applied: Int, skipped: Int) -> String {
+        "Imported \(CountWording.counted(applied, "item"))" + (skipped > 0 ? ", skipped \(skipped)." : ".")
+    }
+
     // MARK: - Actions
 
     private func exportSettings() {
@@ -143,7 +155,7 @@ struct SettingsPage: View {
         Task {
             do {
                 let summary = try await model.exportSettings(to: url)
-                dataMessage = "Exported \(summary.documentNames.count) setting groups."
+                dataMessage = Self.exportedMessage(groups: summary.documentNames.count)
             } catch {
                 dataMessage = "Couldn't export: \(error.localizedDescription)"
             }
@@ -158,7 +170,7 @@ struct SettingsPage: View {
         Task {
             do {
                 let report = try await model.importSettings(from: url)
-                dataMessage = "Imported \(report.appliedCount) item(s)" + (report.skippedCount > 0 ? ", skipped \(report.skippedCount)." : ".")
+                dataMessage = Self.importedMessage(applied: report.appliedCount, skipped: report.skippedCount)
             } catch {
                 dataMessage = "Couldn't import: \(error.localizedDescription)"
             }

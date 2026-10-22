@@ -28,6 +28,11 @@ struct HotkeyConfirmationTests {
         #expect(HotkeyConfirmation.phrase(.recordingCanceled) == "Recording canceled")
     }
 
+    @Test func aOneSecondCountdownReadsInTheSingular() {
+        #expect(HotkeyConfirmation.phrase(.recordingCountdown(seconds: 1)) == "Recording starts in 1 second")
+        #expect(HotkeyConfirmation.phrase(.recordingCountdown(seconds: 5)) == "Recording starts in 5 seconds")
+    }
+
     @Test func toolsThenRecording() {
         let line = HotkeyConfirmation.summary([.tool(.screenRecording, isOn: true), .recordingStarted])
         #expect(line == "Screen Recording on \u{00B7} Recording started")

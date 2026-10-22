@@ -1,4 +1,5 @@
 import ScreenRecording
+import STPlatform
 
 /// What one hotkey press actually did, and the one line the confirmation shows for it (spec 6.1).
 enum HotkeyConfirmation {
@@ -54,7 +55,7 @@ enum HotkeyConfirmation {
         case .recordingStarting: "Starting the recording\u{2026}"
         case .recordingStarted: "Recording started"
         case .recordingCouldNotStart(let reason): "Recording couldn\u{2019}t start: \(reason)"
-        case .recordingCountdown(let seconds): "Recording starts in \(seconds) seconds"
+        case .recordingCountdown(let seconds): "Recording starts in \(CountWording.counted(seconds, "second"))"
         case .recordingStopped: "Recording stopped \u{00B7} \(phrase(.tool(.screenRecording, isOn: false)))"
         case .recordingCanceled: "Recording canceled"
         case .recordingFinishing: "Still finishing the last recording"
