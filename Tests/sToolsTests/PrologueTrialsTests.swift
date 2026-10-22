@@ -227,6 +227,36 @@ struct PrologueTrialsTests {
         content.onDisappear()
     }
 
+    /// A Start-timer key that already exists when the trial opens (a new install's ⌘2) ticks the optional key item at
+    /// once; it doesn't wait for the key to change. Clearing the key unticks it.
+    @Test func anExistingStartTimerKeyTicksTheKeyItem() throws {
+        let harness = Harness(hotkeys: nil)
+        let own = try #require(TrialStartTimerKey.own(in: harness.model.hotkeys.bindings))
+        #expect(own.combo == HotkeyCombo(keyCode: 19, modifiers: .command))
+        harness.model.beginPrologue(at: .timerTrial)
+        let content = harness.model.trialContent(.timerOverlay)
+        content.onAppear()
+        #expect(content.completed() == ["key"])
+
+        TrialStartTimerKey.set(nil, in: harness.model)
+        #expect(!content.completed().contains("key"))
+        TrialStartTimerKey.set(HotkeyCombo(keyCode: 0x60, modifiers: []), in: harness.model)
+        #expect(content.completed().contains("key"))
+        content.onDisappear()
+    }
+
+    /// A key that starts the timer together with something else counts too.
+    @Test func aSharedStartTimerKeyTicksTheKeyItem() {
+        let harness = Harness()
+        harness.model.beginPrologue(at: .timerTrial)
+        _ = harness.model.hotkeys.add(combo: HotkeyCombo(keyCode: 0x61, modifiers: []),
+                                      actions: [.toggle(.crosshair), .startTimer])
+        let content = harness.model.trialContent(.timerOverlay)
+        content.onAppear()
+        #expect(content.completed() == ["key"])
+        content.onDisappear()
+    }
+
     @Test func replayStartsTheTrialsAfresh() throws {
         let harness = Harness(usesRealControllers: true)
         harness.model.beginPrologue(at: .crosshairTrial)
