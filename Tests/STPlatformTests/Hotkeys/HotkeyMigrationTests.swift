@@ -16,6 +16,8 @@ private let timerID = "00000000-0000-0000-0000-0000000000C2"
 private let nbbID = "00000000-0000-0000-0000-0000000000C3"
 private let recordingID = "00000000-0000-0000-0000-0000000000C4"
 private let backdropID = "00000000-0000-0000-0000-0000000000C5"
+private let secondRecordingID = "00000000-0000-0000-0000-0000000000C7"
+private let thirdRecordingID = "00000000-0000-0000-0000-0000000000C8"
 
 /// One stored hotkey, as `hotkeys.json` holds it.
 private func entry(_ id: String, keyCode: Int, modifiers: Int = 256, _ actions: [String]) -> String {
@@ -180,6 +182,78 @@ struct HotkeyMigrationTests {
     @Test func aVersionTwoFileIsNeverMigrated() throws {
         #expect(listing(try Folder(file(version: 2, oldList())).load().bindings) == oldOrder)
         #expect(try Folder(file(version: 2, [])).load().bindings.isEmpty)
+    }
+
+    // MARK: Screen Recording's two former keys become one
+
+    /// Builds with two Screen Recording actions could leave a key for each, "Toggle Screen Recording" and "Start/stop
+    /// recording". Both are the one action now, so a list keeps one key for it, whatever the file's version: Home never
+    /// lists Screen Recording twice. Without a key set's key among them, the first in the list stays, with its id and
+    /// its place; every other hotkey stays as it is.
+    @Test func aKeyForEachFormerScreenRecordingActionBecomesOne() throws {
+        let toggleKey = entry(recordingID, keyCode: 15, modifiers: 2048, ["toggle.screenRecording"]) // ⌥R
+        let crosshairKey = entry(crosshairID, keyCode: 8, modifiers: 6144, ["toggle.crosshair", "toggle.nbbOverlay"]) // ⌃⌥C
+        let startStopKey = entry(secondRecordingID, keyCode: 22, ["startStopRecording"]) // ⌘6
+        for version in [1, 2] {
+            let settings = try Folder(file(version: version, [toggleKey, crosshairKey, startStopKey])).load()
+            #expect(listing(settings.bindings) == ["⌥R Screen Recording", "⌃⌥C Crosshair + NBB Overlay"], "version \(version)")
+            #expect(settings.bindings.map(\.id.uuidString) == [recordingID, crosshairID], "version \(version)")
+        }
+    }
+
+    /// The key a key set gives Screen Recording (⌘5 in ⌘1–⌘5, or ⌃5, ⌥5, F17) stays wherever it is in the list, so
+    /// a list that follows a key set keeps following it.
+    @Test func theKeySetsScreenRecordingKeyIsTheOneThatStays() throws {
+        let f6Toggle = entry(recordingID, keyCode: 97, modifiers: 0, ["toggle.screenRecording"])
+        let commandFive = entry(secondRecordingID, keyCode: 23, ["startStopRecording"])
+        let settings = try Folder(file(version: 2, [f6Toggle, commandFive])).load()
+        #expect(listing(settings.bindings) == ["⌘5 Screen Recording"])
+        #expect(settings.bindings.map(\.id.uuidString) == [secondRecordingID])
+
+        let controlFive = entry(secondRecordingID, keyCode: 23, modifiers: 4096, ["toggle.screenRecording"])
+        let f6StartStop = entry(recordingID, keyCode: 97, modifiers: 0, ["startStopRecording"])
+        #expect(listing(try Folder(file(version: 2, [f6StartStop, controlFive])).load().bindings) == ["⌃5 Screen Recording"])
+    }
+
+    /// Three keys that only record become one too, and a hotkey that records together with other things isn't one of
+    /// them: it stays, and so does the one Screen Recording key beside it.
+    @Test func onlyHotkeysThatOnlyRecordAreMerged() throws {
+        let entries = [entry(recordingID, keyCode: 97, modifiers: 0, ["startStopRecording"]),
+                       entry(crosshairID, keyCode: 8, modifiers: 6144, ["toggle.crosshair", "startStopRecording"]),
+                       entry(secondRecordingID, keyCode: 98, modifiers: 0, ["toggle.screenRecording", "startStopRecording"]),
+                       entry(thirdRecordingID, keyCode: 100, modifiers: 0, ["toggle.screenRecording"])]
+        let settings = try Folder(file(version: 2, entries)).load()
+        #expect(listing(settings.bindings) == ["F6 Screen Recording", "⌃⌥C Crosshair + Screen Recording"])
+
+        let one = [entry(recordingID, keyCode: 23, ["startStopRecording"]),
+                   entry(crosshairID, keyCode: 8, modifiers: 6144, ["toggle.crosshair", "toggle.screenRecording"])]
+        #expect(listing(try Folder(file(version: 2, one)).load().bindings) == ["⌘5 Screen Recording", "⌃⌥C Crosshair + Screen Recording"])
+    }
+
+    /// The old list with a second key for Screen Recording (its other former action, on ⌘6) is still the old list
+    /// once the two are one, so it becomes ⌘1–⌘5 in sidebar order like any other.
+    @Test func theOldListWithASecondScreenRecordingKeyStillMoves() throws {
+        let folder = try Folder(file(oldList() + [entry(secondRecordingID, keyCode: 22, ["toggle.screenRecording"])]))
+        let settings = folder.load()
+        #expect(listing(settings.bindings) == sidebarOrder)
+        #expect(settings.bindings.map(\.id.uuidString) == [nbbID, backdropID, crosshairID, timerID, recordingID])
+        #expect(HotkeyKeySet.current(in: settings.bindings) == .command)
+    }
+
+    /// The center writes the one key back with the rest of the move to version 2, so the file holds what Home shows.
+    @Test func theCenterWritesTheOneScreenRecordingKeyBack() async throws {
+        let entries = [entry(recordingID, keyCode: 15, modifiers: 2048, ["toggle.screenRecording"]),
+                       entry(secondRecordingID, keyCode: 22, ["startStopRecording"])]
+        let folder = try Folder(file(entries))
+        let store = folder.store
+        let registrar = MigrationRegistrar()
+        let center = HotkeyCenter(store: store, registrar: registrar, toolStates: { [:] }, handler: { _ in })
+        #expect(listing(center.bindings) == ["⌥R Screen Recording"])
+        #expect(registrar.active.count == 1)
+        await store.flush()
+        let stored = try folder.stored()
+        #expect(stored.version == 2)
+        #expect((stored.value["bindings"] as? [Any])?.count == 1)
     }
 
     // MARK: Once

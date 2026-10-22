@@ -51,6 +51,13 @@ struct HotkeyKeySetTests {
         #expect(HotkeyKeySet.allCases.map(\.title) == ["⌘1–⌘5", "⌃1–⌃5", "⌥1–⌥5", "F13–F17", "None"])
     }
 
+    /// VoiceOver says each set's name in words, as it says a hotkey's keys, rather than reading its symbols.
+    @Test func eachSetHasASpokenName() {
+        #expect(HotkeyKeySet.allCases.map(\.spokenTitle) == [
+            "Command 1 to Command 5", "Control 1 to Control 5", "Option 1 to Option 5", "F13 to F17", "None",
+        ])
+    }
+
     @Test func eachSetsHotkeysDoTheToolsMainActions() {
         for set in HotkeyKeySet.allCases where set != .noKeys {
             let bindings = set.bindings()
@@ -254,6 +261,90 @@ struct HotkeyKeySetTests {
         let center = HotkeyCenter(store: store, registrar: KeySetRegistrar(), toolStates: { [:] }, handler: { _ in })
         center.setOwnHotkey(nil, for: crosshair)
         #expect(center.bindings == [custom, nbbKey])
+    }
+
+    // MARK: Home's Add Hotkey… and Edit keep the sidebar order
+
+    /// "⌘1 NBB Overlay", as Home lists a hotkey.
+    private func listing(_ bindings: [HotkeyBinding]) -> [String] {
+        bindings.map { "\($0.combo.displayString) \(HotkeyWording.summary($0.actions))" }
+    }
+
+    /// A hotkey added for one tool's action alone is that tool's own key, so it goes in the tool's sidebar place among
+    /// the own keys, as a key set or a tool page puts it; a hotkey that does several things goes at the end.
+    @MainActor
+    @Test func anAddedToolsOwnHotkeyGoesInItsSidebarPlace() async {
+        let (store, directory) = temporaryStore()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        store.save(HotkeySettings(isEnabled: true, bindings: [
+            HotkeyBinding(combo: combo(18, .command), actions: [nbb]),
+            HotkeyBinding(combo: combo(21, .command), actions: [timer]),
+            HotkeyBinding(combo: ctrlOptC, actions: [crosshair, nbb]),
+        ]))
+        let registrar = KeySetRegistrar()
+        let center = HotkeyCenter(store: store, registrar: registrar, toolStates: { [:] }, handler: { _ in })
+        await store.flush()
+        let writes = store.writeCount
+
+        let crosshairKey = center.add(combo: f6, actions: [crosshair])
+        #expect(listing(center.bindings) == ["⌘1 NBB Overlay", "F6 Crosshair", "⌘4 Start timer", "⌃⌥C Crosshair + NBB Overlay"])
+        #expect(center.bindings[1].id == crosshairKey)
+        #expect(registrar.active[crosshairKey] == f6)
+        await store.flush()
+        #expect(store.writeCount == writes + 1, "one change")
+
+        center.add(combo: combo(98), actions: [recording, timer])
+        center.add(combo: combo(19, .command), actions: [backdrop])
+        center.add(combo: combo(23, .command), actions: [recording])
+        #expect(listing(center.bindings) == ["⌘1 NBB Overlay", "⌘2 Window Backdrop", "F6 Crosshair", "⌘4 Start timer",
+                                             "⌘5 Screen Recording", "⌃⌥C Crosshair + NBB Overlay", "F7 Screen Recording + Start timer"])
+    }
+
+    /// Editing a hotkey into a tool's action alone moves it to that tool's place, and editing a tool's own key into
+    /// several actions moves it after the own keys, ahead of the hotkeys that were after it.
+    @MainActor
+    @Test func anEditedHotkeyMovesToOrFromItsSidebarPlace() {
+        let (store, directory) = temporaryStore()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let custom = HotkeyBinding(combo: ctrlOptC, actions: [crosshair, nbb])
+        let recordingAndTimer = HotkeyBinding(combo: f6, actions: [recording, timer])
+        store.save(HotkeySettings(isEnabled: true, bindings: [
+            HotkeyBinding(combo: combo(18, .command), actions: [nbb]),
+            HotkeyBinding(combo: combo(20, .command), actions: [crosshair]),
+            HotkeyBinding(combo: combo(21, .command), actions: [timer]),
+            custom, recordingAndTimer,
+        ]))
+        let center = HotkeyCenter(store: store, registrar: KeySetRegistrar(), toolStates: { [:] }, handler: { _ in })
+
+        center.update(recordingAndTimer.id, actions: [backdrop])
+        #expect(listing(center.bindings) == ["⌘1 NBB Overlay", "F6 Window Backdrop", "⌘3 Crosshair", "⌘4 Start timer",
+                                             "⌃⌥C Crosshair + NBB Overlay"])
+        #expect(center.bindings[1].id == recordingAndTimer.id, "it keeps its id")
+
+        let crosshairKey = center.bindings[2].id
+        center.update(crosshairKey, actions: [crosshair, backdrop])
+        #expect(listing(center.bindings) == ["⌘1 NBB Overlay", "F6 Window Backdrop", "⌘4 Start timer",
+                                             "⌘3 Crosshair + Window Backdrop", "⌃⌥C Crosshair + NBB Overlay"])
+
+        // A new key for a tool's own hotkey keeps its place.
+        center.update(center.bindings[0].id, combo: combo(97, .command))
+        #expect(listing(center.bindings).first == "⌘F6 NBB Overlay")
+    }
+
+    /// With a tool's own key gone, a second key for that tool alone (an older list can have one) is the tool's own,
+    /// and moves up to its place.
+    @MainActor
+    @Test func removingAToolsOwnHotkeyMovesItsSecondKeyUp() {
+        let (store, directory) = temporaryStore()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = HotkeyBinding(combo: combo(20, .command), actions: [crosshair])
+        let custom = HotkeyBinding(combo: ctrlOptC, actions: [crosshair, nbb])
+        let second = HotkeyBinding(combo: f6, actions: [crosshair])
+        let nbbKey = HotkeyBinding(combo: combo(18, .command), actions: [nbb])
+        store.save(HotkeySettings(isEnabled: true, bindings: [nbbKey, first, custom, second]))
+        let center = HotkeyCenter(store: store, registrar: KeySetRegistrar(), toolStates: { [:] }, handler: { _ in })
+        center.remove(first.id)
+        #expect(center.bindings == [nbbKey, second, custom])
     }
 
     // MARK: A new install

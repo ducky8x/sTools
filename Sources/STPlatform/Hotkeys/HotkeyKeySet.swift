@@ -38,6 +38,13 @@ public enum HotkeyKeySet: String, CaseIterable, Hashable, Sendable {
         }
     }
 
+    /// The set's name as VoiceOver says it, in words like a hotkey's keys (`HotkeyWording.spokenName(for:)`): "Command
+    /// 1 to Command 5", "F13 to F17", "None".
+    public var spokenTitle: String {
+        guard let first = combos.first, let last = combos.last else { return title }
+        return "\(HotkeyWording.spokenName(for: first)) to \(HotkeyWording.spokenName(for: last))"
+    }
+
     /// What the tools' own hotkeys follow, by name: the set's title, or Custom when they follow none (`current(in:)`
     /// is nil) because a key was set by hand.
     public static func name(of set: HotkeyKeySet?) -> String { set?.title ?? "Custom" }

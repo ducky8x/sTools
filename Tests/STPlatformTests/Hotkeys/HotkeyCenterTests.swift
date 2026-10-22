@@ -183,11 +183,14 @@ struct HotkeyCenterTests {
 
     // MARK: Conflicts
 
+    // The duplicates below are added in sidebar order (NBB Overlay's before Crosshair's), the order the list keeps the
+    // tools' own hotkeys in, so the first one added is the first in the list.
+
     @Test func duplicateComboIsFlaggedAndNotRegistered() async {
         let h = await Harness()
         h.center.isEnabled = true
-        let first = h.center.add(combo: ctrlOptC, actions: [.toggle(.crosshair)])
-        let second = h.center.add(combo: ctrlOptC, actions: [.toggle(.nbbOverlay)])
+        let first = h.center.add(combo: ctrlOptC, actions: [.toggle(.nbbOverlay)])
+        let second = h.center.add(combo: ctrlOptC, actions: [.toggle(.crosshair)])
         #expect(h.center.status(of: first) == .registered)
         #expect(h.center.status(of: second) == .conflict(.alreadyUsedByYou(first)))
         #expect(h.registrar.active == [first: ctrlOptC])
@@ -195,8 +198,8 @@ struct HotkeyCenterTests {
 
     @Test func duplicateIsFlaggedEvenWhileTheMasterSwitchIsOff() async {
         let h = await Harness()
-        let first = h.center.add(combo: ctrlOptC, actions: [.toggle(.crosshair)])
-        let second = h.center.add(combo: ctrlOptC, actions: [.toggle(.nbbOverlay)])
+        let first = h.center.add(combo: ctrlOptC, actions: [.toggle(.nbbOverlay)])
+        let second = h.center.add(combo: ctrlOptC, actions: [.toggle(.crosshair)])
         #expect(h.center.status(of: first) == .inactive)
         #expect(h.center.status(of: second) == .conflict(.alreadyUsedByYou(first)))
     }
@@ -204,8 +207,8 @@ struct HotkeyCenterTests {
     @Test func removingTheOwnerLetsTheDuplicateRegister() async {
         let h = await Harness()
         h.center.isEnabled = true
-        let first = h.center.add(combo: ctrlOptC, actions: [.toggle(.crosshair)])
-        let second = h.center.add(combo: ctrlOptC, actions: [.toggle(.nbbOverlay)])
+        let first = h.center.add(combo: ctrlOptC, actions: [.toggle(.nbbOverlay)])
+        let second = h.center.add(combo: ctrlOptC, actions: [.toggle(.crosshair)])
         h.center.remove(first)
         #expect(h.center.status(of: second) == .registered)
         #expect(h.registrar.active == [second: ctrlOptC])
@@ -901,8 +904,8 @@ struct HotkeyCenterTests {
         let h = await Harness()
         h.center.isEnabled = true
         h.center.setPaused(true, for: .recordingKey)
-        let first = h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
-        let duplicate = h.center.add(combo: pad1, actions: [.toggle(.nbbOverlay)])
+        let first = h.center.add(combo: pad1, actions: [.toggle(.nbbOverlay)])
+        let duplicate = h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
         let reserved = h.center.add(combo: HotkeyCombo(keyCode: 12, modifiers: .command), actions: [.toggle(.crosshair)])
         let empty = h.center.add(combo: ctrlOptV, actions: [])
         #expect(h.center.status(of: first) == .registered)
@@ -916,8 +919,8 @@ struct HotkeyCenterTests {
     @Test func activeBindingsAreAcceptedFirstOwnersOnlyWhileOn() async {
         let h = await Harness()
         h.registrar.refused = [ctrlOptV]
-        let first = h.center.add(combo: pad1, actions: [.toggle(.crosshair)])
-        h.center.add(combo: pad1, actions: [.toggle(.nbbOverlay)])                                // duplicate
+        let first = h.center.add(combo: pad1, actions: [.toggle(.nbbOverlay)])
+        h.center.add(combo: pad1, actions: [.toggle(.crosshair)])                                  // duplicate
         h.center.add(combo: HotkeyCombo(keyCode: 56, modifiers: []), actions: [.toggle(.crosshair)]) // Shift key
         h.center.add(combo: bareC, actions: [])                                                     // no actions
         h.center.add(combo: ctrlOptV, actions: [.toggle(.crosshair)])                              // refused

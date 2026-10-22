@@ -178,10 +178,10 @@ struct HotkeysSection: View {
         HotkeyScope.allCases.map { STSegmentedOption($0, $0.title) }
     }
 
-    /// Every key set in view, in the order the arrow keys cycle through them. While the keys are Custom (`keySet` is
-    /// nil) none of them is underlined.
+    /// Every key set in view, in the order the arrow keys cycle through them, each read in words by VoiceOver. While
+    /// the keys are Custom (`keySet` is nil) none of them is underlined.
     static var keySetOptions: [STSegmentedOption<HotkeyKeySet?>] {
-        HotkeyKeySet.allCases.map { STSegmentedOption(Optional($0), $0.title) }
+        HotkeyKeySet.allCases.map { STSegmentedOption(Optional($0), $0.title, spokenTitle: $0.spokenTitle) }
     }
 
     /// The set's name: the set the tools' own hotkeys follow, or Custom once a key was set by hand.
@@ -378,7 +378,9 @@ struct HotkeyBindingRow: View {
     }
 }
 
-/// Adds or edits one hotkey: record any key or combination, read what it would take away, pick its actions.
+/// Adds or edits one hotkey: record any key or combination, read what it would take away, pick its actions. A tool
+/// has one key of its own (spec 6.1), so a save that would add a second key for a tool's action alone asks first, and
+/// Replace gives the tool's own key the new one instead.
 struct HotkeyEditor: View {
     let model: AppModel
     let existing: HotkeyBinding?
@@ -386,8 +388,24 @@ struct HotkeyEditor: View {
 
     @State private var shortcut: STShortcut?
     @State private var actions: Set<HotkeyAction>
+    /// The tool's own hotkey a save would duplicate, with the key it would get instead: the question's subject.
+    @State private var replacing: Replacement?
     private let initialActions: Set<HotkeyAction>
     private let startsRecording: Bool
+
+    /// What Save did.
+    enum SaveResult: Equatable {
+        /// The hotkey was saved, in its sidebar place when it's a tool's own.
+        case saved
+        /// Nothing was saved: it would be a second key for this tool's own hotkey's action, so the editor asks first.
+        case asksToReplace(HotkeyBinding)
+    }
+
+    /// A tool's own hotkey and the key Replace would give it.
+    struct Replacement: Equatable {
+        let own: HotkeyBinding
+        let combo: HotkeyCombo
+    }
 
     /// `initialActions` chooses a new hotkey's actions up front (Timer Overlay's Set in Hotkeys…). `startsRecording`
     /// opens an existing hotkey recording a new key (Set in Hotkeys… for the timer's own key).
@@ -431,6 +449,39 @@ struct HotkeyEditor: View {
                 }
             }
         }
+        .confirmationDialog(
+            replacing.map { HotkeyWording.replaceOwnKeyQuestion($0.own, with: $0.combo) } ?? "",
+            isPresented: replaceQuestionIsShown, titleVisibility: .visible, presenting: replacing,
+            actions: { replacement in
+                Button("Replace", role: .destructive) { replace(replacement) }
+                Button("Cancel", role: .cancel) {}
+            },
+            message: { replacement in Text(HotkeyWording.replaceOwnKeyWarning(replacement.own, with: replacement.combo)) })
+    }
+
+    /// Saves `combo` and `actions` (kept in the chips' order) on `existing`, or as a new hotkey, unless that would add
+    /// a second key for one tool's action alone: then nothing changes, and the tool's own hotkey comes back for the
+    /// question (`HotkeyCenter.ownHotkeyReplaced(bySaving:editing:)`).
+    static func save(_ combo: HotkeyCombo, actions: Set<HotkeyAction>, existing: HotkeyBinding?, in hotkeys: HotkeyCenter) -> SaveResult {
+        let ordered = HotkeyAction.allCases.filter(actions.contains)
+        if let own = hotkeys.ownHotkeyReplaced(bySaving: ordered, editing: existing?.id) { return .asksToReplace(own) }
+        if let existing {
+            hotkeys.update(existing.id, combo: combo, actions: ordered)
+        } else {
+            hotkeys.add(combo: combo, actions: ordered)
+        }
+        return .saved
+    }
+
+    /// Replace: `own`, a tool's own hotkey, gets `combo`, and `existing`, the hotkey that was being edited into that
+    /// tool's action, goes.
+    static func replace(_ own: HotkeyBinding, with combo: HotkeyCombo, editing existing: HotkeyBinding?, in hotkeys: HotkeyCenter) {
+        guard let action = own.actions.first else { return }
+        hotkeys.replaceOwnHotkey(for: action, with: combo, removing: existing?.id)
+    }
+
+    private var replaceQuestionIsShown: Binding<Bool> {
+        Binding(get: { replacing != nil }, set: { if !$0 { replacing = nil } })
     }
 
     /// While recording, only real problems refuse a key: a duplicate, a combination macOS keeps, or a key sTools
@@ -444,12 +495,14 @@ struct HotkeyEditor: View {
     private func save() {
         guard let shortcut else { return }
         let combo = shortcut.hotkeyCombo
-        let orderedActions = HotkeyAction.allCases.filter { actions.contains($0) }
-        if let existing {
-            model.hotkeys.update(existing.id, combo: combo, actions: orderedActions)
-        } else {
-            model.hotkeys.add(combo: combo, actions: orderedActions)
+        switch Self.save(combo, actions: actions, existing: existing, in: model.hotkeys) {
+        case .saved: onDone()
+        case .asksToReplace(let own): replacing = Replacement(own: own, combo: combo)
         }
+    }
+
+    private func replace(_ replacement: Replacement) {
+        Self.replace(replacement.own, with: replacement.combo, editing: existing, in: model.hotkeys)
         onDone()
     }
 
@@ -461,7 +514,9 @@ struct HotkeyEditor: View {
 }
 
 /// A choice Home ▸ Hotkeys keeps in view (Where hotkeys work, Key set): its small-caps label with every option beside
-/// it, as a settings row, or the options under the label when the column is too narrow for both on one line.
+/// it, as a settings row, or the options under the label when the column is too narrow for both on one line. Either
+/// way VoiceOver finds a group named by the label and reads each option in it, the chosen one selected, instead of
+/// one element that runs every option together.
 private struct HotkeysChoiceRow<Control: View>: View {
     private let label: String
     private let showsRule: Bool
@@ -476,11 +531,12 @@ private struct HotkeysChoiceRow<Control: View>: View {
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            STSettingsRow(label, showsRule: showsRule) { control.fixedSize() }
+            STSettingsRow(label, showsRule: showsRule, combinesForAccessibility: false) { control.fixedSize() }
             VStack(alignment: .leading, spacing: 4) {
                 Text(label)
                     .stStyle(.label)
                     .foregroundStyle(theme.inkSecondary)
+                    .accessibilityHidden(true)
                 control
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -490,7 +546,9 @@ private struct HotkeysChoiceRow<Control: View>: View {
                     Rectangle().fill(STColor.rule).frame(height: 1).accessibilityHidden(true)
                 }
             }
-            .accessibilityElement(children: .combine)
+            // A group named by the label, its options read one by one, as the settings row keeps them.
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(label)
         }
     }
 }

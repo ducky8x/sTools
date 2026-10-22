@@ -519,6 +519,40 @@ struct KeyRebinderHotkeyTests {
         #expect(center.bindings.count == 1)
     }
 
+    /// A tool has one key of its own (spec 6.1), as on Home: a second hotkey for a tool's action alone saves nothing
+    /// until the key panel's question is answered with Replace, which gives the tool's own key what this key sends.
+    @Test func aSecondKeyForAToolIsSavedOnlyAsAReplacement() async throws {
+        let harness = try await make()
+        defer { harness.remove() }
+        let center = try #require(harness.center)
+        let controller = harness.controller
+        let crosshairKey = center.add(combo: HotkeyFixtures.combo("f6"), actions: [.toggle(.crosshair)])
+        let nbbKey = center.add(combo: HotkeyFixtures.combo("f7"), actions: [.toggle(.nbbOverlay)])
+
+        #expect(controller.ownHotkeyReplaced(bySaving: [.toggle(.crosshair)], editing: nil)?.id == crosshairKey)
+        #expect(controller.saveHotkey(on: .key("caps_lock"), editing: nil, modifiers: [], actions: [.toggle(.crosshair)]) == nil)
+        #expect(center.bindings.map(\.id) == [nbbKey, crosshairKey], "nothing saved before the answer")
+        #expect(controller.saveHotkey(on: .key("caps_lock"), editing: nil, modifiers: [], actions: [.toggle(.crosshair)],
+                                      replacingOwnHotkey: true) == crosshairKey)
+        #expect(center.bindings.map(\.id) == [nbbKey, crosshairKey])
+        #expect(center.bindings.last?.combo == HotkeyFixtures.combo("f13"), "caps_lock sends F13")
+
+        // Editing a hotkey on this key into a tool's action alone asks too, and Replace removes it.
+        let mixed = try #require(controller.saveHotkey(
+            on: .key("caps_lock"), editing: nil, modifiers: .shift, actions: [.toggle(.crosshair), .startTimer]))
+        #expect(controller.ownHotkeyReplaced(bySaving: [.toggle(.nbbOverlay)], editing: mixed)?.id == nbbKey)
+        #expect(controller.saveHotkey(on: .key("caps_lock"), editing: mixed, modifiers: .shift, actions: [.toggle(.nbbOverlay)]) == nil)
+        #expect(controller.saveHotkey(on: .key("caps_lock"), editing: mixed, modifiers: .shift, actions: [.toggle(.nbbOverlay)],
+                                      replacingOwnHotkey: true) == nbbKey)
+        #expect(center.bindings.map(\.id) == [nbbKey, crosshairKey])
+        #expect(center.bindings.first?.combo == HotkeyFixtures.combo("f13", .shift))
+
+        // The tool's own key, edited on its key, needs no question.
+        #expect(controller.ownHotkeyReplaced(bySaving: [.toggle(.crosshair)], editing: crosshairKey) == nil)
+        #expect(controller.saveHotkey(on: .key("caps_lock"), editing: crosshairKey, modifiers: .control, actions: [.toggle(.crosshair)])
+            == crosshairKey)
+    }
+
     @Test func hotkeysCanBeEditedWithoutKarabinerReady() async throws {
         let harness = try await make(ready: false)
         defer { harness.remove() }
@@ -770,15 +804,16 @@ struct KeyRebinderHotkeyTests {
         center.add(combo: HotkeyFixtures.combo("f18", .shift), actions: [.toggle(.nbbOverlay)])
         #expect(await eventually { controller.hotkeys(on: .key("caps_lock")).count == 2 })
         #expect(controller.rebindHotkeyNotes(for: .key("caps_lock"), becoming: nil).isEmpty)
-        // Without the other key, both are stranded.
+        // Without the other key, both are stranded. They're named in Home's order: the tools' own keys in sidebar
+        // order, so NBB Overlay's comes first.
         let alone = try await make(profileP([("caps_lock", "f18")]))
         defer { alone.remove() }
         alone.center?.add(combo: HotkeyFixtures.combo("f18"), actions: [.toggle(.crosshair)])
         alone.center?.add(combo: HotkeyFixtures.combo("f18", .shift), actions: [.toggle(.nbbOverlay)])
         #expect(alone.controller.rebindHotkeyNotes(for: .key("caps_lock"), becoming: nil)
-            == ["Remove Rebind would leave its hotkeys F18 (Crosshair) and \u{21E7}F18 (NBB Overlay) on F18, and no key would send F18."])
+            == ["Remove Rebind would leave its hotkeys \u{21E7}F18 (NBB Overlay) and F18 (Crosshair) on F18, and no key would send F18."])
         #expect(alone.controller.rebindHotkeyNotes(for: .key("caps_lock"), becoming: .key("f19"))
-            == ["Its hotkeys F18 (Crosshair) and \u{21E7}F18 (NBB Overlay) stay on F18, and no key will send F18."])
+            == ["Its hotkeys \u{21E7}F18 (NBB Overlay) and F18 (Crosshair) stay on F18, and no key will send F18."])
     }
 
     // MARK: Where hotkeys listen

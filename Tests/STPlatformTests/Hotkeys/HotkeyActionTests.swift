@@ -176,8 +176,9 @@ struct ScreenRecordingActionTests {
         #expect(String(decoding: data, as: UTF8.self) == #"["startStopRecording"]"#)
     }
 
-    /// An existing `hotkeys.json` keeps working: a hotkey that had both actions keeps one Screen Recording action,
-    /// and one that had either, alone or with other actions, keeps its place in the list and its other actions.
+    /// An existing `hotkeys.json` keeps working: a hotkey that had both actions keeps one Screen Recording action, one
+    /// that had either with other actions keeps its place and its other actions, and two keys that each did one of
+    /// them alone are one key now, the first (spec 6.1), so the list never has two Screen Recording keys.
     @MainActor
     @Test func anExistingHotkeysFileKeepsOneScreenRecordingAction() throws {
         let directory = FileManager.default.temporaryDirectory.appending(path: "stools-hotkeys-\(UUID().uuidString)", directoryHint: .isDirectory)
@@ -197,8 +198,8 @@ struct ScreenRecordingActionTests {
         #expect(settings.isEnabled)
         #expect(settings.bindings.map(\.actions) == [
             [.startStopRecording],
-            [.startStopRecording],
             [.toggle(.crosshair), .startStopRecording, .startTimer],
         ])
+        #expect(settings.bindings.map(\.id.uuidString) == ["00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000003"])
     }
 }

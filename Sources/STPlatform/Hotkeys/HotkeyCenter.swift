@@ -240,25 +240,34 @@ public final class HotkeyCenter {
         return notes
     }
 
-    /// Adds a binding at the end of the list and returns its id. A problem shows up in `statuses`.
+    /// Adds a binding and returns its id. A tool's own hotkey (its only action is one tool's, and the tool had none)
+    /// goes in the tool's sidebar place among the own hotkeys, which Home lists first; any other goes at the end
+    /// (`HotkeyKeySet.ordered`). A problem shows up in `statuses`. Editors ask before adding a second key for a tool's
+    /// action alone (`ownHotkeyReplaced(bySaving:editing:)`).
     @discardableResult
     public func add(combo: HotkeyCombo, actions: [HotkeyAction]) -> UUID {
         let binding = HotkeyBinding(combo: combo, actions: actions)
-        settings.bindings.append(binding)
+        settings.bindings = HotkeyKeySet.ordered(settings.bindings + [binding])
         commit()
         return binding.id
     }
 
-    /// Changes a binding's combination and/or actions. Unknown ids are ignored.
+    /// Changes a binding's combination and/or actions. Unknown ids are ignored. The list stays `HotkeyKeySet.ordered`:
+    /// a binding that becomes a tool's own hotkey moves to the tool's sidebar place, and one that stops being one
+    /// follows the own hotkeys, ahead of the bindings that were after it.
     public func update(_ id: UUID, combo: HotkeyCombo? = nil, actions: [HotkeyAction]? = nil) {
         guard let index = settings.bindings.firstIndex(where: { $0.id == id }) else { return }
-        if let combo { settings.bindings[index].combo = combo }
-        if let actions { settings.bindings[index].actions = actions.uniqued }
+        var bindings = settings.bindings
+        if let combo { bindings[index].combo = combo }
+        if let actions { bindings[index].actions = actions.uniqued }
+        settings.bindings = HotkeyKeySet.ordered(bindings)
         commit()
     }
 
+    /// Removes a binding. When it was a tool's own hotkey, a second key for that tool alone (an older list can have
+    /// one) becomes the tool's own and moves up to its place.
     public func remove(_ id: UUID) {
-        settings.bindings.removeAll { $0.id == id }
+        settings.bindings = HotkeyKeySet.ordered(settings.bindings.filter { $0.id != id })
         commit()
     }
 
@@ -288,6 +297,40 @@ public final class HotkeyCenter {
             if let combo { bindings[index].combo = combo } else { bindings.remove(at: index) }
         } else {
             guard let combo else { return }
+            bindings.append(HotkeyBinding(combo: combo, actions: [action]))
+        }
+        settings.bindings = HotkeyKeySet.ordered(bindings)
+        commit()
+    }
+
+    // MARK: One key of its own per tool
+
+    /// The tool's own hotkey that saving `actions` would duplicate, so the editor asks before it does: when `actions`
+    /// is one tool's action alone (every action is one tool's), another hotkey already has it alone, and the hotkey
+    /// being saved (`id`, nil for a new one) doesn't already. A tool has one key of its own (spec 6.1), so Replace
+    /// gives that hotkey the new key (`replaceOwnHotkey(for:with:removing:)`) instead of adding a second. Nil when
+    /// saving needs no question: several actions, a tool without a key of its own, the tool's own hotkey edited, or a
+    /// second key an older list kept for the tool.
+    public func ownHotkeyReplaced(bySaving actions: [HotkeyAction], editing id: UUID?) -> HotkeyBinding? {
+        let actions = actions.uniqued
+        guard actions.count == 1 else { return nil }
+        if let id, settings.bindings.first(where: { $0.id == id })?.actions == actions { return nil }
+        return settings.bindings.first { $0.actions == actions && $0.id != id }
+    }
+
+    /// Replace, after `ownHotkeyReplaced(bySaving:editing:)`: the tool's own hotkey for `action` gets `combo` and keeps
+    /// its id and sidebar place, and the hotkey `id` that was being saved as a second key (nil for a new one) is
+    /// removed, in one change. Without another hotkey for `action` alone, `combo` becomes the tool's own: on the hotkey
+    /// `id`, or a new one.
+    public func replaceOwnHotkey(for action: HotkeyAction, with combo: HotkeyCombo, removing id: UUID?) {
+        var bindings = settings.bindings
+        if let index = bindings.firstIndex(where: { $0.actions == [action] && $0.id != id }) {
+            bindings[index].combo = combo
+            bindings.removeAll { $0.id == id }
+        } else if let id, let index = bindings.firstIndex(where: { $0.id == id }) {
+            bindings[index].combo = combo
+            bindings[index].actions = [action]
+        } else {
             bindings.append(HotkeyBinding(combo: combo, actions: [action]))
         }
         settings.bindings = HotkeyKeySet.ordered(bindings)

@@ -77,6 +77,14 @@ struct HotkeyKeySetChooserTests {
         #expect(HotkeysSection.scopeOptions.map(\.value) == HotkeyScope.allCases)
     }
 
+    /// VoiceOver reads each key set by its name in words ("Command 1 to Command 5"), not its symbols.
+    @Test func voiceOverReadsEveryKeySetInWords() {
+        #expect(HotkeysSection.keySetOptions.map(\.accessibilityTitle) == [
+            "Command 1 to Command 5", "Control 1 to Control 5", "Option 1 to Option 5", "F13 to F17", "None",
+        ])
+        #expect(HotkeysSection.scopeOptions.map(\.accessibilityTitle) == ["In sTools and Minecraft", "Everywhere"])
+    }
+
     /// Under the sets, one line says what the current set gives each tool, in sidebar order, or whose keys they are.
     /// Each key stays on one line with its tool (no-break spaces), so a narrow column wraps only between them.
     @Test func theCaptionSaysWhatTheSetGivesEachTool() {

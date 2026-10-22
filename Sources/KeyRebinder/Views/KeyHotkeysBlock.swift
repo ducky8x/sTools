@@ -30,7 +30,15 @@ struct KeyHotkeysBlock: View {
 
     /// The inline editor's choices; nil while it's closed.
     @State private var draft: HotkeyDraft?
+    /// The tool's own hotkey Save Hotkey would duplicate, with the key it would get instead: the question's subject.
+    @State private var replacing: Replacement?
     @Environment(\.stTheme) private var theme
+
+    /// A tool's own hotkey and the key Replace would give it (spec 6.1: a tool has one key of its own).
+    struct Replacement: Equatable {
+        let own: HotkeyBinding
+        let combo: HotkeyCombo
+    }
 
     /// - Parameter draft: opens the editor with these choices (for tests and previews).
     init(
@@ -160,6 +168,19 @@ struct KeyHotkeysBlock: View {
                     .padding(.top, 10)
             }
         }
+        // Home's question, for a second key for a tool's action alone: Replace gives the tool's own key this one.
+        .confirmationDialog(
+            replacing.map { HotkeyWording.replaceOwnKeyQuestion($0.own, with: $0.combo) } ?? "",
+            isPresented: replaceQuestionIsShown, titleVisibility: .visible, presenting: replacing,
+            actions: { _ in
+                Button("Replace", role: .destructive) { save(replacingOwnHotkey: true) }
+                Button("Cancel", role: .cancel) {}
+            },
+            message: { replacement in Text(HotkeyWording.replaceOwnKeyWarning(replacement.own, with: replacement.combo)) })
+    }
+
+    private var replaceQuestionIsShown: Binding<Bool> {
+        Binding(get: { replacing != nil }, set: { if !$0 { replacing = nil } })
     }
 
     /// Where sTools hotkeys work and the key set, as Home ▸ Hotkeys sets them, with Change… to go there (left out in
@@ -307,14 +328,21 @@ struct KeyHotkeysBlock: View {
     }
 
     /// Saves the draft: a new hotkey, or the one it changes while that is still on this key (never one the key
-    /// stopped sending, which would move it).
-    private func save() {
+    /// stopped sending, which would move it). A second key for a tool's action alone asks first (`replacing`), and
+    /// Replace saves it with `replacingOwnHotkey`, giving the tool's own hotkey this key.
+    private func save(replacingOwnHotkey: Bool = false) {
         guard let draft, Self.editorPlace(for: draft, among: controller.hotkeys(on: key)) != nil else {
             self.draft = nil
             return
         }
         let actions = HotkeyAction.allCases.filter(draft.does.contains)
-        if controller.saveHotkey(on: key, editing: draft.editing, modifiers: draft.modifiers, actions: actions) != nil {
+        if !replacingOwnHotkey, let keyCode = controller.hotkeyTarget(for: key).keyCode,
+           let own = controller.ownHotkeyReplaced(bySaving: actions, editing: draft.editing) {
+            replacing = Replacement(own: own, combo: draft.combo(on: keyCode))
+            return
+        }
+        if controller.saveHotkey(on: key, editing: draft.editing, modifiers: draft.modifiers, actions: actions,
+                                 replacingOwnHotkey: replacingOwnHotkey) != nil {
             self.draft = nil
         }
     }

@@ -195,21 +195,37 @@ extension KeyRebinderController {
 
     /// Saves a hotkey on what `key` sends now with `modifiers` held: a new one, or the hotkey `editing`, which keeps
     /// its id. Actions are kept in the pickers' order (`HotkeyAction.allCases`). Returns the hotkey's id, or nil when
-    /// nothing was saved: no hotkey list, a key that can't carry hotkeys, no action, or a combination that is reserved
-    /// or already used by another hotkey.
+    /// nothing was saved: no hotkey list, a key that can't carry hotkeys, no action, a combination that is reserved or
+    /// already used by another hotkey, or a second key for a tool's action alone (`ownHotkeyReplaced(bySaving:editing:)`),
+    /// which the panel asks about first. With `replacingOwnHotkey`, that tool's own hotkey gets this key instead, as
+    /// on Home (spec 6.1), and its id comes back.
     @discardableResult
     public func saveHotkey(
-        on key: KarabinerEvent, editing id: UUID?, modifiers: HotkeyCombo.Modifiers, actions: [HotkeyAction]
+        on key: KarabinerEvent, editing id: UUID?, modifiers: HotkeyCombo.Modifiers, actions: [HotkeyAction],
+        replacingOwnHotkey: Bool = false
     ) -> UUID? {
         guard let center = hotkeyCenter, let keyCode = hotkeyTarget(for: key).keyCode, !actions.isEmpty else { return nil }
         let combo = HotkeyCombo(keyCode: keyCode, modifiers: modifiers)
         guard center.conflict(for: combo, excluding: id) == nil else { return nil }
         let ordered = HotkeyAction.allCases.filter(actions.contains)
-        if let id, center.bindings.contains(where: { $0.id == id }) {
-            center.update(id, combo: combo, actions: ordered)
-            return id
+        let editing = id.flatMap { id in center.bindings.contains { $0.id == id } ? id : nil }
+        if let own = center.ownHotkeyReplaced(bySaving: ordered, editing: editing) {
+            guard replacingOwnHotkey, let action = own.actions.first else { return nil }
+            center.replaceOwnHotkey(for: action, with: combo, removing: editing)
+            return own.id
+        }
+        if let editing {
+            center.update(editing, combo: combo, actions: ordered)
+            return editing
         }
         return center.add(combo: combo, actions: ordered)
+    }
+
+    /// The tool's own hotkey that saving `actions` (on the hotkey `id`, nil for a new one) would duplicate, so the key
+    /// panel asks before Replace: a tool has one key of its own (spec 6.1). Nil when saving needs no question, or
+    /// without a hotkey list.
+    public func ownHotkeyReplaced(bySaving actions: [HotkeyAction], editing id: UUID?) -> HotkeyBinding? {
+        hotkeyCenter?.ownHotkeyReplaced(bySaving: actions, editing: id)
     }
 
     public func deleteHotkey(_ id: UUID) {
