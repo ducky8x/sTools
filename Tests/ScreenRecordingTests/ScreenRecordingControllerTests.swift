@@ -22,6 +22,8 @@ private final class FakeFactory: CaptureFactory {
     let stops = StopLog()
     /// How long Minecraft's capture takes to start, as ScreenCaptureKit's can on real hardware.
     var baseStartTakes: Duration?
+    /// Holds Minecraft's capture's start until the test opens it.
+    var baseStartGate: StartGate?
     /// Whether Minecraft's capture sends a first frame as it starts, as ScreenCaptureKit's does.
     var baseSendsFirstFrame = true
     /// How long every other source (windows, cameras, microphones, app sound) takes to start.
@@ -33,7 +35,7 @@ private final class FakeFactory: CaptureFactory {
         let first = baseSendsFirstFrame
             ? VideoFrame(pixelBuffer: WriterFixture.makeFrame(index: 0, size: PixelSize(width: 320, height: 180)), hostTime: HostMediaClock().now())
             : nil
-        let capture = FakeVideoCapture(name: "video", stops: stops, startTakes: baseStartTakes, firstFrame: first)
+        let capture = FakeVideoCapture(name: "video", stops: stops, startTakes: baseStartTakes, firstFrame: first, startGate: baseStartGate)
         bases[minecraftWindowID] = capture
         baseCount += 1
         videoCaptures.append(capture)
@@ -167,10 +169,11 @@ private struct Harness {
     /// `sourcesTake`: how long Minecraft's capture takes to start when the tool switches on, as ScreenCaptureKit's can
     /// on real hardware. `listingTakes`: how long Add Source's listing takes, and `listing` what it finds.
     /// `permissions`: what the permission center reads; everything is granted by default. `listingGate`: each listing
-    /// read waits for the test to finish it, canceled or not.
+    /// read waits for the test to finish it, canceled or not. `baseStartGate`: Minecraft's capture's start waits for
+    /// the test to open it, canceled or not.
     init(minecraft: Bool = true, sourcesTake: Duration? = nil, listingTakes: Duration? = nil,
          listing: AvailableSources = AvailableSources(), permissions: any PermissionProbing = Granted(),
-         listingGate: ListingGate? = nil) {
+         listingGate: ListingGate? = nil, baseStartGate: StartGate? = nil) {
         directory = FileManager.default.temporaryDirectory.appending(path: "stools-recording-\(UUID().uuidString)", directoryHint: .isDirectory)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let window = MinecraftWindow(windowNumber: 42, processID: 4242, title: "Minecraft* 1.16.1", frame: CGRect(x: 0, y: 0, width: 800, height: 600))
@@ -183,6 +186,7 @@ private struct Harness {
         let factory = factory
         factory.baseStartTakes = sourcesTake
         factory.otherSourcesStartTake = sourcesTake
+        factory.baseStartGate = baseStartGate
         let listings = listings
         controller = ScreenRecordingController(
             services: services, makeFactory: { _ in factory },
@@ -1380,8 +1384,9 @@ struct ScreenRecordingArmingTests {
     @Test(arguments: [true, false])
     func aStaleListingNeverArms(offRunsFirst: Bool) async throws {
         let gate = ListingGate()
-        let harness = Harness(sourcesTake: .milliseconds(400), listingGate: gate)
-        defer { gate.finishAll(); harness.remove() }
+        let starts = StartGate()
+        let harness = Harness(listingGate: gate, baseStartGate: starts)
+        defer { gate.finishAll(); starts.open(); harness.remove() }
         harness.addWindowSource()
         harness.controller.setEnabled(true)
         #expect(await harness.waitUntil { gate.pending == 1 })
@@ -1392,10 +1397,12 @@ struct ScreenRecordingArmingTests {
         gate.finishOldest()
         try await Task.sleep(for: .milliseconds(50))
         gate.finishOldest()
+        #expect(await harness.waitUntil { harness.factory.bases[42] != nil })
         try await Task.sleep(for: .milliseconds(50))
         #expect(harness.factory.baseCount == 1)
         #expect(harness.factory.bases[42]?.isRunning == false)
         #expect(harness.controller.toggleRecording() == .starting(waitsForSources: true))
+        starts.open()
         #expect(await harness.waitUntil { harness.controller.phase != .starting })
         #expect(harness.controller.phase == .recording)
         // The file opened on Minecraft's picture: its capture had started when the recording did.
@@ -1431,8 +1438,9 @@ struct ScreenRecordingArmingTests {
     /// late and brings up nothing, so the restart's sources are the only ones, and a press waits for them.
     @Test func aRestartDuringTheListingArmsOnlyTheRestart() async throws {
         let gate = ListingGate()
-        let harness = Harness(sourcesTake: .milliseconds(400), listingGate: gate)
-        defer { gate.finishAll(); harness.remove() }
+        let starts = StartGate()
+        let harness = Harness(listingGate: gate, baseStartGate: starts)
+        defer { gate.finishAll(); starts.open(); harness.remove() }
         harness.addWindowSource()
         harness.controller.setEnabled(true)
         #expect(await harness.waitUntil { gate.pending == 1 })
@@ -1441,9 +1449,12 @@ struct ScreenRecordingArmingTests {
         gate.finishOldest()
         try await Task.sleep(for: .milliseconds(50))
         gate.finishOldest()
+        #expect(await harness.waitUntil { harness.factory.bases[42] != nil })
         try await Task.sleep(for: .milliseconds(50))
         #expect(harness.factory.baseCount == 1)
+        #expect(harness.factory.bases[42]?.isRunning == false)
         #expect(harness.controller.toggleRecording() == .starting(waitsForSources: true))
+        starts.open()
         #expect(await harness.waitUntil { harness.controller.phase != .starting })
         #expect(harness.controller.phase == .recording)
         #expect(harness.factory.bases[42]?.isRunning == true)
@@ -1454,8 +1465,9 @@ struct ScreenRecordingArmingTests {
     /// Switched off and on again before the switch-off ran, the tool keeps the sources it was starting. The new arming
     /// takes them over once they're up: a press meanwhile waits for Minecraft's capture rather than writing at once.
     @Test func switchedBackOnWhileTheSourcesStartAPressWaitsForThem() async throws {
-        let harness = Harness(sourcesTake: .milliseconds(400))
-        defer { harness.remove() }
+        let starts = StartGate()
+        let harness = Harness(baseStartGate: starts)
+        defer { starts.open(); harness.remove() }
         harness.controller.setEnabled(true)
         #expect(await harness.waitUntil { harness.factory.bases[42] != nil })
         harness.controller.setEnabled(false)
@@ -1463,6 +1475,7 @@ struct ScreenRecordingArmingTests {
         try await Task.sleep(for: .milliseconds(50))
         #expect(harness.factory.bases[42]?.isRunning == false)
         #expect(harness.controller.toggleRecording() == .starting(waitsForSources: true))
+        starts.open()
         #expect(await harness.waitUntil { harness.controller.phase != .starting })
         #expect(harness.controller.phase == .recording)
         #expect(harness.factory.bases[42]?.isRunning == true)

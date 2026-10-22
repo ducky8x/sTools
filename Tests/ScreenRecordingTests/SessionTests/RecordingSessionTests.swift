@@ -19,6 +19,34 @@ func uncancellableWait(_ duration: Duration) async {
     await Task.detached { try? await Task.sleep(for: duration) }.value
 }
 
+/// Holds a fake source's start until the test opens it, canceled or not, so a test can check what happens while a
+/// source is still starting without racing a timer (a busy test process can stall the main actor for longer than any
+/// start time a test could afford to wait).
+final class StartGate: @unchecked Sendable {
+    private let state = OSAllocatedUnfairLock(initialState: (isOpen: false, waiting: [CheckedContinuation<Void, Never>]()))
+
+    func wait() async {
+        await withCheckedContinuation { continuation in
+            let goesNow = state.withLock { state in
+                if state.isOpen { return true }
+                state.waiting.append(continuation)
+                return false
+            }
+            if goesNow { continuation.resume() }
+        }
+    }
+
+    /// Lets every start held so far, and every later one, finish.
+    func open() {
+        let waiting = state.withLock { state in
+            state.isOpen = true
+            defer { state.waiting = [] }
+            return state.waiting
+        }
+        waiting.forEach { $0.resume() }
+    }
+}
+
 final class FakeVideoCapture: VideoCapture, @unchecked Sendable {
     private let handler = HandlerSlot<VideoCaptureEvent>()
     let failsToStart: Bool
@@ -30,18 +58,22 @@ final class FakeVideoCapture: VideoCapture, @unchecked Sendable {
     private let firstFrame: VideoFrame?
     /// How long stopping takes, as a real stream's or camera's stop can.
     private let stopTakes: Duration?
+    /// Holds the start until the test opens it.
+    private let startGate: StartGate?
 
     init(failsToStart: Bool = false, name: String = "video", stops: StopLog? = nil, startTakes: Duration? = nil,
-         firstFrame: VideoFrame? = nil, stopTakes: Duration? = nil) {
+         firstFrame: VideoFrame? = nil, stopTakes: Duration? = nil, startGate: StartGate? = nil) {
         self.failsToStart = failsToStart
         self.name = name
         self.stops = stops
         self.startTakes = startTakes
         self.firstFrame = firstFrame
         self.stopTakes = stopTakes
+        self.startGate = startGate
     }
 
     func start(deliver: @escaping @Sendable (VideoCaptureEvent) -> Void) async throws {
+        if let startGate { await startGate.wait() }
         if let startTakes { await uncancellableWait(startTakes) }
         if failsToStart { throw CocoaError(.featureUnsupported) }
         handler.set(deliver)
