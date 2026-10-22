@@ -190,6 +190,7 @@ struct TimerNumberField: View {
             TextField(label, text: $text)
                 .textFieldStyle(.plain)
                 .font(STFont.figures(13 * theme.textScale))
+                .stFieldLineHeight(13 * theme.textScale, weight: .medium)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
                 .frame(width: 64)
