@@ -74,4 +74,27 @@ struct FeedCaptureTests {
         await capture.stop()
         #expect(!feed.hasListeners)
     }
+
+    /// A stop that comes before the start (the rig stopped while its sources were still being started) is final:
+    /// the start adds no listener.
+    @Test func aStopBeforeTheStartLeavesNoListener() async {
+        let feed = InProcessAudio().feed(named: "Timer alarm")
+        let capture = FeedCapture(feed: feed)
+        await capture.stop()
+        await #expect(throws: CancellationError.self) { try await capture.start { _ in } }
+        #expect(!feed.hasListeners)
+    }
+
+    /// Starts and stops racing on other threads never leave a listener behind.
+    @Test func aStopRacingTheStartLeavesNoListener() async {
+        let audio = InProcessAudio()
+        for _ in 0..<200 {
+            let feed = audio.feed(named: "Timer alarm \(UUID())")
+            let capture = FeedCapture(feed: feed)
+            async let started: Void? = try? capture.start { _ in }
+            async let stopped: Void = capture.stop()
+            _ = await (started, stopped)
+            #expect(!feed.hasListeners)
+        }
+    }
 }

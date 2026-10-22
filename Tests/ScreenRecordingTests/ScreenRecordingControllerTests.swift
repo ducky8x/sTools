@@ -24,6 +24,8 @@ private final class FakeFactory: CaptureFactory {
     var baseStartTakes: Duration?
     /// Whether Minecraft's capture sends a first frame as it starts, as ScreenCaptureKit's does.
     var baseSendsFirstFrame = true
+    /// How long every other source (windows, cameras, microphones, app sound) takes to start.
+    var otherSourcesStartTake: Duration?
 
     func base(minecraftWindowID: UInt32, showsCursor: Bool) -> (any VideoCapture)? {
         let first = baseSendsFirstFrame
@@ -38,21 +40,21 @@ private final class FakeFactory: CaptureFactory {
 
     func video(for source: VideoSource, canvas: PixelSize, showsCursor: Bool) -> (any VideoCapture)? {
         if case .window(let reference) = source.kind { capturedWindowIDs.append(reference.windowID) }
-        let capture = FakeVideoCapture(name: "video", stops: stops)
+        let capture = FakeVideoCapture(name: "video", stops: stops, startTakes: otherSourcesStartTake)
         videos[source.id] = capture
         videoCaptures.append(capture)
         return capture
     }
 
     func audio(for source: AudioSource) -> (any AudioCapture)? {
-        let capture = FakeAudioCapture(name: "audio", stops: stops)
+        let capture = FakeAudioCapture(name: "audio", stops: stops, startTakes: otherSourcesStartTake)
         audios[source.id] = capture
         audioCaptures.append(capture)
         return capture
     }
 
     func minecraftAudio(processID: Int32) -> (any AudioCapture)? {
-        let capture = FakeAudioCapture(name: "audio", stops: stops)
+        let capture = FakeAudioCapture(name: "audio", stops: stops, startTakes: otherSourcesStartTake)
         minecraftAudio = capture
         audioCaptures.append(capture)
         return capture
@@ -145,6 +147,7 @@ private struct Harness {
             displays: DisplayDirectory(), minecraft: locator, permissions: PermissionCenter(prober: permissions))
         let factory = factory
         factory.baseStartTakes = sourcesTake
+        factory.otherSourcesStartTake = sourcesTake
         let listings = listings
         controller = ScreenRecordingController(
             services: services, makeFactory: { _ in factory },
@@ -752,6 +755,56 @@ struct ScreenRecordingKeyTests {
         #expect(harness.controller.phase == .idle)
         #expect(!harness.controller.isEnabled)
         #expect(harness.savedFileNames().isEmpty)
+    }
+
+    /// A second press while the sources start cancels the start and switches the tool off, and no source is left
+    /// running once their starts finish: no screen recording indicator, no camera light, no microphone (a canceled
+    /// start used to leave the starting sources capturing unseen). Every fake source finishes starting after the press.
+    @Test func aSecondPressWhileItStartsLeavesNoSourceRunning() async throws {
+        let harness = Harness(sourcesTake: .milliseconds(300))
+        defer { harness.remove() }
+        harness.addCameraAndMicrophone()
+        #expect(harness.controller.toggleRecording() == .starting(waitsForSources: true))
+        #expect(await harness.waitUntil { harness.factory.videoCaptures.count == 2 && harness.factory.audioCaptures.count == 2 })
+        #expect(harness.controller.toggleRecording() == .canceled)
+        try await Task.sleep(for: .milliseconds(700))
+        #expect(!harness.factory.anyRunning)
+        #expect(!harness.controller.isEnabled)
+    }
+
+    /// Switching the tool off while it starts leaves no source running either.
+    @Test func switchingOffWhileItStartsLeavesNoSourceRunning() async throws {
+        let harness = Harness(sourcesTake: .milliseconds(300))
+        defer { harness.remove() }
+        harness.addCameraAndMicrophone()
+        harness.controller.setEnabled(true)
+        #expect(await harness.waitUntil { harness.factory.videoCaptures.count == 2 })
+        harness.controller.setEnabled(false)
+        try await Task.sleep(for: .milliseconds(700))
+        #expect(!harness.factory.anyRunning)
+    }
+
+    /// A change that restarts the sources while they still start stops the ones it replaces: only the new arming's
+    /// sources run afterwards.
+    @Test func restartingWhileTheSourcesStartLeavesOnlyTheNewOnesRunning() async throws {
+        let harness = Harness(sourcesTake: .milliseconds(300))
+        defer { harness.remove() }
+        harness.addCameraAndMicrophone()
+        harness.controller.setEnabled(true)
+        #expect(await harness.waitUntil { harness.factory.videoCaptures.count == 2 })
+        let firstVideo = harness.factory.videoCaptures
+        let firstAudio = harness.factory.audioCaptures
+        harness.controller.options.showCursor.toggle()
+        #expect(await harness.waitUntil { harness.factory.videoCaptures.count == 4 })
+        #expect(await harness.waitUntil {
+            harness.factory.videoCaptures.suffix(2).allSatisfy { $0.isRunning }
+                && harness.factory.audioCaptures.suffix(2).allSatisfy { $0.isRunning }
+        })
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(firstVideo.allSatisfy { !$0.isRunning })
+        #expect(firstAudio.allSatisfy { !$0.isRunning })
+        harness.controller.setEnabled(false)
+        #expect(await harness.waitUntil { !harness.factory.anyRunning })
     }
 
     /// What each press reports, for the confirmation over the game.

@@ -10,12 +10,16 @@ import STPlatform
 public final class FeedCapture: AudioCapture, @unchecked Sendable {
     public let feed: InProcessAudioFeed
     private let token = OSAllocatedUnfairLock<InProcessAudioFeed.ListenerToken?>(initialState: nil)
+    /// A stop that comes before or while the start runs wins (`CaptureStartGate`).
+    private let gate = CaptureStartGate()
 
     public init(feed: InProcessAudioFeed) {
         self.feed = feed
     }
 
+    /// A stop that comes before or while this runs leaves no listener on the feed.
     public func start(deliver: @escaping @Sendable (AudioChunk) -> Void) async throws {
+        try gate.check()
         let listener = feed.addListener { buffer in
             if let chunk = Self.chunk(from: buffer) { deliver(chunk) }
         }
@@ -24,9 +28,15 @@ public final class FeedCapture: AudioCapture, @unchecked Sendable {
             return token
         }
         if let old { feed.removeListener(old) }
+        try await gate.finish { tearDown() }
     }
 
     public func stop() async {
+        gate.close()
+        tearDown()
+    }
+
+    private func tearDown() {
         if let listener = token.withLock({ token in defer { token = nil }; return token }) {
             feed.removeListener(listener)
         }

@@ -9,13 +9,18 @@ public final class CameraCapture: NSObject, VideoCapture, AVCaptureVideoDataOutp
     private let queue = DispatchQueue(label: "sTools.capture.camera", qos: .userInteractive)
     private let session = AVCaptureSession()
     private let deliver = OSAllocatedUnfairLock<(@Sendable (VideoCaptureEvent) -> Void)?>(initialState: nil)
-    private var observer: NSObjectProtocol?
+    private let observer = OSAllocatedUnfairLock<NSObjectProtocol?>(uncheckedState: nil)
+    /// A stop while the camera starts wins (`CaptureStartGate`).
+    private let gate = CaptureStartGate()
 
     public init(uniqueID: String) {
         self.uniqueID = uniqueID
     }
 
+    /// A stop that comes before or while this runs leaves the camera off: the session starts on its queue only while
+    /// no stop has come, and the stop's `stopRunning` is queued behind it.
     public func start(deliver: @escaping @Sendable (VideoCaptureEvent) -> Void) async throws {
+        try gate.check()
         guard let device = AVCaptureDevice(uniqueID: uniqueID) else { throw CaptureError.notFound("The camera") }
         let input = try AVCaptureDeviceInput(device: device)
         let output = AVCaptureVideoDataOutput()
@@ -31,16 +36,27 @@ public final class CameraCapture: NSObject, VideoCapture, AVCaptureVideoDataOutp
         session.addOutput(output)
         session.commitConfiguration()
         self.deliver.withLock { $0 = deliver }
-        observer = NotificationCenter.default.addObserver(forName: AVCaptureDevice.wasDisconnectedNotification, object: device, queue: nil) { _ in
+        let token = NotificationCenter.default.addObserver(forName: AVCaptureDevice.wasDisconnectedNotification, object: device, queue: nil) { _ in
             deliver(.ended("The camera was disconnected."))
         }
-        queue.async { [session] in session.startRunning() }
+        observer.withLockUnchecked { $0 = token }
+        queue.async { [session, gate] in
+            if !gate.isClosed { session.startRunning() }
+        }
+        try await gate.finish { await tearDown() }
     }
 
     public func stop() async {
+        gate.close()
+        await tearDown()
+    }
+
+    /// Lets go of the output and the disconnect observer, and stops the session behind any start queued before it.
+    private func tearDown() async {
         deliver.withLock { $0 = nil }
-        if let observer { NotificationCenter.default.removeObserver(observer) }
-        observer = nil
+        if let token = observer.withLockUnchecked({ observer in defer { observer = nil }; return observer }) {
+            NotificationCenter.default.removeObserver(token)
+        }
         let session = session
         await withCheckedContinuation { continuation in
             queue.async {
@@ -64,12 +80,16 @@ public final class MicrophoneCapture: NSObject, AudioCapture, AVCaptureAudioData
     private let queue = DispatchQueue(label: "sTools.capture.microphone", qos: .userInteractive)
     private let session = AVCaptureSession()
     private let deliver = OSAllocatedUnfairLock<(@Sendable (AudioChunk) -> Void)?>(initialState: nil)
+    /// A stop while the microphone starts wins (`CaptureStartGate`).
+    private let gate = CaptureStartGate()
 
     public init(uniqueID: String) {
         self.uniqueID = uniqueID
     }
 
+    /// A stop that comes before or while this runs leaves the microphone off, as the camera's does.
     public func start(deliver: @escaping @Sendable (AudioChunk) -> Void) async throws {
+        try gate.check()
         guard let device = AVCaptureDevice(uniqueID: uniqueID) else { throw CaptureError.notFound("The microphone") }
         let input = try AVCaptureDeviceInput(device: device)
         let output = AVCaptureAudioDataOutput()
@@ -91,10 +111,19 @@ public final class MicrophoneCapture: NSObject, AudioCapture, AVCaptureAudioData
         session.addOutput(output)
         session.commitConfiguration()
         self.deliver.withLock { $0 = deliver }
-        queue.async { [session] in session.startRunning() }
+        queue.async { [session, gate] in
+            if !gate.isClosed { session.startRunning() }
+        }
+        try await gate.finish { await tearDown() }
     }
 
     public func stop() async {
+        gate.close()
+        await tearDown()
+    }
+
+    /// Lets go of the output and stops the session behind any start queued before it.
+    private func tearDown() async {
         deliver.withLock { $0 = nil }
         let session = session
         await withCheckedContinuation { continuation in

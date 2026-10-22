@@ -24,8 +24,12 @@ public final class CaptureRig: @unchecked Sendable {
     private let audio: [AudioTrackID: any AudioCapture]
     private let minimizedShowsNothing: Bool
     private let bus = OSAllocatedUnfairLock<AudioMixBus?>(initialState: nil)
-    /// Set once the video sources were stopped, so a full stop after `stopVideo()` doesn't stop them twice.
+    /// Set once the video sources were stopped, so a full stop after `stopVideo()` doesn't stop them twice, and a
+    /// picture whose start finishes after it is stopped at once.
     private let videoStopped = OSAllocatedUnfairLock(initialState: false)
+    /// Set once the full stop came, so a sound whose start finishes after it is stopped at once, and a rig stopped
+    /// before it started starts nothing.
+    private let stopped = OSAllocatedUnfairLock(initialState: false)
     /// The pictures whose capture started.
     private let startedVideo = OSAllocatedUnfairLock(initialState: Set<SourceKey>())
 
@@ -46,6 +50,10 @@ public final class CaptureRig: @unchecked Sendable {
 
     /// Starts every source at once, so switching the tool on waits for the slowest one rather than for each in turn
     /// (spec 5.4.4); one that fails is reported and left out.
+    ///
+    /// A stop can come while they start (a second press of the key, the tool switched off, a restart): each source
+    /// whose start finishes after the stop is stopped at once and reported as nothing, so none is left capturing
+    /// (each real source also guards its own start against its stop).
     public func start() async {
         await withTaskGroup(of: Void.self) { group in
             for (key, capture) in video {
@@ -61,6 +69,7 @@ public final class CaptureRig: @unchecked Sendable {
         let hub = hub
         let continuation = continuation
         let hidesWhenMinimized = minimizedShowsNothing
+        guard !videoStopped.withLock({ $0 }) else { return }
         do {
             try await capture.start { event in
                 switch event {
@@ -71,25 +80,45 @@ public final class CaptureRig: @unchecked Sendable {
                     continuation.yield(.ended(key, reason))
                 }
             }
-            startedVideo.withLock { _ = $0.insert(key) }
+            // Marked started under the same lock `stopVideo()` takes, so either the stop sees it started and stops it, or
+            // the start sees the stop and stops it here.
+            let late = videoStopped.withLock { stopped in
+                if !stopped { startedVideo.withLock { _ = $0.insert(key) } }
+                return stopped
+            }
+            guard !late else {
+                await capture.stop()
+                hub.clear(key)
+                return
+            }
             continuation.yield(.started(key))
         } catch {
+            guard !videoStopped.withLock({ $0 }) else { return }
             continuation.yield(.failedToStart(key, error.localizedDescription))
         }
     }
 
     private func start(_ id: AudioTrackID, _ capture: any AudioCapture) async {
         let bus = bus
+        guard !stopped.withLock({ $0 }) else { return }
         do {
             try await capture.start { chunk in bus.withLock { $0 }?.ingest(chunk, for: id) }
+            if stopped.withLock({ $0 }) { await capture.stop() }
         } catch {
+            guard !stopped.withLock({ $0 }) else { return }
             continuation.yield(.audioFailedToStart(id, error.localizedDescription))
         }
     }
 
     /// Stops every source and lets go of their frames; the event stream ends. The pictures go first, then the sounds,
-    /// each group at once.
+    /// each group at once. Sources still starting are stopped as their start finishes (`start()`). Stopping again
+    /// does nothing more.
     public func stop() async {
+        let alreadyStopped = stopped.withLock { stopped in
+            defer { stopped = true }
+            return stopped
+        }
+        guard !alreadyStopped else { return }
         attach(nil)
         await stopVideo()
         await withTaskGroup(of: Void.self) { group in

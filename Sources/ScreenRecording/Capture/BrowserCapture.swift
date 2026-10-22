@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import os
 import WebKit
 
 /// A web page rendered off-screen at the source's pixel size and captured like a window (spec 5.4.2).
@@ -7,8 +8,15 @@ public final class BrowserCapture: VideoCapture, @unchecked Sendable {
     private let url: URL
     private let pixelSize: PixelSize
     private let frameRate: Int
-    private var host: BrowserHost?
-    private var capture: ScreenCapture?
+    private let state = OSAllocatedUnfairLock(uncheckedState: State())
+    /// A stop while the page's window opens or its capture starts wins (`CaptureStartGate`).
+    private let gate = CaptureStartGate()
+
+    private struct State {
+        var host: BrowserHost?
+        /// The page's capture: the one that started, or the attempt under way, so a stop reaches it too.
+        var capture: ScreenCapture?
+    }
 
     public init(url: URL, pixelSize: PixelSize, frameRate: Int = 60) {
         self.url = url
@@ -16,33 +24,52 @@ public final class BrowserCapture: VideoCapture, @unchecked Sendable {
         self.frameRate = frameRate
     }
 
+    /// A stop that comes before or while this runs leaves neither the page's window nor its capture behind.
     public func start(deliver: @escaping @Sendable (VideoCaptureEvent) -> Void) async throws {
-        let host = await BrowserHost(url: url, pixelSize: pixelSize)
-        self.host = host
-        let windowID = await host.windowID
-        // A new window takes a moment to show up in ScreenCaptureKit's list.
-        var lastError: (any Error)?
-        for _ in 0..<10 {
-            let capture = ScreenCapture(target: .window(windowID), showsCursor: false, frameRate: frameRate)
-            do {
-                try await capture.start(deliver: deliver)
-                self.capture = capture
-                return
-            } catch {
-                lastError = error
-                try? await Task.sleep(for: .milliseconds(200))
+        do {
+            try gate.check()
+            let host = await BrowserHost(url: url, pixelSize: pixelSize)
+            state.withLock { $0.host = host }
+            try gate.check()
+            let windowID = await host.windowID
+            // A new window takes a moment to show up in ScreenCaptureKit's list.
+            var lastError: (any Error)?
+            var started = false
+            for _ in 0..<10 {
+                try gate.check()
+                let capture = ScreenCapture(target: .window(windowID), showsCursor: false, frameRate: frameRate)
+                state.withLock { $0.capture = capture }
+                do {
+                    try await capture.start(deliver: deliver)
+                    started = true
+                    break
+                } catch {
+                    lastError = error
+                    try gate.check()
+                    try? await Task.sleep(for: .milliseconds(200))
+                }
             }
+            guard started else { throw lastError ?? CaptureError.unavailable("The web page couldn\u{2019}t be captured.") }
+            try await gate.finish { await tearDown() }
+        } catch {
+            await tearDown()
+            throw error
         }
-        await host.close()
-        self.host = nil
-        throw lastError ?? CaptureError.unavailable("The web page couldn\u{2019}t be captured.")
     }
 
     public func stop() async {
+        gate.close()
+        await tearDown()
+    }
+
+    /// Stops the page's capture and closes its window, whatever of them is there. Running it again finds nothing.
+    private func tearDown() async {
+        let (capture, host) = state.withLock { state in
+            defer { state = State() }
+            return (state.capture, state.host)
+        }
         await capture?.stop()
-        capture = nil
         await host?.close()
-        host = nil
     }
 }
 

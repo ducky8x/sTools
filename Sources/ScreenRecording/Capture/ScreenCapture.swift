@@ -31,7 +31,8 @@ public final class ScreenCapture: NSObject, VideoCapture, SCStreamOutput, SCStre
     private let frameRate: Int
     private let queue = DispatchQueue(label: "sTools.capture.screen", qos: .userInteractive)
     private let state = OSAllocatedUnfairLock(uncheckedState: State())
-    private var refresher: Task<Void, Never>?
+    /// A stop while the stream starts wins (`CaptureStartGate`).
+    private let gate = CaptureStartGate()
 
     /// ScreenCaptureKit isn't annotated for concurrency; a stream is safe to start, stop and update from any task.
     private final class StreamBox: @unchecked Sendable {
@@ -55,6 +56,8 @@ public final class ScreenCapture: NSObject, VideoCapture, SCStreamOutput, SCStre
         /// The observer of overlay panels showing and hiding (the base layer) or of excluded panels showing (a
         /// display).
         var overlayObserver: ObserverBox?
+        /// The base layer's 2 s sweep of the window list.
+        var refresher: Task<Void, Never>?
         /// Numbers the filter's refreshes in the order they read the window list, so an older one that finishes
         /// late never replaces a newer one's filter.
         var lastRefresh = 0
@@ -71,11 +74,16 @@ public final class ScreenCapture: NSObject, VideoCapture, SCStreamOutput, SCStre
         self.frameRate = frameRate
     }
 
+    /// A stop that comes before or while this runs leaves no stream running: the start leaves off at the next await,
+    /// or, once the stream started, stops it again before it returns (and throws `CancellationError`).
     public func start(deliver: @escaping @Sendable (VideoCaptureEvent) -> Void) async throws {
+        try gate.check()
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+        try gate.check()
         let (overlays, excluded) = await MainActor.run {
             (Set(OverlayPanel.visibleWindowNumbers()), Set(OverlayPanel.captureExcludedWindowNumbers()))
         }
+        try gate.check()
         let (filter, included) = try makeFilter(content, overlays: overlays, excluded: excluded)
         let scale = CGFloat(filter.pointPixelScale)
         let size = PixelSize(width: max(2, Int((filter.contentRect.width * scale).rounded())),
@@ -90,11 +98,23 @@ public final class ScreenCapture: NSObject, VideoCapture, SCStreamOutput, SCStre
             $0.filterWindowIDs = included
             $0.requestedSize = size
         }
-        try await box.stream.startCapture()
+        do {
+            try await box.stream.startCapture()
+        } catch {
+            await tearDown()
+            try gate.check()
+            throw error
+        }
         switch target {
         case .base: startRefreshing(on: OverlayPanel.capturableVisibilityDidChange, sweeping: true)
         case .display: startRefreshing(on: OverlayPanel.excludedFromCaptureDidShow, sweeping: false)
         case .window: break
+        }
+        // A stop during `startCapture` may have found the stream not yet running; it's stopped here by its own
+        // reference, since that stop already took it from `state`.
+        try await gate.finish {
+            await tearDown()
+            try? await box.stream.stopCapture()
         }
     }
 
@@ -127,13 +147,19 @@ public final class ScreenCapture: NSObject, VideoCapture, SCStreamOutput, SCStre
         }
     }
 
+    /// Stops the stream for good; a start still under way leaves no stream running either.
     public func stop() async {
-        refresher?.cancel()
-        refresher = nil
-        let (box, observer) = state.withLock { state -> (StreamBox?, ObserverBox?) in
-            defer { state.stream = nil; state.deliver = nil; state.overlayObserver = nil }
-            return (state.stream, state.overlayObserver)
+        gate.close()
+        await tearDown()
+    }
+
+    /// Stops the stream stored so far and lets go of its observer, sweep and output. Running it again finds nothing.
+    private func tearDown() async {
+        let (box, observer, refresher) = state.withLock { state -> (StreamBox?, ObserverBox?, Task<Void, Never>?) in
+            defer { state.stream = nil; state.deliver = nil; state.overlayObserver = nil; state.refresher = nil }
+            return (state.stream, state.overlayObserver, state.refresher)
         }
+        refresher?.cancel()
         if let observer { NotificationCenter.default.removeObserver(observer.token) }
         try? await box?.stream.stopCapture()
     }
@@ -183,13 +209,14 @@ public final class ScreenCapture: NSObject, VideoCapture, SCStreamOutput, SCStre
         let box = ObserverBox(observer)
         state.withLock { $0.overlayObserver = box }
         guard sweeping else { return }
-        refresher = Task { [weak self] in
+        let refresher = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(2))
                 guard let self, !Task.isCancelled else { return }
                 await self.refreshFilter()
             }
         }
+        state.withLock { $0.refresher = refresher }
     }
 
     /// An overlay showed or hid: refresh once the debounce's delay has passed, unless a refresh already waits.
