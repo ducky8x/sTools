@@ -776,10 +776,14 @@ public final class ScreenRecordingController: ToolController {
         Task { [weak self] in
             try? await Task.sleep(for: timeout)
             guard let self, self.session === session, self.isCurrent(start) else { return }
-            let seconds = Double(timeout.components.seconds) + Double(timeout.components.attoseconds) / 1e18
-            self.failStart(start, reason: "the video encoder didn\u{2019}t respond",
-                           detail: "no frame reached the file in \(String(format: "%g", seconds)) seconds.")
+            self.failStart(start, reason: "the video encoder didn\u{2019}t respond", detail: Self.noFrameDetail(after: timeout))
         }
+    }
+
+    /// The page's note for a start whose first frame never reached the file within `timeout`.
+    static func noFrameDetail(after timeout: Duration) -> String {
+        let seconds = Double(timeout.components.seconds) + Double(timeout.components.attoseconds) / 1e18
+        return "no frame reached the file in \(String(format: "%g", seconds)) \(seconds == 1 ? "second" : "seconds")."
     }
 
     /// A few words on why a writer couldn't open its file, for the line over the game.
@@ -1132,7 +1136,10 @@ public final class ScreenRecordingController: ToolController {
         case .starting, .countingDown: "Starting a recording"
         case .finishing: "Finishing a recording"
         case .deciding: "Waiting for Save or Delete, \(isEnabled ? "on" : "off")"
-        case .idle: isEnabled ? "Armed, \(layout.videoSources.count) video and \(layout.audioSources.count) audio sources" : "Off"
+        case .idle:
+            isEnabled
+                ? "Armed, \(CountText.of(layout.videoSources.count, "video source")) and \(CountText.of(layout.audioSources.count, "audio source"))"
+                : "Off"
         }
     }
 }

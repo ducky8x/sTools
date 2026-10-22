@@ -77,7 +77,7 @@ struct RecordingDecisionView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if finished.droppedFrames > 0 {
-                    Text("\(finished.droppedFrames) frames were dropped. If Game Mode was on, macOS may have lowered sTools\u{2019} priority; lower the frame rate or output size if this keeps happening.")
+                    Text(Self.droppedLine(finished.droppedFrames))
                         .stStyle(.caption).foregroundStyle(theme.inkTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -141,6 +141,12 @@ struct RecordingDecisionView: View {
         Text(text)
             .stStyle(.caption).foregroundStyle(theme.inkTertiary)
             .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// How many frames were dropped, and what to do about it.
+    static func droppedLine(_ count: Int) -> String {
+        "\(CountText.of(count, "frame", verb: ("was", "were"))) dropped. If Game Mode was on, macOS may have lowered "
+            + "sTools\u{2019} priority; lower the frame rate or output size if this keeps happening."
     }
 
     /// "00:12:34 long." or "01:02:03 long, in 2 files."

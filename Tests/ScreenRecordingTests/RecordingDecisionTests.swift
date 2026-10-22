@@ -86,6 +86,14 @@ struct RecordingDecisionViewTests {
         #expect(RecordingDecisionView.lengthLine(split) == "00:12:34 long, in 2 files.")
     }
 
+    /// Dropped frames are counted in words that agree with the count, one frame included.
+    @Test func droppedFramesReadInTheSingularForOne() {
+        #expect(RecordingDecisionView.droppedLine(1).hasPrefix("1 frame was dropped. "))
+        #expect(RecordingDecisionView.droppedLine(12).hasPrefix("12 frames were dropped. "))
+        #expect(RecordBar.droppedText(1) == "1 frame dropped")
+        #expect(RecordBar.droppedText(3) == "3 frames dropped")
+    }
+
     /// The question lays out at its width, and its name field starts with the date and time.
     @Test func theNameFieldOffersTheDateAndTimeAndTakesTheKeyboard() throws {
         _ = STFont.register()

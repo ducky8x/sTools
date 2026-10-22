@@ -1131,6 +1131,13 @@ struct ScreenRecordingFirstFrameTests {
 
     /// A first frame that never reaches the file (an encoder that never takes one) doesn't leave the start hanging:
     /// after a while it ends, says why, and leaves nothing behind.
+    /// The page's note for a first frame that never came counts the seconds in words that agree, one included.
+    @Test func theNoFrameNoteCountsItsSeconds() {
+        #expect(ScreenRecordingController.noFrameDetail(after: .seconds(5)) == "no frame reached the file in 5 seconds.")
+        #expect(ScreenRecordingController.noFrameDetail(after: .seconds(1)) == "no frame reached the file in 1 second.")
+        #expect(ScreenRecordingController.noFrameDetail(after: .milliseconds(300)) == "no frame reached the file in 0.3 seconds.")
+    }
+
     @Test func aFirstFrameThatNeverComesEndsTheStart() async throws {
         let harness = Harness()
         defer { harness.remove() }
@@ -1521,6 +1528,18 @@ struct ScreenRecordingArmingTests {
         #expect(harness.controller.toggleRecording() == .starting(waitsForSources: false))
         #expect(await harness.waitUntil { harness.controller.phase == .recording })
         await finish(harness)
+    }
+
+    /// Copy Diagnostics' line for an armed tool counts its sources in words that agree with each count.
+    @Test func theDiagnosticsLineCountsItsSources() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        await harness.arm()
+        #expect(harness.controller.diagnosticsSummary == "Armed, 0 video sources and 0 audio sources")
+        harness.addCameraAndMicrophone()
+        #expect(harness.controller.diagnosticsSummary == "Armed, 1 video source and 1 audio source")
+        harness.controller.setEnabled(false)
+        #expect(await harness.waitUntil { !harness.factory.anyRunning })
     }
 
     /// Switched off while a window source's listing is read, and left off: the read ends with the tool off and brings

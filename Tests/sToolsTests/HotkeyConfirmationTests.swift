@@ -25,6 +25,7 @@ struct HotkeyConfirmationTests {
         // The stop switches the tool off too, so the line says so, as Timer Overlay's cancel says "Timer Overlay off".
         #expect(HotkeyConfirmation.phrase(.recordingStopped) == "Recording stopped \u{00B7} Screen Recording off")
         #expect(HotkeyConfirmation.phrase(.recordingCountdown(seconds: 3)) == "Recording starts in 3 seconds")
+        #expect(HotkeyConfirmation.phrase(.recordingCountdown(seconds: 1)) == "Recording starts in 1 second")
         // A canceled start switches the tool off too, and says so the same way.
         #expect(HotkeyConfirmation.phrase(.recordingCanceled) == "Recording canceled \u{00B7} Screen Recording off")
         #expect(HotkeyConfirmation.phrase(.recordingCouldNotStart("the disk is almost full"))
