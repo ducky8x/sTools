@@ -3,12 +3,12 @@ import STDesign
 import STPlatform
 import SwiftUI
 
-/// Home ▸ Hotkeys (spec 6.1), near the top of Home: Where hotkeys work, the Key set chooser, the list of hotkeys (key
-/// and actions at a glance), Add Hotkey…, an add/edit editor for each, and Advanced (spec 2.4) with the press
-/// confirmation. While hotkeys are off, one strip says so with Turn On; while on, the master switch turns them off. Any
-/// key works, alone
-/// or with modifiers. What the Key Rebinder knows (which key on the keyboard sends a hotkey's key, what Minecraft
-/// uses it for) arrives through `model.hotkeys.advisor`; without one, those lines are simply left out.
+/// Home ▸ Hotkeys (spec 6.1), near the top of Home: Where hotkeys work and the key sets, each with every option in view
+/// and the sets with what the current one gives each tool, the list of hotkeys (key and actions at a glance), Add
+/// Hotkey…, an add/edit editor for each, and Advanced (spec 2.4) with the press confirmation. While hotkeys are off,
+/// one strip says so with Turn On; while on, the master switch turns them off. Any key works, alone or with modifiers.
+/// What the Key Rebinder knows (which key on the keyboard sends a hotkey's key, what Minecraft uses it for) arrives
+/// through `model.hotkeys.advisor`; without one, those lines are simply left out.
 struct HotkeysSection: View {
     let model: AppModel
     @State private var editingID: UUID?
@@ -61,26 +61,20 @@ struct HotkeysSection: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await prepareAdvice() }
         }
-        STSettingsRow("Where hotkeys work", showsRule: Self.scopeNote(scope: hotkeys.scope,
-                                                                    accessibilityGranted: model.accessibilityGranted) == nil) {
-            HotkeysChoiceMenu(title: hotkeys.scope.title,
-                              options: HotkeyScope.allCases.map { STSegmentedOption($0, $0.title) },
-                              selection: hotkeys.scope, label: "Where hotkeys work") { model.hotkeys.scope = $0 }
+        // Both choices stay in view, every option at once, rather than behind menus (revision 9).
+        let scopeNote = Self.scopeNote(scope: hotkeys.scope, accessibilityGranted: model.accessibilityGranted)
+        HotkeysChoiceRow("Where hotkeys work", showsRule: scopeNote == nil) {
+            STSegmented(selection: scopeBinding, options: Self.scopeOptions)
         }
-        if let note = Self.scopeNote(scope: hotkeys.scope, accessibilityGranted: model.accessibilityGranted) {
-            HotkeysCaption(note)
-                .padding(.bottom, 12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .overlay(alignment: .bottom) {
-                    Rectangle().fill(STColor.rule).frame(height: 1).accessibilityHidden(true)
-                }
+        if let scopeNote {
+            HotkeysCaption(scopeNote).hotkeysCaptionRow()
         }
         // One key per tool, in sidebar order; picking a set changes only those, and asks before a key set by hand goes.
-        STSettingsRow("Key set") {
-            HotkeysChoiceMenu(title: Self.keySetTitle(hotkeys.keySet),
-                              options: HotkeyKeySet.allCases.map { STSegmentedOption($0, $0.title) },
-                              selection: hotkeys.keySet, label: "Key set", choose: chooseKeySet)
+        // Nothing is underlined while the keys are Custom.
+        HotkeysChoiceRow("Key set", showsRule: false) {
+            STSegmented(selection: keySetBinding, options: Self.keySetOptions)
         }
+        HotkeysCaption(Self.keySetCaption(hotkeys.keySet)).hotkeysCaptionRow()
         .confirmationDialog(
             pendingKeySet.map { Self.keySetQuestion($0) } ?? "", isPresented: keySetQuestionIsShown,
             titleVisibility: .visible, presenting: pendingKeySet,
@@ -145,8 +139,30 @@ struct HotkeysSection: View {
         return "Until Accessibility is allowed, sTools can't tell when Minecraft is in front, so hotkeys work only in sTools."
     }
 
-    /// The chooser's label: the set the tools' own hotkeys follow, or Custom once a key was set by hand.
+    /// Where hotkeys work, both choices in view.
+    static var scopeOptions: [STSegmentedOption<HotkeyScope>] {
+        HotkeyScope.allCases.map { STSegmentedOption($0, $0.title) }
+    }
+
+    /// Every key set in view, in the order the arrow keys cycle through them. While the keys are Custom (`keySet` is
+    /// nil) none of them is underlined.
+    static var keySetOptions: [STSegmentedOption<HotkeyKeySet?>] {
+        HotkeyKeySet.allCases.map { STSegmentedOption(Optional($0), $0.title) }
+    }
+
+    /// The set's name: the set the tools' own hotkeys follow, or Custom once a key was set by hand.
     static func keySetTitle(_ set: HotkeyKeySet?) -> String { set?.title ?? "Custom" }
+
+    /// The line under the key sets: what the current set gives each tool, in sidebar order ("⌘1 NBB Overlay · ⌘2
+    /// Window Backdrop · …", each key and tool held together by no-break spaces so a narrow column wraps between
+    /// them), that None gives none a key, or, while the keys are Custom, whose keys they are.
+    static func keySetCaption(_ set: HotkeyKeySet?) -> String {
+        guard let set else { return "Custom: keys you set yourself. Pick a set for one key per tool, in sidebar order." }
+        let keys = HotkeyKeySet.toolActions.compactMap { action in
+            set.combo(for: action).map { "\($0.displayString) \(toolName(for: action))".replacingOccurrences(of: " ", with: "\u{00A0}") }
+        }
+        return keys.isEmpty ? "No tool has a key of its own." : keys.joined(separator: " · ")
+    }
 
     /// The confirmation's title before `set` replaces keys set by hand: "Use ⌃1–⌃5?", "Remove every tool's key?".
     static func keySetQuestion(_ set: HotkeyKeySet) -> String {
@@ -182,6 +198,16 @@ struct HotkeysSection: View {
 
     private var keySetQuestionIsShown: Binding<Bool> {
         Binding(get: { pendingKeySet != nil }, set: { if !$0 { pendingKeySet = nil } })
+    }
+
+    /// The key set the tools' own hotkeys follow, nil while Custom. Picking one goes through `chooseKeySet`, so it may
+    /// ask first and leave the keys as they are.
+    private var keySetBinding: Binding<HotkeyKeySet?> {
+        Binding(get: { model.hotkeys.keySet }, set: { set in if let set { chooseKeySet(set) } })
+    }
+
+    private var scopeBinding: Binding<HotkeyScope> {
+        Binding(get: { model.hotkeys.scope }, set: { model.hotkeys.scope = $0 })
     }
 
     private func prepareAdvice() async {
@@ -388,28 +414,49 @@ struct HotkeyEditor: View {
     }
 }
 
-/// A pop-up menu that picks one of `options`, in the app's type (`STMenuLabel`), with a check beside the current one.
-/// `selection` may be nil when no option fits (a key set nobody picked), and `title` then says what the state is.
-struct HotkeysChoiceMenu<Value: Hashable>: View {
-    let title: String
-    let options: [STSegmentedOption<Value>]
-    let selection: Value?
-    let label: String
-    let choose: (Value) -> Void
+/// A choice Home ▸ Hotkeys keeps in view (Where hotkeys work, Key set): its small-caps label with every option beside
+/// it, as a settings row, or the options under the label when the column is too narrow for both on one line.
+private struct HotkeysChoiceRow<Control: View>: View {
+    private let label: String
+    private let showsRule: Bool
+    private let control: Control
+    @Environment(\.stTheme) private var theme
+
+    init(_ label: String, showsRule: Bool = true, @ViewBuilder control: () -> Control) {
+        self.label = label
+        self.showsRule = showsRule
+        self.control = control()
+    }
 
     var body: some View {
-        Menu {
-            ForEach(options) { option in
-                Button { choose(option.value) } label: {
-                    if option.value == selection { Label(option.title, systemImage: "checkmark") } else { Text(option.title) }
+        ViewThatFits(in: .horizontal) {
+            STSettingsRow(label, showsRule: showsRule) { control.fixedSize() }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(label)
+                    .stStyle(.label)
+                    .foregroundStyle(theme.inkSecondary)
+                control
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 12)
+            .overlay(alignment: .bottom) {
+                if showsRule {
+                    Rectangle().fill(STColor.rule).frame(height: 1).accessibilityHidden(true)
                 }
             }
-        } label: {
-            STMenuLabel(title)
+            .accessibilityElement(children: .combine)
         }
-        .stMenuStyle()
-        .accessibilityLabel(label)
-        .accessibilityValue(title)
+    }
+}
+
+private extension View {
+    /// A caption that finishes a row of Home ▸ Hotkeys: the row's rule under it.
+    func hotkeysCaptionRow() -> some View {
+        padding(.bottom, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(STColor.rule).frame(height: 1).accessibilityHidden(true)
+            }
     }
 }
 
