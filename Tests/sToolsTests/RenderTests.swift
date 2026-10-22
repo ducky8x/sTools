@@ -50,6 +50,19 @@ struct RenderTests {
         #expect(distinctColors(in: rep) > 20)
     }
 
+    /// The longest timer status (plan T8), at the smallest and largest text size, fits the sidebar's status line:
+    /// the sidebar keeps its 236 pt at the window's 680 pt minimum, less the line's 16 pt margin and its indent.
+    @Test(arguments: [0.9, 1.0, 1.3])
+    func theLongestTimerStatusFitsTheSidebar(textScale: Double) {
+        _ = STFont.register()
+        let theme = STTheme(textScale: textScale)
+        let label = NSHostingView(rootView: Text(ToolStatus.timer("Paused, 99:59:59").label)
+            .stStyle(.label).fixedSize().environment(\.stTheme, theme))
+        let room = 236 - 16 - 22 * textScale
+        #expect(label.fittingSize.width > 60)
+        #expect(label.fittingSize.width < room, "\(label.fittingSize.width) pt in \(room) pt")
+    }
+
     @Test func hotkeyConfirmationRenders() {
         let rep = renderBitmap(HotkeyHUDView(line: "Crosshair on \u{00B7} NBB Overlay on").environment(\.stTheme, STTheme()),
                                size: CGSize(width: 300, height: 44))
