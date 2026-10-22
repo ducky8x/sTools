@@ -193,6 +193,11 @@ public struct VideoSource: Codable, Equatable, Hashable, Identifiable, Sendable 
                   cornerRadius: mapping.fraction(ofLength: cornerRadius), border: border, zIndex: zIndex)
     }
 
+    /// A window source, whose window is found again in Add Source's listing when the sources start.
+    var isWindow: Bool {
+        if case .window = kind { true } else { false }
+    }
+
     /// The frame in pixels of a `canvas`-sized canvas.
     public func pixelFrame(on canvas: PixelSize) -> PixelRect {
         CanvasMapping(canvas).rect(frame)

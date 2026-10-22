@@ -18,16 +18,25 @@ final class FakeVideoCapture: VideoCapture, @unchecked Sendable {
     let failsToStart: Bool
     private let name: String
     private let stops: StopLog?
+    /// How long starting takes, as a real stream's or camera's start can.
+    private let startTakes: Duration?
+    /// Delivered as it starts, as ScreenCaptureKit sends a stream's first frame.
+    private let firstFrame: VideoFrame?
 
-    init(failsToStart: Bool = false, name: String = "video", stops: StopLog? = nil) {
+    init(failsToStart: Bool = false, name: String = "video", stops: StopLog? = nil, startTakes: Duration? = nil,
+         firstFrame: VideoFrame? = nil) {
         self.failsToStart = failsToStart
         self.name = name
         self.stops = stops
+        self.startTakes = startTakes
+        self.firstFrame = firstFrame
     }
 
     func start(deliver: @escaping @Sendable (VideoCaptureEvent) -> Void) async throws {
+        if let startTakes { try? await Task.sleep(for: startTakes) }
         if failsToStart { throw CocoaError(.featureUnsupported) }
         handler.withLock { $0 = deliver }
+        if let firstFrame { deliver(.frame(firstFrame)) }
     }
 
     func stop() async {
@@ -48,13 +57,18 @@ final class FakeAudioCapture: AudioCapture, @unchecked Sendable {
     private let handler = OSAllocatedUnfairLock<(@Sendable (AudioChunk) -> Void)?>(initialState: nil)
     private let name: String
     private let stops: StopLog?
+    private let startTakes: Duration?
 
-    init(name: String = "audio", stops: StopLog? = nil) {
+    init(name: String = "audio", stops: StopLog? = nil, startTakes: Duration? = nil) {
         self.name = name
         self.stops = stops
+        self.startTakes = startTakes
     }
 
-    func start(deliver: @escaping @Sendable (AudioChunk) -> Void) async throws { handler.withLock { $0 = deliver } }
+    func start(deliver: @escaping @Sendable (AudioChunk) -> Void) async throws {
+        if let startTakes { try? await Task.sleep(for: startTakes) }
+        handler.withLock { $0 = deliver }
+    }
 
     func stop() async {
         let wasRunning = handler.withLock { handler in
@@ -267,6 +281,44 @@ struct CaptureRigTests {
         #expect(rig.hub.snapshot().frames[.source(id)] == nil)
         window.push(.minimized(false))
         #expect(rig.hub.snapshot().frames[.source(id)] != nil)
+        await rig.stop()
+    }
+
+    /// The sources of a recording start together (spec 5.4.4): switching the tool on with its key waits for the
+    /// slowest source, not for each in turn. Three pictures and two sounds that each take 200 ms to start are all up in
+    /// about 200 ms; one after another they would take a second.
+    @Test func everySourceStartsAtOnce() async {
+        let take = Duration.milliseconds(200)
+        let video: [SourceKey: any VideoCapture] = [
+            .base: FakeVideoCapture(startTakes: take),
+            .source(UUID()): FakeVideoCapture(startTakes: take),
+            .source(UUID()): FakeVideoCapture(startTakes: take),
+        ]
+        let audio: [AudioTrackID: any AudioCapture] = [
+            .minecraft: FakeAudioCapture(startTakes: take),
+            .source(UUID()): FakeAudioCapture(startTakes: take),
+        ]
+        let rig = CaptureRig(video: video, audio: audio, minimizedShowsNothing: false)
+        let began = ContinuousClock.now
+        await rig.start()
+        let took = ContinuousClock.now - began
+        #expect(took >= take)
+        #expect(took < .milliseconds(800))
+        #expect(video.values.allSatisfy { ($0 as? FakeVideoCapture)?.isRunning == true })
+        #expect(audio.values.allSatisfy { ($0 as? FakeAudioCapture)?.isRunning == true })
+        await rig.stop()
+    }
+
+    /// It knows which pictures are running: a start waits for Minecraft's first frame only when its capture started.
+    @Test func itKnowsWhichPicturesStarted() async {
+        let camera = SourceKey.source(UUID())
+        let rig = CaptureRig(
+            video: [.base: FakeVideoCapture(failsToStart: true), camera: FakeVideoCapture()], audio: [:],
+            minimizedShowsNothing: false)
+        #expect(!rig.hasStarted(.base) && !rig.hasStarted(camera))
+        await rig.start()
+        #expect(!rig.hasStarted(.base))
+        #expect(rig.hasStarted(camera))
         await rig.stop()
     }
 }

@@ -7,13 +7,24 @@ import STDesign
 import Testing
 @testable import sTools
 
-/// No capture at all: a recording is a blank canvas, written to the harness's folder. Nothing asks for a permission.
+/// No capture at all: a recording is a blank canvas, written to the harness's folder. A microphone in the layout gets a
+/// stand-in that only takes `startTakes` to start, as a real source's start can. Nothing asks for a permission.
 @MainActor
 private final class NoCapture: CaptureFactory {
+    let startTakes: Duration?
+    init(startTakes: Duration?) { self.startTakes = startTakes }
     func base(minecraftWindowID: UInt32, showsCursor: Bool) -> (any VideoCapture)? { nil }
     func video(for source: VideoSource, canvas: PixelSize, showsCursor: Bool) -> (any VideoCapture)? { nil }
-    func audio(for source: AudioSource) -> (any AudioCapture)? { nil }
+    func audio(for source: AudioSource) -> (any AudioCapture)? { startTakes.map(SlowMicrophone.init) }
     func minecraftAudio(processID: Int32) -> (any AudioCapture)? { nil }
+}
+
+/// A microphone that takes a while to start and then hears nothing.
+private final class SlowMicrophone: AudioCapture, @unchecked Sendable {
+    let startTakes: Duration
+    init(startTakes: Duration) { self.startTakes = startTakes }
+    func start(deliver: @escaping @Sendable (AudioChunk) -> Void) async throws { try? await Task.sleep(for: startTakes) }
+    func stop() async {}
 }
 
 /// Records what the controller asked of the Save/Delete question instead of showing the panel.
@@ -54,10 +65,10 @@ private final class RecordingHarness {
     static let patience: Duration = .seconds(20)
 
     /// `hotkeys` is the `hotkeys.json` the launch finds: an existing, empty list by default; nil for a new install,
-    /// which starts with ⌘1–⌘5. `armingTakes`: how long the sources take to come up when the tool switches on, as
-    /// ScreenCaptureKit's listing and the captures starting can on real hardware. `screenRecording`: Screen & System
-    /// Audio Recording, granted by default (Accessibility always is).
-    init(hotkeys: HotkeySettings? = HotkeySettings(), armingTakes: Duration? = nil,
+    /// which starts with ⌘1–⌘5. `sourcesTake`: how long the sources take to come up when the tool switches on, as the
+    /// captures starting can on real hardware (a microphone that takes that long is added). `screenRecording`: Screen &
+    /// System Audio Recording, granted by default (Accessibility always is).
+    init(hotkeys: HotkeySettings? = HotkeySettings(), sourcesTake: Duration? = nil,
          screenRecording: PermissionStatus = .granted) {
         let store = SettingsStore(directory: directory, debounce: .milliseconds(10))
         store.save(AppState(prologueCompleted: true))
@@ -69,12 +80,12 @@ private final class RecordingHarness {
             minecraft: MinecraftLocator(source: StaticMinecraftWindowSource(instances: [])),
             permissions: PermissionCenter(prober: prober, openURL: { _ in }))
         recording = ScreenRecordingController(
-            services: services, makeFactory: { _ in NoCapture() },
-            loadAvailable: { _ in
-                if let armingTakes { try? await Task.sleep(for: armingTakes) }
-                return AvailableSources()
-            },
+            services: services, makeFactory: { _ in NoCapture(startTakes: sourcesTake) },
+            loadAvailable: { _ in AvailableSources() },
             inProcessAudio: InProcessAudio(), decisionPresenter: question)
+        if sourcesTake != nil {
+            recording.updateLayout { $0.add(AudioSource(kind: .microphone(uniqueID: "slow"), name: "Microphone")) }
+        }
         recording.options.folderPath = directory.appending(path: "Movies", directoryHint: .isDirectory).path
         recording.options.canvas = .custom(PixelSize(width: 320, height: 180))
         recording.options.frameRate = .fps30
@@ -190,7 +201,7 @@ struct AppModelRecordingTests {
     /// during a countdown does: nothing is written or asked, the tool is off and the line says so. (It used to start
     /// a second recording, one of which kept writing unseen.)
     @Test func aSecondPressWhileItStartsCancelsIt() async throws {
-        let harness = RecordingHarness(armingTakes: .milliseconds(300))
+        let harness = RecordingHarness(sourcesTake: .milliseconds(300))
         let id = harness.addKey()
         harness.press(id)
         #expect(harness.recording.phase == .starting)

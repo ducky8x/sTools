@@ -26,6 +26,8 @@ public final class CaptureRig: @unchecked Sendable {
     private let bus = OSAllocatedUnfairLock<AudioMixBus?>(initialState: nil)
     /// Set once the video sources were stopped, so a full stop after `stopVideo()` doesn't stop them twice.
     private let videoStopped = OSAllocatedUnfairLock(initialState: false)
+    /// The pictures whose capture started.
+    private let startedVideo = OSAllocatedUnfairLock(initialState: Set<SourceKey>())
 
     public init(video: [SourceKey: any VideoCapture], audio: [AudioTrackID: any AudioCapture], minimizedShowsNothing: Bool) {
         self.video = video
@@ -37,34 +39,51 @@ public final class CaptureRig: @unchecked Sendable {
     public var videoKeys: Set<SourceKey> { Set(video.keys) }
     public var audioTracks: Set<AudioTrackID> { Set(audio.keys) }
 
-    /// Starts every source; one that fails is reported and left out.
+    /// Whether `key`'s capture started (and so may deliver frames).
+    public func hasStarted(_ key: SourceKey) -> Bool {
+        startedVideo.withLock { $0.contains(key) }
+    }
+
+    /// Starts every source at once, so switching the tool on waits for the slowest one rather than for each in turn
+    /// (spec 5.4.4); one that fails is reported and left out.
     public func start() async {
-        for (key, capture) in video {
-            let hub = hub
-            let continuation = continuation
-            let hidesWhenMinimized = minimizedShowsNothing
-            do {
-                try await capture.start { event in
-                    switch event {
-                    case .frame(let frame): hub.submit(frame, for: key)
-                    case .minimized(let minimized): if hidesWhenMinimized { hub.setHidden(minimized, for: key) }
-                    case .ended(let reason):
-                        hub.clear(key)
-                        continuation.yield(.ended(key, reason))
-                    }
-                }
-                continuation.yield(.started(key))
-            } catch {
-                continuation.yield(.failedToStart(key, error.localizedDescription))
+        await withTaskGroup(of: Void.self) { group in
+            for (key, capture) in video {
+                group.addTask { await self.start(key, capture) }
+            }
+            for (id, capture) in audio {
+                group.addTask { await self.start(id, capture) }
             }
         }
-        for (id, capture) in audio {
-            let bus = bus
-            do {
-                try await capture.start { chunk in bus.withLock { $0 }?.ingest(chunk, for: id) }
-            } catch {
-                continuation.yield(.audioFailedToStart(id, error.localizedDescription))
+    }
+
+    private func start(_ key: SourceKey, _ capture: any VideoCapture) async {
+        let hub = hub
+        let continuation = continuation
+        let hidesWhenMinimized = minimizedShowsNothing
+        do {
+            try await capture.start { event in
+                switch event {
+                case .frame(let frame): hub.submit(frame, for: key)
+                case .minimized(let minimized): if hidesWhenMinimized { hub.setHidden(minimized, for: key) }
+                case .ended(let reason):
+                    hub.clear(key)
+                    continuation.yield(.ended(key, reason))
+                }
             }
+            startedVideo.withLock { _ = $0.insert(key) }
+            continuation.yield(.started(key))
+        } catch {
+            continuation.yield(.failedToStart(key, error.localizedDescription))
+        }
+    }
+
+    private func start(_ id: AudioTrackID, _ capture: any AudioCapture) async {
+        let bus = bus
+        do {
+            try await capture.start { chunk in bus.withLock { $0 }?.ingest(chunk, for: id) }
+        } catch {
+            continuation.yield(.audioFailedToStart(id, error.localizedDescription))
         }
     }
 

@@ -99,6 +99,10 @@ public final class ScreenRecordingController: ToolController {
     /// How long a start waits for its first frame to reach the file once the writer is open, before it ends and says
     /// why. A frame normally lands within one tick.
     @ObservationIgnored var firstFrameTimeout: Duration = .seconds(5)
+    /// How long a start waits for Minecraft's first frame once its capture runs, so the file doesn't open on a black
+    /// canvas. ScreenCaptureKit sends a stream's first frame within a frame or two; past this, the recording starts
+    /// and the game's picture joins as it comes.
+    @ObservationIgnored var minecraftFrameWait: Duration = .milliseconds(500)
     public private(set) var phase = Phase.idle {
         didSet {
             guard phase != oldValue, !phaseWaiters.isEmpty else { return }
@@ -232,6 +236,9 @@ public final class ScreenRecordingController: ToolController {
     }
 
     /// Starts the sources, or with `restarting`, stops and starts them again; `armTask` is what a start waits for.
+    ///
+    /// Add Source's listing (ScreenCaptureKit's window list, the cameras and microphones, the apps) is read alongside:
+    /// only a window source needs it first, to find its window again, so the key's start isn't held up by it otherwise.
     private func arm(restarting: Bool = false) {
         armTask?.cancel()
         armCount += 1
@@ -239,7 +246,11 @@ public final class ScreenRecordingController: ToolController {
         armTask = Task { [weak self] in
             guard let self else { return }
             if restarting { await self.tearDownRig() }
-            await self.refreshAvailableSources()
+            if self.layout.videoSources.contains(where: \.isWindow) {
+                await self.refreshAvailableSources()
+            } else {
+                Task { await self.refreshAvailableSources() }
+            }
             await self.buildRig()
             if count > self.armedCount { self.armedCount = count }
         }
@@ -493,6 +504,11 @@ public final class ScreenRecordingController: ToolController {
                 try? await Task.sleep(for: .seconds(1))
                 guard isCurrent(start) else { return }
             }
+        }
+        // The recording's first frame shows the game: its capture runs a moment before the first frame arrives.
+        if let rig, rig.hasStarted(.base) {
+            _ = await rig.hub.waitForFrame(of: .base, timeout: minecraftFrameWait)
+            guard isCurrent(start) else { return }
         }
         beginWriting(start)
     }

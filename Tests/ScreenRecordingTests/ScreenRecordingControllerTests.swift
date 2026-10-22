@@ -16,11 +16,20 @@ private final class FakeFactory: CaptureFactory {
     private(set) var audioCaptures: [FakeAudioCapture] = []
     /// How many times Minecraft's capture was made: once per arming.
     private(set) var baseCount = 0
+    /// The window IDs the window sources were captured by, in order.
+    private(set) var capturedWindowIDs: [UInt32] = []
     /// The order the captures stopped in, "video" or "audio" each.
     let stops = StopLog()
+    /// How long Minecraft's capture takes to start, as ScreenCaptureKit's can on real hardware.
+    var baseStartTakes: Duration?
+    /// Whether Minecraft's capture sends a first frame as it starts, as ScreenCaptureKit's does.
+    var baseSendsFirstFrame = true
 
     func base(minecraftWindowID: UInt32, showsCursor: Bool) -> (any VideoCapture)? {
-        let capture = FakeVideoCapture(name: "video", stops: stops)
+        let first = baseSendsFirstFrame
+            ? VideoFrame(pixelBuffer: WriterFixture.makeFrame(index: 0, size: PixelSize(width: 320, height: 180)), hostTime: HostMediaClock().now())
+            : nil
+        let capture = FakeVideoCapture(name: "video", stops: stops, startTakes: baseStartTakes, firstFrame: first)
         bases[minecraftWindowID] = capture
         baseCount += 1
         videoCaptures.append(capture)
@@ -28,6 +37,7 @@ private final class FakeFactory: CaptureFactory {
     }
 
     func video(for source: VideoSource, canvas: PixelSize, showsCursor: Bool) -> (any VideoCapture)? {
+        if case .window(let reference) = source.kind { capturedWindowIDs.append(reference.windowID) }
         let capture = FakeVideoCapture(name: "video", stops: stops)
         videos[source.id] = capture
         videoCaptures.append(capture)
@@ -102,6 +112,12 @@ private final class ScreenRecordingPermission: PermissionProbing {
     }
 }
 
+/// How many times Add Source's listing finished.
+@MainActor
+private final class ListingCount {
+    var finished = 0
+}
+
 @MainActor
 private struct Harness {
     let directory: URL
@@ -111,11 +127,13 @@ private struct Harness {
     let presenter = FakeDecisionPresenter()
     let controller: ScreenRecordingController
     let source: StaticMinecraftWindowSource
+    let listings = ListingCount()
 
-    /// `armingTakes`: how long listing the sources takes when the tool switches on, as ScreenCaptureKit's listing can
-    /// on real hardware (with Minecraft's capture, its sound and a camera starting after it, up to a couple of seconds).
+    /// `sourcesTake`: how long Minecraft's capture takes to start when the tool switches on, as ScreenCaptureKit's can
+    /// on real hardware. `listingTakes`: how long Add Source's listing takes, and `listing` what it finds.
     /// `permissions`: what the permission center reads; everything is granted by default.
-    init(minecraft: Bool = true, armingTakes: Duration? = nil, permissions: any PermissionProbing = Granted()) {
+    init(minecraft: Bool = true, sourcesTake: Duration? = nil, listingTakes: Duration? = nil,
+         listing: AvailableSources = AvailableSources(), permissions: any PermissionProbing = Granted()) {
         directory = FileManager.default.temporaryDirectory.appending(path: "stools-recording-\(UUID().uuidString)", directoryHint: .isDirectory)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let window = MinecraftWindow(windowNumber: 42, processID: 4242, title: "Minecraft* 1.16.1", frame: CGRect(x: 0, y: 0, width: 800, height: 600))
@@ -126,11 +144,14 @@ private struct Harness {
             settings: SettingsStore(directory: directory.appending(path: "settings", directoryHint: .isDirectory)),
             displays: DisplayDirectory(), minecraft: locator, permissions: PermissionCenter(prober: permissions))
         let factory = factory
+        factory.baseStartTakes = sourcesTake
+        let listings = listings
         controller = ScreenRecordingController(
             services: services, makeFactory: { _ in factory },
             loadAvailable: { _ in
-                if let armingTakes { try? await Task.sleep(for: armingTakes) }
-                return AvailableSources()
+                if let listingTakes { try? await Task.sleep(for: listingTakes) }
+                listings.finished += 1
+                return listing
             },
             inProcessAudio: audio, decisionPresenter: presenter)
         var options = controller.options
@@ -665,7 +686,7 @@ struct ScreenRecordingKeyTests {
     /// press in that moment cancels the start, as one during a countdown does: nothing is written, nothing is asked,
     /// and the tool is off. (It used to start a second recording, and one of the two kept writing unseen.)
     @Test func aSecondPressWhileItStartsCancelsItAndWritesNothing() async throws {
-        let harness = Harness(armingTakes: .milliseconds(300))
+        let harness = Harness(sourcesTake: .milliseconds(300))
         defer { harness.remove() }
         #expect(harness.controller.toggleRecording() == .starting(waitsForSources: true))
         #expect(harness.controller.phase == .starting)
@@ -685,7 +706,7 @@ struct ScreenRecordingKeyTests {
 
     /// One press while the sources take their time records exactly once, and the next press stops that recording.
     @Test func onePressWhileTheSourcesTakeTheirTimeRecordsOnce() async throws {
-        let harness = Harness(armingTakes: .milliseconds(300))
+        let harness = Harness(sourcesTake: .milliseconds(300))
         defer { harness.remove() }
         harness.controller.options.fileType = .mov
         #expect(harness.controller.toggleRecording() == .starting(waitsForSources: true))
@@ -703,7 +724,7 @@ struct ScreenRecordingKeyTests {
 
     /// After a canceled start, the next press switches the tool on and records again.
     @Test func aPressAfterACanceledStartRecords() async throws {
-        let harness = Harness(armingTakes: .milliseconds(200))
+        let harness = Harness(sourcesTake: .milliseconds(200))
         defer { harness.remove() }
         harness.controller.toggleRecording()
         try await Task.sleep(for: .milliseconds(30))
@@ -721,7 +742,7 @@ struct ScreenRecordingKeyTests {
 
     /// Switching the tool off while it starts ends the start too.
     @Test func switchingOffWhileItStartsWritesNothing() async throws {
-        let harness = Harness(armingTakes: .milliseconds(300))
+        let harness = Harness(sourcesTake: .milliseconds(300))
         defer { harness.remove() }
         harness.controller.toggleRecording()
         try await Task.sleep(for: .milliseconds(50))
@@ -1003,5 +1024,79 @@ struct ScreenRecordingFirstFrameTests {
         await harness.controller.stopRecording(explanation: nil)
         harness.controller.delete()
         #expect(outcomes.isEmpty)
+    }
+}
+
+/// The press-to-first-frame delay, kept short (spec 5.4.4): switching the tool on with the key starts its sources
+/// together, doesn't wait for Add Source's listing unless a window source needs it, and writes as soon as Minecraft's
+/// first frame is in, so the recording's first frame shows the game.
+@Suite("Screen Recording's start, quickly", .serialized) @MainActor
+struct ScreenRecordingQuickStartTests {
+    /// Add Source's listing (ScreenCaptureKit's window list, the cameras and microphones) can take a while; a start
+    /// with no window source records without waiting for it, and the listing still arrives for the page.
+    @Test func theListingDoesntHoldUpAStart() async throws {
+        let harness = Harness(listingTakes: .seconds(2))
+        defer { harness.remove() }
+        harness.controller.toggleRecording()
+        #expect(await harness.waitUntil { harness.controller.phase == .recording })
+        #expect(harness.listings.finished == 0)
+        #expect(await harness.waitUntil { harness.listings.finished == 1 })
+        await harness.controller.stopRecording(explanation: nil)
+        harness.controller.delete()
+    }
+
+    /// A window source's window is found again in the listing (its number changes when the window is reopened), so a
+    /// layout with one still waits for it, and records the window it found.
+    @Test func aWindowSourceStillWaitsForTheListingToFindItsWindow() async throws {
+        var listing = AvailableSources()
+        listing.windows = [WindowReference(windowID: 77, appName: "Discord", bundleID: "com.hnc.Discord", title: "Call")]
+        let harness = Harness(listingTakes: .milliseconds(300), listing: listing)
+        defer { harness.remove() }
+        harness.controller.updateLayout {
+            $0.add(VideoSource(kind: .window(WindowReference(windowID: 9, appName: "Discord", bundleID: "com.hnc.Discord", title: "Call")),
+                               frame: PixelRect(x: 0, y: 0, width: 50, height: 50), on: PixelSize(width: 320, height: 180)))
+        }
+        harness.controller.toggleRecording()
+        #expect(await harness.waitUntil { harness.controller.phase == .recording })
+        #expect(harness.listings.finished >= 1)
+        #expect(harness.factory.capturedWindowIDs.first == 77)
+        await harness.controller.stopRecording(explanation: nil)
+        harness.controller.delete()
+    }
+
+    /// Minecraft's capture runs a moment before its first frame arrives. The start waits for that frame, so the file
+    /// doesn't open on a black canvas, and writes as soon as it's in.
+    @Test func theRecordingWaitsForMinecraftsFirstFrame() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        harness.factory.baseSendsFirstFrame = false
+        harness.controller.minecraftFrameWait = .seconds(10)
+        harness.controller.toggleRecording()
+        #expect(await harness.waitUntil { harness.factory.bases[42]?.isRunning == true })
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(harness.controller.phase == .starting)
+        #expect(harness.savedFileNames().isEmpty)
+        harness.pushFrame()
+        #expect(await harness.waitUntil { harness.controller.phase == .recording })
+        await harness.controller.stopRecording(explanation: nil)
+        harness.controller.delete()
+    }
+
+    /// A Minecraft capture that sends nothing holds the start only for a moment (half a second in sTools), then the
+    /// recording starts without it and its picture joins when it comes.
+    @Test func aSilentMinecraftCaptureHoldsTheStartBriefly() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        #expect(harness.controller.minecraftFrameWait == .milliseconds(500))
+        harness.factory.baseSendsFirstFrame = false
+        harness.controller.minecraftFrameWait = .milliseconds(300)
+        let pressed = ContinuousClock.now
+        harness.controller.toggleRecording()
+        #expect(await harness.waitUntil { harness.controller.phase == .recording })
+        let waited = ContinuousClock.now - pressed
+        #expect(waited >= .milliseconds(300))
+        #expect(waited < .seconds(5))
+        await harness.controller.stopRecording(explanation: nil)
+        harness.controller.delete()
     }
 }
