@@ -112,7 +112,7 @@ struct HotkeyScopeTests {
 
     @Test func underTheDefaultHotkeysAreRegisteredOnlyWithSToolsOrMinecraftInFront() {
         let h = ScopeHarness(front: sToolsPID)
-        let a = h.center.add(combo: cmd1, actions: [.toggle(.nbbOverlay)])
+        let a = h.center.add(combo: cmd1, actions: [.toggle(.crosshair)])
         let b = h.center.add(combo: f13, actions: [.startTimer])
         #expect(h.center.scope == .sToolsAndMinecraft)
         #expect(h.center.frontApp == .sTools)

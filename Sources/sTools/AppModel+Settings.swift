@@ -79,11 +79,11 @@ extension AppModel {
     /// exists handles its own save and live refresh, the same as its own "Reset to default" button.
     func resetAllToolsToDefault() {
         controller(for: .crosshair, as: CrosshairController.self)?.resetToDefault()
-        controller(for: .windowBackdrop, as: BackdropController.self)?.resetToDefault()
-        controller(for: .nbbOverlay, as: NBBOverlayController.self)?.resetToDefault()
         timerOverlay?.resetToDefault()
-        keyRebinder?.resetToDefault()
+        controller(for: .nbbOverlay, as: NBBOverlayController.self)?.resetToDefault()
         controller(for: .screenRecording, as: ScreenRecordingController.self)?.resetToDefault()
+        controller(for: .windowBackdrop, as: BackdropController.self)?.resetToDefault()
+        keyRebinder?.resetToDefault()
     }
 
     // MARK: - Help ▸ Copy Diagnostics (spec 6.2)

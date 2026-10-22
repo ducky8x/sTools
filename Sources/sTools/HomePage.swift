@@ -4,6 +4,13 @@ import SwiftUI
 
 /// Home: the hotkeys first, then an at-a-glance status of every tool and dependency.
 struct HomePage: View {
+    /// The strip shown while Accessibility isn't allowed: every tool that needs it (rule R10), in sidebar order.
+    nonisolated static var accessibilityWarning: String {
+        let titles = ToolID.allCases.filter(\.requiresAccessibility).map(\.title)
+        let list = titles.dropLast().joined(separator: ", ") + " and " + (titles.last ?? "")
+        return "Accessibility isn't allowed yet, so \(list) stay off."
+    }
+
     let model: AppModel
 
     var body: some View {
@@ -32,7 +39,7 @@ struct HomePage: View {
         } else {
             STRequirementStrip(
                 kind: .warning,
-                message: "Accessibility isn't allowed yet, so NBB Overlay, Window Backdrop, Crosshair and Screen Recording stay off.",
+                message: Self.accessibilityWarning,
                 actionTitle: "Allow\u{2026}",
                 action: { Task { await model.allowAccessibility() } })
             .padding(.bottom, 4)

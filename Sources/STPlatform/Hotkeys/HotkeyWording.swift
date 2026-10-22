@@ -43,7 +43,7 @@ public enum HotkeyWording {
         "Use \(combo.displayString) for \(own.actions.first?.toolTitle ?? "")?"
     }
 
-    /// What Replace does, under the question: "Crosshair has one key of its own, ⌘3. This replaces it with F6. Your
+    /// What Replace does, under the question: "Crosshair has one key of its own, ⌘1. This replaces it with F6. Your
     /// other hotkeys stay as they are."
     public static func replaceOwnKeyWarning(_ own: HotkeyBinding, with combo: HotkeyCombo) -> String {
         let tool = own.actions.first?.toolTitle ?? ""

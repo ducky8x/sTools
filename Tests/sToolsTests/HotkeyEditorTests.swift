@@ -6,7 +6,7 @@ private let f6 = HotkeyCombo(keyCode: 97, modifiers: [])
 private let f7 = HotkeyCombo(keyCode: 98, modifiers: [])
 private let ctrlOptC = HotkeyCombo(keyCode: 8, modifiers: [.control, .option])
 
-/// "⌘1 NBB Overlay", as Home lists a hotkey.
+/// "⌘1 Crosshair", as Home lists a hotkey.
 @MainActor
 private func listing(_ hotkeys: HotkeyCenter) -> [String] {
     hotkeys.bindings.map { "\($0.combo.displayString) \(HotkeyWording.summary($0.actions))" }
@@ -41,8 +41,8 @@ struct HotkeyEditorTests {
         #expect(hotkeys.bindings == before, "nothing saved before the answer")
 
         HotkeyEditor.replace(crosshairKey, with: f6, editing: nil, in: hotkeys)
-        #expect(listing(hotkeys) == ["⌘1 NBB Overlay", "⌘2 Window Backdrop", "F6 Crosshair", "⌘4 Start timer",
-                                     "⌘5 Screen Recording", "⌃⌥C NBB Overlay + Crosshair"])
+        #expect(listing(hotkeys) == ["F6 Crosshair", "⌘2 Start timer", "⌘3 NBB Overlay", "⌘4 Screen Recording",
+                                     "⌘5 Window Backdrop", "⌃⌥C NBB Overlay + Crosshair"])
         #expect(ToolHotkey.own(for: .toggle(.crosshair), in: hotkeys.bindings)?.id == crosshairKey.id)
     }
 
@@ -65,7 +65,7 @@ struct HotkeyEditorTests {
         let timerKey = try #require(ToolHotkey.own(for: .startTimer, in: hotkeys.bindings))
         #expect(HotkeyEditor.save(f7, actions: [.startTimer], existing: custom, in: hotkeys) == .asksToReplace(timerKey))
         HotkeyEditor.replace(timerKey, with: f7, editing: custom, in: hotkeys)
-        #expect(listing(hotkeys) == ["⌘1 NBB Overlay", "⌘2 Window Backdrop", "⌘3 Crosshair", "F7 Start timer", "⌘5 Screen Recording"])
+        #expect(listing(hotkeys) == ["⌘1 Crosshair", "F7 Start timer", "⌘3 NBB Overlay", "⌘4 Screen Recording", "⌘5 Window Backdrop"])
     }
 
     /// What needs no question saves at once, in sidebar order: a tool's own key given a new key keeps its place, a
@@ -77,12 +77,12 @@ struct HotkeyEditorTests {
         let crosshairKey = try #require(ToolHotkey.own(for: .toggle(.crosshair), in: hotkeys.bindings))
         #expect(HotkeyEditor.save(f6, actions: [.toggle(.crosshair)], existing: crosshairKey, in: hotkeys) == .saved)
         #expect(HotkeyEditor.save(f7, actions: [.startStopRecording, .toggle(.windowBackdrop)], existing: nil, in: hotkeys) == .saved)
-        #expect(listing(hotkeys) == ["⌘1 NBB Overlay", "⌘2 Window Backdrop", "F6 Crosshair", "⌘4 Start timer",
-                                     "⌘5 Screen Recording", "⌃⌥C NBB Overlay + Crosshair", "F7 Window Backdrop + Screen Recording"])
+        #expect(listing(hotkeys) == ["F6 Crosshair", "⌘2 Start timer", "⌘3 NBB Overlay", "⌘4 Screen Recording",
+                                     "⌘5 Window Backdrop", "⌃⌥C NBB Overlay + Crosshair", "F7 Screen Recording + Window Backdrop"])
 
-        hotkeys.remove(try #require(ToolHotkey.own(for: .toggle(.windowBackdrop), in: hotkeys.bindings)).id)
-        #expect(HotkeyEditor.save(ctrlOptC, actions: [.toggle(.windowBackdrop)], existing: custom, in: hotkeys) == .saved)
-        #expect(listing(hotkeys) == ["⌘1 NBB Overlay", "⌃⌥C Window Backdrop", "F6 Crosshair", "⌘4 Start timer",
-                                     "⌘5 Screen Recording", "F7 Window Backdrop + Screen Recording"])
+        hotkeys.remove(try #require(ToolHotkey.own(for: .toggle(.nbbOverlay), in: hotkeys.bindings)).id)
+        #expect(HotkeyEditor.save(ctrlOptC, actions: [.toggle(.nbbOverlay)], existing: custom, in: hotkeys) == .saved)
+        #expect(listing(hotkeys) == ["F6 Crosshair", "⌘2 Start timer", "⌃⌥C NBB Overlay", "⌘4 Screen Recording",
+                                     "⌘5 Window Backdrop", "F7 Screen Recording + Window Backdrop"])
     }
 }

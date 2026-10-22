@@ -20,7 +20,7 @@ struct HotkeyKeySetChooserTests {
     /// Overlay's Key row sets: Start timer for Timer Overlay, the one Screen Recording action for Screen Recording.
     @Test func keySetsGiveTheToolsTheirKeysInSidebarOrder() {
         let tools = ToolID.allCases.filter { $0.hotkeyAction != nil }
-        #expect(tools == [.nbbOverlay, .windowBackdrop, .crosshair, .timerOverlay, .screenRecording])
+        #expect(tools == [.crosshair, .timerOverlay, .nbbOverlay, .screenRecording, .windowBackdrop])
         #expect(HotkeyKeySet.toolActions == tools.compactMap(\.hotkeyAction))
         #expect(ToolID.keyRebinder.hotkeyAction == nil)
         // The digits follow the sidebar's numbers.
@@ -34,11 +34,11 @@ struct HotkeyKeySetChooserTests {
         let hotkeys = harness.model.hotkeys
         #expect(hotkeys.keySet == .command)
         #expect(hotkeys.bindings.map { "\($0.combo.displayString) \(HotkeyWording.summary($0.actions))" }
-            == ["⌘1 NBB Overlay", "⌘2 Window Backdrop", "⌘3 Crosshair", "⌘4 Start timer", "⌘5 Screen Recording"])
+            == ["⌘1 Crosshair", "⌘2 Start timer", "⌘3 NBB Overlay", "⌘4 Screen Recording", "⌘5 Window Backdrop"])
         #expect(hotkeys.isEnabled, "on from the first launch, in sTools and Minecraft only")
         #expect(hotkeys.scope == .sToolsAndMinecraft)
-        #expect(ToolHotkey.own(for: .toggle(.crosshair), in: hotkeys.bindings)?.combo.displayString == "⌘3")
-        #expect(TimerKeyStatus(hotkeys: hotkeys).title == "Start timer: ⌘4")
+        #expect(ToolHotkey.own(for: .toggle(.crosshair), in: hotkeys.bindings)?.combo.displayString == "⌘1")
+        #expect(TimerKeyStatus(hotkeys: hotkeys).title == "Start timer: ⌘2")
         // Each page's Hotkey row shows the set's key for its tool, Screen Recording's included.
         for tool in [ToolID.nbbOverlay, .windowBackdrop, .crosshair, .screenRecording] {
             let action = try #require(ToolHotkeyRow(model: harness.model, tool: tool)?.action)
@@ -92,14 +92,16 @@ struct HotkeyKeySetChooserTests {
             HotkeysSection.keySetCaption(set).replacingOccurrences(of: "\u{00A0}", with: " ")
         }
         #expect(caption(.command)
-            == "⌘1 NBB Overlay · ⌘2 Window Backdrop · ⌘3 Crosshair · ⌘4 Timer Overlay · ⌘5 Screen Recording")
+            == "⌘1 Crosshair · ⌘2 Timer Overlay · ⌘3 NBB Overlay · ⌘4 Screen Recording · ⌘5 Window Backdrop")
         #expect(HotkeysSection.keySetCaption(.command).components(separatedBy: " · ")
-            == ["⌘1\u{00A0}NBB\u{00A0}Overlay", "⌘2\u{00A0}Window\u{00A0}Backdrop", "⌘3\u{00A0}Crosshair",
-                "⌘4\u{00A0}Timer\u{00A0}Overlay", "⌘5\u{00A0}Screen\u{00A0}Recording"])
+            == ["⌘1\u{00A0}Crosshair", "⌘2\u{00A0}Timer\u{00A0}Overlay", "⌘3\u{00A0}NBB\u{00A0}Overlay",
+                "⌘4\u{00A0}Screen\u{00A0}Recording", "⌘5\u{00A0}Window\u{00A0}Backdrop"])
+        #expect(caption(.control)
+            == "⌃1 Crosshair · ⌃2 Timer Overlay · ⌃3 NBB Overlay · ⌃4 Screen Recording · ⌃5 Window Backdrop")
         #expect(caption(.option)
-            == "⌥1 NBB Overlay · ⌥2 Window Backdrop · ⌥3 Crosshair · ⌥4 Timer Overlay · ⌥5 Screen Recording")
+            == "⌥1 Crosshair · ⌥2 Timer Overlay · ⌥3 NBB Overlay · ⌥4 Screen Recording · ⌥5 Window Backdrop")
         #expect(caption(.functionKeys)
-            == "F13 NBB Overlay · F14 Window Backdrop · F15 Crosshair · F16 Timer Overlay · F17 Screen Recording")
+            == "F13 Crosshair · F14 Timer Overlay · F15 NBB Overlay · F16 Screen Recording · F17 Window Backdrop")
         #expect(HotkeysSection.keySetCaption(.noKeys) == "No tool has a key of its own.")
         #expect(HotkeysSection.keySetCaption(nil)
             == "Custom: keys you set yourself. Pick a set for one key per tool, in sidebar order.")
@@ -107,15 +109,15 @@ struct HotkeyKeySetChooserTests {
 
     @Test func theQuestionNamesTheKeysSetByHand() {
         var bindings = HotkeyKeySet.command.bindings()
-        bindings[2].combo = f6
+        bindings[0].combo = f6
         #expect(HotkeysSection.keySetQuestion(.control) == "Use ⌃1–⌃5?")
         #expect(HotkeysSection.keySetQuestion(.noKeys) == "Remove every tool's key?")
         #expect(HotkeysSection.keySetWarning(.control, bindings: bindings)
             == "This replaces the key you set for Crosshair (F6). Your other hotkeys stay as they are.")
-        bindings[3].combo = f7
+        bindings[1].combo = f7
         #expect(HotkeysSection.keySetWarning(.noKeys, bindings: bindings)
             == "This removes the keys you set for Crosshair (F6) and Timer Overlay (F7). Your other hotkeys stay as they are.")
-        bindings[4].combo = f8
+        bindings[3].combo = f8
         #expect(HotkeysSection.keySetWarning(.option, bindings: bindings)
             == "This replaces the keys you set for Crosshair (F6), Timer Overlay (F7) and Screen Recording (F8). Your other hotkeys stay as they are.")
     }

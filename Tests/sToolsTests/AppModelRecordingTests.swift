@@ -166,12 +166,12 @@ struct AppModelRecordingTests {
         harness.recording.delete()
     }
 
-    /// A new install's key set gives Screen Recording ⌘5 with its one action, so once hotkeys are on, ⌘5 records,
+    /// A new install's key set gives Screen Recording ⌘4 with its one action, so once hotkeys are on, ⌘4 records,
     /// stops and asks like the key its page sets; answering turns the tool off.
-    @Test func aNewInstallsCommandFiveRecordsWithTheOneAction() async throws {
+    @Test func aNewInstallsCommandFourRecordsWithTheOneAction() async throws {
         let harness = RecordingHarness(hotkeys: nil)
         let own = try #require(ToolHotkey.own(for: .startStopRecording, in: harness.model.hotkeys.bindings))
-        #expect(own.combo.displayString == "⌘5")
+        #expect(own.combo.displayString == "⌘4")
         harness.model.hotkeys.isEnabled = true
         #expect(harness.model.hotkeys.status(of: own.id) == .registered)
         #expect(await harness.recordByKey(own.id))

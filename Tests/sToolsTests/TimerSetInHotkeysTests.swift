@@ -4,7 +4,7 @@ import Testing
 
 private let f13 = HotkeyCombo(keyCode: 105, modifiers: [])
 
-/// Timer Overlay's Set in Hotkeys… (spec 5.6.2): with a Start-timer key of its own (a key set's ⌘4, or one set by
+/// Timer Overlay's Set in Hotkeys… (spec 5.6.2): with a Start-timer key of its own (a key set's ⌘2, or one set by
 /// hand), Home ▸ Hotkeys opens that key's editor, ready to record, rather than adding a second key beside it. Without
 /// one it opens a new hotkey with Start timer chosen, as before.
 @MainActor
@@ -13,7 +13,7 @@ struct TimerSetInHotkeysTests {
     @Test func itOpensTheKeyTheTimerAlreadyHas() throws {
         let harness = Harness(hotkeys: nil)
         let own = try #require(ToolHotkey.own(for: .startTimer, in: harness.model.hotkeys.bindings))
-        #expect(own.combo.displayString == "⌘4")
+        #expect(own.combo.displayString == "⌘2")
         harness.model.navigate(to: .tool(.timerOverlay))
         harness.model.openHotkeysForStartTimer()
         #expect(harness.model.route == .home)

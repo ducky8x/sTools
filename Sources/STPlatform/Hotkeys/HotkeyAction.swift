@@ -1,11 +1,11 @@
 import Foundation
 
-/// The three tools a hotkey toggles. Tool modules are not importable from STPlatform, so the
+/// The three tools a hotkey toggles, in sidebar order. Tool modules are not importable from STPlatform, so the
 /// app maps each case to the real `ToolController`. The raw value is the stored name.
 public enum HotkeyTool: String, Codable, CaseIterable, Hashable, Sendable {
+    case crosshair
     case nbbOverlay
     case windowBackdrop
-    case crosshair
 }
 
 /// One thing a hotkey does.
@@ -19,11 +19,13 @@ public enum HotkeyAction: Hashable, Sendable {
     /// does, and a press switches the tool on when it's off.
     case startTimer
 
-    /// Every action, in the order a picker should list them: the sidebar's (NBB Overlay, Window Backdrop, Crosshair,
-    /// Timer Overlay's Start timer, Screen Recording), the order the key sets give the tools their keys in.
-    public static var allCases: [HotkeyAction] {
-        HotkeyTool.allCases.map(HotkeyAction.toggle) + [.startTimer, .startStopRecording]
-    }
+    /// Every action, one per tool with a switch, in the order a picker should list them: the sidebar's (Crosshair,
+    /// Timer Overlay's Start timer, NBB Overlay, Screen Recording, Window Backdrop; the app's `ToolID` holds that
+    /// order, which a test checks this against), the order the key sets give the tools their keys in
+    /// (`HotkeyKeySet.toolActions`).
+    public static let allCases: [HotkeyAction] = [
+        .toggle(.crosshair), .startTimer, .toggle(.nbbOverlay), .startStopRecording, .toggle(.windowBackdrop),
+    ]
 }
 
 /// Stored as one plain string: `toggle.crosshair`, `startStopRecording` or `startTimer`.

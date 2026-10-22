@@ -1,5 +1,6 @@
 import STPlatform
 import Testing
+@testable import Prologue
 @testable import sTools
 
 @Suite("NavigationHistory")
@@ -68,8 +69,8 @@ struct NavigationHistoryTests {
 struct GoCommandTests {
     @Test func menuListsHomeToolsSettingsThenBackAndForward() {
         #expect(GoCommand.menu == [
-            .home, .tool(.nbbOverlay), .tool(.windowBackdrop), .tool(.crosshair), .tool(.timerOverlay),
-            .tool(.screenRecording), .tool(.keyRebinder), .settings, .back, .forward,
+            .home, .tool(.crosshair), .tool(.timerOverlay), .tool(.nbbOverlay), .tool(.screenRecording),
+            .tool(.windowBackdrop), .tool(.keyRebinder), .settings, .back, .forward,
         ])
     }
 
@@ -83,11 +84,11 @@ struct GoCommandTests {
 
     @Test func shortcutsFollowTheSpec() {
         #expect(GoCommand.home.shortcutKey == "0")
-        #expect(GoCommand.tool(.nbbOverlay).shortcutKey == "1")
-        #expect(GoCommand.tool(.windowBackdrop).shortcutKey == "2")
-        #expect(GoCommand.tool(.crosshair).shortcutKey == "3")
-        #expect(GoCommand.tool(.timerOverlay).shortcutKey == "4")
-        #expect(GoCommand.tool(.screenRecording).shortcutKey == "5")
+        #expect(GoCommand.tool(.crosshair).shortcutKey == "1")
+        #expect(GoCommand.tool(.timerOverlay).shortcutKey == "2")
+        #expect(GoCommand.tool(.nbbOverlay).shortcutKey == "3")
+        #expect(GoCommand.tool(.screenRecording).shortcutKey == "4")
+        #expect(GoCommand.tool(.windowBackdrop).shortcutKey == "5")
         #expect(GoCommand.tool(.keyRebinder).shortcutKey == "6")
         #expect(GoCommand.settings.shortcutKey == ",")
         #expect(GoCommand.back.shortcutKey == "[")
@@ -135,8 +136,9 @@ struct ToolIDTests {
     @Test func toolsAreNumberedOneToSixInOrder() {
         #expect(ToolID.allCases.map(\.number) == [1, 2, 3, 4, 5, 6])
         #expect(ToolID.allCases.map(\.title) == [
-            "NBB Overlay", "Window Backdrop", "Crosshair", "Timer Overlay", "Screen Recording", "Key Rebinder",
+            "Crosshair", "Timer Overlay", "NBB Overlay", "Screen Recording", "Window Backdrop", "Key Rebinder",
         ])
+        #expect(ToolID.allCases == [.crosshair, .timerOverlay, .nbbOverlay, .screenRecording, .windowBackdrop, .keyRebinder])
     }
 
     @Test func taglinesAreVerbatimFromRuleR13() {
@@ -157,7 +159,26 @@ struct ToolIDTests {
         #expect(!ToolID.keyRebinder.hasSwitch)
     }
 
+    /// The stored names don't follow the order: tools saved as on at quit by a build with another sidebar order come
+    /// back the same, and the hotkey names stay as written.
+    @Test func storedNamesStayWhateverTheOrder() {
+        let savedByAnEarlierOrder = ["nbbOverlay", "windowBackdrop", "crosshair", "timerOverlay", "screenRecording", "keyRebinder"]
+        #expect(savedByAnEarlierOrder.compactMap(ToolID.init(rawValue:))
+            == [.nbbOverlay, .windowBackdrop, .crosshair, .timerOverlay, .screenRecording, .keyRebinder])
+        #expect(Set(ToolID.allCases.map(\.rawValue)) == Set(savedByAnEarlierOrder))
+    }
+
+    /// Lists of tools in the app's words follow the sidebar: Home's Accessibility warning and the Prologue's "Used by"
+    /// for Accessibility name every tool that needs it (rule R10), in sidebar order.
+    @Test func toolListsInWordsFollowTheSidebar() {
+        let needAccessibility = ToolID.allCases.filter(\.requiresAccessibility).map(\.title)
+        #expect(needAccessibility == ["Crosshair", "Timer Overlay", "NBB Overlay", "Screen Recording", "Window Backdrop"])
+        #expect(HomePage.accessibilityWarning
+            == "Accessibility isn't allowed yet, so Crosshair, Timer Overlay, NBB Overlay, Screen Recording and Window Backdrop stay off.")
+        #expect(PermissionStepView.Copy.usedBy(.accessibility) == needAccessibility.joined(separator: ", "))
+    }
+
     @Test func sidebarNamesFitTheSidebar() {
-        #expect(ToolID.allCases.map(\.sidebarTitle) == ["NBB Overlay", "Backdrop", "Crosshair", "Timer Overlay", "Recording", "Key Rebinder"])
+        #expect(ToolID.allCases.map(\.sidebarTitle) == ["Crosshair", "Timer Overlay", "NBB Overlay", "Recording", "Backdrop", "Key Rebinder"])
     }
 }

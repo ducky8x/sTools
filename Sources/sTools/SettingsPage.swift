@@ -85,7 +85,7 @@ struct SettingsPage: View {
                     Button("Reset All Tools", role: .destructive) { model.resetAllToolsToDefault() }
                     Button("Cancel", role: .cancel) {}
                 },
-                message: { Text("This sets Window Backdrop, Crosshair and NBB Overlay back to their defaults. General, Appearance and Hotkeys are untouched — use Reset sTools below for those.") })
+                message: { Text("This sets Crosshair, NBB Overlay and Window Backdrop back to their defaults. General, Appearance and Hotkeys are untouched — use Reset sTools below for those.") })
             STSettingsRow("Reset sTools", showsRule: false) {
                 Button("Reset sTools\u{2026}") { isResetConfirming = true }
                     .buttonStyle(STButtonStyle(.secondary))
