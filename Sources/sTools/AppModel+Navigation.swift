@@ -21,7 +21,7 @@ extension AppModel {
         navigate(to: .home)
     }
 
-    /// Timer Overlay's Set in Hotkeys…: opens Home ▸ Hotkeys with the timer's own Start-timer hotkey (a key set's ⌘4,
+    /// Timer Overlay's Set in Hotkeys…: opens Home ▸ Hotkeys with the timer's own Start-timer hotkey (a key set's ⌘2,
     /// or one set by hand) in its editor, recording a new key, or, when it has none, a new hotkey whose action is Start
     /// timer, ready for its key. While hotkeys are off it asks first (plan decision 14); a no opens Home ▸ Hotkeys
     /// with neither.

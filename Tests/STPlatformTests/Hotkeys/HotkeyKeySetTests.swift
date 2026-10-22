@@ -36,7 +36,7 @@ struct HotkeyKeySetTests {
     // MARK: What each set gives
 
     @Test func eachSetGivesOneKeyPerToolInSidebarOrder() {
-        #expect(HotkeyKeySet.toolActions == [nbb, backdrop, crosshair, timer, recording])
+        #expect(HotkeyKeySet.toolActions == [crosshair, timer, nbb, recording, backdrop])
         let digits: [UInt16] = [18, 19, 20, 21, 23]
         #expect(HotkeyKeySet.command.combos == digits.map { combo($0, .command) })
         #expect(HotkeyKeySet.control.combos == digits.map { combo($0, .control) })
@@ -54,7 +54,7 @@ struct HotkeyKeySetTests {
     @Test func eachSetsHotkeysDoTheToolsMainActions() {
         for set in HotkeyKeySet.allCases where set != .noKeys {
             let bindings = set.bindings()
-            #expect(bindings.map(\.actions) == [[nbb], [backdrop], [crosshair], [timer], [recording]], "\(set)")
+            #expect(bindings.map(\.actions) == [[crosshair], [timer], [nbb], [recording], [backdrop]], "\(set)")
             #expect(bindings.map(\.combo) == set.combos)
             #expect(bindings.allSatisfy { $0.combo.isValid }, "no set holds a combination macOS keeps")
             #expect(HotkeyKeySet.current(in: bindings) == set)
@@ -63,9 +63,9 @@ struct HotkeyKeySetTests {
         // A new install's keys, as the hotkey list names them: Timer Overlay's is Start timer, and Screen Recording's
         // is its one action, the one its page's Hotkey row sets.
         #expect(HotkeyKeySet.command.bindings().map { "\($0.combo.displayString) \(HotkeyWording.summary($0.actions))" }
-            == ["⌘1 NBB Overlay", "⌘2 Window Backdrop", "⌘3 Crosshair", "⌘4 Start timer", "⌘5 Screen Recording"])
-        #expect(HotkeyKeySet.command.combo(for: .startStopRecording)?.displayString == "⌘5")
-        #expect(HotkeyKeySet.functionKeys.combo(for: .startStopRecording)?.displayString == "F17")
+            == ["⌘1 Crosshair", "⌘2 Start timer", "⌘3 NBB Overlay", "⌘4 Screen Recording", "⌘5 Window Backdrop"])
+        #expect(HotkeyKeySet.command.combo(for: .startStopRecording)?.displayString == "⌘4")
+        #expect(HotkeyKeySet.functionKeys.combo(for: .startStopRecording)?.displayString == "F16")
     }
 
     // MARK: Which set the list follows
@@ -95,26 +95,28 @@ struct HotkeyKeySetTests {
         let after = HotkeyKeySet.functionKeys.applied(to: before)
         #expect(after.count == before.count)
         #expect(Array(after[0...4]).map(\.combo) == HotkeyKeySet.functionKeys.combos)
-        #expect(Array(after[0...4]).map(\.actions) == [[nbb], [backdrop], [crosshair], [timer], [recording]])
+        #expect(Array(after[0...4]).map(\.actions) == [[crosshair], [timer], [nbb], [recording], [backdrop]])
         #expect(Array(after[0...4]).map(\.id) == Array(before[1...5]).map(\.id), "each own hotkey keeps its id")
         #expect(Array(after[5...]) == [custom, recordingAndTimer], "other hotkeys stay as they are, in their order")
         #expect(HotkeyKeySet.current(in: after) == .functionKeys)
     }
 
-    /// The list ducky had before key sets existed, set by hand in the old order: picking ⌘1–⌘5 gives each tool its
-    /// sidebar number and lists them in sidebar order, so Home reads ⌘1 to ⌘5 down the page.
-    @Test func pickingASetPutsAListInTheOldOrderInSidebarOrder() {
-        let old = [
-            HotkeyBinding(combo: combo(18, .command), actions: [crosshair]),
-            HotkeyBinding(combo: combo(19, .command), actions: [timer]),
-            HotkeyBinding(combo: combo(20, .command), actions: [nbb]),
-            HotkeyBinding(combo: combo(21, .command), actions: [recording]),
-            HotkeyBinding(combo: combo(23, .command), actions: [backdrop]),
+    /// The ⌘1–⌘5 list in an earlier sidebar order (build 449's default: ⌘1 NBB Overlay, ⌘2 Window Backdrop, ⌘3
+    /// Crosshair, ⌘4 Start timer, ⌘5 Screen Recording): picking ⌘1–⌘5 gives each tool its sidebar number and lists
+    /// them in sidebar order, so Home reads ⌘1 to ⌘5 down the page.
+    @Test func pickingASetPutsAListInAnEarlierOrderInSidebarOrder() {
+        let earlier = [
+            HotkeyBinding(combo: combo(18, .command), actions: [nbb]),
+            HotkeyBinding(combo: combo(19, .command), actions: [backdrop]),
+            HotkeyBinding(combo: combo(20, .command), actions: [crosshair]),
+            HotkeyBinding(combo: combo(21, .command), actions: [timer]),
+            HotkeyBinding(combo: combo(23, .command), actions: [recording]),
         ]
-        let after = HotkeyKeySet.command.applied(to: old)
+        #expect(HotkeyKeySet.current(in: earlier) == nil, "Custom before")
+        let after = HotkeyKeySet.command.applied(to: earlier)
         #expect(after.map { "\($0.combo.displayString) \(HotkeyWording.summary($0.actions))" }
-            == ["⌘1 NBB Overlay", "⌘2 Window Backdrop", "⌘3 Crosshair", "⌘4 Start timer", "⌘5 Screen Recording"])
-        #expect(after.map(\.id) == [old[2].id, old[4].id, old[0].id, old[1].id, old[3].id])
+            == ["⌘1 Crosshair", "⌘2 Start timer", "⌘3 NBB Overlay", "⌘4 Screen Recording", "⌘5 Window Backdrop"])
+        #expect(after.map(\.id) == [earlier[2].id, earlier[3].id, earlier[0].id, earlier[4].id, earlier[1].id])
         #expect(HotkeyKeySet.current(in: after) == .command)
     }
 
@@ -122,9 +124,9 @@ struct HotkeyKeySetTests {
         let custom = HotkeyBinding(combo: ctrlOptC, actions: [crosshair, nbb])
         let crosshairOnF6 = HotkeyBinding(combo: f6, actions: [crosshair])
         let after = HotkeyKeySet.option.applied(to: [custom, crosshairOnF6])
-        #expect(after.map(\.actions) == [[nbb], [backdrop], [crosshair], [timer], [recording], [crosshair, nbb]])
+        #expect(after.map(\.actions) == [[crosshair], [timer], [nbb], [recording], [backdrop], [crosshair, nbb]])
         #expect(after.prefix(5).map(\.combo) == HotkeyKeySet.option.combos)
-        #expect(after[2].id == crosshairOnF6.id)
+        #expect(after[0].id == crosshairOnF6.id)
         #expect(after.last == custom)
     }
 
@@ -139,7 +141,7 @@ struct HotkeyKeySetTests {
         let first = HotkeyBinding(combo: f6, actions: [crosshair])
         let second = HotkeyBinding(combo: combo(98), actions: [crosshair])
         let after = HotkeyKeySet.command.applied(to: [first, second])
-        #expect(after[2].id == first.id && after[2].combo == combo(20, .command))
+        #expect(after[0].id == first.id && after[0].combo == combo(18, .command))
         #expect(after.last == second, "a second hotkey for the tool alone is one of the others")
     }
 
@@ -150,7 +152,7 @@ struct HotkeyKeySetTests {
         let nbbOnF7 = HotkeyBinding(combo: combo(98), actions: [nbb])
         let secondTimer = HotkeyBinding(combo: combo(100), actions: [timer])
         let ordered = HotkeyKeySet.ordered([custom, timerOnF6, secondTimer, nbbOnF7])
-        #expect(ordered == [nbbOnF7, timerOnF6, custom, secondTimer])
+        #expect(ordered == [timerOnF6, nbbOnF7, custom, secondTimer])
         #expect(HotkeyKeySet.ordered(ordered) == ordered)
         #expect(HotkeyKeySet.ordered([]) == [])
     }
@@ -211,36 +213,36 @@ struct HotkeyKeySetTests {
         let registrar = KeySetRegistrar()
         let center = HotkeyCenter(store: store, registrar: registrar, toolStates: { [:] }, handler: { _ in })
         let custom = center.add(combo: ctrlOptC, actions: [crosshair, nbb])
-        let nbbKey = center.add(combo: combo(18, .command), actions: [nbb])
-        let timerKey = center.add(combo: combo(21, .command), actions: [timer])
+        let timerKey = center.add(combo: combo(19, .command), actions: [timer])
+        let backdropKey = center.add(combo: combo(23, .command), actions: [backdrop])
         await store.flush()
         let writes = store.writeCount
 
-        center.setOwnHotkey(f6, for: crosshair)
+        center.setOwnHotkey(f6, for: nbb)
         await store.flush()
         #expect(store.writeCount == writes + 1, "one change")
-        #expect(center.bindings.map(\.actions) == [[nbb], [crosshair], [timer], [crosshair, nbb]])
-        #expect(center.bindings.map(\.id).first == nbbKey)
-        #expect(center.bindings[2].id == timerKey)
+        #expect(center.bindings.map(\.actions) == [[timer], [nbb], [backdrop], [crosshair, nbb]])
+        #expect(center.bindings.map(\.id).first == timerKey)
+        #expect(center.bindings[2].id == backdropKey)
         #expect(center.bindings.last?.id == custom)
-        let crosshairKey = center.bindings[1].id
-        #expect(registrar.active[crosshairKey] == f6)
+        let nbbKey = center.bindings[1].id
+        #expect(registrar.active[nbbKey] == f6)
 
-        center.setOwnHotkey(combo(98), for: crosshair)
-        #expect(center.bindings[1].id == crosshairKey)
+        center.setOwnHotkey(combo(98), for: nbb)
+        #expect(center.bindings[1].id == nbbKey)
         #expect(center.bindings[1].combo == combo(98))
-        #expect(registrar.active[crosshairKey] == combo(98))
+        #expect(registrar.active[nbbKey] == combo(98))
         await store.flush()
         let afterChange = store.writeCount
-        center.setOwnHotkey(combo(98), for: crosshair)
+        center.setOwnHotkey(combo(98), for: nbb)
         await store.flush()
         #expect(store.writeCount == afterChange, "the key it already has changes nothing")
 
-        center.setOwnHotkey(nil, for: crosshair)
-        #expect(center.bindings.map(\.id) == [nbbKey, timerKey, custom])
-        #expect(registrar.active[crosshairKey] == nil)
-        center.setOwnHotkey(nil, for: crosshair)
-        #expect(center.bindings.map(\.id) == [nbbKey, timerKey, custom])
+        center.setOwnHotkey(nil, for: nbb)
+        #expect(center.bindings.map(\.id) == [timerKey, backdropKey, custom])
+        #expect(registrar.active[nbbKey] == nil)
+        center.setOwnHotkey(nil, for: nbb)
+        #expect(center.bindings.map(\.id) == [timerKey, backdropKey, custom])
     }
 
     /// Clearing a key a tool doesn't have leaves the list as it is, in whatever order it has.
@@ -258,7 +260,7 @@ struct HotkeyKeySetTests {
 
     // MARK: Home's Add Hotkey… and Edit keep the sidebar order
 
-    /// "⌘1 NBB Overlay", as Home lists a hotkey.
+    /// "⌘1 Crosshair", as Home lists a hotkey.
     private func listing(_ bindings: [HotkeyBinding]) -> [String] {
         bindings.map { "\($0.combo.displayString) \(HotkeyWording.summary($0.actions))" }
     }
@@ -270,8 +272,8 @@ struct HotkeyKeySetTests {
         let (store, directory) = temporaryStore()
         defer { try? FileManager.default.removeItem(at: directory) }
         store.save(HotkeySettings(isEnabled: true, bindings: [
-            HotkeyBinding(combo: combo(18, .command), actions: [nbb]),
-            HotkeyBinding(combo: combo(21, .command), actions: [timer]),
+            HotkeyBinding(combo: combo(18, .command), actions: [crosshair]),
+            HotkeyBinding(combo: combo(20, .command), actions: [nbb]),
             HotkeyBinding(combo: ctrlOptC, actions: [crosshair, nbb]),
         ]))
         let registrar = KeySetRegistrar()
@@ -279,18 +281,18 @@ struct HotkeyKeySetTests {
         await store.flush()
         let writes = store.writeCount
 
-        let crosshairKey = center.add(combo: f6, actions: [crosshair])
-        #expect(listing(center.bindings) == ["⌘1 NBB Overlay", "F6 Crosshair", "⌘4 Start timer", "⌃⌥C Crosshair + NBB Overlay"])
-        #expect(center.bindings[1].id == crosshairKey)
-        #expect(registrar.active[crosshairKey] == f6)
+        let timerKey = center.add(combo: f6, actions: [timer])
+        #expect(listing(center.bindings) == ["⌘1 Crosshair", "F6 Start timer", "⌘3 NBB Overlay", "⌃⌥C Crosshair + NBB Overlay"])
+        #expect(center.bindings[1].id == timerKey)
+        #expect(registrar.active[timerKey] == f6)
         await store.flush()
         #expect(store.writeCount == writes + 1, "one change")
 
         center.add(combo: combo(98), actions: [recording, timer])
-        center.add(combo: combo(19, .command), actions: [backdrop])
-        center.add(combo: combo(23, .command), actions: [recording])
-        #expect(listing(center.bindings) == ["⌘1 NBB Overlay", "⌘2 Window Backdrop", "F6 Crosshair", "⌘4 Start timer",
-                                             "⌘5 Screen Recording", "⌃⌥C Crosshair + NBB Overlay", "F7 Screen Recording + Start timer"])
+        center.add(combo: combo(23, .command), actions: [backdrop])
+        center.add(combo: combo(21, .command), actions: [recording])
+        #expect(listing(center.bindings) == ["⌘1 Crosshair", "F6 Start timer", "⌘3 NBB Overlay", "⌘4 Screen Recording",
+                                             "⌘5 Window Backdrop", "⌃⌥C Crosshair + NBB Overlay", "F7 Screen Recording + Start timer"])
     }
 
     /// Editing a hotkey into a tool's action alone moves it to that tool's place, and editing a tool's own key into
@@ -302,26 +304,26 @@ struct HotkeyKeySetTests {
         let custom = HotkeyBinding(combo: ctrlOptC, actions: [crosshair, nbb])
         let recordingAndTimer = HotkeyBinding(combo: f6, actions: [recording, timer])
         store.save(HotkeySettings(isEnabled: true, bindings: [
-            HotkeyBinding(combo: combo(18, .command), actions: [nbb]),
-            HotkeyBinding(combo: combo(20, .command), actions: [crosshair]),
-            HotkeyBinding(combo: combo(21, .command), actions: [timer]),
+            HotkeyBinding(combo: combo(18, .command), actions: [crosshair]),
+            HotkeyBinding(combo: combo(20, .command), actions: [nbb]),
+            HotkeyBinding(combo: combo(23, .command), actions: [backdrop]),
             custom, recordingAndTimer,
         ]))
         let center = HotkeyCenter(store: store, registrar: KeySetRegistrar(), toolStates: { [:] }, handler: { _ in })
 
-        center.update(recordingAndTimer.id, actions: [backdrop])
-        #expect(listing(center.bindings) == ["⌘1 NBB Overlay", "F6 Window Backdrop", "⌘3 Crosshair", "⌘4 Start timer",
+        center.update(recordingAndTimer.id, actions: [timer])
+        #expect(listing(center.bindings) == ["⌘1 Crosshair", "F6 Start timer", "⌘3 NBB Overlay", "⌘5 Window Backdrop",
                                              "⌃⌥C Crosshair + NBB Overlay"])
         #expect(center.bindings[1].id == recordingAndTimer.id, "it keeps its id")
 
-        let crosshairKey = center.bindings[2].id
-        center.update(crosshairKey, actions: [crosshair, backdrop])
-        #expect(listing(center.bindings) == ["⌘1 NBB Overlay", "F6 Window Backdrop", "⌘4 Start timer",
-                                             "⌘3 Crosshair + Window Backdrop", "⌃⌥C Crosshair + NBB Overlay"])
+        let nbbKey = center.bindings[2].id
+        center.update(nbbKey, actions: [nbb, backdrop])
+        #expect(listing(center.bindings) == ["⌘1 Crosshair", "F6 Start timer", "⌘5 Window Backdrop",
+                                             "⌘3 NBB Overlay + Window Backdrop", "⌃⌥C Crosshair + NBB Overlay"])
 
         // A new key for a tool's own hotkey keeps its place.
         center.update(center.bindings[0].id, combo: combo(97, .command))
-        #expect(listing(center.bindings).first == "⌘F6 NBB Overlay")
+        #expect(listing(center.bindings).first == "⌘F6 Crosshair")
     }
 
     /// With a tool's own key gone, a second key for that tool alone (an older list can have one) is the tool's own,
@@ -330,14 +332,14 @@ struct HotkeyKeySetTests {
     @Test func removingAToolsOwnHotkeyMovesItsSecondKeyUp() {
         let (store, directory) = temporaryStore()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let first = HotkeyBinding(combo: combo(20, .command), actions: [crosshair])
+        let first = HotkeyBinding(combo: combo(20, .command), actions: [nbb])
         let custom = HotkeyBinding(combo: ctrlOptC, actions: [crosshair, nbb])
-        let second = HotkeyBinding(combo: f6, actions: [crosshair])
-        let nbbKey = HotkeyBinding(combo: combo(18, .command), actions: [nbb])
-        store.save(HotkeySettings(isEnabled: true, bindings: [nbbKey, first, custom, second]))
+        let second = HotkeyBinding(combo: f6, actions: [nbb])
+        let crosshairKey = HotkeyBinding(combo: combo(18, .command), actions: [crosshair])
+        store.save(HotkeySettings(isEnabled: true, bindings: [crosshairKey, first, custom, second]))
         let center = HotkeyCenter(store: store, registrar: KeySetRegistrar(), toolStates: { [:] }, handler: { _ in })
         center.remove(first.id)
-        #expect(center.bindings == [nbbKey, second, custom])
+        #expect(center.bindings == [crosshairKey, second, custom])
     }
 
     // MARK: A new install
@@ -351,7 +353,7 @@ struct HotkeyKeySetTests {
         let registrar = KeySetRegistrar()
         let center = HotkeyCenter(store: store, registrar: registrar, toolStates: { [:] }, handler: { _ in })
         #expect(center.bindings.map(\.combo) == HotkeyKeySet.command.combos)
-        #expect(center.bindings.map(\.actions) == [[nbb], [backdrop], [crosshair], [timer], [recording]])
+        #expect(center.bindings.map(\.actions) == [[crosshair], [timer], [nbb], [recording], [backdrop]])
         #expect(center.keySet == .command)
         #expect(center.isEnabled)
         #expect(center.scope == .sToolsAndMinecraft)
@@ -359,7 +361,7 @@ struct HotkeyKeySetTests {
         #expect(center.bindings.allSatisfy { center.status(of: $0.id) == .registered })
     }
 
-    /// Each of a new install's keys does its tool's main action: ⌘4 sends Start timer, and ⌘5 starts or stops a
+    /// Each of a new install's keys does its tool's main action: ⌘2 sends Start timer, and ⌘4 starts or stops a
     /// recording.
     @MainActor
     @Test func aNewInstallsKeysEachDoTheirToolsMainAction() {
@@ -369,8 +371,8 @@ struct HotkeyKeySetTests {
         var events: [[HotkeyEvent]] = []
         let center = HotkeyCenter(store: store, registrar: registrar, toolStates: { [:] }, handler: { events.append($0) })
         for binding in center.bindings { registrar.onPress?(binding.id) }
-        #expect(events == [[.setTool(.nbbOverlay, isOn: true)], [.setTool(.windowBackdrop, isOn: true)],
-                           [.setTool(.crosshair, isOn: true)], [.startTimer], [.toggleRecording]])
+        #expect(events == [[.setTool(.crosshair, isOn: true)], [.startTimer], [.setTool(.nbbOverlay, isOn: true)],
+                           [.toggleRecording], [.setTool(.windowBackdrop, isOn: true)]])
     }
 
     /// A current file keeps what it has: an empty list (the None key set) stays empty. Lists from earlier versions

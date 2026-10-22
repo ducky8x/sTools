@@ -8,14 +8,15 @@ struct PermissionStepView: View {
     let model: PrologueModel
     let permission: Permission
 
-    private enum Copy {
+    /// Internal so the app's tests can check the tool list against the sidebar's order.
+    enum Copy {
         static let allow = "Allow\u{2026}"
         static let relaunchNote = "Turned it on in System Settings? macOS applies it once sTools opens again."
         static let relaunch = "Relaunch sTools"
 
         static func usedBy(_ permission: Permission) -> String {
             switch permission {
-            case .accessibility: "NBB Overlay, Window Backdrop, Crosshair, Timer Overlay, Screen Recording"
+            case .accessibility: "Crosshair, Timer Overlay, NBB Overlay, Screen Recording, Window Backdrop"
             case .screenRecording, .appAudio, .microphone, .camera: "Screen Recording"
             }
         }

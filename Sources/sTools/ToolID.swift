@@ -1,22 +1,17 @@
 import Foundation
 
-/// The six tools, in sidebar order.
+/// The six tools, in sidebar order: the one place that order is written down (spec 3.5). The sidebar, its glide,
+/// the Go menu, Home's tool rows, the Prologue's tool lists and everything else that follows the sidebar read it from
+/// here (`allCases`). The hotkey actions keep the same order in STPlatform, which can't see this type
+/// (`HotkeyAction.allCases`); a test checks the two agree.
 enum ToolID: String, CaseIterable, Identifiable, Hashable, Sendable {
-    case nbbOverlay, windowBackdrop, crosshair, timerOverlay, screenRecording, keyRebinder
+    case crosshair, timerOverlay, nbbOverlay, screenRecording, windowBackdrop, keyRebinder
 
     var id: String { rawValue }
 
-    /// The 1-6 shown in the sidebar and used by the Go menu shortcuts (⌃⌘1–⌃⌘6) and the ⌘1–⌘5 key set.
-    var number: Int {
-        switch self {
-        case .nbbOverlay: 1
-        case .windowBackdrop: 2
-        case .crosshair: 3
-        case .timerOverlay: 4
-        case .screenRecording: 5
-        case .keyRebinder: 6
-        }
-    }
+    /// The 1-6 shown in the sidebar and used by the Go menu shortcuts (⌃⌘1–⌃⌘6) and the ⌘1–⌘5 key set: the tool's
+    /// place in the sidebar.
+    var number: Int { (Self.allCases.firstIndex(of: self) ?? 0) + 1 }
 
     var title: String {
         switch self {

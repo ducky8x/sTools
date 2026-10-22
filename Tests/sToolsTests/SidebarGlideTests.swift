@@ -155,7 +155,7 @@ struct SidebarGlideTests {
 
     @Test func aNeighborPlaysTheShortGlideAndNoDetent() {
         let rig = Rig()
-        rig.player.glide(from: .tool(.windowBackdrop), to: .tool(.crosshair))
+        rig.player.glide(from: .tool(.crosshair), to: .tool(.timerOverlay))
         rig.clock.advance(by: 1)
         #expect(rig.sound.sounds == [.glideShort])
         #expect(rig.taps.count == 0)
@@ -212,9 +212,9 @@ struct SidebarGlideTests {
     /// Once a glide has settled, the next starts from the row the marker rests on.
     @Test func aMoveAfterTheGlideSettledStartsFromRest() {
         let rig = Rig()
-        rig.player.glide(from: .home, to: .tool(.crosshair))
+        rig.player.glide(from: .home, to: .tool(.nbbOverlay))
         rig.clock.advance(by: 2)
-        rig.player.glide(from: .tool(.crosshair), to: .home)
+        rig.player.glide(from: .tool(.nbbOverlay), to: .home)
         rig.clock.advance(by: 2)
         #expect(rig.sound.detentTimes.count == 4, "two rows each way")
     }
@@ -280,24 +280,24 @@ struct SidebarGlideNavigationTests {
 
     @Test func theGoMenuGlidesTheSameWay() {
         let (harness, clock, sound) = rigged()
-        harness.model.perform(.tool(.crosshair))
+        harness.model.perform(.tool(.nbbOverlay))
         clock.advance(by: 1)
         #expect(sound.glides == [.glideMedium])
         #expect(sound.detentTimes.count == 2)
-        harness.model.perform(.tool(.crosshair))
+        harness.model.perform(.tool(.nbbOverlay))
         #expect(sound.glides.count == 1, "the page already open plays nothing")
     }
 
     @Test func backAndForwardGlide() {
         let (harness, clock, sound) = rigged()
-        harness.model.navigate(to: .tool(.windowBackdrop))
+        harness.model.navigate(to: .tool(.timerOverlay))
         clock.advance(by: 1)
         harness.model.perform(.back)
         clock.advance(by: 1)
         harness.model.perform(.forward)
         clock.advance(by: 1)
         #expect(sound.glides == [.glideMedium, .glideMedium, .glideMedium])
-        #expect(sound.detentTimes.count == 3, "NBB Overlay each way")
+        #expect(sound.detentTimes.count == 3, "Crosshair each way")
         #expect(!sound.sounds.contains(.page))
     }
 

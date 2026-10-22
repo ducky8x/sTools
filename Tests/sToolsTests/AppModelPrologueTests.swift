@@ -64,7 +64,7 @@ struct AppModelPrologueTests {
         harness.model.beginPrologue(at: .youreSet)
         harness.model.setTool(.crosshair, on: true)
         harness.model.setTool(.windowBackdrop, on: true)
-        #expect(harness.model.toolsToSwitchOff() == [.windowBackdrop, .crosshair])
+        #expect(harness.model.toolsToSwitchOff() == [.crosshair, .windowBackdrop], "in sidebar order")
         let prologue = try #require(harness.model.prologue)
         prologue.runFinale()
         prologue.completeFinale()

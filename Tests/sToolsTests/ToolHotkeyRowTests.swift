@@ -57,7 +57,7 @@ struct ToolHotkeyRowTests {
         let json = """
             {"isEnabled": true, "showsConfirmation": true, "bindings": [
               {"id": "\(UUID().uuidString)", "combo": {"keyCode": 15, "modifiers": 2048}, "actions": ["toggle.screenRecording"]},
-              {"id": "\(UUID().uuidString)", "combo": {"keyCode": 21, "modifiers": 256}, "actions": ["startStopRecording"]},
+              {"id": "\(UUID().uuidString)", "combo": {"keyCode": 22, "modifiers": 256}, "actions": ["startStopRecording"]},
               {"id": "\(UUID().uuidString)", "combo": {"keyCode": 8, "modifiers": 6144}, "actions": ["toggle.crosshair", "startStopRecording"]}
             ]}
             """
