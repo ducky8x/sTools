@@ -55,6 +55,8 @@ struct RecordBar: View {
         case .idle:
             Button("Record") { Task { await controller.startRecording() } }
                 .buttonStyle(STButtonStyle(.primary))
+                // Without the permission nothing would be recorded; the strip at the top of the page offers Allow….
+                .disabled(!canRecord)
         }
     }
 
@@ -68,9 +70,13 @@ struct RecordBar: View {
         case .countingDown: return "Get ready."
         case .finishing: return "Writing the file\u{2026}"
         case .deciding: return "Choose Save or Delete. Screen Recording switches off after."
-        case .idle: return controller.isEnabled ? "Ready. Stopping switches Screen Recording off." : "Record switches Screen Recording on first."
+        case .idle:
+            if !canRecord { return "Allow Screen & System Audio Recording to record." }
+            return controller.isEnabled ? "Ready. Stopping switches Screen Recording off." : "Record switches Screen Recording on first."
         }
     }
+
+    private var canRecord: Bool { controller.screenRecordingPermission == .granted }
 
     static func clock(_ seconds: Double) -> String {
         let total = Int(seconds)

@@ -55,6 +55,7 @@ struct HotkeyConfirmationTests {
             (.finishing, .recordingFinishing),
             (.awaitingDecision, .recordingAwaitingDecision),
             (.couldNotSwitchOn, .needsAccessibility(.screenRecording)),
+            (.needsPermission, .recordingNeedsPermission),
         ]
         for (press, expected) in cases {
             #expect(HotkeyConfirmation.recordingEffect(press) == expected)
@@ -66,6 +67,13 @@ struct HotkeyConfirmationTests {
         #expect(!HotkeyConfirmation.changedSomething([HotkeyConfirmation.recordingEffect(.couldNotSwitchOn)]))
         #expect(HotkeyConfirmation.summary([HotkeyConfirmation.recordingEffect(.couldNotSwitchOn)])
             == "Screen Recording needs Accessibility")
+    }
+
+    /// Without Screen & System Audio Recording nothing starts, so the line names the permission and earns no seal.
+    @Test func aStartWithoutScreenRecordingPermissionSaysWhatsMissing() {
+        #expect(HotkeyConfirmation.phrase(.recordingNeedsPermission) == "Screen Recording needs Screen & System Audio Recording")
+        #expect(!HotkeyConfirmation.changedSomething([.recordingNeedsPermission]))
+        #expect(HotkeyConfirmation.changedSomething([.tool(.crosshair, isOn: true), .recordingNeedsPermission]))
     }
 }
 

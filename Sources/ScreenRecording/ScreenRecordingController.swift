@@ -45,6 +45,8 @@ public final class ScreenRecordingController: ToolController {
         case finishing
         /// The tool couldn't switch on (it needs Accessibility, rule R10), so nothing started.
         case couldNotSwitchOn
+        /// Screen & System Audio Recording isn't allowed, so nothing started and the tool stayed as it was.
+        case needsPermission
     }
 
     /// A finished recording waiting for its Save/Delete answer.
@@ -383,7 +385,7 @@ public final class ScreenRecordingController: ToolController {
     }
 
     /// Record on the page: starts a recording as the key does, switching the tool on first when it's off. Returns
-    /// once it writes, or once the start ended without a recording (canceled or failed).
+    /// once it writes, or once the start ended without a recording (canceled, refused or failed).
     public func startRecording() async {
         await startRecording(isTest: false)
     }
@@ -405,7 +407,13 @@ public final class ScreenRecordingController: ToolController {
     /// The part of a start that can't wait: switches the tool on when it's off, then marks the start (`.starting`)
     /// before anything waits, so a press while the sources come up finds it and cancels it instead of starting a
     /// second recording.
+    ///
+    /// Without Screen & System Audio Recording nothing starts and the tool stays as it was: there would be nothing to
+    /// record but a blank canvas, and arming could bring up macOS's prompt over the game. The page's Allow… is where
+    /// it's given. It's read fresh here (a cheap check that never prompts), so a grant since counts at once.
     private func beginStart(isTest: Bool) -> (KeyPress, Start?) {
+        services.permissions.refresh([.screenRecording])
+        guard screenRecordingPermission == .granted else { return (.needsPermission, nil) }
         if !isEnabled {
             if let requestEnable { guard requestEnable() else { return (.couldNotSwitchOn, nil) } } else { setEnabled(true) }
         }

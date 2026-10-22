@@ -35,6 +35,7 @@ private final class RecordingHarness {
     let question = FakeQuestion()
     let registrar = FakeHotkeyRegistrar()
     let hud = FakeHotkeyHUD()
+    let prober: FakeProber
     let recording: ScreenRecordingController
     let model: AppModel
     /// Arming and starting a recording can take seconds while the whole suite runs at once.
@@ -42,15 +43,19 @@ private final class RecordingHarness {
 
     /// `hotkeys` is the `hotkeys.json` the launch finds: an existing, empty list by default; nil for a new install,
     /// which starts with ⌘1–⌘5. `armingTakes`: how long the sources take to come up when the tool switches on, as
-    /// ScreenCaptureKit's listing and the captures starting can on real hardware.
-    init(hotkeys: HotkeySettings? = HotkeySettings(), armingTakes: Duration? = nil) {
+    /// ScreenCaptureKit's listing and the captures starting can on real hardware. `screenRecording`: Screen & System
+    /// Audio Recording, granted by default (Accessibility always is).
+    init(hotkeys: HotkeySettings? = HotkeySettings(), armingTakes: Duration? = nil,
+         screenRecording: PermissionStatus = .granted) {
         let store = SettingsStore(directory: directory, debounce: .milliseconds(10))
         store.save(AppState(prologueCompleted: true))
         if let hotkeys { store.save(hotkeys) }
+        prober = FakeProber(accessibility: .granted)
+        prober.set(.screenRecording, screenRecording)
         let services = ToolServices(
             settings: store, displays: DisplayDirectory(screenProvider: { [harnessDisplay] }),
             minecraft: MinecraftLocator(source: StaticMinecraftWindowSource(instances: [])),
-            permissions: PermissionCenter(prober: FakeProber(accessibility: .granted), openURL: { _ in }))
+            permissions: PermissionCenter(prober: prober, openURL: { _ in }))
         recording = ScreenRecordingController(
             services: services, makeFactory: { _ in NoCapture() },
             loadAvailable: { _ in
@@ -136,6 +141,29 @@ struct AppModelRecordingTests {
         #expect(harness.savedFileNames().count == 1)
         harness.recording.delete()
         #expect(!harness.model.isOn(.screenRecording))
+    }
+
+    /// Without Screen & System Audio Recording the key starts nothing: no recording (it would be a blank canvas), the
+    /// tool stays off, nothing asks macOS for the permission over the game, and the line says what's missing, without
+    /// the seal. The page's Allow… is where it's given.
+    @Test func withoutScreenRecordingPermissionTheKeyStartsNothing() async throws {
+        let harness = RecordingHarness(screenRecording: .denied)
+        let id = harness.addKey()
+        harness.press(id)
+        #expect(harness.recording.phase == .idle)
+        #expect(!harness.model.isOn(.screenRecording))
+        #expect(harness.hud.lines == ["Screen Recording needs Screen & System Audio Recording"])
+        #expect(harness.hud.presented.map(\.sealed) == [false])
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(harness.recording.phase == .idle)
+        #expect(harness.savedFileNames().isEmpty)
+        #expect(harness.question.presented == 0)
+        #expect(!harness.prober.requested.contains(.screenRecording))
+        // Once it's allowed, the next press records.
+        harness.prober.set(.screenRecording, .granted)
+        #expect(await harness.recordByKey(id))
+        #expect(harness.hud.lines.suffix(2) == ["Recording started", "Recording stopped"])
+        harness.recording.delete()
     }
 
     /// A new install's key set gives Screen Recording ⌘5 with its one action, so once hotkeys are on, ⌘5 records,

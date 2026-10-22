@@ -18,6 +18,8 @@ enum HotkeyConfirmation {
         case recordingFinishing
         /// The last recording waits for Save or Delete in its panel, so the press only brought that forward.
         case recordingAwaitingDecision
+        /// Nothing started: Screen Recording needs the Screen & System Audio Recording permission.
+        case recordingNeedsPermission
     }
 
     /// Whether the press changed anything. Only then does the seal stamp: a gold check beside
@@ -26,7 +28,7 @@ enum HotkeyConfirmation {
         effects.contains { effect in
             switch effect {
             case .tool, .recordingStarted, .recordingCountdown, .recordingStopped, .recordingCanceled: true
-            case .needsAccessibility, .recordingFinishing, .recordingAwaitingDecision: false
+            case .needsAccessibility, .recordingFinishing, .recordingAwaitingDecision, .recordingNeedsPermission: false
             }
         }
     }
@@ -46,6 +48,7 @@ enum HotkeyConfirmation {
         case .recordingCanceled: "Recording canceled"
         case .recordingFinishing: "Still finishing the last recording"
         case .recordingAwaitingDecision: "Save or delete the last recording first"
+        case .recordingNeedsPermission: "Screen Recording needs Screen & System Audio Recording"
         }
     }
 
@@ -60,6 +63,7 @@ enum HotkeyConfirmation {
         case .awaitingDecision: .recordingAwaitingDecision
         case .finishing: .recordingFinishing
         case .couldNotSwitchOn: .needsAccessibility(.screenRecording)
+        case .needsPermission: .recordingNeedsPermission
         }
     }
 }

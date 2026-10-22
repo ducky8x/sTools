@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import Synchronization
 import Testing
 @testable import ScreenRecording
 @testable import STPlatform
@@ -59,6 +60,30 @@ private struct Granted: PermissionProbing {
     func request(_ permission: Permission) async -> PermissionStatus { .granted }
 }
 
+/// Screen & System Audio Recording as the test sets it, everything else granted. Nothing asks the system, and the
+/// test sees whether anything asked at all.
+private final class ScreenRecordingPermission: PermissionProbing {
+    private let screenRecording: Mutex<PermissionStatus>
+    private let requests = Mutex(0)
+
+    init(_ status: PermissionStatus) {
+        screenRecording = Mutex(status)
+    }
+
+    func set(_ status: PermissionStatus) { screenRecording.withLock { $0 = status } }
+
+    var requestCount: Int { requests.withLock { $0 } }
+
+    func status(for permission: Permission) -> PermissionStatus {
+        permission == .screenRecording ? screenRecording.withLock { $0 } : .granted
+    }
+
+    func request(_ permission: Permission) async -> PermissionStatus {
+        requests.withLock { $0 += 1 }
+        return status(for: permission)
+    }
+}
+
 @MainActor
 private struct Harness {
     let directory: URL
@@ -71,7 +96,8 @@ private struct Harness {
 
     /// `armingTakes`: how long listing the sources takes when the tool switches on, as ScreenCaptureKit's listing can
     /// on real hardware (with Minecraft's capture, its sound and a camera starting after it, up to a couple of seconds).
-    init(minecraft: Bool = true, armingTakes: Duration? = nil) {
+    /// `permissions`: what the permission center reads; everything is granted by default.
+    init(minecraft: Bool = true, armingTakes: Duration? = nil, permissions: any PermissionProbing = Granted()) {
         directory = FileManager.default.temporaryDirectory.appending(path: "stools-recording-\(UUID().uuidString)", directoryHint: .isDirectory)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let window = MinecraftWindow(windowNumber: 42, processID: 4242, title: "Minecraft* 1.16.1", frame: CGRect(x: 0, y: 0, width: 800, height: 600))
@@ -80,7 +106,7 @@ private struct Harness {
         locator.refresh()
         let services = ToolServices(
             settings: SettingsStore(directory: directory.appending(path: "settings", directoryHint: .isDirectory)),
-            displays: DisplayDirectory(), minecraft: locator, permissions: PermissionCenter(prober: Granted()))
+            displays: DisplayDirectory(), minecraft: locator, permissions: PermissionCenter(prober: permissions))
         let factory = factory
         controller = ScreenRecordingController(
             services: services, makeFactory: { _ in factory },
@@ -567,6 +593,60 @@ struct ScreenRecordingKeyTests {
         #expect(harness.controller.toggleRecording() == .countdown(seconds: 3))
         #expect(await harness.waitUntil { harness.controller.phase == .countingDown(3) })
         #expect(harness.controller.toggleRecording() == .canceled)
+        #expect(!harness.controller.isEnabled)
+    }
+
+    /// Without Screen & System Audio Recording there is nothing to record but a blank canvas, and arming would bring up
+    /// macOS's prompt over the game. The key starts nothing, the tool stays off, nothing asks for the permission, and
+    /// the press says why.
+    @Test func withoutScreenRecordingPermissionTheKeyStartsNothing() async throws {
+        let permission = ScreenRecordingPermission(.denied)
+        let harness = Harness(permissions: permission)
+        defer { harness.remove() }
+        #expect(harness.controller.toggleRecording() == .needsPermission)
+        #expect(harness.controller.phase == .idle)
+        #expect(!harness.controller.isEnabled)
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(harness.factory.bases.isEmpty)
+        #expect(harness.savedFileNames().isEmpty)
+        #expect(harness.presenter.presented.isEmpty)
+        #expect(permission.requestCount == 0)
+        #expect(harness.controller.screenRecordingPermission == .denied)
+    }
+
+    /// Switched on by hand without the permission, the key and Record still write nothing, and the tool stays on.
+    @Test func withoutScreenRecordingPermissionRecordWritesNothing() async throws {
+        let permission = ScreenRecordingPermission(.denied)
+        let harness = Harness(permissions: permission)
+        defer { harness.remove() }
+        await harness.arm()
+        harness.pushFrame()
+        #expect(harness.controller.toggleRecording() == .needsPermission)
+        await harness.controller.startRecording()
+        #expect(harness.controller.phase == .idle)
+        #expect(harness.controller.isEnabled)
+        #expect(!(await harness.controller.recordTest(for: .milliseconds(100))))
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(harness.savedFileNames().isEmpty)
+        #expect(permission.requestCount == 0)
+        harness.controller.setEnabled(false)
+    }
+
+    /// The permission is read at the press, so allowing it in System Settings counts at once.
+    @Test func allowingThePermissionCountsAtTheNextPress() async throws {
+        let permission = ScreenRecordingPermission(.denied)
+        let harness = Harness(permissions: permission)
+        defer { harness.remove() }
+        #expect(harness.controller.toggleRecording() == .needsPermission)
+        permission.set(.granted)
+        #expect(harness.controller.toggleRecording() == .started)
+        #expect(await harness.waitUntil { harness.controller.phase == .recording })
+        #expect(harness.controller.screenRecordingPermission == .granted)
+        harness.pushFrame()
+        try await Task.sleep(for: .milliseconds(250))
+        #expect(harness.controller.toggleRecording() == .stopped)
+        #expect(await harness.waitUntil { harness.controller.phase == .deciding })
+        harness.controller.delete()
         #expect(!harness.controller.isEnabled)
     }
 
