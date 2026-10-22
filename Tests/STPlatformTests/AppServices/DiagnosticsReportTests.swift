@@ -49,12 +49,13 @@ private func makeReport(
     enabledTools: [String] = ["crosshair", "backdrop"],
     settingsFiles: [SettingsFileInfo] = [SettingsFileInfo(name: "general.json", bytes: 120)],
     reader: FakeLogReader = FakeLogReader(),
-    homeDirectory: String = home
+    homeDirectory: String = home,
+    hotkeys: DiagnosticsHotkeys? = nil
 ) -> DiagnosticsReport {
     DiagnosticsReport(
         system: system, displays: displays, permissions: permissions, karabiner: karabiner,
         ninjabrain: ninjabrain, minecraft: minecraft, enabledTools: enabledTools,
-        settingsFiles: settingsFiles, logReader: reader, now: now, homeDirectory: homeDirectory)
+        settingsFiles: settingsFiles, logReader: reader, now: now, homeDirectory: homeDirectory, hotkeys: hotkeys)
 }
 
 @Suite struct DiagnosticsReportTests {
@@ -74,6 +75,31 @@ private func makeReport(
         #expect(text.contains("Enabled tools: crosshair, backdrop"))
         #expect(text.contains("general.json (120 bytes)"))
         #expect(text.contains("12:00:00 [error] Crosshair: oops"))
+    }
+
+    /// Every permission has a line, in `Permission`'s order.
+    @Test func everyPermissionHasALine() throws {
+        let text = makeReport(permissions: [
+            .accessibility: .granted, .screenRecording: .denied, .appAudio: .unknown, .microphone: .notDetermined, .camera: .granted,
+        ]).render()
+        let lines = text.split(separator: "\n").map(String.init)
+        let start = try #require(lines.firstIndex(of: "Permissions:"))
+        #expect(Array(lines[start + 1...start + 5]) == [
+            "  Accessibility: granted", "  Screen & System Audio Recording: denied", "  App audio: unknown",
+            "  Microphone: not determined", "  Camera: granted",
+        ])
+    }
+
+    /// The header says whether hotkeys are on, where they work and which key set the tools' keys follow.
+    @Test func theHeaderSaysHowHotkeysAreSet() {
+        let text = makeReport(hotkeys: DiagnosticsHotkeys(isEnabled: true, scope: "In sTools and Minecraft", keySet: "⌘1–⌘5")).render()
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        #expect(Array(lines.prefix(5)) == [
+            "sTools 1.2.3 (45) diagnostics", "Generated: \(now.formatted(.iso8601))", "Hotkeys: on",
+            "Where hotkeys work: In sTools and Minecraft", "Key set: ⌘1–⌘5",
+        ])
+        let off = makeReport(hotkeys: DiagnosticsHotkeys(isEnabled: false, scope: "Everywhere", keySet: "Custom")).render()
+        #expect(off.contains("Hotkeys: off\nWhere hotkeys work: Everywhere\nKey set: Custom\n"))
     }
 
     /// A settings file's size agrees with its count, one byte included.

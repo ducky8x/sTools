@@ -94,6 +94,47 @@ struct AppModelSettingsTests {
         #expect(clipboard.copiedText?.contains("sTools") == true)
     }
 
+    /// Copy Diagnostics reports every permission's state as macOS has it now, read with the checks that never ask, so
+    /// copying a report brings up no prompt.
+    @Test func copyDiagnosticsReportsEveryPermissionWithoutAsking() {
+        let harness = Harness(accessibility: .granted)
+        harness.prober.set(.screenRecording, .denied)
+        harness.prober.set(.appAudio, .unknown)
+        harness.prober.set(.microphone, .notDetermined)
+        harness.prober.set(.camera, .granted)
+        let clipboard = FakeClipboard()
+        harness.model.copyDiagnostics(to: clipboard)
+        let text = clipboard.copiedText ?? ""
+        #expect(text.contains("  Accessibility: granted\n"))
+        #expect(text.contains("  Screen & System Audio Recording: denied\n"))
+        #expect(text.contains("  App audio: unknown\n"))
+        #expect(text.contains("  Microphone: not determined\n"))
+        #expect(text.contains("  Camera: granted\n"))
+        #expect(!text.contains("not reported"))
+        #expect(harness.prober.requested.isEmpty, "nothing asked macOS for a permission")
+
+        // A permission changed since the app last read it is reported as it is now.
+        harness.prober.set(.camera, .denied)
+        harness.model.copyDiagnostics(to: clipboard)
+        #expect(clipboard.copiedText?.contains("  Camera: denied\n") == true)
+        #expect(harness.prober.requested.isEmpty)
+    }
+
+    /// The report's header says whether hotkeys are on, Where hotkeys work and the key set the tools' keys follow.
+    @Test func copyDiagnosticsSaysHowHotkeysAreSet() {
+        let fresh = Harness(accessibility: .granted, hotkeys: nil)
+        let clipboard = FakeClipboard()
+        fresh.model.copyDiagnostics(to: clipboard)
+        let header = (clipboard.copiedText ?? "").components(separatedBy: "\n\n").first ?? ""
+        #expect(header.contains("\nHotkeys: on\nWhere hotkeys work: In sTools and Minecraft\nKey set: \(HotkeyKeySet.command.title)"))
+
+        let custom = Harness(accessibility: .granted)
+        custom.model.hotkeys.scope = .everywhere
+        custom.model.copyDiagnostics(to: clipboard)
+        let customHeader = (clipboard.copiedText ?? "").components(separatedBy: "\n\n").first ?? ""
+        #expect(customHeader.contains("\nHotkeys: off\nWhere hotkeys work: Everywhere\nKey set: \(HotkeyKeySet.name(of: custom.model.hotkeys.keySet))"))
+    }
+
     @MainActor
     @Test func resetAllToolsToDefaultResetsEveryToolButNotGeneralOrAppearance() {
         let harness = Harness(accessibility: .granted, usesRealControllers: true)
