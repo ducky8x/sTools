@@ -18,7 +18,7 @@ final class StillHost<Content: View> {
 
     init(_ view: Content, size: CGSize) {
         _ = NSApplication.shared
-        host = NSHostingView(rootView: view)
+        host = hostingView(view)
         host.frame = CGRect(origin: .zero, size: size)
         host.appearance = NSAppearance(named: .darkAqua)
         settle()
