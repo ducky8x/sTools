@@ -9,6 +9,12 @@ import Testing
 import TimerOverlay
 @testable import sTools
 
+/// Holds the answer the fake Hotkeys question gives, so the test can change it after the closure captures it.
+@MainActor
+private final class AnswerBox {
+    var value = false
+}
+
 @MainActor
 @Suite("App ▸ Prologue trials")
 struct PrologueTrialsTests {
@@ -193,10 +199,10 @@ struct PrologueTrialsTests {
         let content = harness.model.trialContent(.timerOverlay)
         content.onAppear()
         var asked = 0
-        var answer = false
+        let answer = AnswerBox()
         harness.model.confirmTurningOnHotkeys = {
             asked += 1
-            return answer
+            return answer.value
         }
         let combo = HotkeyCombo(keyCode: 0x60, modifiers: [])
 
@@ -206,7 +212,7 @@ struct PrologueTrialsTests {
         #expect(TrialStartTimerKey.own(in: harness.model.hotkeys.bindings) == nil)
         #expect(!content.completed().contains("key"))
 
-        answer = true
+        answer.value = true
         TrialStartTimerKey.set(combo, in: harness.model)
         #expect(asked == 2)
         #expect(harness.model.hotkeys.isEnabled)
