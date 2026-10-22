@@ -24,8 +24,7 @@ struct HotkeyWordingTests {
         #expect(HotkeyAction.toggle(.nbbOverlay).title == "NBB Overlay")
         #expect(HotkeyAction.toggle(.windowBackdrop).title == "Window Backdrop")
         #expect(HotkeyAction.toggle(.crosshair).title == "Crosshair")
-        #expect(HotkeyAction.toggle(.screenRecording).title == "Screen Recording")
-        #expect(HotkeyAction.startStopRecording.title == "Start/stop recording")
+        #expect(HotkeyAction.startStopRecording.title == "Screen Recording")
         #expect(HotkeyAction.startTimer.title == "Start timer")
     }
 
@@ -40,7 +39,7 @@ struct HotkeyWordingTests {
 
     @Test func summaryJoinsWithPlusInActionOrder() {
         #expect(HotkeyWording.summary([.toggle(.crosshair), .toggle(.nbbOverlay)]) == "Crosshair + NBB Overlay")
-        #expect(HotkeyWording.summary([.startStopRecording, .toggle(.crosshair)]) == "Start/stop recording + Crosshair")
+        #expect(HotkeyWording.summary([.startStopRecording, .toggle(.crosshair)]) == "Screen Recording + Crosshair")
         #expect(HotkeyWording.summary([.toggle(.windowBackdrop)]) == "Window Backdrop")
         #expect(HotkeyWording.summary([.toggle(.crosshair), .startTimer]) == "Crosshair + Start timer")
         #expect(HotkeyWording.summary([]) == "")
@@ -51,7 +50,7 @@ struct HotkeyWordingTests {
         #expect(HotkeyWording.spokenSummary([.toggle(.crosshair), .toggle(.nbbOverlay)]) == "Crosshair and NBB Overlay")
         #expect(HotkeyWording.spokenSummary([.startTimer, .toggle(.crosshair)]) == "Start timer and Crosshair")
         #expect(HotkeyWording.spokenSummary([.toggle(.crosshair), .toggle(.nbbOverlay), .startStopRecording])
-                == "Crosshair, NBB Overlay and Start/stop recording")
+                == "Crosshair, NBB Overlay and Screen Recording")
         #expect(HotkeyWording.spokenSummary([]) == "")
     }
 

@@ -42,7 +42,7 @@ struct AppModelHotkeysTests {
         #expect(states[.crosshair] == true)
         #expect(states[.nbbOverlay] == false)
         #expect(states[.windowBackdrop] == false)
-        #expect(states[.screenRecording] == false)
+        #expect(states.count == HotkeyTool.allCases.count)
     }
 
     @Test func handlingASetToolEventTurnsTheMappedToolOn() {
