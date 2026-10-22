@@ -42,21 +42,31 @@ public final class WorkspaceFrontmostApp: FrontmostAppObserving {
 /// change to the locator's instances (a window that opens while its game is already in front), never on a timer.
 ///
 /// Minecraft is recognized by its process, from the locator's instances, so recognizing it needs Accessibility, as
-/// every tool a hotkey switches does; without it, hotkeys work only in sTools under the default.
+/// every tool a hotkey switches does; without it, hotkeys work only in sTools under the default. A game's process,
+/// once listed, counts until it quits: the locator lists only the windows Accessibility can read right now, and a
+/// full-screen game on its own Space, or a game on another Space, drops out of that list while you're elsewhere, so
+/// switching back to it (⌘-Tab, a Spaces swipe) would otherwise find its hotkeys unregistered.
 @MainActor
 public final class HotkeyFrontAppWatcher {
     private let center: HotkeyCenter
     private let frontmost: any FrontmostAppObserving
     private let minecraft: MinecraftLocator
     private let ownProcessID: Int32
+    private let isRunning: @MainActor (Int32) -> Bool
     private var isFollowingMinecraft = false
+    /// Every Minecraft process the locator has listed whose process still runs (`isRunning`).
+    private var minecraftProcesses: Set<Int32> = []
 
+    /// - Parameter isRunning: whether a process still runs, so a game that quit is forgotten (and a later process
+    ///   with its number isn't taken for Minecraft). The app's asks `NSRunningApplication`; tests pass a fake.
     public init(center: HotkeyCenter, frontmost: any FrontmostAppObserving, minecraft: MinecraftLocator,
-                ownProcessID: Int32 = ProcessInfo.processInfo.processIdentifier) {
+                ownProcessID: Int32 = ProcessInfo.processInfo.processIdentifier,
+                isRunning: @escaping @MainActor (Int32) -> Bool = HotkeyFrontAppWatcher.processIsRunning) {
         self.center = center
         self.frontmost = frontmost
         self.minecraft = minecraft
         self.ownProcessID = ownProcessID
+        self.isRunning = isRunning
     }
 
     /// Tells the center about the app in front now, then after every switch. Calling it twice is harmless.
@@ -66,16 +76,30 @@ public final class HotkeyFrontAppWatcher {
         update()
     }
 
-    /// Sorts the app in front again and tells the center.
+    /// Sorts the app in front again and tells the center: remembers the games the locator lists now, forgets the ones
+    /// that quit.
     public func update() {
-        center.setFrontApp(Self.sort(frontmost.frontmostProcessID, ownProcessID: ownProcessID, minecraft: minecraft.instances))
+        minecraftProcesses.formUnion(minecraft.instances.map(\.window.processID))
+        minecraftProcesses = minecraftProcesses.filter(isRunning)
+        center.setFrontApp(Self.sort(frontmost.frontmostProcessID, ownProcessID: ownProcessID,
+                                     minecraftProcesses: minecraftProcesses))
     }
 
     /// sTools when `pid` is sTools' own process, Minecraft when it is one of `minecraft`'s processes, else other.
     public static func sort(_ pid: Int32?, ownProcessID: Int32, minecraft: [MinecraftInstance]) -> HotkeyFrontApp {
+        sort(pid, ownProcessID: ownProcessID, minecraftProcesses: Set(minecraft.map(\.window.processID)))
+    }
+
+    /// sTools when `pid` is sTools' own process, Minecraft when it is one of `minecraftProcesses`, else other.
+    public static func sort(_ pid: Int32?, ownProcessID: Int32, minecraftProcesses: Set<Int32>) -> HotkeyFrontApp {
         guard let pid else { return .other }
         if pid == ownProcessID { return .sTools }
-        return minecraft.contains { $0.window.processID == pid } ? .minecraft : .other
+        return minecraftProcesses.contains(pid) ? .minecraft : .other
+    }
+
+    /// Whether `pid` belongs to an app that still runs: the app's check that a remembered game hasn't quit.
+    public nonisolated static func processIsRunning(_ pid: Int32) -> Bool {
+        NSRunningApplication(processIdentifier: pid).map { !$0.isTerminated } ?? false
     }
 
     /// Re-arms itself after each change, one main-actor turn later, once the locator has its new instances.
