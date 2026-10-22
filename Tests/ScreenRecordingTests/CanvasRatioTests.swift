@@ -45,13 +45,28 @@ private struct NoCaptures: CaptureFactory {
     func minecraftAudio(processID: Int32) -> (any AudioCapture)? { nil }
 }
 
+/// Counts what arming asks for and builds nothing, so arming starts no real capture.
 @MainActor
-private func makeController(display: TestDisplay, settings: SettingsStore) -> ScreenRecordingController {
+private final class CountingCaptures: CaptureFactory {
+    var videoRequests: [(id: UUID, canvas: PixelSize)] = []
+    func base(minecraftWindowID: UInt32, showsCursor: Bool) -> (any VideoCapture)? { nil }
+    func video(for source: VideoSource, canvas: PixelSize, showsCursor: Bool) -> (any VideoCapture)? {
+        videoRequests.append((source.id, canvas))
+        return nil
+    }
+    func audio(for source: AudioSource) -> (any AudioCapture)? { nil }
+    func minecraftAudio(processID: Int32) -> (any AudioCapture)? { nil }
+}
+
+@MainActor
+private func makeController(display: TestDisplay, settings: SettingsStore,
+                            factory: (any CaptureFactory)? = nil) -> ScreenRecordingController {
     let services = ToolServices(
         settings: settings, displays: display.directory,
         minecraft: MinecraftLocator(source: StaticMinecraftWindowSource(instances: [])),
         permissions: PermissionCenter(prober: AlwaysGranted()))
-    return ScreenRecordingController(services: services, makeFactory: { _ in NoCaptures() }, loadAvailable: { _ in AvailableSources() })
+    let factory = factory ?? NoCaptures()
+    return ScreenRecordingController(services: services, makeFactory: { _ in factory }, loadAvailable: { _ in AvailableSources() })
 }
 
 private func temporaryDirectory() -> URL {
@@ -227,6 +242,26 @@ struct CanvasRatioTests {
                 }
             }
         }
+    }
+
+    /// Window and display sources are captured at their display's pixel size, so an armed recorder starts its
+    /// streams again when a display's resolution or backing scale changes, at the new canvas.
+    @Test func anArmedRecorderRestartsItsSourcesWhenADisplayChanges() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let display = TestDisplay()
+        let factory = CountingCaptures()
+        let controller = makeController(display: display, settings: SettingsStore(directory: directory), factory: factory)
+        controller.addVideo(.window(WindowReference(windowID: 7, appName: "Chat", title: "Room")), contentSize: PixelSize(width: 1600, height: 1200))
+        controller.setEnabled(true)
+        for _ in 0..<200 where factory.videoRequests.isEmpty { try await Task.sleep(for: .milliseconds(5)) }
+        #expect(factory.videoRequests.map(\.canvas) == [PixelSize(width: 3840, height: 2160)])
+
+        display.change(scale: 1)
+        for _ in 0..<200 where factory.videoRequests.count < 2 { try await Task.sleep(for: .milliseconds(5)) }
+        #expect(factory.videoRequests.map(\.canvas) == [PixelSize(width: 3840, height: 2160), PixelSize(width: 1920, height: 1080)])
+        controller.setEnabled(false)
+        try await Task.sleep(for: .milliseconds(20))
     }
 
     // MARK: Version-1 layouts

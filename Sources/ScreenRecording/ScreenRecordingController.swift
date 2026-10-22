@@ -84,6 +84,7 @@ public final class ScreenRecordingController: ToolController {
         self.loadAvailable = loadAvailable ?? { await AvailableSources.load(excludingProcessIDs: $0) }
         convertLegacyLayout()
         watchMinecraft()
+        watchDisplays()
     }
 
     /// A layout saved by version 1 holds canvas pixels; it's turned into fractions of the canvas once, here, and
@@ -203,6 +204,22 @@ public final class ScreenRecordingController: ToolController {
                 guard let self else { return }
                 if self.isEnabled, self.phase == .idle, self.services.minecraft.active?.id != self.armedMinecraftID { self.rearm() }
                 self.watchMinecraft()
+            }
+        }
+    }
+
+    /// A display changing resolution or backing scale changes the pixel size its windows and its whole picture are
+    /// captured at, while running streams keep the size they started with. Re-arming while idle starts them again at
+    /// the new size, so each source's content keeps filling the frame it's fitted into. (While recording, Minecraft's
+    /// display changing stops the recording, spec 5.4.6.)
+    private func watchDisplays() {
+        withObservationTracking {
+            _ = services.displays.displays
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if self.isEnabled, self.phase == .idle, self.rig != nil { self.rearm() }
+                self.watchDisplays()
             }
         }
     }
