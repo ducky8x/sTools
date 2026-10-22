@@ -41,11 +41,11 @@ private let f5 = HotkeyCombo(keyCode: 96, modifiers: [])
 
 /// The recording's frame clock, fired by the test: no frame is written until it fires.
 private final class HandTickDriver: TickDriver, @unchecked Sendable {
-    private let handler = OSAllocatedUnfairLock<(@Sendable () -> Void)?>(initialState: nil)
-    func start(interval: Double, handler: @escaping @Sendable () -> Void) { self.handler.withLock { $0 = handler } }
-    func stop() { handler.withLock { $0 = nil } }
-    var isRunning: Bool { handler.withLock { $0 != nil } }
-    func fire() { handler.withLock { $0 }?() }
+    private let handler = HandlerSlot<Void>()
+    func start(interval: Double, handler: @escaping @Sendable () -> Void) { self.handler.set { handler() } }
+    func stop() { handler.clear() }
+    var isRunning: Bool { handler.isSet }
+    func fire() { handler(()) }
 }
 
 private let startingLine = "Starting the recording\u{2026}"
