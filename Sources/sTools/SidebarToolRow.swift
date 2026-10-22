@@ -78,6 +78,6 @@ struct SidebarToolRow: View {
     }
 
     private var statusColor: Color {
-        status == .on ? theme.accent : theme.inkTertiary
+        status.isLit ? theme.accent : theme.inkTertiary
     }
 }

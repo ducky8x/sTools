@@ -5,6 +5,7 @@ import NBBOverlay
 import Prologue
 import ScreenRecording
 import Observation
+import TimerOverlay
 import STDesign
 import STPlatform
 import SwiftUI
@@ -24,6 +25,9 @@ final class AppModel {
     var history = NavigationHistory()
     /// Where the next page shown should scroll to; the page clears it once it has.
     var pendingPageAnchor: PageAnchor?
+    /// The actions of a new hotkey Home ▸ Hotkeys opens its editor with (Timer Overlay's Set in Hotkeys…); Home
+    /// clears it once the editor is open.
+    var pendingNewHotkeyActions: Set<HotkeyAction>?
     var appearance: AppearanceSettings
     var general: GeneralSettings
     var updates: UpdateSettings
@@ -60,6 +64,9 @@ final class AppModel {
     @ObservationIgnored var lastKarabinerRequirement: KarabinerRequirement?
     /// What the Prologue's trials have seen so far; fresh each time the introduction starts.
     @ObservationIgnored var trials = TrialSession()
+    /// Asks before Set in Hotkeys… turns hotkeys on (plan decision 14); true to turn them on. Tests replace it, so no
+    /// test shows an alert.
+    @ObservationIgnored var confirmTurningOnHotkeys: @MainActor () -> Bool = AppModel.askToTurnOnHotkeys
     /// Follows macOS's Reduce motion into the theme. Only the real app has one; tests set the theme themselves.
     @ObservationIgnored var systemMotion: SystemMotionWatcher?
 
@@ -102,6 +109,12 @@ final class AppModel {
             self.setTool(.screenRecording, on: true)
             return self.isOn(.screenRecording)
         }
+        // Start, Test, placement mode and the Start-timer key switch the tool on through its switch, so rule R10 holds.
+        (controllers[.timerOverlay] as? TimerOverlayController)?.requestEnable = { [weak self] in
+            guard let self else { return false }
+            self.setTool(.timerOverlay, on: true)
+            return self.isOn(.timerOverlay)
+        }
         if PrologueModel.isNeeded(in: services.settings) { beginPrologue() }
         // The Key Rebinder shows, edits and advises on the hotkey list; without one, the list isn't built here.
         keyRebinder?.connect(hotkeys: hotkeys)
@@ -119,6 +132,8 @@ final class AppModel {
             .nbbOverlay: NBBOverlayController(services: services),
             .windowBackdrop: BackdropController(services: services),
             .crosshair: CrosshairController(services: services),
+            // The app's own theme, so the overlay follows Reduce animations even while the window is closed.
+            .timerOverlay: TimerOverlayController(services: services, theme: theme),
             .screenRecording: ScreenRecordingController(services: services),
         ], keyRebinder: KeyRebinderController(services: services), updater: AppUpdater(),
         hotkeyRegistrar: CarbonHotkeyRegistrar(), hotkeyHUD: HotkeyHUD(theme: theme), loginItem: SystemLoginItem())

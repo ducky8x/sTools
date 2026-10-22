@@ -123,13 +123,15 @@ extension ToolID {
         }
     }
 
-    var trial: PrologueTrial {
+    /// The tool's trial in the introduction; nil for Timer Overlay, which has none yet.
+    var trial: PrologueTrial? {
         switch self {
         case .crosshair: .crosshair
         case .windowBackdrop: .windowBackdrop
         case .nbbOverlay: .nbbOverlay
         case .screenRecording: .screenRecording
         case .keyRebinder: .keyRebinder
+        case .timerOverlay: nil
         }
     }
 }

@@ -1,19 +1,20 @@
 import Foundation
 
-/// The five tools, in sidebar order.
+/// The six tools, in sidebar order.
 enum ToolID: String, CaseIterable, Identifiable, Hashable, Sendable {
-    case nbbOverlay, windowBackdrop, crosshair, screenRecording, keyRebinder
+    case nbbOverlay, windowBackdrop, crosshair, timerOverlay, screenRecording, keyRebinder
 
     var id: String { rawValue }
 
-    /// The 1-5 shown in the sidebar and used by the Go menu shortcuts.
+    /// The 1-6 shown in the sidebar and used by the Go menu shortcuts.
     var number: Int {
         switch self {
         case .nbbOverlay: 1
         case .windowBackdrop: 2
         case .crosshair: 3
-        case .screenRecording: 4
-        case .keyRebinder: 5
+        case .timerOverlay: 4
+        case .screenRecording: 5
+        case .keyRebinder: 6
         }
     }
 
@@ -22,6 +23,7 @@ enum ToolID: String, CaseIterable, Identifiable, Hashable, Sendable {
         case .nbbOverlay: "NBB Overlay"
         case .windowBackdrop: "Window Backdrop"
         case .crosshair: "Crosshair"
+        case .timerOverlay: "Timer Overlay"
         case .screenRecording: "Screen Recording"
         case .keyRebinder: "Key Rebinder"
         }
@@ -42,6 +44,7 @@ enum ToolID: String, CaseIterable, Identifiable, Hashable, Sendable {
         case .nbbOverlay: "Ninjabrain Bot's answer, right over the game."
         case .windowBackdrop: "A clean stage behind Minecraft."
         case .crosshair: "The exact center, drawn your way."
+        case .timerOverlay: "Your Fire Resistance, counted down."
         case .screenRecording: "Minecraft and everything else, on one canvas."
         case .keyRebinder: "Every rebind, right on its key."
         }
@@ -57,6 +60,9 @@ enum ToolID: String, CaseIterable, Identifiable, Hashable, Sendable {
 /// The one-line live status under a tool's name in the sidebar and on Home.
 enum ToolStatus: Equatable, Sendable {
     case on, off, alwaysAvailable, needsAccessibility
+    /// Timer Overlay's own words while it's on (spec 5.6.3): "Ready", "2:14 left", "Paused, 1:02", "Time's up".
+    /// Shown in gold, like *On*.
+    case timer(String)
 
     /// Rendered in small caps, which the label font draws for upper- and lowercase alike.
     var label: String {
@@ -65,6 +71,15 @@ enum ToolStatus: Equatable, Sendable {
         case .off: "OFF"
         case .alwaysAvailable: "ALWAYS AVAILABLE"
         case .needsAccessibility: "NEEDS ACCESSIBILITY"
+        case .timer(let text): text.uppercased()
+        }
+    }
+
+    /// Whether it reads in gold, as a tool that's on does.
+    var isLit: Bool {
+        switch self {
+        case .on, .timer: true
+        case .off, .alwaysAvailable, .needsAccessibility: false
         }
     }
 }

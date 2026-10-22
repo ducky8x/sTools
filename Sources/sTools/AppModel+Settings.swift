@@ -6,6 +6,7 @@ import ScreenRecording
 import STDesign
 import STPlatform
 import SwiftUI
+import TimerOverlay
 
 extension AppModel {
     func generalBinding<Value>(_ keyPath: WritableKeyPath<GeneralSettings, Value>) -> Binding<Value> {
@@ -50,6 +51,7 @@ extension AppModel {
         KeyRebinderSettings.name: KeyRebinderSettings.version,
         RecordingOptions.name: RecordingOptions.version,
         RecordingLayout.name: RecordingLayout.version,
+        TimerOverlaySettings.name: TimerOverlaySettings.version,
     ]
 
     @discardableResult
@@ -79,6 +81,7 @@ extension AppModel {
         controller(for: .crosshair, as: CrosshairController.self)?.resetToDefault()
         controller(for: .windowBackdrop, as: BackdropController.self)?.resetToDefault()
         controller(for: .nbbOverlay, as: NBBOverlayController.self)?.resetToDefault()
+        timerOverlay?.resetToDefault()
         keyRebinder?.resetToDefault()
         controller(for: .screenRecording, as: ScreenRecordingController.self)?.resetToDefault()
     }

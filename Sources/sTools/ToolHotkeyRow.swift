@@ -10,7 +10,7 @@ extension ToolID {
         case .windowBackdrop: .windowBackdrop
         case .crosshair: .crosshair
         case .screenRecording: .screenRecording
-        case .keyRebinder: nil
+        case .timerOverlay, .keyRebinder: nil
         }
     }
 }
