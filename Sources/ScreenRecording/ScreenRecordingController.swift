@@ -196,13 +196,21 @@ public final class ScreenRecordingController: ToolController {
     /// gets a track for each one that wants recording when it starts.
     @ObservationIgnored private let inProcessAudio: InProcessAudio
     @ObservationIgnored private var rig: CaptureRig?
+    /// `rig`'s start (every source's, Minecraft's capture included), which an arming that takes the rig over from an
+    /// earlier one waits for.
+    @ObservationIgnored private var rigStart: Task<Void, Never>?
+    /// What `rig` was built for (`captureSignature`): a later arming takes it over only while that still holds.
+    @ObservationIgnored private var rigSignature: String?
     @ObservationIgnored private var session: RecordingSession?
     /// The latest arming: starting the sources when the tool switches on, or restarting them after a change. A start
     /// waits for it.
     @ObservationIgnored private var armTask: Task<Void, Never>?
-    /// Counts armings, so only the latest one marks the sources ready (`sourcesAreReady`).
+    /// Numbers the armings. Each one owns the sources it brings up under its number: once a later arming began, an
+    /// earlier one whose waits end late (Add Source's listing and the sources' starts finish even when canceled, as
+    /// ScreenCaptureKit's do) brings up nothing and marks nothing ready.
     @ObservationIgnored private var armCount = 0
-    @ObservationIgnored private var armedCount = 0
+    /// The arming whose sources are up: its rig is the tool's and has finished starting (`sourcesAreReady`).
+    @ObservationIgnored private var readyArming = 0
     /// Counts starts, so a start that was canceled while it waited never writes.
     @ObservationIgnored private var startCount = 0
     @ObservationIgnored private var eventsTask: Task<Void, Never>?
@@ -291,22 +299,31 @@ public final class ScreenRecordingController: ToolController {
     /// Add Source's listing (ScreenCaptureKit's window list, the cameras and microphones, the apps) is read alongside:
     /// only a window source needs it first, to find its window again, so the key's start isn't held up by it otherwise.
     /// The encoder and Core Image are readied alongside too (`warmUp`).
+    ///
+    /// Each arming owns its sources by its number (`armCount`): every wait here can end after a later arming began (the
+    /// tool switched off and on, or restarted), since neither the listing nor a source's start stops when its task is
+    /// canceled, so after each one an arming that's no longer the latest leaves off.
     private func arm(restarting: Bool = false) {
         armTask?.cancel()
         warmUp()
         armCount += 1
-        let count = armCount
+        let arming = armCount
         armTask = Task { [weak self] in
             guard let self else { return }
             if restarting { await self.tearDownRig() }
+            guard self.isLatest(arming) else { return }
             if self.layout.videoSources.contains(where: \.isWindow) {
                 await self.refreshAvailableSources()
             } else {
                 Task { await self.refreshAvailableSources() }
             }
-            await self.buildRig()
-            if count > self.armedCount { self.armedCount = count }
+            await self.buildRig(arming: arming)
         }
+    }
+
+    /// Whether `arming` is the latest one and the tool is still on, so what it brings up is the tool's.
+    private func isLatest(_ arming: Int) -> Bool {
+        arming == armCount && isEnabled
     }
 
     /// A setting, a source, Minecraft or a display changed while idle. The restart is the arming a start waits for,
@@ -315,8 +332,9 @@ public final class ScreenRecordingController: ToolController {
         arm(restarting: true)
     }
 
-    /// The sources run and nothing is restarting them, so a start can write at once, without waiting.
-    private var sourcesAreReady: Bool { rig != nil && armedCount == armCount }
+    /// The latest arming's sources run (their starts, Minecraft's capture included, have finished) and nothing is
+    /// restarting them, so a start can write at once, without waiting.
+    private var sourcesAreReady: Bool { rig != nil && readyArming == armCount }
 
     /// Switching off: a recording still going stops (and finishes its file) first, then the sources stop and what
     /// `warmUp` readied goes. Switched back on by hand while that file finished, the tool stays on with the sources
@@ -362,8 +380,21 @@ public final class ScreenRecordingController: ToolController {
         isWarmedUp = false
     }
 
-    private func buildRig() async {
-        guard isEnabled, rig == nil else { return }
+    /// Brings up `arming`'s sources and marks them ready once they've all started. A rig an earlier arming left (the tool
+    /// was switched off and on before the switch-off ran) is taken over instead, and ready once its start has finished,
+    /// unless it was built for other sources or settings (changed while the tool was off), which it's replaced for.
+    private func buildRig(arming: Int) async {
+        guard isLatest(arming) else { return }
+        if let rig {
+            if rigSignature == captureSignature {
+                await rigStart?.value
+                guard self.rig === rig, isLatest(arming) else { return }
+                markReady(arming)
+                return
+            }
+            await tearDownRig()
+            guard isLatest(arming), self.rig == nil else { return }
+        }
         let factory = makeFactory(options.frameRate.framesPerSecond)
         var video: [SourceKey: any VideoCapture] = [:]
         var audio: [AudioTrackID: any AudioCapture] = [:]
@@ -382,9 +413,7 @@ public final class ScreenRecordingController: ToolController {
             var source = source
             if case .window(let reference) = source.kind, let found = available.resolve(reference), found != reference {
                 source.kind = .window(found)
-                updateLayout { layout in
-                    if let index = layout.videoSources.firstIndex(where: { $0.id == source.id }) { layout.videoSources[index].kind = .window(found) }
-                }
+                rememberWindow(found, for: source.id)
             }
             if let capture = factory.video(for: source, canvas: canvas, showsCursor: options.showCursor) { video[.source(source.id)] = capture }
         }
@@ -396,14 +425,35 @@ public final class ScreenRecordingController: ToolController {
         }
         let rig = CaptureRig(video: video, audio: audio, minimizedShowsNothing: options.minimizedWindowBehavior == .showNothing)
         self.rig = rig
+        rigSignature = captureSignature
         listen(to: rig)
-        await rig.start()
+        // The start is the rig's, not this arming's: a later arming that takes the rig over waits for the same start.
+        let starting = Task { await rig.start() }
+        rigStart = starting
+        await starting.value
         // Taken away while it started (the tool switched off, a canceled start, a restart): whoever took it stops it,
         // and so does this, so a rig that's no longer the tool's never keeps a source running.
         guard self.rig === rig else {
             await rig.stop()
             return
         }
+        // Taken over by a later arming, which marks it ready itself.
+        guard isLatest(arming) else { return }
+        markReady(arming)
+    }
+
+    /// A window source's window was found again under a new number (it was reopened): the layout keeps the new one.
+    /// The arming that found it is already capturing it, so this saves it without restarting the sources (an edit
+    /// would), and even while a start locks the layout.
+    private func rememberWindow(_ found: WindowReference, for id: UUID) {
+        guard let index = layout.videoSources.firstIndex(where: { $0.id == id }) else { return }
+        layout.videoSources[index].kind = .window(found)
+        services.settings.save(layout)
+    }
+
+    /// `arming`'s sources are up: a start can write at once, and the preview shows them.
+    private func markReady(_ arming: Int) {
+        readyArming = arming
         startPreview()
     }
 
@@ -421,6 +471,8 @@ public final class ScreenRecordingController: ToolController {
         preview = nil
         let old = rig
         rig = nil
+        rigStart = nil
+        rigSignature = nil
         return old
     }
 
@@ -1063,6 +1115,14 @@ public final class ScreenRecordingController: ToolController {
 
     private func captureAffecting(_ options: RecordingOptions) -> String {
         "\(options.showCursor)\(options.minimizedWindowBehavior)\(options.frameRate)"
+    }
+
+    /// What a rig built now would capture: the capture settings, the sources, Minecraft's window and the canvas. A rig
+    /// built for anything else is out of date.
+    private var captureSignature: String {
+        let minecraft = services.minecraft.active.map { "\($0.id)" } ?? "none"
+        return [captureAffecting(options), Self.sourceSet(layout).joined(separator: ","), minecraft, "\(canvas)"]
+            .joined(separator: "|")
     }
 
     /// One line for Help ▸ Copy Diagnostics.
