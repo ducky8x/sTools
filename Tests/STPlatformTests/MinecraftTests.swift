@@ -223,13 +223,16 @@ private func eventually(timeout: Duration = .seconds(3), _ condition: @MainActor
 }
 
 @MainActor
-@Test func burstsOfChangesCollapseIntoFewRefreshes() async {
+@Test(.timeLimit(.minutes(1)))
+func burstsOfChangesCollapseIntoFewRefreshes() async throws {
     @MainActor final class CountingSource: MinecraftWindowSource {
         var snapshots = 0
         private let stream = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
         func snapshot() -> [MinecraftInstance] { snapshots += 1; return [] }
         func changes() -> AsyncStream<Void> { stream.0 }
         func fire() { stream.1.yield() }
+        /// Ends the changes: the locator's loop finishes once it has handled every change before this.
+        func finish() { stream.1.finish() }
     }
     let source = CountingSource()
     let locator = MinecraftLocator(source: source, coalescing: .milliseconds(40))
@@ -237,7 +240,10 @@ private func eventually(timeout: Duration = .seconds(3), _ condition: @MainActor
     defer { locator.stop() }
     #expect(source.snapshots == 1)
     for _ in 0..<200 { source.fire() }
-    try? await Task.sleep(for: .milliseconds(300))
+    // Waits until the locator has handled the whole burst, however long a busy main actor takes, rather than a
+    // fixed 300 ms that a loaded run could outlast. Every refresh the burst causes has happened by then.
+    source.finish()
+    try await #require(locator.changeLoop).value
     #expect(source.snapshots <= 4, "200 change events must not cause 200 snapshots (got \(source.snapshots))")
     #expect(source.snapshots >= 2)
 }
