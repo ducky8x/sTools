@@ -64,7 +64,7 @@ public final class ScreenRecordingController: ToolController {
         /// The writer put the recording's first frame in the file.
         case started
         /// It ended without a recording, for this reason: a few words for the line over the game ("the disk is almost
-        /// full"); the page's note says more.
+        /// full"); the page's note says more. The tool is off by now, as after a canceled start.
         case failed(String)
     }
 
@@ -757,16 +757,16 @@ public final class ScreenRecordingController: ToolController {
     }
 
     /// A start that couldn't begin writing ends without a recording: a file it opened is removed, the page says why
-    /// (`detail`, or the `reason` itself), the key's line over the game hears `reason`, and the tool switches off as
-    /// after a canceled start (the Prologue's test leaves it on).
+    /// (`detail`, or the `reason` itself), the tool switches off as after a canceled start (the Prologue's test leaves
+    /// it on), and then the key's line over the game hears `reason`, saying the tool is off.
     private func failStart(_ start: Start, reason: String, detail: String? = nil) {
         guard isCurrent(start) else { return }
         endStart()
         let elapsed = Int(((ContinuousClock.now - start.marks.pressed) / .milliseconds(1)).rounded())
         log.notice("Recording couldn\u{2019}t start \(elapsed, privacy: .public) ms after the press: \(reason, privacy: .public)")
         note("The recording couldn\u{2019}t start: \(detail ?? "\(reason).")")
-        if start.fromKey { keyStartEnded?(.failed(reason)) }
         if !start.isTest { switchOff() }
+        if start.fromKey { keyStartEnded?(.failed(reason)) }
     }
 
     /// Ends a start whose first frame hasn't reached the file `firstFrameTimeout` after the writer opened it, so it

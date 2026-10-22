@@ -1112,10 +1112,16 @@ struct ScreenRecordingFirstFrameTests {
         try Data().write(to: blocker)
         harness.controller.options.folderPath = blocker.appending(path: "Movies").path
         var outcomes: [ScreenRecordingController.KeyStartOutcome] = []
-        harness.controller.keyStartEnded = { outcomes.append($0) }
+        // The line over the game says the tool is off, so it already is when the failure is reported.
+        var onWhenReported: [Bool] = []
+        harness.controller.keyStartEnded = { [controller = harness.controller] in
+            outcomes.append($0)
+            onWhenReported.append(controller.isEnabled)
+        }
         harness.controller.toggleRecording()
         #expect(await harness.waitUntil { !outcomes.isEmpty })
         #expect(outcomes == [.failed("the recordings folder can\u{2019}t be written to")])
+        #expect(onWhenReported == [false])
         #expect(harness.controller.phase == .idle)
         #expect(!harness.controller.isEnabled)
         #expect(harness.controller.notes.count == 1)
