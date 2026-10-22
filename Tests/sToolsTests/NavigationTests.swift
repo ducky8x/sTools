@@ -169,13 +169,15 @@ struct ToolIDTests {
     }
 
     /// Lists of tools in the app's words follow the sidebar: Home's Accessibility warning and the Prologue's "Used by"
-    /// for Accessibility name every tool that needs it (rule R10), in sidebar order.
+    /// for Accessibility name every tool that needs it (rule R10), in sidebar order; the "Used by" ends with hotkeys in
+    /// Minecraft, which need it to recognize Minecraft in front, as the README's Permissions table says.
     @Test func toolListsInWordsFollowTheSidebar() {
         let needAccessibility = ToolID.allCases.filter(\.requiresAccessibility).map(\.title)
         #expect(needAccessibility == ["Crosshair", "Timer Overlay", "NBB Overlay", "Screen Recording", "Window Backdrop"])
         #expect(HomePage.accessibilityWarning
             == "Accessibility isn't allowed yet, so Crosshair, Timer Overlay, NBB Overlay, Screen Recording and Window Backdrop stay off.")
-        #expect(PermissionStepView.Copy.usedBy(.accessibility) == needAccessibility.joined(separator: ", "))
+        #expect(PermissionStepView.Copy.usedBy(.accessibility)
+            == (needAccessibility + ["hotkeys in Minecraft"]).joined(separator: ", "))
     }
 
     @Test func sidebarNamesFitTheSidebar() {

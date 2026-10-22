@@ -92,7 +92,8 @@ private final class OpenedURLs {
 // MARK: - Permission metadata
 
 @Test func permissionReasonsMatchTheSpec() {
-    #expect(Permission.accessibility.reason == "Lets sTools find the Minecraft window and follow it.")
+    #expect(Permission.accessibility.reason
+        == "Lets sTools find the Minecraft window and follow it, and lets hotkeys recognize Minecraft in front.")
     #expect(Permission.screenRecording.reason == "Lets sTools record Minecraft and the sources you add.")
     #expect(Permission.appAudio.reason == "Lets sTools record the sound of Minecraft and other apps.")
     #expect(Permission.microphone.reason == "Lets sTools record your voice.")
