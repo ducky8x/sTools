@@ -237,11 +237,11 @@ private struct TimerBar: View {
 
     var body: some View {
         ZStack {
-            Capsule().fill(color.opacity(0.25))
+            Capsule(style: .circular).fill(color.opacity(0.25))
             BarFill(fraction: fraction).fill(color)
         }
         .overlay {
-            if let outline { Capsule().stroke(Color(hex: outline), lineWidth: 1) }
+            if let outline { Capsule(style: .circular).stroke(Color(hex: outline), lineWidth: 1) }
         }
     }
 }
@@ -253,7 +253,7 @@ private struct BarFill: Shape {
         let width = rect.width * fraction
         guard width > 0 else { return Path() }
         let filled = CGRect(x: rect.minX, y: rect.minY, width: max(width, rect.height), height: rect.height)
-        return Capsule().path(in: filled)
+        return Capsule(style: .circular).path(in: filled)
     }
 }
 
