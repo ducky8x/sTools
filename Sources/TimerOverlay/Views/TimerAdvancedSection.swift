@@ -442,7 +442,7 @@ struct TimerFontMenu: View {
             ForEach(TimerFont.offeredFamilies, id: \.self) { item($0) }
             Divider()
             Menu("Other Fonts") {
-                ForEach(TimerFont.installedFamilies().filter { !TimerFont.offeredFamilies.contains($0) }, id: \.self) { item($0) }
+                ForEach(Self.otherFamilies, id: \.self) { item($0) }
             }
         } label: {
             STMenuLabel(title)
@@ -451,6 +451,10 @@ struct TimerFontMenu: View {
         .accessibilityLabel("Font")
         .accessibilityValue(title)
     }
+
+    /// Every other installed family, listed once per launch: the menu is rebuilt whenever a setting changes, and
+    /// asking the font manager each time would cost more than the list is worth.
+    static let otherFamilies = TimerFont.installedFamilies().filter { !TimerFont.offeredFamilies.contains($0) }
 
     private func item(_ name: String) -> some View {
         Button { family = name } label: {
