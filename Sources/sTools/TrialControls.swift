@@ -7,7 +7,8 @@ import STPlatform
 import SwiftUI
 
 /// A tool's real controls inside its trial: its switch (or, for the Key Rebinder, its profile menu), the
-/// Accessibility strip when it's missing, then the same settings as its page, without sTools hotkeys.
+/// Accessibility strip when it's missing, then the same settings as its page, without sTools hotkeys. Timer
+/// Overlay's trial adds its own Start-timer key under the switch.
 struct TrialToolControls: View {
     let model: AppModel
     let tool: ToolID
@@ -29,6 +30,9 @@ struct TrialToolControls: View {
                 STSettingsRow(Copy.profile) {
                     KeyRebinderProfileMenu(controller: keyRebinder)
                 }
+            }
+            if tool == .timerOverlay {
+                TrialStartTimerKeyRow(model: model)
             }
             if tool.requiresAccessibility && !model.accessibilityGranted {
                 STRequirementStrip(kind: .warning, message: Copy.needsAccessibility(tool), actionTitle: Copy.allow) {
@@ -53,7 +57,7 @@ struct TrialStartTimerKeyRow: View {
     }
 
     var body: some View {
-        STSettingsRow(Copy.title, showsRule: false) {
+        STSettingsRow(Copy.title) {
             STShortcutRecorder(shortcut: shortcutBinding, label: Copy.title,
                                validate: { TrialStartTimerKey.refusal(for: $0.hotkeyCombo, in: model.hotkeys) })
                 .frame(width: 200)

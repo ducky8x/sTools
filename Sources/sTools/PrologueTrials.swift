@@ -108,8 +108,8 @@ enum TrialCopy {
 
     enum Timer {
         static let on = "Switch it on"
-        static let test = "Press Test and watch a 5-second run"
-        static let testDetail = "It pops up, counts down, rings and leaves. Your saved duration stays as it is."
+        static let test = "Press Test and watch it run"
+        static let testDetail = "A 5-second run pops up, counts down, rings and leaves. Your saved duration stays as it is."
         static let place = "Drag it into place and see the rule guides"
         static let placeDetail = "Turn on \u{201C}Move by dragging\u{201D}, then drag the timer."
         static let key = "Set a Start-timer key"
@@ -222,10 +222,7 @@ extension AppModel {
                 if !keys.isEmpty && keys != keysAtStart { done.insert("key") }
                 return done
             },
-            controls: { AnyView(VStack(alignment: .leading, spacing: 18) {
-                TrialToolControls(model: self, tool: .timerOverlay)
-                TrialStartTimerKeyRow(model: self)
-            }) },
+            controls: { AnyView(TrialToolControls(model: self, tool: .timerOverlay)) },
             onAppear: {
                 if session.timerStartOffset == nil { session.timerStartOffset = [timer.settings.offsetX, timer.settings.offsetY] }
                 if session.timerKeysAtStart == nil { session.timerKeysAtStart = Self.startTimerKeys(in: self.hotkeys.bindings) }
