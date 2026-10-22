@@ -12,6 +12,9 @@ import Foundation
 /// Anything else is kept exactly as it is: a changed key, an extra or missing hotkey, another modifier, a hotkey with
 /// more than one action, an action this build doesn't know, or an entry it can't read. The other settings (the master
 /// switch, the confirmation, Where hotkeys work) are never touched. Each tool keeps its hotkey's id.
+///
+/// Before the match, a list's keys for Screen Recording alone become one (`withOneScreenRecordingKey`), as they do
+/// whenever a list loads: so the old list with a key for each of Screen Recording's two former actions still counts.
 enum HotkeyListUpgrade {
     /// One hotkey of a stored list, without its id.
     private struct Entry: Hashable {
@@ -42,14 +45,15 @@ enum HotkeyListUpgrade {
     /// The version 1 value `raw` as version 2: its `bindings` replaced by the new install's key set when they are one of
     /// `earlierLists`, else `raw` unchanged.
     static func upgrade(_ raw: [String: Any]) -> [String: Any] {
-        guard let stored = raw["bindings"] as? [Any], let hotkeys = read(stored) else { return raw }
-        let entries = hotkeys.map { Entry(combo: $0.combo, actions: $0.actions.uniqued) }
+        guard let stored = raw["bindings"] as? [Any], let strict = read(stored) else { return raw }
+        let hotkeys = withOneScreenRecordingKey(strict.map { HotkeyBinding(id: $0.id, combo: $0.combo, actions: $0.actions) })
+        let entries = hotkeys.map { Entry(combo: $0.combo, actions: $0.actions) }
         let found = Set(entries)
         guard found.count == entries.count, earlierLists.contains(found) else { return raw }
 
         // Each tool keeps the id its hotkey had; a tool that had none gets a new one.
         var ids: [HotkeyAction: UUID] = [:]
-        for (hotkey, entry) in zip(hotkeys, entries) where entry.actions.count == 1 { ids[entry.actions[0]] = hotkey.id }
+        for hotkey in hotkeys where hotkey.actions.count == 1 { ids[hotkey.actions[0]] = hotkey.id }
         let bindings = HotkeyKeySet.newInstall.bindings().map { binding in
             HotkeyBinding(id: binding.actions.first.flatMap { ids[$0] } ?? binding.id, combo: binding.combo, actions: binding.actions)
         }
@@ -58,6 +62,23 @@ enum HotkeyListUpgrade {
         var result = raw
         result["bindings"] = upgraded
         return result
+    }
+
+    /// `bindings` with one hotkey whose only action is Screen Recording's. Builds with two Screen Recording actions,
+    /// "Toggle Screen Recording" and "Start/stop recording", could leave a key for each; both read as the one action
+    /// now (`HotkeyAction`'s decoding), so without this Home would list Screen Recording twice. The one that stays is
+    /// the first on the key a key set gives Screen Recording (⌘5, ⌃5, ⌥5 or F17), so a list that follows a key set
+    /// keeps following it, else the first in the list; it keeps its id, key and place. Hotkeys that record together with
+    /// other things, and every other hotkey, stay as they are. Applied to every list that loads (`HotkeySettings`'
+    /// decoding), whatever its version.
+    static func withOneScreenRecordingKey(_ bindings: [HotkeyBinding]) -> [HotkeyBinding] {
+        let recording = HotkeyAction.startStopRecording
+        let indices = bindings.indices.filter { bindings[$0].actions == [recording] }
+        guard indices.count > 1 else { return bindings }
+        let keySetKeys = Set(HotkeyKeySet.allCases.compactMap { $0.combo(for: recording) })
+        let kept = indices.first { keySetKeys.contains(bindings[$0].combo) } ?? indices[0]
+        let dropped = Set(indices).subtracting([kept])
+        return bindings.indices.filter { !dropped.contains($0) }.map { bindings[$0] }
     }
 
     /// Every stored hotkey, or nil when any of them can't be read strictly.

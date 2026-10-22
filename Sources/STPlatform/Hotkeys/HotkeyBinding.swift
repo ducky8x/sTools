@@ -64,7 +64,8 @@ public struct HotkeySettings: SettingsDocument {
     private enum CodingKeys: String, CodingKey { case isEnabled, bindings, showsConfirmation, scope }
 
     /// A file without `scope` (every file from before it existed) or with a scope this build doesn't know gets the
-    /// default, In sTools and Minecraft.
+    /// default, In sTools and Minecraft. A list with several keys for Screen Recording alone, one for each of its two
+    /// former actions, keeps one (`HotkeyListUpgrade.withOneScreenRecordingKey`).
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         func flag(_ key: CodingKeys, default value: Bool) -> Bool {
@@ -72,7 +73,7 @@ public struct HotkeySettings: SettingsDocument {
         }
         let bindings = try? container.decodeIfPresent([LossyElement<HotkeyBinding>].self, forKey: .bindings)
         self.init(isEnabled: flag(.isEnabled, default: false),
-                  bindings: bindings?.compactMap(\.value) ?? [],
+                  bindings: HotkeyListUpgrade.withOneScreenRecordingKey(bindings?.compactMap(\.value) ?? []),
                   showsConfirmation: flag(.showsConfirmation, default: true),
                   scope: (try? container.decodeIfPresent(HotkeyScope.self, forKey: .scope)) ?? .sToolsAndMinecraft)
     }

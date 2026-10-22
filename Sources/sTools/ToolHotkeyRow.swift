@@ -35,8 +35,9 @@ enum ToolHotkey {
         HotkeyKeySet.ownBinding(for: action, in: bindings)
     }
 
-    /// The other hotkeys with the tool's action: together with something else, or alone on another key (an older list
-    /// can have one key for each of Screen Recording's two former actions, both the one action now).
+    /// The other hotkeys with the tool's action: together with something else, or alone on another key. Screen
+    /// Recording never has a second key alone: a list's keys for its two former actions become one as it loads
+    /// (`HotkeySettings`).
     static func shared(for action: HotkeyAction, in bindings: [HotkeyBinding]) -> [HotkeyBinding] {
         let own = own(for: action, in: bindings)
         return bindings.filter { $0.actions.contains(action) && $0.id != own?.id }
