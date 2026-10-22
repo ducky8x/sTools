@@ -41,7 +41,8 @@ public enum CanvasEditing {
 
     /// The source after dragging `handle` by `delta` canvas pixels from where it was when the drag began. The math
     /// runs in pixels of `canvas` (the canvas in use now); the frame comes back as fractions of it.
-    /// Moves and resizes snap (`SnapEngine`); crops follow the pointer across the content as it is drawn.
+    /// Moves and resizes snap (`SnapEngine`) within a distance relative to the canvas; crops follow the pointer
+    /// across the content as it is drawn.
     public static func drag(
         _ handle: Handle, source: VideoSource, by delta: (dx: Double, dy: Double),
         canvas: PixelSize, others: [CanvasRect], contentSize: PixelSize?
@@ -49,11 +50,12 @@ public enum CanvasEditing {
         let mapping = CanvasMapping(canvas)
         let frame = mapping.rect(source.frame)
         let others = others.map(mapping.rect)
+        let threshold = SnapEngine.threshold(for: canvas)
         func fractions(_ rect: PixelRect) -> CanvasRect { mapping.canvasRect(LayoutMath.clamp(rect, to: canvas)).clamped() }
         switch handle {
         case .body:
             let moved = LayoutMath.clamp(frame.offsetBy(dx: delta.dx, dy: delta.dy), to: canvas)
-            let snapped = SnapEngine.snapMove(moved, canvas: canvas, others: others)
+            let snapped = SnapEngine.snapMove(moved, canvas: canvas, others: others, threshold: threshold)
             return Result(frame: fractions(snapped.frame), crop: source.crop, guides: snapped.guides)
         case .resize(let edges):
             var left = frame.minX, right = frame.maxX, top = frame.minY, bottom = frame.maxY
@@ -62,7 +64,7 @@ public enum CanvasEditing {
             if edges.contains(.top) { top += delta.dy }
             if edges.contains(.bottom) { bottom += delta.dy }
             let proposed = PixelRect(x: min(left, right), y: min(top, bottom), width: abs(right - left), height: abs(bottom - top))
-            let snapped = SnapEngine.snapResize(proposed, edges: edges, canvas: canvas, others: others)
+            let snapped = SnapEngine.snapResize(proposed, edges: edges, canvas: canvas, others: others, threshold: threshold)
             return Result(frame: fractions(snapped.frame), crop: source.crop, guides: snapped.guides)
         case .crop(let edges):
             let size = contentSize ?? PixelSize(width: Int(frame.width), height: Int(frame.height))
