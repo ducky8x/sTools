@@ -25,8 +25,9 @@ private func entry(_ id: String, keyCode: Int, modifiers: Int = 256, _ actions: 
     return #"{"id":"\#(id)","combo":{"keyCode":\#(keyCode),"modifiers":\#(modifiers)},"actions":[\#(names)]}"#
 }
 
-/// The list earlier builds left ducky with, set by hand in the old order: ⌘1 Crosshair, ⌘2 Start timer, ⌘3 NBB
-/// Overlay, ⌘4 Screen Recording (under any name an earlier build wrote), ⌘5 Window Backdrop.
+/// ducky's own list, set by hand before key sets existed: ⌘1 Crosshair, ⌘2 Start timer, ⌘3 NBB Overlay, ⌘4 Screen
+/// Recording (under any name an earlier build wrote), ⌘5 Window Backdrop. It is also the ⌘1–⌘5 key set in today's
+/// sidebar order.
 private func oldList(recording: [String] = ["startStopRecording"]) -> [String] {
     [entry(crosshairID, keyCode: 18, ["toggle.crosshair"]),
      entry(timerID, keyCode: 19, ["startTimer"]),
@@ -39,13 +40,15 @@ private func file(version: Int = 1, _ entries: [String], isEnabled: Bool = true,
     #"{"version":\#(version),"value":{"isEnabled":\#(isEnabled)\#(extra),"bindings":[\#(entries.joined(separator: ","))]}}"#
 }
 
-/// "⌘1 NBB Overlay", as Home lists a hotkey.
+/// "⌘1 Crosshair", as Home lists a hotkey.
 private func listing(_ bindings: [HotkeyBinding]) -> [String] {
     bindings.map { "\($0.combo.displayString) \(HotkeyWording.summary($0.actions))" }
 }
 
-private let sidebarOrder = ["⌘1 NBB Overlay", "⌘2 Window Backdrop", "⌘3 Crosshair", "⌘4 Start timer", "⌘5 Screen Recording"]
-private let oldOrder = ["⌘1 Crosshair", "⌘2 Start timer", "⌘3 NBB Overlay", "⌘4 Screen Recording", "⌘5 Window Backdrop"]
+private let sidebarOrder = ["⌘1 Crosshair", "⌘2 Start timer", "⌘3 NBB Overlay", "⌘4 Screen Recording", "⌘5 Window Backdrop"]
+/// Build 449's ⌘1–⌘5, in the sidebar order it had.
+private let build449Order = ["⌘1 NBB Overlay", "⌘2 Window Backdrop", "⌘3 Crosshair", "⌘4 Start timer", "⌘5 Screen Recording"]
+private let ownIDs = [crosshairID, timerID, nbbID, recordingID, backdropID]
 
 /// A folder of its own holding one `hotkeys.json`, removed afterwards.
 @MainActor
@@ -71,8 +74,8 @@ private final class Folder {
     isolated deinit { try? FileManager.default.removeItem(at: url) }
 }
 
-/// Version 2 of `hotkeys.json` (spec 6.1): a list earlier builds started people with becomes the ⌘1–⌘5 key set in
-/// sidebar order, once. A list anyone changed stays as it is.
+/// Version 2 of `hotkeys.json` (spec 6.1): the empty list earlier builds started people with becomes the ⌘1–⌘5 key set
+/// in sidebar order, once. A list with hotkeys in it, ducky's included, is never moved.
 @MainActor
 @Suite("Hotkey list migration")
 struct HotkeyMigrationTests {
@@ -80,36 +83,42 @@ struct HotkeyMigrationTests {
         #expect(HotkeySettings.version == 2)
     }
 
-    // MARK: The old list becomes the sidebar-order key set
+    // MARK: ducky's list stays exactly as it is
 
-    /// ducky's list, set by hand before key sets existed, reads ⌘1 to ⌘5 in sidebar order afterwards, and the Key set
-    /// chooser shows ⌘1–⌘5 instead of Custom. Each tool keeps its hotkey's id; the switches and the scope stay.
-    @Test func theOldListBecomesCommandOneToFiveInSidebarOrder() throws {
+    /// ducky's list loads unchanged, keys, actions, ids and order, and the Key set chooser shows ⌘1–⌘5, because the key
+    /// set in sidebar order is that list. The switches and the scope stay too.
+    @Test func duckysListLoadsUnchangedAsCommandOneToFive() throws {
         let folder = try Folder(file(oldList()))
         let settings = folder.load()
         #expect(listing(settings.bindings) == sidebarOrder)
-        #expect(settings.bindings.map(\.id.uuidString) == [nbbID, backdropID, crosshairID, timerID, recordingID])
+        #expect(settings.bindings.map(\.id.uuidString) == ownIDs)
+        #expect(settings.bindings == HotkeyKeySet.command.bindings().enumerated().map { index, binding in
+            HotkeyBinding(id: UUID(uuidString: ownIDs[index])!, combo: binding.combo, actions: binding.actions)
+        }, "it is the ⌘1–⌘5 key set")
         #expect(HotkeyKeySet.current(in: settings.bindings) == .command)
         #expect(settings.isEnabled)
         #expect(settings.showsConfirmation)
         #expect(settings.scope == .sToolsAndMinecraft)
     }
 
-    /// Earlier builds wrote Screen Recording's key as "Toggle Screen Recording", "Start/stop recording" or both.
-    @Test func everyNameEarlierBuildsGaveScreenRecordingCounts() throws {
+    /// Earlier builds wrote Screen Recording's key as "Toggle Screen Recording", "Start/stop recording" or both: each
+    /// reads as the one action, on the same key, in the same place.
+    @Test func everyNameEarlierBuildsGaveScreenRecordingKeepsTheList() throws {
         for recording in [["startStopRecording"], ["toggle.screenRecording"], ["toggle.screenRecording", "startStopRecording"],
                           ["startStopRecording", "toggle.screenRecording"]] {
-            let folder = try Folder(file(oldList(recording: recording)))
-            #expect(listing(folder.load().bindings) == sidebarOrder, "\(recording)")
+            let settings = try Folder(file(oldList(recording: recording))).load()
+            #expect(listing(settings.bindings) == sidebarOrder, "\(recording)")
+            #expect(settings.bindings.map(\.id.uuidString) == ownIDs, "\(recording)")
         }
     }
 
-    /// The list's own order never counted for anything a person chose: the same five keys in any order migrate.
-    @Test func theSameFiveKeysInAnyOrderCount() throws {
-        let folder = try Folder(file(oldList().reversed()))
-        let settings = folder.load()
-        #expect(listing(settings.bindings) == sidebarOrder)
-        #expect(settings.bindings.map(\.id.uuidString) == [nbbID, backdropID, crosshairID, timerID, recordingID])
+    /// The same five keys in another order keep that order: nothing reorders a list someone has. It still follows the
+    /// ⌘1–⌘5 key set, which looks only at each tool's key.
+    @Test func theSameFiveKeysInAnotherOrderKeepThatOrder() throws {
+        let settings = try Folder(file(oldList().reversed())).load()
+        #expect(listing(settings.bindings) == sidebarOrder.reversed())
+        #expect(settings.bindings.map(\.id.uuidString) == ownIDs.reversed())
+        #expect(HotkeyKeySet.current(in: settings.bindings) == .command)
     }
 
     /// The flags come through as they were: off stays off, and so do Everywhere and a hidden confirmation.
@@ -120,6 +129,20 @@ struct HotkeyMigrationTests {
         #expect(!settings.isEnabled)
         #expect(!settings.showsConfirmation)
         #expect(settings.scope == .everywhere)
+    }
+
+    /// A ⌘1–⌘5 list in build 449's sidebar order (never launched, but a list like it is someone's own) stays as it is,
+    /// in either file version: it reads as Custom until someone picks a set.
+    @Test func aListInAnEarlierSidebarOrderStaysAsItIs() throws {
+        let entries = [entry(nbbID, keyCode: 18, ["toggle.nbbOverlay"]), entry(backdropID, keyCode: 19, ["toggle.windowBackdrop"]),
+                       entry(crosshairID, keyCode: 20, ["toggle.crosshair"]), entry(timerID, keyCode: 21, ["startTimer"]),
+                       entry(recordingID, keyCode: 23, ["startStopRecording"])]
+        for version in [1, 2] {
+            let settings = try Folder(file(version: version, entries)).load()
+            #expect(listing(settings.bindings) == build449Order, "version \(version)")
+            #expect(settings.bindings.map(\.id.uuidString) == [nbbID, backdropID, crosshairID, timerID, recordingID])
+            #expect(HotkeyKeySet.current(in: settings.bindings) == nil)
+        }
     }
 
     /// Earlier builds started everyone with no hotkeys at all: that list becomes a new install's ⌘1–⌘5 too, with the
@@ -167,20 +190,10 @@ struct HotkeyMigrationTests {
         }
     }
 
-    /// The key set a new install has, already in sidebar order, needs nothing.
-    @Test func theNewKeySetIsKeptAsItIs() throws {
-        let entries = [entry(nbbID, keyCode: 18, ["toggle.nbbOverlay"]), entry(backdropID, keyCode: 19, ["toggle.windowBackdrop"]),
-                       entry(crosshairID, keyCode: 20, ["toggle.crosshair"]), entry(timerID, keyCode: 21, ["startTimer"]),
-                       entry(recordingID, keyCode: 23, ["startStopRecording"])]
-        let settings = try Folder(file(entries)).load()
-        #expect(listing(settings.bindings) == sidebarOrder)
-        #expect(settings.bindings.map(\.id.uuidString) == [nbbID, backdropID, crosshairID, timerID, recordingID])
-    }
-
     /// Once a file is version 2, its list is the person's own: the old order, or no hotkeys at all (the None key set),
     /// stays as it is.
     @Test func aVersionTwoFileIsNeverMigrated() throws {
-        #expect(listing(try Folder(file(version: 2, oldList())).load().bindings) == oldOrder)
+        #expect(listing(try Folder(file(version: 2, oldList())).load().bindings) == sidebarOrder)
         #expect(try Folder(file(version: 2, [])).load().bindings.isEmpty)
     }
 
@@ -201,8 +214,9 @@ struct HotkeyMigrationTests {
         }
     }
 
-    /// The key a key set gives Screen Recording (⌘5 in ⌘1–⌘5, or ⌃5, ⌥5, F17) stays wherever it is in the list, so
-    /// a list that follows a key set keeps following it.
+    /// The key a key set gives Screen Recording (⌘4 in ⌘1–⌘5, or ⌃4, ⌥4, F16) stays wherever it is in the list, so
+    /// a list that follows a key set keeps following it; without one, the key an earlier build's key set gave it (⌘5,
+    /// ⌃5, ⌥5, F17) stays.
     @Test func theKeySetsScreenRecordingKeyIsTheOneThatStays() throws {
         let f6Toggle = entry(recordingID, keyCode: 97, modifiers: 0, ["toggle.screenRecording"])
         let commandFive = entry(secondRecordingID, keyCode: 23, ["startStopRecording"])
@@ -213,6 +227,11 @@ struct HotkeyMigrationTests {
         let controlFive = entry(secondRecordingID, keyCode: 23, modifiers: 4096, ["toggle.screenRecording"])
         let f6StartStop = entry(recordingID, keyCode: 97, modifiers: 0, ["startStopRecording"])
         #expect(listing(try Folder(file(version: 2, [f6StartStop, controlFive])).load().bindings) == ["⌃5 Screen Recording"])
+
+        let commandFour = entry(thirdRecordingID, keyCode: 21, ["toggle.screenRecording"])
+        let both = try Folder(file(version: 2, [f6Toggle, commandFive, commandFour])).load()
+        #expect(listing(both.bindings) == ["⌘4 Screen Recording"], "today's key set wins over an earlier one's")
+        #expect(both.bindings.map(\.id.uuidString) == [thirdRecordingID])
     }
 
     /// Three keys that only record become one too, and a hotkey that records together with other things isn't one of
@@ -230,13 +249,13 @@ struct HotkeyMigrationTests {
         #expect(listing(try Folder(file(version: 2, one)).load().bindings) == ["⌘5 Screen Recording", "⌃⌥C Crosshair + Screen Recording"])
     }
 
-    /// The old list with a second key for Screen Recording (its other former action, on ⌘6) is still the old list
-    /// once the two are one, so it becomes ⌘1–⌘5 in sidebar order like any other.
-    @Test func theOldListWithASecondScreenRecordingKeyStillMoves() throws {
+    /// ducky's list with a second key for Screen Recording (its other former action, on ⌘6) keeps ⌘4, the key set's,
+    /// and is ducky's list again.
+    @Test func duckysListWithASecondScreenRecordingKeyKeepsCommandFour() throws {
         let folder = try Folder(file(oldList() + [entry(secondRecordingID, keyCode: 22, ["toggle.screenRecording"])]))
         let settings = folder.load()
         #expect(listing(settings.bindings) == sidebarOrder)
-        #expect(settings.bindings.map(\.id.uuidString) == [nbbID, backdropID, crosshairID, timerID, recordingID])
+        #expect(settings.bindings.map(\.id.uuidString) == ownIDs)
         #expect(HotkeyKeySet.current(in: settings.bindings) == .command)
     }
 
@@ -258,9 +277,8 @@ struct HotkeyMigrationTests {
 
     // MARK: Once
 
-    /// The center writes the upgraded list back as version 2 as it starts, so the migration runs once, and registers
-    /// the new keys at once.
-    @Test func theCenterWritesTheUpgradeBackOnce() async throws {
+    /// The center writes ducky's list back as version 2 as it starts, unchanged, and registers its keys at once.
+    @Test func theCenterWritesDuckysListBackUnchanged() async throws {
         let folder = try Folder(file(oldList()))
         let store = folder.store
         let registrar = MigrationRegistrar()
@@ -273,6 +291,7 @@ struct HotkeyMigrationTests {
         let stored = try folder.stored()
         #expect(stored.version == 2)
         #expect(stored.value["isEnabled"] as? Bool == true)
+        #expect((stored.value["bindings"] as? [[String: Any]])?.compactMap { $0["id"] as? String } == ownIDs)
         let relaunched = HotkeyCenter(store: folder.store, registrar: MigrationRegistrar(), toolStates: { [:] }, handler: { _ in })
         #expect(relaunched.bindings == center.bindings)
     }

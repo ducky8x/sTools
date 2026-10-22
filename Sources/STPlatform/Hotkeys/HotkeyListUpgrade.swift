@@ -1,20 +1,18 @@
 import Foundation
 
-/// `hotkeys.json` version 1 to 2 (spec 6.1, revision 9): a list an earlier build left someone with, rather than one
-/// they made, becomes the key set a new install has, ⌘1–⌘5 in sidebar order. It runs once: `HotkeyCenter` writes the
-/// result back as version 2, and from then on the list is the person's own.
+/// `hotkeys.json` version 1 to 2 (spec 6.1, revision 9): the list every build before key sets started people with, no
+/// hotkeys at all, becomes the key set a new install has, ⌘1–⌘5 in sidebar order. It runs once: `HotkeyCenter` writes
+/// the result back as version 2, and from then on the list is the person's own.
 ///
-/// Two lists count, matched by their hotkeys (key and actions) whatever their order and ids:
-/// - no hotkeys at all, every build's list before key sets existed;
-/// - the ⌘1–⌘5 list in the old order: ⌘1 Crosshair, ⌘2 Start timer, ⌘3 NBB Overlay, ⌘4 Screen Recording (under any
-///   name an earlier build wrote it), ⌘5 Window Backdrop, each alone on its key.
-///
-/// Anything else is kept exactly as it is: a changed key, an extra or missing hotkey, another modifier, a hotkey with
-/// more than one action, an action this build doesn't know, or an entry it can't read. The other settings (the master
-/// switch, the confirmation, Where hotkeys work) are never touched. Each tool keeps its hotkey's id.
+/// Only that empty list counts. Every list with a hotkey in it is kept exactly as it is, keys, actions, ids and order:
+/// ducky's own ⌘1 Crosshair, ⌘2 Start timer, ⌘3 NBB Overlay, ⌘4 Screen Recording, ⌘5 Window Backdrop (which is also
+/// the ⌘1–⌘5 key set in today's sidebar order, so it reads as that set), a changed key, an extra or missing hotkey,
+/// another modifier, a hotkey with more than one action, an action this build doesn't know, or an entry it can't
+/// read. (Revision 10, owner: "the hotkeys stay the same, but the order in the sidebar changes": no build moves a
+/// list someone has.) The other settings (the master switch, the confirmation, Where hotkeys work) are never touched.
 ///
 /// Before the match, a list's keys for Screen Recording alone become one (`withOneScreenRecordingKey`), as they do
-/// whenever a list loads: so the old list with a key for each of Screen Recording's two former actions still counts.
+/// whenever a list loads.
 enum HotkeyListUpgrade {
     /// One hotkey of a stored list, without its id.
     private struct Entry: Hashable {
@@ -30,17 +28,8 @@ enum HotkeyListUpgrade {
         let actions: [HotkeyAction]
     }
 
-    private static let command = HotkeyCombo.Modifiers.command
-
-    /// The lists earlier builds left people with.
-    private static let earlierLists: [Set<Entry>] = [
-        [],
-        [Entry(combo: HotkeyCombo(keyCode: 18, modifiers: command), actions: [.toggle(.crosshair)]),
-         Entry(combo: HotkeyCombo(keyCode: 19, modifiers: command), actions: [.startTimer]),
-         Entry(combo: HotkeyCombo(keyCode: 20, modifiers: command), actions: [.toggle(.nbbOverlay)]),
-         Entry(combo: HotkeyCombo(keyCode: 21, modifiers: command), actions: [.startStopRecording]),
-         Entry(combo: HotkeyCombo(keyCode: 23, modifiers: command), actions: [.toggle(.windowBackdrop)])],
-    ]
+    /// The lists earlier builds left people with, rather than ones they made: no hotkeys at all.
+    private static let earlierLists: [Set<Entry>] = [[]]
 
     /// The version 1 value `raw` as version 2: its `bindings` replaced by the new install's key set when they are one of
     /// `earlierLists`, else `raw` unchanged.
@@ -51,12 +40,7 @@ enum HotkeyListUpgrade {
         let found = Set(entries)
         guard found.count == entries.count, earlierLists.contains(found) else { return raw }
 
-        // Each tool keeps the id its hotkey had; a tool that had none gets a new one.
-        var ids: [HotkeyAction: UUID] = [:]
-        for hotkey in hotkeys where hotkey.actions.count == 1 { ids[hotkey.actions[0]] = hotkey.id }
-        let bindings = HotkeyKeySet.newInstall.bindings().map { binding in
-            HotkeyBinding(id: binding.actions.first.flatMap { ids[$0] } ?? binding.id, combo: binding.combo, actions: binding.actions)
-        }
+        let bindings = HotkeyKeySet.newInstall.bindings()
         guard let data = try? JSONEncoder().encode(bindings),
               let upgraded = try? JSONSerialization.jsonObject(with: data) else { return raw }
         var result = raw
@@ -64,19 +48,28 @@ enum HotkeyListUpgrade {
         return result
     }
 
+    /// The keys earlier builds' key sets gave Screen Recording, fifth in their sidebar order: ⌘5, ⌃5, ⌥5 and F17.
+    private static let earlierKeySetRecordingKeys: Set<HotkeyCombo> = [
+        HotkeyCombo(keyCode: 23, modifiers: .command), HotkeyCombo(keyCode: 23, modifiers: .control),
+        HotkeyCombo(keyCode: 23, modifiers: .option), HotkeyCombo(keyCode: 64, modifiers: []),
+    ]
+
     /// `bindings` with one hotkey whose only action is Screen Recording's. Builds with two Screen Recording actions,
     /// "Toggle Screen Recording" and "Start/stop recording", could leave a key for each; both read as the one action
     /// now (`HotkeyAction`'s decoding), so without this Home would list Screen Recording twice. The one that stays is
-    /// the first on the key a key set gives Screen Recording (⌘5, ⌃5, ⌥5 or F17), so a list that follows a key set
-    /// keeps following it, else the first in the list; it keeps its id, key and place. Hotkeys that record together with
-    /// other things, and every other hotkey, stay as they are. Applied to every list that loads (`HotkeySettings`'
-    /// decoding), whatever its version.
+    /// the first on the key a key set gives Screen Recording (⌘4, ⌃4, ⌥4 or F16), so a list that follows a key set
+    /// keeps following it, else the first on the key an earlier build's key set gave it (⌘5, ⌃5, ⌥5 or F17), else the
+    /// first in the list; it keeps its id, key and place. Hotkeys that record together with other things, and every
+    /// other hotkey, stay as they are. Applied to every list that loads (`HotkeySettings`' decoding), whatever its
+    /// version.
     static func withOneScreenRecordingKey(_ bindings: [HotkeyBinding]) -> [HotkeyBinding] {
         let recording = HotkeyAction.startStopRecording
         let indices = bindings.indices.filter { bindings[$0].actions == [recording] }
         guard indices.count > 1 else { return bindings }
         let keySetKeys = Set(HotkeyKeySet.allCases.compactMap { $0.combo(for: recording) })
-        let kept = indices.first { keySetKeys.contains(bindings[$0].combo) } ?? indices[0]
+        let kept = indices.first { keySetKeys.contains(bindings[$0].combo) }
+            ?? indices.first { earlierKeySetRecordingKeys.contains(bindings[$0].combo) }
+            ?? indices[0]
         let dropped = Set(indices).subtracting([kept])
         return bindings.indices.filter { !dropped.contains($0) }.map { bindings[$0] }
     }
