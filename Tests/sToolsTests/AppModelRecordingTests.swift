@@ -276,7 +276,7 @@ struct AppModelRecordingTests {
         harness.press(id)
         #expect(harness.question.presented == 2)
         #expect(harness.recording.phase == .deciding)
-        #expect(harness.hud.presented.last?.line == "Save or delete the last recording first")
+        #expect(harness.hud.presented.last?.line == "Save or Delete the last recording first")
         #expect(harness.hud.presented.last?.sealed == false)
         #expect(!harness.model.isOn(.screenRecording))
         harness.recording.delete()
