@@ -70,6 +70,7 @@ struct HotkeysSection: View {
         if let note = Self.scopeNote(scope: hotkeys.scope, accessibilityGranted: model.accessibilityGranted) {
             HotkeysCaption(note)
                 .padding(.bottom, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .overlay(alignment: .bottom) {
                     Rectangle().fill(STColor.rule).frame(height: 1).accessibilityHidden(true)
                 }
