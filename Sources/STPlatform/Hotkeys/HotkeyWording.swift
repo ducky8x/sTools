@@ -12,6 +12,12 @@ extension HotkeyAction {
         case .startTimer: "Start timer"
         }
     }
+
+    /// The tool the action belongs to, by name, for what's said about the tool's own key: Start timer is Timer
+    /// Overlay's. The same names as the sidebar's.
+    public var toolTitle: String {
+        self == .startTimer ? "Timer Overlay" : title
+    }
 }
 
 /// The words both hotkey editors use (Home ▸ Hotkeys and the Key Rebinder's key panel), so they always match.
@@ -29,6 +35,20 @@ public enum HotkeyWording {
         guard let last = titles.last else { return "" }
         guard titles.count > 1 else { return last }
         return titles.dropLast().joined(separator: ", ") + " and " + last
+    }
+
+    /// The question before `combo` replaces a tool's own key instead of becoming a second one
+    /// (`HotkeyCenter.ownHotkeyReplaced(bySaving:editing:)`): "Use F6 for Crosshair?".
+    public static func replaceOwnKeyQuestion(_ own: HotkeyBinding, with combo: HotkeyCombo) -> String {
+        "Use \(combo.displayString) for \(own.actions.first?.toolTitle ?? "")?"
+    }
+
+    /// What Replace does, under the question: "Crosshair has one key of its own, ⌘3. This replaces it with F6. Your
+    /// other hotkeys stay as they are."
+    public static func replaceOwnKeyWarning(_ own: HotkeyBinding, with combo: HotkeyCombo) -> String {
+        let tool = own.actions.first?.toolTitle ?? ""
+        return "\(tool) has one key of its own, \(own.combo.displayString). This replaces it with \(combo.displayString). "
+            + "Your other hotkeys stay as they are."
     }
 
     /// Why a combination can't be a hotkey: "Unsupported key", "Reserved: Spotlight".
