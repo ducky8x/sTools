@@ -128,6 +128,18 @@ private final class RecordingHarness {
 @MainActor
 @Suite("AppModel Screen Recording key", .serialized)
 struct AppModelRecordingTests {
+    /// The page's Hotkey row says what the one key does: start, stop and the question, and that the stop switches the
+    /// tool off. With Ask Save or Delete on stop off, the stop saves under the date and time instead.
+    @Test func theHotkeyRowSaysWhatTheOneKeyDoes() throws {
+        let harness = RecordingHarness()
+        let row = try #require(ToolHotkeyRow(model: harness.model, tool: .screenRecording))
+        #expect(row.purposeLine == "Starts a recording; press again to stop, name it and Save or Delete. "
+            + "Stopping switches Screen Recording off.")
+        harness.recording.options.askSaveDelete = false
+        #expect(row.purposeLine == "Starts a recording; press again to stop and save it under its date and time. "
+            + "Stopping switches Screen Recording off.")
+    }
+
     /// Off, the press switches the tool on and its sources start: the line says the recording is starting, without the
     /// seal, and "Recording started" follows with the seal once the recording writes.
     @Test func offTheKeySwitchesTheToolOnAndRecordsAtOnce() async throws {

@@ -164,8 +164,8 @@ struct ToolHotkeyRowTests {
     }
 
     /// Timer Overlay's row is the same row: it records the Start-timer key in place, as the timer's own key in its
-    /// sidebar place, and adds one line on what the key does, which follows Advanced ▸ Cancel gesture. No other tool's
-    /// row has that line.
+    /// sidebar place, and adds one line on what the key does, which follows Advanced ▸ Cancel gesture. The toggles' rows
+    /// have no such line.
     @Test func timerOverlaysRowRecordsTheStartTimerKeyInPlace() throws {
         let harness = Harness(accessibility: .granted)
         let hotkeys = harness.model.hotkeys
@@ -173,7 +173,11 @@ struct ToolHotkeyRowTests {
         let row = try #require(ToolHotkeyRow(model: harness.model, tool: .timerOverlay))
         #expect(row.action == .startTimer)
         #expect(row.purposeLine == "Starts the timer. A double press switches Timer Overlay off.")
-        #expect(ToolHotkeyRow(model: harness.model, tool: .crosshair)?.purposeLine == nil)
+        // The toggles say nothing more than their title; Screen Recording's line is tested with its real controller
+        // (`AppModelRecordingTests`).
+        for tool in [ToolID.crosshair, .nbbOverlay, .windowBackdrop] {
+            #expect(ToolHotkeyRow(model: harness.model, tool: tool)?.purposeLine == nil)
+        }
         let timer = try #require(harness.model.timerOverlay)
         timer.settings.cancelGesture = .hold
         #expect(row.purposeLine == "Starts the timer. Holding it 1 s switches Timer Overlay off.")
