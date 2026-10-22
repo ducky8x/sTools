@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 import Testing
@@ -52,8 +53,14 @@ private func minecraftInstance(pid: Int32) -> MinecraftInstance {
                       launchDate: Date(timeIntervalSince1970: Double(pid)))
 }
 
+/// The processes the fake system has running; a game that quits is taken out by hand.
+@MainActor
+private final class FakeProcesses {
+    var running: Set<Int32> = [sToolsPID, minecraftPID, secondMinecraftPID, browserPID]
+}
+
 /// A center on a fake registrar, told about the app in front by a real `HotkeyFrontAppWatcher` over a fake
-/// frontmost app and a locator on a static source.
+/// frontmost app, a locator on a static source and fake running processes.
 @MainActor
 private final class ScopeHarness {
     let directory = FileManager.default.temporaryDirectory.appending(path: "hotkey-scope-\(UUID().uuidString)", directoryHint: .isDirectory)
@@ -64,6 +71,7 @@ private final class ScopeHarness {
     let locator: MinecraftLocator
     let center: HotkeyCenter
     let watcher: HotkeyFrontAppWatcher
+    let processes = FakeProcesses()
     var events: [HotkeyEvent] = []
 
     init(front pid: Int32? = sToolsPID, minecraft: [Int32] = [minecraftPID], scope: HotkeyScope = .sToolsAndMinecraft) {
@@ -75,7 +83,8 @@ private final class ScopeHarness {
         locator.start()
         var sink: (([HotkeyEvent]) -> Void)?
         center = HotkeyCenter(store: store, registrar: registrar, toolStates: { [:] }, handler: { sink?($0) })
-        watcher = HotkeyFrontAppWatcher(center: center, frontmost: frontmost, minecraft: locator, ownProcessID: sToolsPID)
+        watcher = HotkeyFrontAppWatcher(center: center, frontmost: frontmost, minecraft: locator, ownProcessID: sToolsPID,
+                                        isRunning: { [processes] in processes.running.contains($0) })
         sink = { [unowned self] in events.append(contentsOf: $0) }
         watcher.start()
     }
@@ -173,8 +182,56 @@ struct HotkeyScopeTests {
         #expect(await eventually { h.center.frontApp == .minecraft })
         #expect(h.registrar.active.count == 1)
 
+        // Once seen, the game counts while its process runs, listed or not (`aGameStaysMinecraftWhile…`); when it
+        // quits, it's forgotten.
+        h.processes.running.remove(minecraftPID)
         h.source.instances = []
         #expect(await eventually { h.center.frontApp == .other })
+        #expect(h.registrar.active.isEmpty)
+    }
+
+    /// The locator lists only the windows Accessibility can read now: a full-screen game on its own Space, or a game on
+    /// another Space, drops out of its list while you're elsewhere. Switching back to it (⌘-Tab, a Spaces swipe) must
+    /// find its hotkeys working at once, before the locator reads its window again.
+    @Test func aGameStaysMinecraftWhileItsWindowIsOnAnotherSpace() async {
+        let h = ScopeHarness(front: browserPID)
+        let id = h.center.add(combo: cmd1, actions: [.toggle(.nbbOverlay)])
+        h.source.instances = []
+        #expect(await eventually { h.locator.instances.isEmpty })
+
+        h.frontmost.bringToFront(minecraftPID)
+        #expect(h.center.frontApp == .minecraft)
+        #expect(h.registrar.active == [id: cmd1])
+
+        h.frontmost.bringToFront(browserPID)
+        #expect(h.registrar.active.isEmpty)
+        h.frontmost.bringToFront(minecraftPID)
+        #expect(h.registrar.active == [id: cmd1])
+    }
+
+    /// A game that quit is forgotten, so whatever process later has its number isn't taken for Minecraft. As in macOS,
+    /// the quit brings another app to the front, which is when the watcher sees it.
+    @Test func aGameThatQuitIsForgotten() async {
+        let h = ScopeHarness(front: minecraftPID)
+        h.center.add(combo: cmd1, actions: [.toggle(.nbbOverlay)])
+        #expect(h.center.frontApp == .minecraft)
+        h.processes.running.remove(minecraftPID)
+        h.source.instances = []
+        #expect(await eventually { h.locator.instances.isEmpty })
+        h.frontmost.bringToFront(browserPID)
+
+        h.processes.running.insert(minecraftPID)
+        h.frontmost.bringToFront(minecraftPID)
+        #expect(h.center.frontApp == .other)
+        #expect(h.registrar.active.isEmpty)
+    }
+
+    /// A process the locator never listed isn't Minecraft, even a Java one (Ninjabrain Bot, a launcher).
+    @Test func aProcessNeverListedIsntMinecraft() {
+        let h = ScopeHarness(front: sToolsPID, minecraft: [])
+        h.center.add(combo: cmd1, actions: [.toggle(.nbbOverlay)])
+        h.frontmost.bringToFront(minecraftPID)
+        #expect(h.center.frontApp == .other)
         #expect(h.registrar.active.isEmpty)
     }
 
@@ -226,6 +283,13 @@ struct HotkeyScopeTests {
         #expect(HotkeyFrontAppWatcher.sort(browserPID, ownProcessID: sToolsPID, minecraft: games) == .other)
         #expect(HotkeyFrontAppWatcher.sort(nil, ownProcessID: sToolsPID, minecraft: games) == .other)
         #expect(HotkeyFrontAppWatcher.sort(minecraftPID, ownProcessID: sToolsPID, minecraft: []) == .other)
+        #expect(HotkeyFrontAppWatcher.sort(minecraftPID, ownProcessID: sToolsPID, minecraftProcesses: [minecraftPID]) == .minecraft)
+        // The app's check asks NSWorkspace, which lists the Minecraft locator's Java processes too (reading it shows
+        // nothing and asks for no permission).
+        if let app = NSWorkspace.shared.runningApplications.first(where: { !$0.isTerminated }) {
+            #expect(HotkeyFrontAppWatcher.processIsRunning(app.processIdentifier))
+        }
+        #expect(!HotkeyFrontAppWatcher.processIsRunning(Int32.max))
     }
 
     @Test func theTypingNoteSaysWhoLosesTheKey() throws {

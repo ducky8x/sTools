@@ -2,8 +2,9 @@ import Foundation
 import STPlatform
 
 /// What the Timer page's key row shows (spec 5.6.2): every Start-timer hotkey in Home ▸ Hotkeys' order, each with its
-/// key and its problem if it has one, and whether Hotkeys are on. The app fills it in from `HotkeyCenter`, so the
-/// timer never registers a key of its own (spec 5.6.10). The words are placeholder wording for M9.
+/// key and its problem if it has one, whether Hotkeys are on, and where they work and the key set (spec 6.1). The app
+/// fills it in from `HotkeyCenter`, so the timer never registers a key of its own (spec 5.6.10). The words are
+/// placeholder wording for M9.
 public struct TimerKeyStatus: Equatable, Sendable {
     /// One Start-timer hotkey.
     public struct Key: Equatable, Sendable, Identifiable {
@@ -25,25 +26,38 @@ public struct TimerKeyStatus: Equatable, Sendable {
     public var keys: [Key]
     /// Whether the Hotkeys master switch is on. A Start-timer key works only while it is (spec 5.6.2).
     public var hotkeysAreOn: Bool
+    /// Where hotkeys work (Home ▸ Hotkeys), for the row's line under the key.
+    public var scope: HotkeyScope
+    /// The key set the tools' own hotkeys follow, the Start-timer key among them; nil when they follow none (Custom).
+    public var keySet: HotkeyKeySet?
 
-    public init(keys: [Key] = [], hotkeysAreOn: Bool = false) {
+    /// `keySet` defaults to None, an empty list's.
+    public init(keys: [Key] = [], hotkeysAreOn: Bool = false, scope: HotkeyScope = .sToolsAndMinecraft,
+                keySet: HotkeyKeySet? = .noKeys) {
         self.keys = keys
         self.hotkeysAreOn = hotkeysAreOn
+        self.scope = scope
+        self.keySet = keySet
     }
 
-    /// The hotkeys among `bindings` that hold Start timer, in their order, each with the problem `status` reports.
-    public init(bindings: [HotkeyBinding], hotkeysAreOn: Bool, status: (UUID) -> HotkeyStatus?) {
+    /// The hotkeys among `bindings` that hold Start timer, in their order, each with the problem `status` reports, and
+    /// the key set `bindings` follow.
+    public init(bindings: [HotkeyBinding], hotkeysAreOn: Bool, scope: HotkeyScope = .sToolsAndMinecraft,
+                status: (UUID) -> HotkeyStatus?) {
         keys = bindings.filter { $0.actions.contains(.startTimer) }.map { binding in
             Key(id: binding.id, name: binding.combo.displayString,
                 problem: HotkeyWording.statusNote(status(binding.id), combo: binding.combo, inList: false))
         }
         self.hotkeysAreOn = hotkeysAreOn
+        self.scope = scope
+        keySet = HotkeyKeySet.current(in: bindings)
     }
 
     /// The key row for `hotkeys` as they are now.
     @MainActor
     public init(hotkeys: HotkeyCenter) {
-        self.init(bindings: hotkeys.bindings, hotkeysAreOn: hotkeys.isEnabled, status: { hotkeys.status(of: $0) })
+        self.init(bindings: hotkeys.bindings, hotkeysAreOn: hotkeys.isEnabled, scope: hotkeys.scope,
+                  status: { hotkeys.status(of: $0) })
     }
 
     /// No Start-timer hotkey, with Hotkeys off.

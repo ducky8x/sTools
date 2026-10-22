@@ -3,8 +3,8 @@ import Foundation
 /// Home ▸ Hotkeys ▸ Key set (spec 6.1): one hotkey per tool, in sidebar order, each doing that tool's main action.
 ///
 /// A set owns one hotkey per tool, the tool's own hotkey: the first whose only action is the tool's main action (the
-/// hotkey a tool page's Hotkey row, or Timer Overlay's Key row, sets). Picking a set changes only those; every
-/// other hotkey stays as it is. A new install starts with ⌘1–⌘5.
+/// hotkey a tool page's Hotkey row, or Timer Overlay's Key row, sets). Picking a set changes only those and lists
+/// them first, in sidebar order; every other hotkey stays as it is, after them. A new install starts with ⌘1–⌘5.
 public enum HotkeyKeySet: String, CaseIterable, Hashable, Sendable {
     /// ⌘1–⌘5, a new install's.
     case command
@@ -37,6 +37,10 @@ public enum HotkeyKeySet: String, CaseIterable, Hashable, Sendable {
         case .noKeys: "None"
         }
     }
+
+    /// What the tools' own hotkeys follow, by name: the set's title, or Custom when they follow none (`current(in:)`
+    /// is nil) because a key was set by hand.
+    public static func name(of set: HotkeyKeySet?) -> String { set?.title ?? "Custom" }
 
     /// The digits 1 to 5 on the main row, and F13 to F17, as virtual key codes.
     private static let digitKeyCodes: [UInt16] = [18, 19, 20, 21, 23]
@@ -87,8 +91,9 @@ public enum HotkeyKeySet: String, CaseIterable, Hashable, Sendable {
         }
     }
 
-    /// `bindings` with this set picked: each tool's own hotkey gets the set's key, in its place in the list (added
-    /// at the end for a tool without one), or is removed with None. Every other hotkey stays as it is, where it is.
+    /// `bindings` with this set picked: each tool's own hotkey gets the set's key and keeps its id (one is added for a
+    /// tool without), or is removed with None. The result is `ordered`: the tools' own hotkeys first, in sidebar order,
+    /// then every other hotkey as it was, in its order.
     public func applied(to bindings: [HotkeyBinding]) -> [HotkeyBinding] {
         var result = bindings
         for action in Self.toolActions {
@@ -99,6 +104,15 @@ public enum HotkeyKeySet: String, CaseIterable, Hashable, Sendable {
                 result.append(HotkeyBinding(combo: key, actions: [action]))
             }
         }
-        return result
+        return Self.ordered(result)
+    }
+
+    /// The order Home lists hotkeys in once a key set or a tool page has set a tool's key: the tools' own hotkeys first,
+    /// in sidebar order (⌘1 to ⌘5 down the page), then every other hotkey in its order. Only own hotkeys move, so a
+    /// list already in this order comes back unchanged.
+    public static func ordered(_ bindings: [HotkeyBinding]) -> [HotkeyBinding] {
+        let own = toolActions.compactMap { ownBinding(for: $0, in: bindings) }
+        let ownIDs = Set(own.map(\.id))
+        return own + bindings.filter { !ownIDs.contains($0.id) }
     }
 }

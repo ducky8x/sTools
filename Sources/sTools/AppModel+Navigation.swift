@@ -21,9 +21,10 @@ extension AppModel {
         navigate(to: .home)
     }
 
-    /// Timer Overlay's Set in Hotkeys…: opens Home ▸ Hotkeys with a new hotkey whose action is Start timer, ready
-    /// for its key. While hotkeys are off it asks first (plan decision 14); a no opens Home ▸ Hotkeys without the
-    /// new hotkey.
+    /// Timer Overlay's Set in Hotkeys…: opens Home ▸ Hotkeys with the timer's own Start-timer hotkey (a key set's ⌘4,
+    /// or one set by hand) in its editor, recording a new key, or, when it has none, a new hotkey whose action is Start
+    /// timer, ready for its key. While hotkeys are off it asks first (plan decision 14); a no opens Home ▸ Hotkeys
+    /// with neither.
     func openHotkeysForStartTimer() {
         if !hotkeys.isEnabled {
             guard confirmTurningOnHotkeys() else {
@@ -32,7 +33,11 @@ extension AppModel {
             }
             hotkeys.isEnabled = true
         }
-        pendingNewHotkeyActions = [.startTimer]
+        if let own = ToolHotkey.own(for: .startTimer, in: hotkeys.bindings) {
+            pendingEditHotkeyID = own.id
+        } else {
+            pendingNewHotkeyActions = [.startTimer]
+        }
         openHotkeys()
     }
 

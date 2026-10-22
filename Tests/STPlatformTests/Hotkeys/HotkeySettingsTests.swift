@@ -4,12 +4,16 @@ import Testing
 
 @Suite("HotkeySettings")
 struct HotkeySettingsTests {
+    /// A new install (no `hotkeys.json`) has ⌘1–⌘5 with hotkeys on: by default they work only in sTools and
+    /// Minecraft, so they take no other app's keys. A value built in code starts off and empty, as before.
     @Test func identityAndDefaults() {
         #expect(HotkeySettings.name == "hotkeys")
-        #expect(HotkeySettings.version == 1)
-        #expect(HotkeySettings.defaultValue.isEnabled == false)
+        #expect(HotkeySettings.version == 2)
+        #expect(HotkeySettings.defaultValue.isEnabled, "a new install starts with hotkeys on")
         #expect(HotkeySettings.defaultValue.bindings.map(\.combo) == HotkeyKeySet.command.combos, "a new install's ⌘1–⌘5")
         #expect(HotkeySettings.defaultValue.showsConfirmation)
+        #expect(HotkeySettings.defaultValue.scope == .sToolsAndMinecraft)
+        #expect(!HotkeySettings().isEnabled)
         #expect(HotkeySettings().bindings.isEmpty)
     }
 

@@ -117,6 +117,22 @@ struct HotkeyWordingTests {
         #expect(HotkeyWording.functionKeyNote(for: c) == nil)
     }
 
+    // MARK: Where hotkeys work and the key set
+
+    /// The line every other place that edits a hotkey shows (a tool page's Hotkey row, Timer Overlay's Key row, the
+    /// Key Rebinder's key panel), so what Home ▸ Hotkeys sets is in view there too.
+    @Test func theLineSaysWhereHotkeysWorkAndTheKeySet() {
+        #expect(HotkeyWording.whereAndKeySet(scope: .sToolsAndMinecraft, keySet: .command)
+            == "Hotkeys work in sTools and Minecraft · Key set: ⌘1–⌘5")
+        #expect(HotkeyWording.whereAndKeySet(scope: .everywhere, keySet: .functionKeys)
+            == "Hotkeys work in every app · Key set: F13–F17")
+        #expect(HotkeyWording.whereAndKeySet(scope: .sToolsAndMinecraft, keySet: .noKeys)
+            == "Hotkeys work in sTools and Minecraft · Key set: None")
+        #expect(HotkeyWording.whereAndKeySet(scope: .everywhere, keySet: nil) == "Hotkeys work in every app · Key set: Custom")
+        #expect(HotkeyKeySet.name(of: nil) == "Custom")
+        #expect(HotkeyKeySet.name(of: .control) == "⌃1–⌃5")
+    }
+
     // MARK: Spoken names
 
     @Test func spokenNames() {

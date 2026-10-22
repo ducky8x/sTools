@@ -14,6 +14,8 @@ private let f8 = HotkeyCombo(keyCode: 100, modifiers: [])
 @MainActor
 @Suite("Key set chooser")
 struct HotkeyKeySetChooserTests {
+    init() { _ = STFont.register() }
+
     /// A key set's hotkey does the tool's one action (`ToolID.hotkeyAction`), the one its page's Hotkey row or Timer
     /// Overlay's Key row sets: Start timer for Timer Overlay, the one Screen Recording action for Screen Recording.
     @Test func keySetsGiveTheToolsTheirKeysInSidebarOrder() {
@@ -33,7 +35,7 @@ struct HotkeyKeySetChooserTests {
         #expect(hotkeys.keySet == .command)
         #expect(hotkeys.bindings.map { "\($0.combo.displayString) \(HotkeyWording.summary($0.actions))" }
             == ["⌘1 NBB Overlay", "⌘2 Window Backdrop", "⌘3 Crosshair", "⌘4 Start timer", "⌘5 Screen Recording"])
-        #expect(!hotkeys.isEnabled)
+        #expect(hotkeys.isEnabled, "on from the first launch, in sTools and Minecraft only")
         #expect(hotkeys.scope == .sToolsAndMinecraft)
         #expect(ToolHotkey.own(for: .toggle(.crosshair), in: hotkeys.bindings)?.combo.displayString == "⌘3")
         #expect(TimerKeyStatus(hotkeys: hotkeys).title == "Start timer: ⌘4")
@@ -43,8 +45,7 @@ struct HotkeyKeySetChooserTests {
             #expect(ToolHotkey.own(for: action, in: hotkeys.bindings)?.combo.displayString == "⌘\(tool.number)", "\(tool)")
         }
 
-        // Turned on, they register at once, and each fires its tool's main action.
-        hotkeys.isEnabled = true
+        // They're registered at once (with the harness's fake registrar, never with macOS).
         let fake = harness.hotkeyRegistrar as! FakeHotkeyRegistrar
         #expect(Set(fake.registered.values) == Set(HotkeyKeySet.command.combos))
     }
@@ -65,6 +66,35 @@ struct HotkeyKeySetChooserTests {
         ToolHotkey.set(f6, for: .toggle(.crosshair), in: harness.model.hotkeys)
         #expect(own.id == ToolHotkey.own(for: .toggle(.crosshair), in: harness.model.hotkeys.bindings)?.id)
         #expect(harness.model.hotkeys.keySet == nil, "a key set by hand on Crosshair's page: Custom")
+    }
+
+    /// Every key set is in view on Home at once, in the order the arrow keys cycle through them, and so is each place
+    /// hotkeys can work: neither waits behind a menu.
+    @Test func everyChoiceIsInViewOnHome() {
+        #expect(HotkeysSection.keySetOptions.map(\.title) == ["⌘1–⌘5", "⌃1–⌃5", "⌥1–⌥5", "F13–F17", "None"])
+        #expect(HotkeysSection.keySetOptions.map(\.value) == HotkeyKeySet.allCases.map(Optional.some))
+        #expect(HotkeysSection.scopeOptions.map(\.title) == ["In sTools and Minecraft", "Everywhere"])
+        #expect(HotkeysSection.scopeOptions.map(\.value) == HotkeyScope.allCases)
+    }
+
+    /// Under the sets, one line says what the current set gives each tool, in sidebar order, or whose keys they are.
+    /// Each key stays on one line with its tool (no-break spaces), so a narrow column wraps only between them.
+    @Test func theCaptionSaysWhatTheSetGivesEachTool() {
+        func caption(_ set: HotkeyKeySet?) -> String {
+            HotkeysSection.keySetCaption(set).replacingOccurrences(of: "\u{00A0}", with: " ")
+        }
+        #expect(caption(.command)
+            == "⌘1 NBB Overlay · ⌘2 Window Backdrop · ⌘3 Crosshair · ⌘4 Timer Overlay · ⌘5 Screen Recording")
+        #expect(HotkeysSection.keySetCaption(.command).components(separatedBy: " · ")
+            == ["⌘1\u{00A0}NBB\u{00A0}Overlay", "⌘2\u{00A0}Window\u{00A0}Backdrop", "⌘3\u{00A0}Crosshair",
+                "⌘4\u{00A0}Timer\u{00A0}Overlay", "⌘5\u{00A0}Screen\u{00A0}Recording"])
+        #expect(caption(.option)
+            == "⌥1 NBB Overlay · ⌥2 Window Backdrop · ⌥3 Crosshair · ⌥4 Timer Overlay · ⌥5 Screen Recording")
+        #expect(caption(.functionKeys)
+            == "F13 NBB Overlay · F14 Window Backdrop · F15 Crosshair · F16 Timer Overlay · F17 Screen Recording")
+        #expect(HotkeysSection.keySetCaption(.noKeys) == "No tool has a key of its own.")
+        #expect(HotkeysSection.keySetCaption(nil)
+            == "Custom: keys you set yourself. Pick a set for one key per tool, in sidebar order.")
     }
 
     @Test func theQuestionNamesTheKeysSetByHand() {
@@ -97,7 +127,10 @@ struct HotkeyKeySetChooserTests {
         let command = png()
         harness.model.hotkeys.apply(.functionKeys)
         let functionKeys = png()
-        #expect(command != functionKeys)
         #expect(harness.model.hotkeys.bindings.map(\.combo.displayString) == ["F13", "F14", "F15", "F16", "F17"])
+        ToolHotkey.set(f6, for: .toggle(.crosshair), in: harness.model.hotkeys)
+        #expect(harness.model.hotkeys.keySet == nil)
+        let custom = png()
+        #expect(Set([command, functionKeys, custom]).count == 3)
     }
 }

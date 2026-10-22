@@ -2,12 +2,12 @@ import STDesign
 import STPlatform
 import SwiftUI
 
-/// The key panel's Hotkeys part (spec 5.5.3, 6.1): the sTools hotkeys on what the selected key sends after
-/// Karabiner, an inline editor that adds or changes one with Hold and Does chips, and, for a key that can't carry
-/// hotkeys, why not and the spare key it could become. Hotkeys live in `hotkeys.json`, never in `karabiner.json`, so
-/// all of this works without Karabiner-Elements; only Use F20 needs it. The panel gives the block a new identity
-/// (`identity(of:controller:)`) per key and per key code the key sends, so selecting another key, or a rebind of this
-/// one, closes the editor unsaved.
+/// The key panel's Hotkeys part (spec 5.5.3, 6.1): where hotkeys work and the key set, as Home ▸ Hotkeys sets them,
+/// the sTools hotkeys on what the selected key sends after Karabiner, an inline editor that adds or changes one with
+/// Hold and Does chips, and, for a key that can't carry hotkeys, why not and the spare key it could become. Hotkeys
+/// live in `hotkeys.json`, never in `karabiner.json`, so all of this works without Karabiner-Elements; only Use F20
+/// needs it. The panel gives the block a new identity (`identity(of:controller:)`) per key and per key code the key
+/// sends, so selecting another key, or a rebind of this one, closes the editor unsaved.
 struct KeyHotkeysBlock: View {
     /// What the block shows for a key.
     enum Content: Equatable {
@@ -24,7 +24,8 @@ struct KeyHotkeysBlock: View {
     let key: KarabinerEvent
     /// The panel's Becomes. Use F20 only puts the spare key there; nothing is written until the panel's Save.
     @Binding var chosen: KarabinerEvent?
-    /// Opens Home ▸ Hotkeys, for a key a rule drives. Nil leaves Open Hotkeys out.
+    /// Opens Home ▸ Hotkeys: Change… beside where hotkeys work, and Open Hotkeys for a key a rule drives. Nil leaves
+    /// both out.
     let openHotkeys: (() -> Void)?
 
     /// The inline editor's choices; nil while it's closed.
@@ -133,6 +134,9 @@ struct KeyHotkeysBlock: View {
         let place = Self.editorPlace(for: draft, among: hotkeys)
         let controls = Self.controls(for: draft, on: keyCode, controller: controller)
         VStack(alignment: .leading, spacing: 0) {
+            if let line = controller.hotkeyWhereLine {
+                whereLine(line)
+            }
             if let note = controller.hotkeySourceNote(for: key) {
                 Text(note)
                     .stStyle(.caption)
@@ -156,6 +160,23 @@ struct KeyHotkeysBlock: View {
                     .padding(.top, 10)
             }
         }
+    }
+
+    /// Where sTools hotkeys work and the key set, as Home ▸ Hotkeys sets them, with Change… to go there (left out in
+    /// the Prologue's trial, which has no `openHotkeys`).
+    private func whereLine(_ line: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(line)
+                .stStyle(.caption)
+                .foregroundStyle(theme.inkTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let openHotkeys {
+                Button("Change\u{2026}", action: openHotkeys)
+                    .buttonStyle(STButtonStyle(.quiet))
+                    .accessibilityLabel("Change where hotkeys work and the key set")
+            }
+        }
+        .padding(.bottom, 6)
     }
 
     /// One hotkey: its combination, what it does and what's wrong with it, then Edit. VoiceOver reads the first
