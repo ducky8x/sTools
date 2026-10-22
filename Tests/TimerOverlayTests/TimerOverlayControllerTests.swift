@@ -776,3 +776,35 @@ struct TimerPlacementModeTests {
         #expect(rig.presenter.popIns.count == 1, "no plate comes back")
     }
 }
+
+/// Hard limits on the whole module, read from its source.
+@Suite("Timer Overlay hard limits")
+struct TimerOverlayLimitsTests {
+    private static let sources = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        .deletingLastPathComponent().appending(path: "Sources/TimerOverlay", directoryHint: .isDirectory)
+
+    private static func sourceTexts() throws -> [(name: String, text: String)] {
+        let files = try #require(FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil))
+            .compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" }
+        return try files.map { ($0.lastPathComponent, try String(contentsOf: $0, encoding: .utf8)) }
+    }
+
+    /// Spec 5.6.8: the timer never reads Minecraft's files, screen or sound, and never sends keys, pauses the game or
+    /// moves focus.
+    @Test func itNeverReadsOrActsOnTheGame() throws {
+        let texts = try Self.sourceTexts()
+        #expect(texts.count > 20)
+        for token in ["CGEvent", "options.txt", "ScreenCaptureKit", "SCStream", "SCShareableContent", "activate("] {
+            #expect(texts.filter { $0.text.contains(token) }.map(\.name).isEmpty, "\(token)")
+        }
+    }
+
+    /// The plan's cost rule: nothing runs all the time; one-shot wakes go through the injected scheduler.
+    @Test func nothingRunsAllTheTime() throws {
+        let texts = try Self.sourceTexts()
+        for token in ["TimelineView", "CADisplayLink", "CVDisplayLink", "Timer.publish", "scheduledTimer",
+                      "repeatForever", "Task.sleep", "Thread.sleep", "usleep("] {
+            #expect(texts.filter { $0.text.contains(token) }.map(\.name).isEmpty, "\(token)")
+        }
+    }
+}
