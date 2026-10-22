@@ -143,13 +143,11 @@ struct RuleGuidesView: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            Canvas { context, _ in
-                for outline in model.outlines {
-                    draw(outline, covered: model.covered.contains(outline.kind), in: &context)
-                }
-            }
+            // Its own view, so the line following the plate never redraws the whole display.
+            ZoneOutlines(outlines: model.outlines, covered: model.covered, isHighContrast: theme.increaseContrast)
+                .equatable()
             if let line = model.line, let plate = model.plate {
-                BesidePlate(plate: plate) { CoverLine(text: line) }
+                LineLayout(plate: plate) { CoverLine(text: line) }
             }
         }
         // Covering a zone shows at once, in both modes: no animation reaches the outlines or the line.
@@ -163,13 +161,56 @@ struct RuleGuidesView: View {
         }
     }
 
+    /// Places its one view beside the plate, at its own size, where `origin(of:beside:in:)` says.
+    struct LineLayout: Layout {
+        /// Room between the plate, the line and the display's edges.
+        static let gap: CGFloat = 8
+
+        let plate: CGRect
+
+        /// Where a line of `size` goes, in the coordinates of a view of `bounds` (y down): centered under the plate,
+        /// or above it when there's no room below, and kept inside the display. Whole points, so the text stays crisp.
+        static func origin(of size: CGSize, beside plate: CGRect, in bounds: CGSize) -> CGPoint {
+            let x = min(max(plate.midX - size.width / 2, gap), max(gap, bounds.width - size.width - gap))
+            var y = plate.maxY + gap
+            if y + size.height > bounds.height - gap { y = max(gap, plate.minY - gap - size.height) }
+            return CGPoint(x: x.rounded(), y: y.rounded())
+        }
+
+        func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+            proposal.replacingUnspecifiedDimensions()
+        }
+
+        func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+            guard let line = subviews.first else { return }
+            let size = line.sizeThatFits(.unspecified)
+            let origin = Self.origin(of: size, beside: plate, in: bounds.size)
+            line.place(at: CGPoint(x: bounds.minX + origin.x, y: bounds.minY + origin.y), proposal: ProposedViewSize(size))
+        }
+    }
+}
+
+/// Every zone's outline in one drawing, redrawn only when what's covered (or Increase Contrast) changes.
+private struct ZoneOutlines: View, Equatable {
+    let outlines: [RuleGuidesModel.Outline]
+    let covered: [RuleZones.Kind]
+    let isHighContrast: Bool
+
+    var body: some View {
+        Canvas { context, _ in
+            for outline in outlines {
+                draw(outline, covered: covered.contains(outline.kind), in: &context)
+            }
+        }
+    }
+
     private func draw(_ outline: RuleGuidesModel.Outline, covered: Bool, in context: inout GraphicsContext) {
-        let width: CGFloat = theme.increaseContrast ? 2.5 : 1.5
+        let width: CGFloat = isHighContrast ? 2.5 : 1.5
         let path = Path(outline.rect.insetBy(dx: width / 2, dy: width / 2))
         if covered { context.fill(path, with: .color(STColor.danger.opacity(0.18))) }
         // A dark halo under the line keeps it readable over sky and snow.
         context.stroke(path, with: .color(STColor.background.opacity(0.6)), lineWidth: width + 2)
-        let style = StrokeStyle(lineWidth: width, dash: covered || theme.increaseContrast ? [] : [6, 4])
+        let style = StrokeStyle(lineWidth: width, dash: covered || isHighContrast ? [] : [6, 4])
         context.stroke(path, with: .color(covered ? STColor.danger : STColor.ink.opacity(0.9)), style: style)
     }
 }
@@ -188,33 +229,5 @@ private struct CoverLine: View {
             .padding(.vertical, 6)
             .background(STColor.background.opacity(0.85), in: Capsule())
             .overlay { Capsule().strokeBorder(STColor.danger.opacity(0.6), lineWidth: 1) }
-    }
-}
-
-/// Places its one view beside the plate, at its own size, where `origin(of:beside:in:)` says.
-struct BesidePlate: Layout {
-    /// Room between the plate, the line and the display's edges.
-    static let gap: CGFloat = 8
-
-    let plate: CGRect
-
-    /// Where a line of `size` goes, in the coordinates of a view of `bounds` (y down): centered under the plate, or
-    /// above it when there's no room below, and kept inside the display. Whole points, so the text stays crisp.
-    static func origin(of size: CGSize, beside plate: CGRect, in bounds: CGSize) -> CGPoint {
-        let x = min(max(plate.midX - size.width / 2, gap), max(gap, bounds.width - size.width - gap))
-        var y = plate.maxY + gap
-        if y + size.height > bounds.height - gap { y = max(gap, plate.minY - gap - size.height) }
-        return CGPoint(x: x.rounded(), y: y.rounded())
-    }
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        proposal.replacingUnspecifiedDimensions()
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        guard let line = subviews.first else { return }
-        let size = line.sizeThatFits(.unspecified)
-        let origin = Self.origin(of: size, beside: plate, in: bounds.size)
-        line.place(at: CGPoint(x: bounds.minX + origin.x, y: bounds.minY + origin.y), proposal: ProposedViewSize(size))
     }
 }

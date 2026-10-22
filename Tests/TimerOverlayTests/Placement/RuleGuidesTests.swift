@@ -178,23 +178,23 @@ struct RuleGuidesLineTests {
 
     @Test func itSitsCenteredUnderThePlate() {
         let plate = CGRect(x: 800, y: 300, width: 153, height: 63)
-        let origin = BesidePlate.origin(of: line, beside: plate, in: bounds)
-        #expect(origin.y == plate.maxY + BesidePlate.gap)
+        let origin = RuleGuidesView.LineLayout.origin(of: line, beside: plate, in: bounds)
+        #expect(origin.y == plate.maxY + RuleGuidesView.LineLayout.gap)
         #expect(abs(origin.x + line.width / 2 - plate.midX) <= 0.5)
     }
 
     @Test func itGoesAboveWhenThereIsNoRoomBelow() {
         let plate = CGRect(x: 800, y: 1000, width: 153, height: 63)
-        let origin = BesidePlate.origin(of: line, beside: plate, in: bounds)
-        #expect(origin.y + line.height == plate.minY - BesidePlate.gap)
+        let origin = RuleGuidesView.LineLayout.origin(of: line, beside: plate, in: bounds)
+        #expect(origin.y + line.height == plate.minY - RuleGuidesView.LineLayout.gap)
     }
 
     @Test func itStaysOnTheDisplayBesideAPlateInTheCorner() {
         // The owner's spot over the toasts is near the right edge: the line can't be centered there.
-        let right = BesidePlate.origin(of: line, beside: CGRect(x: 1800, y: 50, width: 120, height: 63), in: bounds)
-        #expect(right.x + line.width == bounds.width - BesidePlate.gap)
-        let left = BesidePlate.origin(of: line, beside: CGRect(x: 0, y: 50, width: 120, height: 63), in: bounds)
-        #expect(left.x == BesidePlate.gap)
+        let right = RuleGuidesView.LineLayout.origin(of: line, beside: CGRect(x: 1800, y: 50, width: 120, height: 63), in: bounds)
+        #expect(right.x + line.width == bounds.width - RuleGuidesView.LineLayout.gap)
+        let left = RuleGuidesView.LineLayout.origin(of: line, beside: CGRect(x: 0, y: 50, width: 120, height: 63), in: bounds)
+        #expect(left.x == RuleGuidesView.LineLayout.gap)
     }
 
     @Test func itNamesTheCoveredZones() {
