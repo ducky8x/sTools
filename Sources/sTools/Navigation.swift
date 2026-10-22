@@ -83,7 +83,20 @@ enum GoCommand: Hashable, Sendable {
         }
     }
 
-    /// The key pressed with Command.
+    /// Whether the shortcut holds Control as well as Command. The pages do (⌃⌘0 Home, ⌃⌘1–⌃⌘6 the tools): hotkeys
+    /// fire with sTools in front, and a key set's ⌘1–⌘5 would take ⌘ with a digit. Settings, Back and Forward keep
+    /// their usual ⌘, ⌘[ and ⌘].
+    var shortcutHoldsControl: Bool {
+        switch self {
+        case .home, .tool: true
+        case .settings, .back, .forward: false
+        }
+    }
+
+    /// The shortcut as the menu shows it: "⌃⌘3", "⌘,".
+    var shortcutDisplay: String { (shortcutHoldsControl ? "⌃⌘" : "⌘") + String(shortcutKey) }
+
+    /// The key pressed with Command (and Control, `shortcutHoldsControl`).
     var shortcutKey: Character {
         switch self {
         case .home: "0"

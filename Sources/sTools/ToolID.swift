@@ -6,7 +6,7 @@ enum ToolID: String, CaseIterable, Identifiable, Hashable, Sendable {
 
     var id: String { rawValue }
 
-    /// The 1-6 shown in the sidebar and used by the Go menu shortcuts.
+    /// The 1-6 shown in the sidebar and used by the Go menu shortcuts (⌃⌘1–⌃⌘6) and the ⌘1–⌘5 key set.
     var number: Int {
         switch self {
         case .nbbOverlay: 1

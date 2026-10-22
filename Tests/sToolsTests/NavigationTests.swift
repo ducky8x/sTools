@@ -1,3 +1,4 @@
+import STPlatform
 import Testing
 @testable import sTools
 
@@ -96,6 +97,28 @@ struct GoCommandTests {
     @Test func shortcutsAreUnique() {
         let keys = GoCommand.menu.map(\.shortcutKey)
         #expect(Set(keys).count == keys.count)
+    }
+
+    /// Hotkeys fire with sTools in front, so the pages hold ⌃⌘: ⌘1–⌘5 belong to the key set.
+    @Test func thePagesHoldControlAndCommand() {
+        #expect(GoCommand.menu.map(\.shortcutDisplay)
+            == ["⌃⌘0", "⌃⌘1", "⌃⌘2", "⌃⌘3", "⌃⌘4", "⌃⌘5", "⌃⌘6", "⌘,", "⌘[", "⌘]"])
+    }
+
+    /// No Go menu shortcut is a key any key set gives, so a press always reaches the one it means.
+    @Test func noShortcutClashesWithAKeySet() {
+        let keyCodes: [Character: UInt16] = ["0": 29, "1": 18, "2": 19, "3": 20, "4": 21, "5": 23, "6": 22,
+                                             ",": 43, "[": 33, "]": 30]
+        let keySetCombos = Set(HotkeyKeySet.allCases.flatMap(\.combos))
+        for command in GoCommand.menu {
+            let keyCode = keyCodes[command.shortcutKey]
+            #expect(keyCode != nil, "\(command)")
+            let modifiers: HotkeyCombo.Modifiers = command.shortcutHoldsControl ? [.control, .command] : .command
+            let combo = HotkeyCombo(keyCode: keyCode ?? 0, modifiers: modifiers)
+            #expect(combo.displayString == command.shortcutDisplay)
+            #expect(!keySetCombos.contains(combo), "\(command.shortcutDisplay)")
+            #expect(combo.isValid, "\(command.shortcutDisplay) isn't a combination macOS keeps")
+        }
     }
 
     @Test func titlesNameTheDestination() {

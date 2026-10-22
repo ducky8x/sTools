@@ -30,7 +30,8 @@ struct GoCommands: Commands {
     @ViewBuilder
     private func item(_ command: GoCommand, title: String) -> some View {
         Button(title) { model.perform(command) }
-            .keyboardShortcut(KeyEquivalent(command.shortcutKey), modifiers: .command)
+            .keyboardShortcut(KeyEquivalent(command.shortcutKey),
+                              modifiers: command.shortcutHoldsControl ? [.control, .command] : .command)
             .disabled(isDisabled(command))
     }
 
