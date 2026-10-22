@@ -39,9 +39,12 @@ private final class RecordingHarness {
     /// Arming and starting a recording can take seconds while the whole suite runs at once.
     static let patience: Duration = .seconds(20)
 
-    init() {
+    /// `hotkeys` is the `hotkeys.json` the launch finds: an existing, empty list by default; nil for a new install,
+    /// which starts with ⌘1–⌘5.
+    init(hotkeys: HotkeySettings? = HotkeySettings()) {
         let store = SettingsStore(directory: directory, debounce: .milliseconds(10))
         store.save(AppState(prologueCompleted: true))
+        if let hotkeys { store.save(hotkeys) }
         let services = ToolServices(
             settings: store, displays: DisplayDirectory(screenProvider: { [harnessDisplay] }),
             minecraft: MinecraftLocator(source: StaticMinecraftWindowSource(instances: [])),
@@ -100,6 +103,20 @@ struct AppModelRecordingTests {
         #expect(harness.hud.lines == ["Recording started"])
         await harness.recording.stopRecording(explanation: nil)
         harness.recording.delete()
+    }
+
+    /// A new install's key set gives Screen Recording ⌘5 with its one action, so once hotkeys are on, ⌘5 records,
+    /// stops and asks like the key its page sets; answering turns the tool off.
+    @Test func aNewInstallsCommandFiveRecordsWithTheOneAction() async throws {
+        let harness = RecordingHarness(hotkeys: nil)
+        let own = try #require(ToolHotkey.own(for: .startStopRecording, in: harness.model.hotkeys.bindings))
+        #expect(own.combo.displayString == "⌘5")
+        harness.model.hotkeys.isEnabled = true
+        #expect(harness.model.hotkeys.status(of: own.id) == .registered)
+        #expect(await harness.recordByKey(own.id))
+        #expect(harness.question.presented == 1)
+        harness.recording.delete()
+        #expect(!harness.model.isOn(.screenRecording))
     }
 
     @Test func whileRecordingTheKeyStopsAndAsks() async throws {
