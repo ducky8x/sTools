@@ -96,10 +96,10 @@ struct AppModelPrologueTests {
     @Test func aLaunchMidwaySavedByABuildWithoutTheTimerTrialResumesAtTheSameStep() async throws {
         let harness = Harness()
         await harness.store.flush()
-        try Data(#"{"version":1,"value":{"prologueCompleted":false,"prologueStep":9}}"#.utf8)
+        try Data(#"{"version":1,"value":{"prologueCompleted":false,"prologueStep":10}}"#.utf8)
             .write(to: harness.directory.appending(path: "appState.json"))
         harness.model.beginPrologue()
-        #expect(harness.model.prologue?.step == .backdropTrial)
+        #expect(harness.model.prologue?.step == .nbbOverlayTrial)
     }
 
     @Test func skippingTheIntroductionSwitchesTrialToolsOff() throws {

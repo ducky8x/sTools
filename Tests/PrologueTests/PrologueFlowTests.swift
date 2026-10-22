@@ -18,9 +18,36 @@ struct PrologueFlowTests {
         #expect(PrologueStep.timerTrial.rawValue == AppState.timerTrialIndex)
         #expect(PrologueStep.timerTrial.trial == .timerOverlay)
         #expect(PrologueStep.timerTrial.part == .trials)
-        #expect(PrologueStep.backdropTrial.number == 11)
-        #expect(PrologueTrial.allCases == [.crosshair, .timerOverlay, .windowBackdrop, .nbbOverlay, .screenRecording, .keyRebinder])
         #expect(PrologueStep.allCases.compactMap(\.trial) == PrologueTrial.allCases)
+    }
+
+    /// The Trials are shown in sidebar order (revision 12), while each step keeps the index saved progress names it by.
+    @Test func theTrialsFollowTheSidebarAndKeepTheirSavedIndices() {
+        #expect(PrologueTrial.allCases == [.crosshair, .timerOverlay, .nbbOverlay, .screenRecording, .windowBackdrop, .keyRebinder])
+        #expect(PrologueStep.allCases.compactMap(\.trial) == PrologueTrial.allCases)
+        #expect([PrologueStep.crosshairTrial, .timerTrial, .nbbOverlayTrial, .recordingTrial, .backdropTrial, .keyRebinderTrial]
+            .map(\.number) == [9, 10, 11, 12, 13, 14])
+        // The saved indices are the ones every earlier build wrote.
+        #expect(PrologueStep.allCases.map(\.rawValue) == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 10, 13, 14, 15])
+        #expect(PrologueStep.backdropTrial.rawValue == AppState.backdropTrialIndex)
+        #expect(PrologueStep.nbbOverlayTrial.rawValue == AppState.nbbOverlayTrialIndex)
+        #expect(Set(PrologueStep.allCases.map(\.rawValue)) == Set(0..<16))
+    }
+
+    /// A step saved by a build that showed the old trial order (Crosshair, Timer Overlay, Window Backdrop, NBB
+    /// Overlay, Screen Recording, Key Rebinder) resumes where Continue still reaches every step that build hadn't
+    /// shown yet, and at the saved step itself wherever that's so.
+    @Test(arguments: 0..<16)
+    func aStepSavedInTheOldTrialOrderLeavesNoTrialUnseen(saved: Int) {
+        let oldOrder = (0..<16).map { PrologueStep(savedIndex: $0) }
+        let notYetShown = Set(oldOrder.drop { $0.rawValue != saved })
+        var flow = PrologueFlow(resumingAt: AppState.step(fromOldTrialOrder: saved))
+        var reached: Set<PrologueStep> = [flow.step]
+        while flow.next(), !flow.isEnded { reached.insert(flow.step) }
+        #expect(notYetShown.isSubset(of: reached))
+        if saved != AppState.backdropTrialIndex {
+            #expect(AppState.step(fromOldTrialOrder: saved) == saved)
+        }
     }
 
     @Test func startsAtTheGreeting() {
@@ -30,9 +57,25 @@ struct PrologueFlowTests {
         #expect(flow.outcome == nil)
     }
 
-    @Test(arguments: [0, 3, 9, 14, 15])
+    @Test(arguments: [0, 3, 9, 10, 11, 12, 14, 15])
     func resumesAtASavedStep(index: Int) {
         #expect(PrologueFlow(resumingAt: index).step.rawValue == index)
+    }
+
+    /// Continue and Back follow the order shown, not the saved indices: NBB Overlay's trial follows the Timer trial.
+    @Test func continueAndBackFollowTheOrderShown() {
+        var flow = PrologueFlow(resumingAt: PrologueStep.timerTrial.rawValue)
+        var shown: [PrologueStep] = []
+        for _ in 0..<4 {
+            flow.next()
+            shown.append(flow.step)
+        }
+        #expect(shown == [.nbbOverlayTrial, .recordingTrial, .backdropTrial, .keyRebinderTrial])
+        flow.back()
+        #expect(flow.step == .backdropTrial)
+        flow.back()
+        #expect(flow.step == .recordingTrial)
+        #expect(flow.progress == Double(12) / 16)
     }
 
     @Test(arguments: [-1, 16, 99])

@@ -370,6 +370,20 @@ struct AppModelRecordingTests {
         #expect(harness.savedFileNames().count == 1)
         #expect(!harness.model.isOn(.screenRecording))
     }
+
+    /// Settings ▸ Reset All Tools resets Screen Recording's settings but keeps its sources and layout, as its
+    /// confirmation says (`AppModel.resetAllToolsMessage`).
+    @Test func resetAllToolsKeepsTheSourcesAndLayout() {
+        let harness = RecordingHarness()
+        harness.recording.updateLayout { $0.add(AudioSource(kind: .microphone(uniqueID: "kept"), name: "Microphone")) }
+        let layoutBefore = harness.recording.layout
+
+        harness.model.resetAllToolsToDefault()
+
+        #expect(harness.recording.options == RecordingOptions.defaultValue)
+        #expect(harness.recording.layout == layoutBefore)
+        #expect(harness.recording.layout.audioSources.contains { $0.name == "Microphone" })
+    }
 }
 
 /// The recording question takes the keyboard over Minecraft without making sTools the active app (spec 5.4.4), yet

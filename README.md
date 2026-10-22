@@ -23,7 +23,7 @@
   <a href="#license">License</a>
 </p>
 
-sTools puts the tools around a speedrun into one native Mac app: Ninjabrain Bot's answer drawn over the game, a backdrop that hides everything behind Minecraft, a crosshair placed to the pixel, a countdown that pops up over the game on one key, a screen recorder that lays out a whole scene, and a visual editor for your Karabiner-Elements rebinds.
+sTools puts the tools around a speedrun into one native Mac app: a crosshair placed to the pixel, a countdown that pops up over the game on one key, Ninjabrain Bot's answer drawn over the game, a screen recorder that lays out a whole scene, a backdrop that hides everything behind Minecraft, and a visual editor for your Karabiner-Elements rebinds.
 
 It's built for the game first. Overlays are click-through and never take focus from Minecraft, and anything with a reasonable alternative is a setting. The app itself is always dark, set in serif type with gold accents.
 
