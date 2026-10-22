@@ -35,22 +35,14 @@ It's built for the game first. Overlays are click-through and never take focus f
 
 | | Tool | What it does | Needs |
 |---|------|--------------|-------|
-| 1 | [NBB Overlay](#nbb-overlay) | Shows Ninjabrain Bot's current result over the game. | Accessibility, Ninjabrain Bot |
-| 2 | [Window Backdrop](#window-backdrop) | Hides everything behind the Minecraft window. | Accessibility |
-| 3 | [Crosshair](#crosshair) | Draws a crosshair at the exact center of the screen. | Accessibility |
-| 4 | [Timer Overlay](#timer-overlay) | Pops a countdown over the game on one key, rings and leaves. | Accessibility |
-| 5 | [Screen Recording](#screen-recording) | Records Minecraft and your other sources on one canvas. | Accessibility, Screen & System Audio Recording |
+| 1 | [Crosshair](#crosshair) | Draws a crosshair at the exact center of the screen. | Accessibility |
+| 2 | [Timer Overlay](#timer-overlay) | Pops a countdown over the game on one key, rings and leaves. | Accessibility |
+| 3 | [NBB Overlay](#nbb-overlay) | Shows Ninjabrain Bot's current result over the game. | Accessibility, Ninjabrain Bot |
+| 4 | [Screen Recording](#screen-recording) | Records Minecraft and your other sources on one canvas. | Accessibility, Screen & System Audio Recording |
+| 5 | [Window Backdrop](#window-backdrop) | Hides everything behind the Minecraft window. | Accessibility |
 | 6 | [Key Rebinder](#key-rebinder) | Shows and edits your rebinds on a drawn keyboard and mouse. | Karabiner-Elements 16+, to edit |
 
 Each tool has its own page: a live preview where it helps, then its settings, with the rarely needed ones under **Advanced**. Switch tools on and off from the sidebar or their pages.
-
-### NBB Overlay
-
-Reads Ninjabrain Bot's local API and shows its current result in a small plate over the game: predictions with certainty and distance, your eye throws, the boat state, and its blind, divine and all-advancements modes. It shows only what Ninjabrain Bot itself shows and fades out when you reset Ninjabrain Bot. Drag it into place with snapping or type its position, and set its size and opacity.
-
-### Window Backdrop
-
-Covers the display Minecraft is on, edge to edge and behind the menu bar and Dock, and keeps the backdrop directly under the Minecraft window, so every other window disappears. Fill it with a color, a linear or radial gradient, or an image, and cover your other displays too, each with its own fill. Clicking it does nothing. Switch to another app and its windows come forward as usual; switch back and the backdrop is under Minecraft again.
 
 ### Crosshair
 
@@ -64,9 +56,17 @@ Draws a click-through crosshair at the exact center of Minecraft's display, abov
 
 Press your Start-timer key and a countdown pops up over the game, 2:30 by default or any length you set. At zero it rings an alarm, pulses with each ring and leaves by itself; press again to restart, or twice quickly to cancel and switch Timer Overlay off, which sTools confirms over the game (the next press switches it back on and starts again). Choose a look (a plate, digits only or a compact pill) and its colors, font and size, and an alarm from macOS's sounds, four sTools alarms or your own files. Drag it into place with guides that show when it covers the hotbar, chat, toasts or anything else the rules need visible. It can also count down on the Dock icon, and it shows in your sTools recordings, with the alarm on its own track if you want it.
 
+### NBB Overlay
+
+Reads Ninjabrain Bot's local API and shows its current result in a small plate over the game: predictions with certainty and distance, your eye throws, the boat state, and its blind, divine and all-advancements modes. It shows only what Ninjabrain Bot itself shows and fades out when you reset Ninjabrain Bot. Drag it into place with snapping or type its position, and set its size and opacity.
+
 ### Screen Recording
 
 Records Minecraft with sTools' overlays and backdrop, plus any windows, displays, cameras and web pages you arrange on one canvas. Sources don't have to be visible on your real screen. Sound from Minecraft, other apps and microphones is saved as one mixed track plus a track per source. Choose .mp4 or .mov, H.264 or HEVC, 30 or 60 fps. Files are written crash-safe. One key switches Screen Recording on and starts recording, and stops it when pressed again. A small panel then asks for a name and Save or Delete right over the game, ready to type in without leaving it, and Screen Recording switches off.
+
+### Window Backdrop
+
+Covers the display Minecraft is on, edge to edge and behind the menu bar and Dock, and keeps the backdrop directly under the Minecraft window, so every other window disappears. Fill it with a color, a linear or radial gradient, or an image, and cover your other displays too, each with its own fill. Clicking it does nothing. Switch to another app and its windows come forward as usual; switch back and the backdrop is under Minecraft again.
 
 ### Key Rebinder
 
@@ -104,7 +104,7 @@ The Prologue walks you through each one, and a tool's page offers **Allow…** w
 
 | Permission | Why | Used by |
 |------------|-----|---------|
-| Accessibility | Finds the Minecraft window and follows it: where it is, which display it's on, whether it has focus. | NBB Overlay, Window Backdrop, Crosshair, Timer Overlay, Screen Recording |
+| Accessibility | Finds the Minecraft window and follows it: where it is, which display it's on, whether it has focus. | Crosshair, Timer Overlay, NBB Overlay, Screen Recording, Window Backdrop |
 | Screen & System Audio Recording | Records Minecraft and the windows and displays you add. macOS may ask you to reopen sTools after you allow it. | Screen Recording |
 | App audio | Records the sound of Minecraft and other apps. | Screen Recording |
 | Microphone | Records your voice, once you add a microphone. | Screen Recording |
