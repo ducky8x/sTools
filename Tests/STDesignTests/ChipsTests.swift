@@ -102,6 +102,26 @@ struct ChipsRenderTests {
     }
 }
 
+/// Both hotkey editors show "Does" beside their action chips (Home's and the Key Rebinder's key panel), as text you
+/// can see; the chips name their group with it for VoiceOver.
+@Suite("STLabeledChips rendering")
+@MainActor
+struct LabeledChipsRenderTests {
+    private let size = CGSize(width: 320, height: 90)
+
+    @Test func theLabelIsDrawnBesideTheChips() throws {
+        let chips = STChips(selection: .constant(["nbb"]), options: actions, label: "Does")
+        let bare = try #require(render(chips, size: size))
+        let labeled = try #require(render(STLabeledChips("Does") { chips }, size: size))
+        let held = try #require(render(STLabeledChips("Hold") { chips }, size: size))
+        #expect(labeled != bare)
+        #expect(labeled != held)
+        // The label alone, with nothing beside it, still draws.
+        let labelOnly = try #require(render(STLabeledChips("Does") { Color.clear.frame(width: 10, height: 10) }, size: size))
+        #expect(labelOnly != render(Color.clear, size: size))
+    }
+}
+
 @Suite("STNoteLine rendering")
 @MainActor
 struct NoteLineRenderTests {
