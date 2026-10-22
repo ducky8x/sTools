@@ -78,22 +78,14 @@ enum TrialStartTimerKey {
         bindings.first { $0.actions == [.startTimer] }
     }
 
-    /// Sets the key: changes that hotkey's key, or adds it at the end of the list. While Hotkeys are off it asks
-    /// before turning them on, and keeps nothing if the answer is no. Nil clears the key.
+    /// Sets the key: changes that hotkey's key, or adds it in Timer Overlay's sidebar place among the tools' own
+    /// hotkeys, as its page would. While Hotkeys are off it asks before turning them on, and keeps nothing if the
+    /// answer is no. Nil clears the key.
     static func set(_ combo: HotkeyCombo?, in model: AppModel) {
-        let center = model.hotkeys
-        switch (combo, own(in: center.bindings)) {
-        case (let combo?, let own?):
+        if combo != nil {
             guard turnOnHotkeys(model) else { return }
-            center.update(own.id, combo: combo)
-        case (let combo?, nil):
-            guard turnOnHotkeys(model) else { return }
-            center.add(combo: combo, actions: [.startTimer])
-        case (nil, let own?):
-            center.remove(own.id)
-        case (nil, nil):
-            break
         }
+        model.hotkeys.setOwnHotkey(combo, for: .startTimer)
     }
 
     /// Why the recorder refuses `combo`, with the same rules as Home's editor. Nil when it's fine.

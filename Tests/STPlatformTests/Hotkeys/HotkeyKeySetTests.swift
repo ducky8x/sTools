@@ -230,12 +230,30 @@ struct HotkeyKeySetTests {
         #expect(center.bindings[1].id == crosshairKey)
         #expect(center.bindings[1].combo == combo(98))
         #expect(registrar.active[crosshairKey] == combo(98))
+        await store.flush()
+        let afterChange = store.writeCount
+        center.setOwnHotkey(combo(98), for: crosshair)
+        await store.flush()
+        #expect(store.writeCount == afterChange, "the key it already has changes nothing")
 
         center.setOwnHotkey(nil, for: crosshair)
         #expect(center.bindings.map(\.id) == [nbbKey, timerKey, custom])
         #expect(registrar.active[crosshairKey] == nil)
         center.setOwnHotkey(nil, for: crosshair)
         #expect(center.bindings.map(\.id) == [nbbKey, timerKey, custom])
+    }
+
+    /// Clearing a key a tool doesn't have leaves the list as it is, in whatever order it has.
+    @MainActor
+    @Test func clearingAMissingOwnHotkeyMovesNothing() async {
+        let (store, directory) = temporaryStore()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let custom = HotkeyBinding(combo: ctrlOptC, actions: [crosshair, nbb])
+        let nbbKey = HotkeyBinding(combo: combo(18, .command), actions: [nbb])
+        store.save(HotkeySettings(isEnabled: true, bindings: [custom, nbbKey]))
+        let center = HotkeyCenter(store: store, registrar: KeySetRegistrar(), toolStates: { [:] }, handler: { _ in })
+        center.setOwnHotkey(nil, for: crosshair)
+        #expect(center.bindings == [custom, nbbKey])
     }
 
     // MARK: A new install
