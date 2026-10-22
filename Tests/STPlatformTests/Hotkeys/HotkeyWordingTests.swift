@@ -122,15 +122,27 @@ struct HotkeyWordingTests {
     /// The line every other place that edits a hotkey shows (a tool page's Hotkey row, Timer Overlay's Key row, the
     /// Key Rebinder's key panel), so what Home ▸ Hotkeys sets is in view there too.
     @Test func theLineSaysWhereHotkeysWorkAndTheKeySet() {
-        #expect(HotkeyWording.whereAndKeySet(scope: .sToolsAndMinecraft, keySet: .command)
+        #expect(HotkeyWording.whereAndKeySet(scope: .sToolsAndMinecraft, keySet: .command, accessibilityGranted: true)
             == "Hotkeys work in sTools and Minecraft · Key set: ⌘1–⌘5")
-        #expect(HotkeyWording.whereAndKeySet(scope: .everywhere, keySet: .functionKeys)
+        #expect(HotkeyWording.whereAndKeySet(scope: .everywhere, keySet: .functionKeys, accessibilityGranted: true)
             == "Hotkeys work in every app · Key set: F13–F17")
-        #expect(HotkeyWording.whereAndKeySet(scope: .sToolsAndMinecraft, keySet: .noKeys)
+        #expect(HotkeyWording.whereAndKeySet(scope: .sToolsAndMinecraft, keySet: .noKeys, accessibilityGranted: true)
             == "Hotkeys work in sTools and Minecraft · Key set: None")
-        #expect(HotkeyWording.whereAndKeySet(scope: .everywhere, keySet: nil) == "Hotkeys work in every app · Key set: Custom")
+        #expect(HotkeyWording.whereAndKeySet(scope: .everywhere, keySet: nil, accessibilityGranted: true)
+            == "Hotkeys work in every app · Key set: Custom")
         #expect(HotkeyKeySet.name(of: nil) == "Custom")
         #expect(HotkeyKeySet.name(of: .control) == "⌃1–⌃5")
+    }
+
+    /// Recognizing Minecraft needs Accessibility, so without it In sTools and Minecraft works only in sTools, as Home
+    /// says under Where hotkeys work; Everywhere doesn't need it.
+    @Test func withoutAccessibilityTheLineSaysOnlyInSTools() {
+        #expect(HotkeyWording.whereAndKeySet(scope: .sToolsAndMinecraft, keySet: .command, accessibilityGranted: false)
+            == "Hotkeys work only in sTools until Accessibility is allowed · Key set: ⌘1–⌘5")
+        #expect(HotkeyWording.whereAndKeySet(scope: .sToolsAndMinecraft, keySet: nil, accessibilityGranted: false)
+            == "Hotkeys work only in sTools until Accessibility is allowed · Key set: Custom")
+        #expect(HotkeyWording.whereAndKeySet(scope: .everywhere, keySet: .functionKeys, accessibilityGranted: false)
+            == "Hotkeys work in every app · Key set: F13–F17")
     }
 
     // MARK: Spoken names

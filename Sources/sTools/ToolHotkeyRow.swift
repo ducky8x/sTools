@@ -125,8 +125,11 @@ struct ToolHotkeyRow: View {
     }
 
     /// Where hotkeys work and the key set the tools follow, as Home ▸ Hotkeys sets them: "Hotkeys work in sTools and
-    /// Minecraft · Key set: ⌘1–⌘5".
-    var whereLine: String { HotkeyWording.whereAndKeySet(scope: hotkeys.scope, keySet: hotkeys.keySet) }
+    /// Minecraft · Key set: ⌘1–⌘5", or only in sTools while Accessibility is missing, as Home says.
+    var whereLine: String {
+        HotkeyWording.whereAndKeySet(scope: hotkeys.scope, keySet: hotkeys.keySet,
+                                     accessibilityGranted: model.accessibilityGranted)
+    }
 
     /// Change…: Home ▸ Hotkeys, where both are set.
     func changeWhereHotkeysWork() { model.openHotkeys() }
