@@ -252,15 +252,16 @@ struct OverlayPanelWindowServerTests {
     }
 }
 
-/// Counts `capturableVisibilityDidChange` posts for one panel. Posts arrive synchronously on the main thread.
+/// Counts one notification's posts for one panel, `capturableVisibilityDidChange` by default. Posts arrive
+/// synchronously on the main thread.
 @MainActor
 private final class VisibilityPosts {
     private(set) var count = 0
     private var token: NSObjectProtocol?
 
-    init(for panel: OverlayPanel) {
+    init(for panel: OverlayPanel, name: Notification.Name = OverlayPanel.capturableVisibilityDidChange) {
         token = NotificationCenter.default.addObserver(
-            forName: OverlayPanel.capturableVisibilityDidChange, object: panel, queue: nil
+            forName: name, object: panel, queue: nil
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.count += 1 }
         }
@@ -333,6 +334,29 @@ struct OverlayPanelVisibilityPostTests {
         panel.show(frame: try offScreenFrame())
         panel.hide()
         #expect(posts.count == 0)
+    }
+
+    /// A whole-display source leaves out each one as it shows.
+    @Test func aPanelExcludedFromCapturePostsOnlyItsShowing() throws {
+        let panel = OverlayPanel(isExcludedFromCapture: true)
+        let shows = VisibilityPosts(for: panel, name: OverlayPanel.excludedFromCaptureDidShow)
+        defer { shows.stop(); panel.hide() }
+        panel.show(frame: try offScreenFrame())
+        panel.show(frame: try offScreenFrame(dx: 20))
+        #expect(shows.count == 1)
+        panel.hide()
+        #expect(shows.count == 1)
+        panel.show(frame: try offScreenFrame())
+        #expect(shows.count == 2)
+    }
+
+    @Test func aCapturablePanelNeverPostsTheExcludedShowing() throws {
+        let panel = OverlayPanel()
+        let shows = VisibilityPosts(for: panel, name: OverlayPanel.excludedFromCaptureDidShow)
+        defer { shows.stop(); panel.hide() }
+        panel.show(frame: try offScreenFrame())
+        panel.hide()
+        #expect(shows.count == 0)
     }
 
     @Test func aBackdropPostsLikeAnOverlay() throws {

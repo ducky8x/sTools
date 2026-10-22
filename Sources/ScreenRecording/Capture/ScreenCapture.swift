@@ -48,13 +48,15 @@ public final class ScreenCapture: NSObject, VideoCapture, SCStreamOutput, SCStre
     private struct State {
         var stream: StreamBox?
         var deliver: (@Sendable (VideoCaptureEvent) -> Void)?
-        var includedWindowIDs: Set<UInt32> = []
+        /// The windows the filter names: the ones the base layer includes, or the sTools panels a display leaves out.
+        var filterWindowIDs: Set<UInt32> = []
         /// The size the stream was last asked to run at.
         var requestedSize: PixelSize?
-        /// The base layer's observer of overlay panels showing and hiding.
+        /// The observer of overlay panels showing and hiding (the base layer) or of excluded panels showing (a
+        /// display).
         var overlayObserver: ObserverBox?
-        /// Numbers the base layer's refreshes in the order they read the window list, so an older one that
-        /// finishes late never replaces a newer one's filter.
+        /// Numbers the filter's refreshes in the order they read the window list, so an older one that finishes
+        /// late never replaces a newer one's filter.
         var lastRefresh = 0
         var appliedRefresh = 0
         var overlayDebounce = OverlayRefreshDebounce()
@@ -85,11 +87,15 @@ public final class ScreenCapture: NSObject, VideoCapture, SCStreamOutput, SCStre
         state.withLock {
             $0.stream = box
             $0.deliver = deliver
-            $0.includedWindowIDs = included
+            $0.filterWindowIDs = included
             $0.requestedSize = size
         }
         try await box.stream.startCapture()
-        if case .base = target { startRefreshing() }
+        switch target {
+        case .base: startRefreshing(on: OverlayPanel.capturableVisibilityDidChange, sweeping: true)
+        case .display: startRefreshing(on: OverlayPanel.excludedFromCaptureDidShow, sweeping: false)
+        case .window: break
+        }
     }
 
     private static func configuration(size: PixelSize, frameRate: Int, showsCursor: Bool) -> SCStreamConfiguration {
@@ -134,8 +140,8 @@ public final class ScreenCapture: NSObject, VideoCapture, SCStreamOutput, SCStre
 
     // MARK: Filters
 
-    /// `excluded` lists sTools panels that must never be recorded (the hotkey confirmation); a whole display
-    /// would otherwise pick them up.
+    /// `excluded` lists sTools panels that must never be recorded (the hotkey confirmation, Timer Overlay with "Show in
+    /// recordings" off); a whole display would otherwise pick them up. Also returns the windows the filter names.
     private func makeFilter(_ content: SCShareableContent, overlays: Set<UInt32>,
                             excluded: Set<UInt32> = []) throws -> (SCContentFilter, Set<UInt32>) {
         switch target {
@@ -145,7 +151,7 @@ public final class ScreenCapture: NSObject, VideoCapture, SCStreamOutput, SCStre
         case .display(let id):
             guard let display = content.displays.first(where: { $0.displayID == id }) else { throw CaptureError.notFound("The display") }
             let hidden = content.windows.filter { excluded.contains($0.windowID) }
-            return (SCContentFilter(display: display, excludingWindows: hidden), [])
+            return (SCContentFilter(display: display, excludingWindows: hidden), Set(hidden.map(\.windowID)))
         case .base(let minecraftID):
             guard let minecraft = content.windows.first(where: { $0.windowID == minecraftID }) else {
                 throw CaptureError.notFound("Minecraft\u{2019}s window")
@@ -168,20 +174,20 @@ public final class ScreenCapture: NSObject, VideoCapture, SCStreamOutput, SCStre
 
     /// sTools' overlays come and go as tools are switched and as Timer Overlay pops up. The base layer's window list
     /// follows each panel that shows or hides (`OverlayPanel.capturableVisibilityDidChange`) about 50 ms later, and
-    /// every 2 s as a backstop (plan decision 1).
-    private func startRefreshing() {
-        let observer = NotificationCenter.default.addObserver(
-            forName: OverlayPanel.capturableVisibilityDidChange, object: nil, queue: nil
-        ) { [weak self] _ in
+    /// every 2 s as a backstop (plan decision 1). A display leaves out each panel excluded from capture that shows
+    /// (`OverlayPanel.excludedFromCaptureDidShow`) the same way.
+    private func startRefreshing(on name: Notification.Name, sweeping: Bool) {
+        let observer = NotificationCenter.default.addObserver(forName: name, object: nil, queue: nil) { [weak self] _ in
             self?.overlaysChanged()
         }
         let box = ObserverBox(observer)
         state.withLock { $0.overlayObserver = box }
+        guard sweeping else { return }
         refresher = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(2))
                 guard let self, !Task.isCancelled else { return }
-                await self.refreshBaseLayer()
+                await self.refreshFilter()
             }
         }
     }
@@ -197,22 +203,24 @@ public final class ScreenCapture: NSObject, VideoCapture, SCStreamOutput, SCStre
         guard let delay else { return }
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(delay))
-            await self?.refreshBaseLayer()
+            await self?.refreshFilter()
         }
     }
 
-    /// Reads the overlays on screen and gives the stream a new filter when the windows it includes changed.
-    private func refreshBaseLayer() async {
+    /// Reads sTools' panels and gives the stream a new filter when the windows it names changed.
+    private func refreshFilter() async {
         guard let refresh = state.withLock({ state -> Int? in
             guard state.stream != nil else { return nil }
             state.lastRefresh += 1
             return state.lastRefresh
         }) else { return }
-        let overlays = await MainActor.run { Set(OverlayPanel.visibleWindowNumbers()) }
+        let (overlays, excluded) = await MainActor.run {
+            (Set(OverlayPanel.visibleWindowNumbers()), Set(OverlayPanel.captureExcludedWindowNumbers()))
+        }
         guard let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false),
-              let (filter, included) = try? makeFilter(content, overlays: overlays) else { return }
+              let (filter, named) = try? makeFilter(content, overlays: overlays, excluded: excluded) else { return }
         let box: StreamBox? = state.withLock { state in
-            guard refresh > state.appliedRefresh, state.includedWindowIDs != included, let stream = state.stream else { return nil }
+            guard refresh > state.appliedRefresh, state.filterWindowIDs != named, let stream = state.stream else { return nil }
             state.appliedRefresh = refresh
             return stream
         }
@@ -220,7 +228,7 @@ public final class ScreenCapture: NSObject, VideoCapture, SCStreamOutput, SCStre
         do {
             try await box.stream.updateContentFilter(filter)
             state.withLock { state in
-                if state.appliedRefresh == refresh { state.includedWindowIDs = included }
+                if state.appliedRefresh == refresh { state.filterWindowIDs = named }
             }
         } catch {
             // The next post or sweep tries again.

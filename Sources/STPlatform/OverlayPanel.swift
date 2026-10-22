@@ -92,20 +92,30 @@ public final class OverlayPanel: NSPanel {
     /// `visibleWindowNumbers()` again at once instead of at its next sweep, so a panel built per pop-up (Timer
     /// Overlay's) is in the recording from its first frames. Moves and re-orders post nothing: the NBB Overlay
     /// shows its panel on every update and the backdrop re-orders on every Minecraft activation. Panels excluded
-    /// from capture never post.
+    /// from capture never post it; they post `excludedFromCaptureDidShow` instead.
     nonisolated public static let capturableVisibilityDidChange =
         Notification.Name("sTools.OverlayPanel.capturableVisibilityDidChange")
+
+    /// Posted on the main thread, with the panel as its object, when a panel excluded from capture is shown while it
+    /// was hidden. A whole-display source then adds it to the windows it leaves out: a panel built per pop-up (Timer
+    /// Overlay's with "Show in recordings" off) has a window number its stream has never seen.
+    nonisolated public static let excludedFromCaptureDidShow =
+        Notification.Name("sTools.OverlayPanel.excludedFromCaptureDidShow")
 
     /// Whether the panel was on screen when its visibility was last checked.
     private var wasVisible = false
 
-    /// Posts `capturableVisibilityDidChange` when the panel's visibility differs from the last check.
+    /// Posts `capturableVisibilityDidChange`, or `excludedFromCaptureDidShow`, when the panel's visibility differs
+    /// from the last check.
     private func noteVisibility() {
         let visible = isVisible
         guard visible != wasVisible else { return }
         wasVisible = visible
-        guard !isExcludedFromCapture else { return }
-        NotificationCenter.default.post(name: Self.capturableVisibilityDidChange, object: self)
+        if !isExcludedFromCapture {
+            NotificationCenter.default.post(name: Self.capturableVisibilityDidChange, object: self)
+        } else if visible {
+            NotificationCenter.default.post(name: Self.excludedFromCaptureDidShow, object: self)
+        }
     }
 
     // Every way a panel is ordered in or out checks. AppKit may route one through another, and the check posts
