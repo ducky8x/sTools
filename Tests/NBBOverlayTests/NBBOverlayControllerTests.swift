@@ -146,10 +146,14 @@ struct NBBOverlayControllerTests {
     /// ducky's case: an old copy holds the API with nothing in it, and the newer copy in use has a result. The overlay
     /// follows the newer copy, read from its window; picking the old one switches back to the API.
     @MainActor @Test func theOverlayFollowsTheChosenCopyReadFromItsWindow() async {
-        final class FakeWindow: NBBWindowReading {
-            var reads: [Int32] = []
-            func read(pid: Int32) -> NBBWindowSnapshot? {
-                reads.append(pid)
+        /// Records each read and whether it ran on the main thread.
+        final class FakeWindow: NBBWindowReading, @unchecked Sendable {
+            private let lock = NSLock()
+            private var recorded: [(pid: Int32, onMainThread: Bool)] = []
+            var reads: [Int32] { lock.withLock { recorded.map(\.pid) } }
+            var readsOnMainThread: Int { lock.withLock { recorded.filter(\.onMainThread).count } }
+            func read(pid: Int32) async -> NBBWindowSnapshot? {
+                lock.withLock { recorded.append((pid, pthread_main_np() != 0)) }
                 return NBBWindowSnapshot(stronghold: NBBOverlayControllerTests.result, messages: ["A note from the window."])
             }
         }
@@ -164,12 +168,15 @@ struct NBBOverlayControllerTests {
             copies: monitor, windowReader: window, windowPollInterval: .milliseconds(20))
         controller.setEnabled(true)
         defer { controller.setEnabled(false) }
+        await waitUntil { controller.readsWindow && controller.windowSnapshot != nil }
         #expect(controller.readsWindow)
         #expect(window.reads.first == 92616)
         #expect(controller.stronghold == Self.result)
         #expect(controller.isReachable)
         #expect(controller.previewMessages.map(\.text) == ["A note from the window."])
         #expect(controller.isOverlayVisible)
+        await waitUntil { window.reads.count >= 3 }
+        #expect(window.reads.count >= 3 && window.readsOnMainThread == 0, "the window is read off the main actor")
 
         monitor.choice = .copy(873)
         await waitUntil { controller.windowSnapshot == nil }
@@ -178,6 +185,26 @@ struct NBBOverlayControllerTests {
         let readsBefore = window.reads.count
         try? await Task.sleep(for: .milliseconds(100))
         #expect(window.reads.count == readsBefore, "the window isn't read while the API copy is followed")
+    }
+
+    /// The copies are looked for only while the tool is on.
+    @MainActor @Test func theCopiesAreScannedOnlyWhileTheToolIsOn() async throws {
+        let scanner = FakeCopiesScanner([NBBCopy(pid: 873, startedAt: Date(timeIntervalSince1970: 10), arguments: [], holdsAPI: true)])
+        let monitor = NBBCopiesMonitor(
+            scanner: scanner, control: FakeCopiesControl(scanner: scanner), interval: .milliseconds(10), idleInterval: .milliseconds(10))
+        let controller = NBBOverlayController(
+            services: makeServices(tempDirectory: tempDirectory()), connection: NBBConnection(source: FakeEventSource([])), copies: monitor)
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(scanner.scanCount == 0)
+        controller.setEnabled(true)
+        await waitUntil { monitor.copies.count == 1 }
+        #expect(monitor.copies.count == 1 && scanner.scanCountOnMainThread == 0)
+        controller.setEnabled(false)
+        #expect(monitor.copies.isEmpty && !monitor.isWatching)
+        try await Task.sleep(for: .milliseconds(30))
+        let scans = scanner.scanCount
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(scanner.scanCount == scans)
     }
 
     /// The page's preview shows only Ninjabrain Bot's live result: the intro's sample stays in the intro (spec 4,

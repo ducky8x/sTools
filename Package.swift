@@ -26,6 +26,9 @@ let package = Package(
             linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]),
         // Measures a recording's CPU cost with fake sources (`swift run -c release RecordingBench`); never shipped.
         .executableTarget(name: "RecordingBench", dependencies: ["ScreenRecording", "STPlatform"], path: "Benchmarks/RecordingBench"),
+        // Measures what watching Ninjabrain Bot costs: the copies scan and a window read (`swift run -c release NBBBench`);
+        // reads only, never shipped.
+        .executableTarget(name: "NBBBench", dependencies: ["NBBOverlay"], path: "Benchmarks/NBBBench"),
         .testTarget(name: "STDesignTests", dependencies: ["STDesign"]),
         .testTarget(name: "STPlatformTests", dependencies: ["STPlatform"]),
         // The test bundle finds Sparkle.framework next to it in the build folder.

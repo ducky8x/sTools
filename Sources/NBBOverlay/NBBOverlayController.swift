@@ -24,10 +24,16 @@ public final class NBBOverlayController: ToolController {
     public let copies: NBBCopiesMonitor
     /// What the followed copy's window shows, while it's read from its window (it doesn't hold the API).
     public private(set) var windowSnapshot: NBBWindowSnapshot?
+    /// Whether a read of a followed copy's window came back since window reading started. Until then the overlay goes
+    /// on showing what it showed (the API's result, or the copy it followed before), so a switch doesn't blink.
+    private(set) var hasReadWindow = false
     @ObservationIgnored private let windowReader: any NBBWindowReading
     @ObservationIgnored private var windowPoll: Task<Void, Never>?
     @ObservationIgnored private var windowPollPID: Int32?
-    /// How often a copy's window is read: twice a second, a few milliseconds each.
+    /// Counts window polls, so a read that ends after its poll stopped or moved to another copy is dropped.
+    @ObservationIgnored private var windowPollGeneration = 0
+    /// How often a copy's window is read: twice a second, off the main actor (about 20 ms each, nearly all of it
+    /// waiting for Ninjabrain Bot's answers).
     @ObservationIgnored private let windowPollInterval: Duration
     @ObservationIgnored private let panel = OverlayPanel(role: .topmost)
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
@@ -79,8 +85,8 @@ public final class NBBOverlayController: ToolController {
     /// Ninjabrain Bot's latest stronghold result: from the API, or from the followed copy's window.
     public var stronghold: NBBEvents.Stronghold? { readsWindow ? windowSnapshot?.stronghold : connection.stronghold }
 
-    /// Whether the overlay follows a copy it reads from its window.
-    public var readsWindow: Bool { copies.readsWindow }
+    /// Whether the overlay follows a copy it reads from its window (once the first read came back).
+    public var readsWindow: Bool { copies.readsWindow && hasReadWindow }
 
     // The window gives predictions, eye throws and notes only; the boat and the other views come over the API.
     private var currentBlind: NBBEvents.Blind? { readsWindow ? nil : connection.blind }
@@ -216,6 +222,7 @@ public final class NBBOverlayController: ToolController {
             _ = copies.copies
             _ = copies.choice
             _ = windowSnapshot
+            _ = hasReadWindow
         } onChange: { [weak self] in
             Task { @MainActor in
                 self?.syncWindowReading()
@@ -226,26 +233,38 @@ public final class NBBOverlayController: ToolController {
     }
 
     /// Reads the followed copy's window twice a second while the tool is on and that copy doesn't hold the API; stops
-    /// otherwise.
+    /// otherwise. The reads run off the main actor, and a snapshot reaches it only when it differs from the last one.
     private func syncWindowReading() {
         let pid = isEnabled && copies.readsWindow ? copies.readCopy?.pid : nil
         guard pid != windowPollPID else { return }
         windowPoll?.cancel()
         windowPoll = nil
         windowPollPID = pid
+        windowPollGeneration += 1
         guard let pid else {
             if windowSnapshot != nil { windowSnapshot = nil }
+            if hasReadWindow { hasReadWindow = false }
             return
         }
-        windowSnapshot = windowReader.read(pid: pid)
-        windowPoll = Task { [weak self, interval = windowPollInterval] in
-            while !Task.isCancelled {
+        let generation = windowPollGeneration
+        let reader = windowReader, interval = windowPollInterval
+        windowPoll = Task.detached(priority: .utility) { [weak self] in
+            var last: NBBWindowSnapshot??
+            while !Task.isCancelled, self != nil {
+                let snapshot = await reader.read(pid: pid)
+                if last != .some(snapshot) {
+                    last = .some(snapshot)
+                    await self?.showWindow(snapshot, generation: generation)
+                }
                 try? await Task.sleep(for: interval)
-                guard !Task.isCancelled, let self, self.windowPollPID == pid else { return }
-                let snapshot = self.windowReader.read(pid: pid)
-                if snapshot != self.windowSnapshot { self.windowSnapshot = snapshot }
             }
         }
+    }
+
+    private func showWindow(_ snapshot: NBBWindowSnapshot?, generation: Int) {
+        guard generation == windowPollGeneration else { return }
+        if snapshot != windowSnapshot { windowSnapshot = snapshot }
+        if !hasReadWindow { hasReadWindow = true }
     }
 
     private func refreshIfEnabled() {
