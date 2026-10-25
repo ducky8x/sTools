@@ -12,8 +12,6 @@ public enum HotkeyKeySet: String, CaseIterable, Hashable, Sendable {
     case control
     /// ⌥1–⌥5.
     case option
-    /// F13–F17.
-    case functionKeys
     /// No key for any tool ("None"; not `none`, which would read as `Optional.none` next to `keySet`).
     case noKeys
 
@@ -32,13 +30,12 @@ public enum HotkeyKeySet: String, CaseIterable, Hashable, Sendable {
         case .command: "⌘1–⌘5"
         case .control: "⌃1–⌃5"
         case .option: "⌥1–⌥5"
-        case .functionKeys: "F13–F17"
         case .noKeys: "None"
         }
     }
 
     /// The set's name as VoiceOver says it, in words like a hotkey's keys (`HotkeyWording.spokenName(for:)`): "Command
-    /// 1 to Command 5", "F13 to F17", "None".
+    /// 1 to Command 5", "Option 1 to Option 5", "None".
     public var spokenTitle: String {
         guard let first = combos.first, let last = combos.last else { return title }
         return "\(HotkeyWording.spokenName(for: first)) to \(HotkeyWording.spokenName(for: last))"
@@ -48,9 +45,8 @@ public enum HotkeyKeySet: String, CaseIterable, Hashable, Sendable {
     /// is nil) because a key was set by hand.
     public static func name(of set: HotkeyKeySet?) -> String { set?.title ?? "Custom" }
 
-    /// The digits 1 to 5 on the main row, and F13 to F17, as virtual key codes.
+    /// The digits 1 to 5 on the main row, as virtual key codes.
     private static let digitKeyCodes: [UInt16] = [18, 19, 20, 21, 23]
-    private static let functionKeyCodes: [UInt16] = [105, 107, 113, 106, 64]
 
     /// The key this set gives the tool whose main action is `action`: nil with None, or for an action that is no
     /// tool's main action.
@@ -61,7 +57,6 @@ public enum HotkeyKeySet: String, CaseIterable, Hashable, Sendable {
         case .command: HotkeyCombo(keyCode: digit, modifiers: .command)
         case .control: HotkeyCombo(keyCode: digit, modifiers: .control)
         case .option: HotkeyCombo(keyCode: digit, modifiers: .option)
-        case .functionKeys: HotkeyCombo(keyCode: Self.functionKeyCodes[index], modifiers: [])
         case .noKeys: nil
         }
     }

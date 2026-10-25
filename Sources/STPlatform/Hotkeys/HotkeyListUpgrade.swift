@@ -100,25 +100,31 @@ enum HotkeyListUpgrade {
 
     // MARK: Screen Recording's keys
 
-    /// The keys earlier builds' key sets gave Screen Recording, fifth in their sidebar order: ⌘5, ⌃5, ⌥5 and F17.
+    /// The keys earlier builds' key sets gave Screen Recording, fifth in their sidebar order: ⌘5, ⌃5, ⌥5 and F17
+    /// (the F13–F17 key set's, removed since).
     private static let earlierKeySetRecordingKeys: Set<HotkeyCombo> = [
         HotkeyCombo(keyCode: 23, modifiers: .command), HotkeyCombo(keyCode: 23, modifiers: .control),
         HotkeyCombo(keyCode: 23, modifiers: .option), HotkeyCombo(keyCode: 64, modifiers: []),
     ]
 
+    /// The key the F13–F17 key set gave Screen Recording in today's sidebar order, F16, before that set was removed
+    /// (spec revision 26). A list on F13–F17 reads as Custom now; F16 still wins here as it did, so such a list loads
+    /// with the keys it had.
+    private static let removedKeySetRecordingKeys: Set<HotkeyCombo> = [HotkeyCombo(keyCode: 106, modifiers: [])]
+
     /// `bindings` with one hotkey whose only action is Screen Recording's. Builds with two Screen Recording actions,
     /// "Toggle Screen Recording" and "Start/stop recording", could leave a key for each; both read as the one action
     /// now (`HotkeyAction`'s decoding), so without this Home would list Screen Recording twice. The one that stays is
-    /// the first on the key a key set gives Screen Recording (⌘4, ⌃4, ⌥4 or F16), so a list that follows a key set
-    /// keeps following it, else the first on the key an earlier build's key set gave it (⌘5, ⌃5, ⌥5 or F17), else the
-    /// first in the list; it keeps its id, key and place. Hotkeys that record together with other things, and every
-    /// other hotkey, stay as they are. Applied to every list that loads (`HotkeySettings`' decoding), whatever its
-    /// version.
+    /// the first on the key a key set gives Screen Recording (⌘4, ⌃4 or ⌥4) or the removed F13–F17 set gave it (F16),
+    /// so a list that follows a key set keeps following it, else the first on the key an earlier build's key set gave
+    /// it (⌘5, ⌃5, ⌥5 or F17), else the first in the list; it keeps its id, key and place. Hotkeys that record
+    /// together with other things, and every other hotkey, stay as they are. Applied to every list that loads
+    /// (`HotkeySettings`' decoding), whatever its version.
     static func withOneScreenRecordingKey(_ bindings: [HotkeyBinding]) -> [HotkeyBinding] {
         let recording = HotkeyAction.startStopRecording
         let indices = bindings.indices.filter { bindings[$0].actions == [recording] }
         guard indices.count > 1 else { return bindings }
-        let keySetKeys = Set(HotkeyKeySet.allCases.compactMap { $0.combo(for: recording) })
+        let keySetKeys = Set(HotkeyKeySet.allCases.compactMap { $0.combo(for: recording) }).union(removedKeySetRecordingKeys)
         let kept = indices.first { keySetKeys.contains(bindings[$0].combo) }
             ?? indices.first { earlierKeySetRecordingKeys.contains(bindings[$0].combo) }
             ?? indices[0]

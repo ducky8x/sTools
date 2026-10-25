@@ -101,6 +101,34 @@ struct HotkeyMigrationTests {
         #expect(settings.scope == .sToolsAndMinecraft)
     }
 
+    /// F13–F17 was a key set until spec revision 26. A list on those keys (F13 Crosshair, F14 Start timer, F15 NBB
+    /// Overlay, F16 Screen Recording, F17 Window Backdrop) loads unchanged, keys, actions, ids and order, whatever its
+    /// version, and the Key set chooser shows Custom.
+    @Test func aListOnF13ToF17LoadsUnchangedAsCustom() async throws {
+        let fKeys = [105, 107, 113, 106, 64]
+        let actions = [["toggle.crosshair"], ["startTimer"], ["toggle.nbbOverlay"], ["startStopRecording"], ["toggle.windowBackdrop"]]
+        let entries = (0..<5).map { entry(ownIDs[$0], keyCode: fKeys[$0], modifiers: 0, actions[$0]) }
+        let fOrder = ["F13 Crosshair", "F14 Start timer", "F15 NBB Overlay", "F16 Screen Recording", "F17 Window Backdrop"]
+        for version in [1, 2, 3] {
+            let settings = try Folder(file(version: version, entries)).load()
+            #expect(listing(settings.bindings) == fOrder, "version \(version)")
+            #expect(settings.bindings.map(\.id.uuidString) == ownIDs, "version \(version)")
+            #expect(HotkeyKeySet.current(in: settings.bindings) == nil, "version \(version)")
+            #expect(HotkeyKeySet.name(of: HotkeyKeySet.current(in: settings.bindings)) == "Custom")
+        }
+
+        let folder = try Folder(file(version: 3, entries))
+        let store = folder.store
+        let registrar = MigrationRegistrar()
+        let center = HotkeyCenter(store: store, registrar: registrar, toolStates: { [:] }, handler: { _ in })
+        #expect(listing(center.bindings) == fOrder)
+        #expect(center.keySet == nil)
+        #expect(Set(registrar.active.values.map(\.displayString)) == ["F13", "F14", "F15", "F16", "F17"])
+        await store.flush()
+        let stored = try folder.stored()
+        #expect((stored.value["bindings"] as? [[String: Any]])?.compactMap { $0["id"] as? String } == ownIDs)
+    }
+
     /// Earlier builds wrote Screen Recording's key as "Toggle Screen Recording", "Start/stop recording" or both: each
     /// reads as the one action, on the same key, in the same place.
     @Test func everyNameEarlierBuildsGaveScreenRecordingKeepsTheList() throws {
@@ -270,9 +298,9 @@ struct HotkeyMigrationTests {
         }
     }
 
-    /// The key a key set gives Screen Recording (⌘4 in ⌘1–⌘5, or ⌃4, ⌥4, F16) stays wherever it is in the list, so
-    /// a list that follows a key set keeps following it; without one, the key an earlier build's key set gave it (⌘5,
-    /// ⌃5, ⌥5, F17) stays.
+    /// The key a key set gives Screen Recording (⌘4 in ⌘1–⌘5, or ⌃4, ⌥4) stays wherever it is in the list, so a list
+    /// that follows a key set keeps following it; without one, the key an earlier build's key set gave it (⌘5, ⌃5, ⌥5,
+    /// F17) stays.
     @Test func theKeySetsScreenRecordingKeyIsTheOneThatStays() throws {
         let f6Toggle = entry(recordingID, keyCode: 97, modifiers: 0, ["toggle.screenRecording"])
         let commandFive = entry(secondRecordingID, keyCode: 23, ["startStopRecording"])
@@ -288,6 +316,28 @@ struct HotkeyMigrationTests {
         let both = try Folder(file(version: 2, [f6Toggle, commandFive, commandFour])).load()
         #expect(listing(both.bindings) == ["⌘4 Screen Recording"], "today's key set wins over an earlier one's")
         #expect(both.bindings.map(\.id.uuidString) == [thirdRecordingID])
+    }
+
+    /// F16, the key the removed F13–F17 key set gave Screen Recording, still stays as a key set's key does, so a list
+    /// that followed that set loads with the keys it had; F17, that set's key in an earlier sidebar order, stays like
+    /// the other earlier keys.
+    @Test func theRemovedFunctionKeySetsScreenRecordingKeyStillStays() throws {
+        let f16 = entry(recordingID, keyCode: 106, modifiers: 0, ["startStopRecording"])
+        let f17 = entry(secondRecordingID, keyCode: 64, modifiers: 0, ["toggle.screenRecording"])
+        let f6 = entry(thirdRecordingID, keyCode: 97, modifiers: 0, ["toggle.screenRecording"])
+        let commandFive = entry(thirdRecordingID, keyCode: 23, ["startStopRecording"])
+
+        let f16AndF17 = try Folder(file(version: 2, [f17, f16])).load()
+        #expect(listing(f16AndF17.bindings) == ["F16 Screen Recording"])
+        #expect(f16AndF17.bindings.map(\.id.uuidString) == [recordingID])
+        #expect(listing(try Folder(file(version: 2, [commandFive, f16])).load().bindings) == ["F16 Screen Recording"],
+                "F16 wins over an earlier key set's key")
+        #expect(listing(try Folder(file(version: 2, [f6, f17])).load().bindings) == ["F17 Screen Recording"],
+                "F17 wins over a key set by hand")
+
+        let commandFour = entry(secondRecordingID, keyCode: 21, ["startStopRecording"])
+        #expect(listing(try Folder(file(version: 2, [f16, commandFour])).load().bindings) == ["F16 Screen Recording"],
+                "between F16 and a key set's key, the first in the list stays")
     }
 
     /// Three keys that only record become one too, and a hotkey that records together with other things isn't one of
