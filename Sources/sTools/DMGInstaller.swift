@@ -153,6 +153,7 @@ final class DMGInstaller {
     static func replace(_ installed: URL, with candidate: URL, verifying signatures: any AppSignatureChecking) throws {
         let files = FileManager.default
         let parent = installed.deletingLastPathComponent()
+        guard !isTemporaryCopy(installed) else { throw DMGInstallError.runningFromTemporaryCopy }
         guard files.isWritableFile(atPath: parent.path) else { throw DMGInstallError.folderNotWritable }
         let staging = parent.appending(path: ".sTools-update-\(UUID().uuidString)", directoryHint: .isDirectory)
         try files.createDirectory(at: staging, withIntermediateDirectories: false)
@@ -166,6 +167,14 @@ final class DMGInstaller {
         removeQuarantine(under: staged)
         guard signatures.isSignedLikeRunningApp(staged) else { throw DMGInstallError.copyDamaged }
         _ = try files.replaceItemAt(installed, withItemAt: staged)
+    }
+
+    /// Whether this copy runs from somewhere it can't be replaced: a copy macOS moved aside on first open (App
+    /// Translocation, for an app opened straight from Downloads or a DMG) or a read-only volume such as the DMG itself.
+    static func isTemporaryCopy(_ app: URL) -> Bool {
+        if app.path.contains("/AppTranslocation/") { return true }
+        let readOnly = (try? app.resourceValues(forKeys: [.volumeIsReadOnlyKey]))?.volumeIsReadOnly
+        return readOnly == true
     }
 
     static func removeQuarantine(under root: URL) {
@@ -193,10 +202,12 @@ final class DMGInstaller {
 }
 
 enum DMGInstallError: Error, Equatable {
-    case folderNotWritable, copyFailed, copyDamaged
+    case runningFromTemporaryCopy, folderNotWritable, copyFailed, copyDamaged
 
     func message(installedApp: URL) -> String {
         switch self {
+        case .runningFromTemporaryCopy:
+            "This sTools is running from the DMG or a temporary copy macOS made. Drag sTools into Applications, open it from there, then install again."
         case .folderNotWritable:
             "sTools can\u{2019}t write to \(installedApp.deletingLastPathComponent().lastPathComponent). Drag sTools from the DMG into it instead."
         case .copyFailed:
@@ -220,18 +231,27 @@ enum DiskImageError: Error, Equatable {
     case attachFailed
 }
 
-/// `hdiutil attach -nobrowse -readonly`: no Finder window, no icon on the desktop, nothing written to the DMG.
+/// `hdiutil attach -nobrowse -readonly`: no Finder window, no icon on the desktop, nothing written to the DMG. macOS 27
+/// calls `hdiutil attach` deprecated, so when it fails, `diskutil image attach --readOnly --nobrowse` (same plist
+/// output) is tried.
 struct HdiutilMounter: DiskImageMounting {
     func attach(_ dmg: URL) async throws -> URL {
-        let output = try await Self.run(["attach", "-nobrowse", "-readonly", "-noautoopen", "-plist", dmg.path])
-        guard let mountPoint = Self.mountPoint(fromPlist: output) else { throw DiskImageError.attachFailed }
-        return mountPoint
+        let attempts: [(String, [String])] = [
+            ("/usr/bin/hdiutil", ["attach", "-nobrowse", "-readonly", "-noautoopen", "-plist", dmg.path]),
+            ("/usr/sbin/diskutil", ["image", "attach", "--plist", "--readOnly", "--nobrowse", dmg.path]),
+        ]
+        for (tool, arguments) in attempts {
+            if let output = try? await Self.run(tool, arguments), let mountPoint = Self.mountPoint(fromPlist: output) {
+                return mountPoint
+            }
+        }
+        throw DiskImageError.attachFailed
     }
 
     func detach(_ mountPoint: URL) async {
-        if (try? await Self.run(["detach", mountPoint.path])) == nil {
-            _ = try? await Self.run(["detach", "-force", mountPoint.path])
-        }
+        if (try? await Self.run("/usr/bin/hdiutil", ["detach", mountPoint.path])) != nil { return }
+        if (try? await Self.run("/usr/sbin/diskutil", ["eject", mountPoint.path])) != nil { return }
+        _ = try? await Self.run("/usr/bin/hdiutil", ["detach", "-force", mountPoint.path])
     }
 
     /// The mount point in `hdiutil attach -plist`'s output.
@@ -241,10 +261,10 @@ struct HdiutilMounter: DiskImageMounting {
         return entities.lazy.compactMap { $0["mount-point"] as? String }.first.map { URL(fileURLWithPath: $0, isDirectory: true) }
     }
 
-    private static func run(_ arguments: [String]) async throws -> Data {
+    private static func run(_ tool: String, _ arguments: [String]) async throws -> Data {
         try await withCheckedThrowingContinuation { continuation in
             let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
+            process.executableURL = URL(fileURLWithPath: tool)
             process.arguments = arguments
             let pipe = Pipe()
             process.standardOutput = pipe
