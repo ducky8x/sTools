@@ -49,7 +49,7 @@ public struct NBBOverlaySettingsView: View {
                 STSettingsRow("Width") {
                     STSlider(value: widthBinding, in: Double(NBBOverlaySettings.widthRange.lowerBound)...Double(NBBOverlaySettings.widthRange.upperBound), label: "Width", valueText: { "\(Int($0)) px" })
                 }
-                STSettingsRow("Aspect ratio") {
+                STSettingsRow("Aspect ratio", combinesForAccessibility: false) {
                     STSegmented(selection: aspectRatioPresetBinding, options: NBBAspectRatioPreset.allCases.map { STSegmentedOption($0, $0.title) })
                 }
                 if aspectRatioPresetBinding.wrappedValue == .custom {

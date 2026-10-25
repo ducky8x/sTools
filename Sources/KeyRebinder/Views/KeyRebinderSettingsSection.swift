@@ -16,7 +16,7 @@ struct KeyRebinderSettingsSection: View {
         VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 0) {
                 if controller.layout != nil {
-                    STSettingsRow("Keyboard") {
+                    STSettingsRow("Keyboard", combinesForAccessibility: false) {
                         VStack(alignment: .trailing, spacing: 8) {
                             STSegmented(selection: shapeBinding, options: KeyboardShape.allCases.map { STSegmentedOption($0, $0.title) })
                             STSegmented(selection: formFactorBinding, options: KeyboardFormFactor.allCases.map { STSegmentedOption($0, $0.title) })
@@ -62,7 +62,7 @@ struct KeyRebinderSettingsSection: View {
                             STSwitch(isOn: $controller.settings.showsHotkeys, label: "Show hotkeys")
                         }
                     }
-                    STSettingsRow("Backups kept") {
+                    STSettingsRow("Backups kept", combinesForAccessibility: false) {
                         STSegmented(selection: backupsBinding, options: KeyRebinderSettings.backupsKeptChoices.map { STSegmentedOption($0, "\($0)") })
                     }
                     Text("Copies of karabiner.json made before every change, in ~/Library/Application Support/sTools/Karabiner Backups.")

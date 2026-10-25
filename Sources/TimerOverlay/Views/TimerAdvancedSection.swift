@@ -82,7 +82,7 @@ struct TimerAdvancedSection: View {
             }
             .transition(.opacity)
         }
-        STSettingsRow("Progress") {
+        STSettingsRow("Progress", combinesForAccessibility: false) {
             STSegmented(selection: $controller.settings.progress, options: [.init(.off, "None"), .init(.bar, "Bar"), .init(.ring, "Ring")])
         }
         STSettingsRow("Color near zero") {
@@ -107,7 +107,7 @@ struct TimerAdvancedSection: View {
     // MARK: - The time
 
     @ViewBuilder private var timeRows: some View {
-        STSettingsRow("Time format") {
+        STSettingsRow("Time format", combinesForAccessibility: false) {
             STSegmented(selection: $controller.settings.timeFormat, options: [
                 .init(.minutesAndSeconds, "MM:SS"), .init(.shortMinutes, "M:SS"), .init(.secondsOnly, "Seconds"),
             ])
@@ -115,7 +115,7 @@ struct TimerAdvancedSection: View {
         STSettingsRow("Tenths in the last 10 s") {
             STSwitch(isOn: $controller.settings.showsTenths, label: "Tenths in the last 10 s")
         }
-        STSettingsRow("At zero, show") {
+        STSettingsRow("At zero, show", combinesForAccessibility: false) {
             STSegmented(selection: $controller.settings.atZero, options: [
                 .init(.holdZero, "00:00"), .init(.word, "A word"), .init(.overtime, "Overtime"),
             ])
@@ -131,7 +131,7 @@ struct TimerAdvancedSection: View {
     // MARK: - Motion
 
     @ViewBuilder private var motionRows: some View {
-        STSettingsRow("Pop-up motion") {
+        STSettingsRow("Pop-up motion", combinesForAccessibility: false) {
             STSegmented(selection: $controller.settings.popUpMotion, options: [
                 .init(.springPop, "Pop"), .init(.fade, "Fade"), .init(.slide, "Slide"), .init(.instant, "None"),
             ])
@@ -180,7 +180,7 @@ struct TimerAdvancedSection: View {
                 .init(.ignore, "Is ignored"),
             ], label: "A press while ringing or lingering")
         }
-        STSettingsRow("Cancel gesture", showsRule: false) {
+        STSettingsRow("Cancel gesture", showsRule: false, combinesForAccessibility: false) {
             STSegmented(selection: $controller.settings.cancelGesture, options: [
                 .init(.doublePress, "Double press"), .init(.hold, "Hold"), .init(.off, "None"),
             ])
@@ -241,7 +241,7 @@ struct TimerAdvancedSection: View {
         STSettingsRow("Pause while Minecraft isn\u{2019}t focused") {
             STSwitch(isOn: $controller.settings.pausesWhileMinecraftNotFocused, label: "Pause while Minecraft isn\u{2019}t focused")
         }
-        STSettingsRow("Display") {
+        STSettingsRow("Display", combinesForAccessibility: false) {
             STSegmented(selection: $controller.settings.displayChoice, options: [
                 .init(.followMinecraft, "Follow Minecraft"), .init(.specific, "A specific display"),
             ])

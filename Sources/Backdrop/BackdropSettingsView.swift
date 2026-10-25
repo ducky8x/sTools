@@ -45,7 +45,7 @@ public struct BackdropSettingsView: View {
                     STSettingsRow("Opacity") {
                         STSlider(value: opacityBinding, in: 10...100, label: "Opacity", valueText: { "\(Int($0))%" })
                     }
-                    STSettingsRow("Hide on full screen") {
+                    STSettingsRow("Hide on full screen", combinesForAccessibility: false) {
                         STSegmented(selection: $controller.settings.hideOnFullScreenScope, options: [
                             .init(.thisDisplay, "This display"), .init(.allDisplays, "All displays"),
                         ])
