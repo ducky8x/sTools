@@ -198,10 +198,17 @@ final class FrameCopier {
 
 /// Makes Core Image images of captured frames in the color space their tags give, worked out once per set of tags.
 /// `CIImage(cvPixelBuffer:)` builds that color space from the tags again for every frame (a ColorSync profile, made
-/// and validated each time), which costs more than the rest of a frame's drawing; a source's tags stay the same from
-/// frame to frame. Call from one queue.
+/// and validated each time), the largest part of drawing a layer on the frame thread; a source's tags stay the same
+/// from frame to frame. Call from one queue.
 struct FrameColorSpaces {
-    private var known: [(tags: CFDictionary, space: CGColorSpace?)] = []
+    /// The tags a color space is made from. Other attachments (a camera's per-frame metadata) don't count, so they
+    /// can't make every frame look new.
+    nonisolated(unsafe) private static let colorKeys: [CFString] = [
+        kCVImageBufferCGColorSpaceKey, kCVImageBufferICCProfileKey, kCVImageBufferColorPrimariesKey,
+        kCVImageBufferTransferFunctionKey, kCVImageBufferGammaLevelKey, kCVImageBufferYCbCrMatrixKey,
+    ]
+
+    private var known: [(tags: [CFTypeRef?], space: CGColorSpace?)] = []
 
     /// The image `CIImage(cvPixelBuffer:)` makes of `buffer`.
     mutating func image(of buffer: CVPixelBuffer) -> CIImage {
@@ -212,11 +219,22 @@ struct FrameColorSpaces {
     /// The color space Core Image reads from `buffer`'s tags; nil for an untagged buffer, which Core Image treats
     /// as it does with no tags.
     mutating func colorSpace(of buffer: CVPixelBuffer) -> CGColorSpace? {
-        let tags = CVBufferCopyAttachments(buffer, .shouldPropagate) ?? ([:] as CFDictionary)
-        if let entry = known.first(where: { CFEqual($0.tags, tags) }) { return entry.space }
-        let space = CVImageBufferCreateColorSpaceFromAttachments(tags)?.takeRetainedValue()
+        let attachments = CVBufferCopyAttachments(buffer, .shouldPropagate) ?? ([:] as CFDictionary)
+        let tags = Self.colorKeys.map { key in CFDictionaryGetValue(attachments, Unmanaged.passUnretained(key).toOpaque()).map { Unmanaged<CFTypeRef>.fromOpaque($0).takeUnretainedValue() } }
+        if let entry = known.first(where: { Self.same($0.tags, tags) }) { return entry.space }
+        let space = CVImageBufferCreateColorSpaceFromAttachments(attachments)?.takeRetainedValue()
         if known.count >= 8 { known.removeFirst() }
         known.append((tags, space))
         return space
+    }
+
+    private static func same(_ a: [CFTypeRef?], _ b: [CFTypeRef?]) -> Bool {
+        zip(a, b).allSatisfy { x, y in
+            switch (x, y) {
+            case (nil, nil): true
+            case let (x?, y?): CFEqual(x, y)
+            default: false
+            }
+        }
     }
 }

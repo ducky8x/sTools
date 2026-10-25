@@ -235,8 +235,10 @@ private func writeMovie(_ pictures: [CVPixelBuffer], size: PixelSize, name: Stri
                 #expect(bytes(of: spaces.image(of: pixelBuffer), with: context) == bytes(of: CIImage(cvPixelBuffer: pixelBuffer), with: context))
             }
         }
-        // Each set of tags is worked out once: the same tags give the very same color space.
+        // Each set of tags is worked out once: the same tags give the very same color space, whatever other
+        // attachments a frame carries.
         let again = buffer(kCVPixelFormatType_32BGRA, tags: srgb)
+        CVBufferSetAttachment(again, "sTools frame number" as CFString, 7 as CFNumber, .shouldPropagate)
         let first = spaces.colorSpace(of: cases[1])
         #expect(first != nil)
         #expect(spaces.colorSpace(of: again) === first)
