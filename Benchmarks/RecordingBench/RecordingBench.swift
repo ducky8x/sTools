@@ -154,10 +154,16 @@ final class TimedTickDriver: TickDriver, @unchecked Sendable {
 
 /// The process's user plus system CPU time, in seconds.
 func processCPUSeconds() -> Double {
+    let (user, system) = processCPUTimes()
+    return user + system
+}
+
+/// The process's user and system CPU time, in seconds.
+func processCPUTimes() -> (user: Double, system: Double) {
     var usage = rusage()
     getrusage(RUSAGE_SELF, &usage)
     func seconds(_ t: timeval) -> Double { Double(t.tv_sec) + Double(t.tv_usec) / 1e6 }
-    return seconds(usage.ru_utime) + seconds(usage.ru_stime)
+    return (seconds(usage.ru_utime), seconds(usage.ru_stime))
 }
 
 func percentile(_ values: [Double], _ p: Double) -> Double {
@@ -178,6 +184,8 @@ struct Result {
     var scenario: Scenario
     var canvas: PixelSize
     var cpuPercent: Double
+    /// The part of `cpuPercent` spent in the kernel.
+    var systemPercent = 0.0
     var tickWallMean = 0.0, tickWallP95 = 0.0, tickCPUMean = 0.0
     var framesWritten = 0, dropped = 0
     var colorTags = ""
@@ -243,9 +251,11 @@ func run(_ scenario: Scenario, canvas: PixelSize, seconds: Double, warmUp: Doubl
     try session.start()
     try await Task.sleep(for: .seconds(warmUp))
     driver.beginMeasuring()
-    let cpu0 = processCPUSeconds(), wall0 = Date()
+    let cpu0 = processCPUTimes(), wall0 = Date()
     try await Task.sleep(for: .seconds(seconds))
-    result.cpuPercent = (processCPUSeconds() - cpu0) / Date().timeIntervalSince(wall0) * 100
+    let cpu1 = processCPUTimes(), wall = Date().timeIntervalSince(wall0)
+    result.cpuPercent = (cpu1.user + cpu1.system - cpu0.user - cpu0.system) / wall * 100
+    result.systemPercent = (cpu1.system - cpu0.system) / wall * 100
     await rig.stopVideo()
     let written = await session.stop()
     await rig.stop()
@@ -287,13 +297,13 @@ struct RecordingBench {
         }
         let canvases = sizes.isEmpty ? [PixelSize(width: 1920, height: 1080), PixelSize(width: 3840, height: 2160)] : sizes
 
-        print("scenario  canvas       CPU % of a core   tick wall ms (mean / p95)   tick CPU ms   frames   dropped")
+        print("scenario  canvas       CPU % of a core (kernel)   tick wall ms (mean / p95)   tick CPU ms   frames   dropped")
         for canvas in canvases {
             for scenario in scenarios {
                 let r = try await run(scenario, canvas: canvas, seconds: seconds, warmUp: 2, pixelFormat: format, withSound: withSound)
                 let line = String(
-                    format: "%-8@  %4dx%-4d   %8.1f          %6.2f / %6.2f             %6.2f      %5d    %4d   %@",
-                    scenario.rawValue as NSString, r.canvas.width, r.canvas.height, r.cpuPercent,
+                    format: "%-8@  %4dx%-4d   %8.1f (%4.1f)          %6.2f / %6.2f             %6.2f      %5d    %4d   %@",
+                    scenario.rawValue as NSString, r.canvas.width, r.canvas.height, r.cpuPercent, r.systemPercent,
                     r.tickWallMean, r.tickWallP95, r.tickCPUMean, r.framesWritten, r.dropped, r.colorTags as NSString)
                 print(line)
             }
