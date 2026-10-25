@@ -77,8 +77,9 @@ public enum HotkeyWording {
     }
 
     /// The problem to show beside a hotkey, or nil when there is none: it is registered, off with the master
-    /// switch, or unknown.
-    public static func statusNote(_ status: HotkeyStatus?, combo: HotkeyCombo, inList: Bool = true) -> String? {
+    /// switch, or unknown. `inList` has no default: only Home's list may say "above" (`conflictText`), so every
+    /// caller says where the note shows.
+    public static func statusNote(_ status: HotkeyStatus?, combo: HotkeyCombo, inList: Bool) -> String? {
         guard case .conflict(let conflict) = status else { return nil }
         return conflictText(conflict, combo: combo, inList: inList)
     }

@@ -80,17 +80,17 @@ struct HotkeyWordingTests {
     }
 
     @Test func statusNoteIsNilForAHealthyOrUnknownHotkey() {
-        #expect(HotkeyWording.statusNote(.registered, combo: c) == nil)
-        #expect(HotkeyWording.statusNote(.inactive, combo: c) == nil)
-        #expect(HotkeyWording.statusNote(nil, combo: c) == nil)
+        #expect(HotkeyWording.statusNote(.registered, combo: c, inList: true) == nil)
+        #expect(HotkeyWording.statusNote(.inactive, combo: c, inList: true) == nil)
+        #expect(HotkeyWording.statusNote(nil, combo: c, inList: false) == nil)
     }
 
     @Test func statusNoteSaysWhatIsWrong() {
-        #expect(HotkeyWording.statusNote(.conflict(.noActions), combo: c) == "No actions")
-        #expect(HotkeyWording.statusNote(.conflict(.alreadyUsedByYou(UUID())), combo: c) == "Already used above")
+        #expect(HotkeyWording.statusNote(.conflict(.noActions), combo: c, inList: true) == "No actions")
+        #expect(HotkeyWording.statusNote(.conflict(.alreadyUsedByYou(UUID())), combo: c, inList: true) == "Already used above")
         #expect(HotkeyWording.statusNote(.conflict(.alreadyUsedByYou(UUID())), combo: c, inList: false)
                 == "Already used by another hotkey")
-        #expect(HotkeyWording.statusNote(.conflict(.systemRefused), combo: controlOptionC) == "Refused by macOS")
+        #expect(HotkeyWording.statusNote(.conflict(.systemRefused), combo: controlOptionC, inList: true) == "Refused by macOS")
     }
 
     // MARK: Notes

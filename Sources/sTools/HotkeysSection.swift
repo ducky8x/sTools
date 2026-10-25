@@ -310,7 +310,7 @@ struct HotkeyBindingRow: View {
     }
 
     private var statusNote: String? {
-        HotkeyWording.statusNote(model.hotkeys.status(of: binding.id), combo: binding.combo)
+        HotkeyWording.statusNote(model.hotkeys.status(of: binding.id), combo: binding.combo, inList: true)
     }
 
     private var spokenName: String { HotkeyWording.spokenName(for: binding.combo) }

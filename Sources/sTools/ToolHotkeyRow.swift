@@ -98,8 +98,8 @@ struct ToolHotkeyRow: View {
             if let purposeLine {
                 caption(purposeLine)
             }
-            if let own, let problem = HotkeyWording.statusNote(hotkeys.status(of: own.id), combo: own.combo) {
-                Text(problem)
+            if let problemNote {
+                Text(problemNote)
                     .stStyle(.caption)
                     .foregroundStyle(STColor.danger)
                     .fixedSize(horizontal: false, vertical: true)
@@ -127,6 +127,13 @@ struct ToolHotkeyRow: View {
                 }
             }
         }
+    }
+
+    /// What's wrong with the tool's own key, in red under the row; nil when nothing is. A page isn't Home's list, so a
+    /// key another hotkey has gets the words for outside it: nothing on a tool page is "above".
+    var problemNote: String? {
+        guard let own = ToolHotkey.own(for: action, in: hotkeys.bindings) else { return nil }
+        return HotkeyWording.statusNote(hotkeys.status(of: own.id), combo: own.combo, inList: false)
     }
 
     /// Where hotkeys work and the key set the tools follow, as Home ▸ Hotkeys sets them: "Hotkeys work in sTools and
