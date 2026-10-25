@@ -24,9 +24,9 @@ private func onScreenWindowRecord(_ windowNumber: Int) -> WindowRecord? {
 /// while pumping the run loop.
 @MainActor
 private func waitForRecord(_ windowNumber: Int, present: Bool = true) -> WindowRecord? {
-    let deadline = Date().addingTimeInterval(3)
+    let deadline = SuspendingClock.now.advanced(by: .seconds(3))
     var record = onScreenWindowRecord(windowNumber)
-    while (record != nil) != present, Date() < deadline {
+    while (record != nil) != present, SuspendingClock.now < deadline {
         RunLoop.current.run(until: Date().addingTimeInterval(0.01))
         record = onScreenWindowRecord(windowNumber)
     }

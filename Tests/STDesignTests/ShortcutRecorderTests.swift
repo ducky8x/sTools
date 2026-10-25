@@ -334,8 +334,8 @@ private struct ClickHarness {
     }
 
     func spin(_ seconds: TimeInterval) {
-        let end = Date().addingTimeInterval(seconds)
-        repeat { RunLoop.current.run(until: Date().addingTimeInterval(0.03)) } while Date() < end
+        let end = SuspendingClock.now.advanced(by: .seconds(seconds))
+        repeat { RunLoop.current.run(until: Date().addingTimeInterval(0.03)) } while SuspendingClock.now < end
     }
 
     /// A click at `y` points from the window's bottom.

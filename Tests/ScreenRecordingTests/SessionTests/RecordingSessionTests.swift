@@ -336,9 +336,9 @@ struct CaptureRigTests {
             .source(UUID()): FakeAudioCapture(startTakes: take),
         ]
         let rig = CaptureRig(video: video, audio: audio, minimizedShowsNothing: false)
-        let began = ContinuousClock.now
+        let began = SuspendingClock.now
         await rig.start()
-        let took = ContinuousClock.now - began
+        let took = SuspendingClock.now - began
         #expect(took >= take)
         #expect(took < .milliseconds(800))
         #expect(video.values.allSatisfy { ($0 as? FakeVideoCapture)?.isRunning == true })
@@ -358,9 +358,9 @@ struct CaptureRigTests {
             video: [.base: pictures[0], .source(UUID()): pictures[1], .source(UUID()): pictures[2]],
             audio: [.minecraft: sound], minimizedShowsNothing: false)
         await rig.start()
-        let began = ContinuousClock.now
+        let began = SuspendingClock.now
         await rig.stopVideo()
-        let took = ContinuousClock.now - began
+        let took = SuspendingClock.now - began
         #expect(took >= take)
         #expect(took < .milliseconds(450))
         #expect(pictures.allSatisfy { !$0.isRunning })
@@ -377,9 +377,9 @@ struct CaptureRigTests {
             video: [.base: FakeVideoCapture()],
             audio: [.minecraft: sounds[0], .source(UUID()): sounds[1], .source(UUID()): sounds[2]], minimizedShowsNothing: false)
         await rig.start()
-        let began = ContinuousClock.now
+        let began = SuspendingClock.now
         await rig.stop()
-        let took = ContinuousClock.now - began
+        let took = SuspendingClock.now - began
         #expect(took >= take)
         #expect(took < .milliseconds(450))
         #expect(sounds.allSatisfy { !$0.isRunning })

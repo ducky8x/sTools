@@ -67,8 +67,8 @@ struct CrosshairControllerTests {
 
         let looks = controller.placementCount
         source.instances = [minecraft(x: 40)]
-        let deadline = ContinuousClock.now + .seconds(2)
-        while controller.placementCount == looks, ContinuousClock.now < deadline {
+        let deadline = SuspendingClock.now + .seconds(2)
+        while controller.placementCount == looks, SuspendingClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(controller.placementCount > looks, "the crosshair should look again when Minecraft changes")
@@ -94,8 +94,8 @@ struct CrosshairControllerTests {
 
         let looks = controller.placementCount
         source.instances = [minecraft(x: 40, frontmost: false)]
-        let deadline = ContinuousClock.now + .seconds(2)
-        while controller.placementCount == looks, ContinuousClock.now < deadline {
+        let deadline = SuspendingClock.now + .seconds(2)
+        while controller.placementCount == looks, SuspendingClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(controller.placementCount > looks)

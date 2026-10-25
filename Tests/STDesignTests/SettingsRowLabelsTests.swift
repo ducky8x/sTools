@@ -41,11 +41,11 @@ private final class Hosted {
         host.frame = CGRect(origin: .zero, size: size)
         window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
         window.contentView = host
-        let end = Date().addingTimeInterval(0.15)
+        let end = SuspendingClock.now.advanced(by: .seconds(0.15))
         repeat {
             host.layoutSubtreeIfNeeded()
             RunLoop.current.run(until: Date().addingTimeInterval(0.03))
-        } while Date() < end
+        } while SuspendingClock.now < end
     }
 
     /// The view at 1 pixel per point.

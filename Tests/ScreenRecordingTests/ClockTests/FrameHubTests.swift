@@ -119,30 +119,30 @@ import Testing
     @Test func aFrameAlreadyThereNeedsNoWait() async {
         let hub = FrameHub()
         hub.submit(ClockTestFrames.frame(at: 1), for: .base)
-        let began = ContinuousClock.now
+        let began = SuspendingClock.now
         #expect(await hub.waitForFrame(of: .base, timeout: .seconds(5)))
-        #expect(ContinuousClock.now - began < .seconds(1))
+        #expect(SuspendingClock.now - began < .seconds(1))
     }
 
     @Test func theWaitEndsAsTheFirstFrameArrives() async {
         let hub = FrameHub()
-        let began = ContinuousClock.now
+        let began = SuspendingClock.now
         Task {
             try? await Task.sleep(for: .milliseconds(100))
             hub.submit(ClockTestFrames.frame(at: 1), for: .source(UUID()))
             hub.submit(ClockTestFrames.frame(at: 2), for: .base)
         }
         #expect(await hub.waitForFrame(of: .base, timeout: .seconds(5)))
-        let waited = ContinuousClock.now - began
+        let waited = SuspendingClock.now - began
         #expect(waited >= .milliseconds(100))
         #expect(waited < .seconds(4))
     }
 
     @Test func theWaitGivesUpAfterItsTimeout() async {
         let hub = FrameHub()
-        let began = ContinuousClock.now
+        let began = SuspendingClock.now
         #expect(!(await hub.waitForFrame(of: .base, timeout: .milliseconds(150))))
-        #expect(ContinuousClock.now - began >= .milliseconds(150))
+        #expect(SuspendingClock.now - began >= .milliseconds(150))
         // A frame after the wait is kept as any other.
         hub.submit(ClockTestFrames.frame(at: 1), for: .base)
         #expect(hub.peek()[.base] != nil)
@@ -154,8 +154,8 @@ import Testing
             try? await Task.sleep(for: .milliseconds(100))
             hub.removeAll()
         }
-        let began = ContinuousClock.now
+        let began = SuspendingClock.now
         #expect(!(await hub.waitForFrame(of: .base, timeout: .seconds(5))))
-        #expect(ContinuousClock.now - began < .seconds(4))
+        #expect(SuspendingClock.now - began < .seconds(4))
     }
 }

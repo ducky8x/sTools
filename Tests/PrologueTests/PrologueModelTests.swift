@@ -282,9 +282,9 @@ struct PrologueModelTests {
 
 @MainActor
 func waitUntil(timeout: Duration = .seconds(3), _ condition: @MainActor () -> Bool) async -> Bool {
-    let deadline = ContinuousClock.now + timeout
+    let deadline = SuspendingClock.now + timeout
     while !condition() {
-        if ContinuousClock.now > deadline { return false }
+        if SuspendingClock.now > deadline { return false }
         try? await Task.sleep(for: .milliseconds(5))
     }
     return true
