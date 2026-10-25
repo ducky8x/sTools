@@ -78,7 +78,7 @@ Draws your keyboard (ANSI, ISO or JIS, laptop or full size) and mouse with every
 - **The Prologue.** On first launch, an animated welcome, then help with each permission, Ninjabrain Bot and Karabiner-Elements, then a hands-on try of every tool. Back and Skip work on every step, and Help ▸ Replay Introduction runs it again.
 - **Settings.** Open at login, sounds and volume, text size, accent color, update options, exporting and importing all your settings in one file, resetting the tools or all of sTools, and Copy Diagnostics for bug reports.
 - **Reduce animations.** sTools animates nearly everything: switches spring, numbers roll, successes stamp a gold seal, and the sidebar glides with a soft tick for each row it passes (and a tap on a Force Touch trackpad). One switch in Settings ▸ Appearance turns every animation off, and macOS's Reduce motion does the same.
-- **Updates.** sTools checks for new versions on its own and can download and install them when you quit. Settings ▸ Updates shows the version you're running, and Check for Updates… is there and in the app menu.
+- **Updates.** sTools checks for new versions on its own and can download and install them when you quit. Settings ▸ Updates shows the version you're running, and Check for Updates… is there and in the app menu. Got a newer DMG by hand? Choose **Install from DMG…** (or drop the DMG on it), and sTools checks it, installs it and opens again.
 
 Close the window and your tools keep running; click the Dock icon to bring it back. Quitting turns everything off.
 
@@ -122,6 +122,8 @@ Without Accessibility, the tools that need it stay off and hotkeys work only in 
    3. Click **Open Anyway**, then confirm.
 
 After that it opens normally. Every release is signed with the same certificate, so macOS keeps the permissions you've granted when sTools updates itself.
+
+**Updating from a DMG.** You only drag sTools into Applications once. For the next version, download its DMG, then in sTools choose **Settings ▸ Updates ▸ Install from DMG…** (or **sTools ▸ Install from DMG…**) and pick it. sTools installs it only if it's a newer sTools signed with the same certificate, then opens again.
 
 ## Privacy
 

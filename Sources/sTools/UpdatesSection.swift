@@ -7,6 +7,8 @@ struct UpdatesSection: View {
     let model: AppModel
 
     private var center: UpdateCenter { model.updateCenter }
+    private var installer: DMGInstaller { model.dmgInstaller }
+    @State private var isDropTargeted = false
 
     var body: some View {
         PageSectionTitle("Updates").padding(.top, 28).padding(.bottom, 4)
@@ -41,5 +43,40 @@ struct UpdatesSection: View {
         }
         .fixedSize(horizontal: false, vertical: true)
         .stAnimation(STMotion.quick, value: center.statusText)
+        STSettingsRow("Install from a DMG", showsRule: false) {
+            HStack(spacing: 8) {
+                if case .confirmOlder = installer.phase {
+                    Button("Cancel") { installer.dismiss() }
+                        .buttonStyle(STButtonStyle(.secondary))
+                    Button("Install Older Build") { Task { await installer.confirmOlder() } }
+                        .buttonStyle(STButtonStyle(.secondary))
+                } else {
+                    Button(installer.isBusy ? "Installing\u{2026}" : "Install from DMG\u{2026}") { installer.chooseAndInstall() }
+                        .buttonStyle(STButtonStyle(.secondary))
+                        .disabled(installer.isBusy)
+                }
+            }
+        }
+        .padding(.top, 12)
+        .background {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(STColor.gold, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                .opacity(isDropTargeted ? 1 : 0)
+        }
+        .dropDestination(for: URL.self) { urls, _ in
+            guard let dmg = urls.first(where: { $0.pathExtension.lowercased() == "dmg" }), !installer.isBusy else { return false }
+            Task { await installer.install(from: dmg) }
+            return true
+        } isTargeted: { isDropTargeted = $0 }
+        Text(installer.statusText ?? "Downloaded a newer sTools? Choose its DMG, or drop it here, and sTools installs it and opens again.")
+            .stStyle(.caption)
+            .foregroundStyle(isFailure ? STColor.danger : model.theme.inkSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .stAnimation(STMotion.quick, value: installer.statusText)
+    }
+
+    private var isFailure: Bool {
+        if case .failed = installer.phase { return true }
+        return false
     }
 }

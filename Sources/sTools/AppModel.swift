@@ -43,6 +43,8 @@ final class AppModel {
     @ObservationIgnored let keyRebinder: KeyRebinderController?
     /// Settings ▸ Updates and Check for Updates… (spec 6.3); its updater is Sparkle in the app, nil or a fake in tests.
     let updateCenter: UpdateCenter
+    /// Settings ▸ Updates ▸ Install from DMG…: replaces this copy with the sTools in a DMG someone downloaded.
+    let dmgInstaller: DMGInstaller
     @ObservationIgnored let loginItem: any LoginItemControlling
     @ObservationIgnored var wasAccessibilityGranted: Bool
     /// Held while a tool that needs Accessibility runs, so a revoked grant turns it off (`updateToolPolling()`).
@@ -84,7 +86,7 @@ final class AppModel {
 
     /// Every tool starts off (spec 3.5). `controllers` holds the tools that exist so far.
     init(services: ToolServices, theme: STTheme, sound: STSoundPlayer, controllers: [ToolID: any ToolController],
-         keyRebinder: KeyRebinderController? = nil, updater: (any AppUpdating)? = nil,
+         keyRebinder: KeyRebinderController? = nil, updater: (any AppUpdating)? = nil, dmgInstaller: DMGInstaller? = nil,
          hotkeyRegistrar: any HotkeyRegistering, hotkeyHUD: any HotkeyConfirmationPresenting,
          loginItem: any LoginItemControlling) {
         self.services = services
@@ -93,6 +95,7 @@ final class AppModel {
         self.controllers = controllers
         self.keyRebinder = keyRebinder
         updateCenter = UpdateCenter(updater: updater, notices: AlertUpdateNoticePresenter(theme: theme))
+        self.dmgInstaller = dmgInstaller ?? DMGInstaller()
         self.hotkeyRegistrar = hotkeyRegistrar
         self.hotkeyHUD = hotkeyHUD
         self.loginItem = loginItem
