@@ -229,12 +229,17 @@ private struct Harness {
         controller.options = options
     }
 
+    /// Switches the tool on and waits (bounded, as `waitUntil`) until its sources are ready: the latest arming's rig has
+    /// finished starting, so a press writes at once. Minecraft's capture exists before its start has run, and under load
+    /// that start can take far longer than any fixed pause.
     func arm() async {
         controller.setEnabled(true)
-        for _ in 0..<200 where !(controller.isEnabled && (factory.bases[42] != nil || controller.previewMessage != nil)) {
-            try? await Task.sleep(for: .milliseconds(5))
-        }
-        try? await Task.sleep(for: .milliseconds(30))
+        #expect(await waitUntilSourcesAreReady(), "the armed tool's sources started")
+    }
+
+    /// Waits (bounded, as `waitUntil`) until the latest arming's sources have finished starting.
+    func waitUntilSourcesAreReady() async -> Bool {
+        await waitUntil { controller.sourcesAreReady }
     }
 
     /// Records about `seconds` of a still base frame.
@@ -754,6 +759,7 @@ struct ScreenRecordingKeyTests {
         #expect(await harness.waitUntil { harness.controller.isWarmedUp })
         harness.controller.delete()
         #expect(harness.controller.isEnabled)
+        #expect(await harness.waitUntilSourcesAreReady())
         harness.pushFrame()
         #expect(harness.controller.toggleRecording() == .starting(waitsForSources: false), "the sources already run")
         #expect(await harness.waitUntil { harness.controller.phase == .recording })
@@ -1520,6 +1526,7 @@ struct ScreenRecordingArmingTests {
         #expect(await harness.waitUntil { harness.factory.bases[42]?.isRunning == true })
         try await Task.sleep(for: .milliseconds(300))
         #expect(harness.factory.baseCount == 1)
+        #expect(await harness.waitUntilSourcesAreReady())
         #expect(harness.controller.toggleRecording() == .starting(waitsForSources: false))
         #expect(await harness.waitUntil { harness.controller.phase == .recording })
         await finish(harness)
@@ -1588,7 +1595,7 @@ struct ScreenRecordingArmingTests {
         #expect(await harness.waitUntil { harness.factory.baseCount == 2 })
         #expect(await harness.waitUntil { harness.factory.bases[42]?.isRunning == true && !first.isRunning })
         // The rig's start returns a moment after its capture runs.
-        try await Task.sleep(for: .milliseconds(100))
+        #expect(await harness.waitUntilSourcesAreReady())
         #expect(harness.controller.toggleRecording() == .starting(waitsForSources: false))
         #expect(await harness.waitUntil { harness.controller.phase == .recording })
         await finish(harness)
@@ -1602,7 +1609,8 @@ struct ScreenRecordingArmingTests {
         #expect(await harness.waitUntil { harness.factory.bases[42]?.isRunning == true })
         harness.controller.setEnabled(false)
         harness.controller.setEnabled(true)
-        try await Task.sleep(for: .milliseconds(100))
+        // Ready again means the new arming has taken the rig over: nothing more is built after that.
+        #expect(await harness.waitUntilSourcesAreReady())
         #expect(harness.factory.baseCount == 1)
         #expect(harness.factory.bases[42]?.isRunning == true)
         #expect(harness.controller.toggleRecording() == .starting(waitsForSources: false))
@@ -1761,6 +1769,7 @@ struct ScreenRecordingBusyChangeTests {
         await self.answer(answer, harness)
         try await Task.sleep(for: .milliseconds(100))
         #expect(harness.factory.baseCount == 2)
+        #expect(await harness.waitUntilSourcesAreReady())
         harness.pushFrame()
         #expect(harness.controller.toggleRecording() == .starting(waitsForSources: false))
         #expect(await harness.waitUntil { harness.controller.phase == .recording })

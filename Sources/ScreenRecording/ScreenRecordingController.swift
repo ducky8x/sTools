@@ -369,8 +369,9 @@ public final class ScreenRecordingController: ToolController {
     private var rigIsRecording: Bool { rig != nil && session != nil }
 
     /// The latest arming's sources run (their starts, Minecraft's capture included, have finished) and nothing is
-    /// restarting them, so a start can write at once, without waiting.
-    private var sourcesAreReady: Bool { rig != nil && readyArming == armCount }
+    /// restarting them, so a start can write at once, without waiting. Tests wait for it before a press that expects
+    /// an armed tool.
+    var sourcesAreReady: Bool { rig != nil && readyArming == armCount }
 
     /// Switching off: a recording still going stops (and finishes its file) first, then the sources stop and what
     /// `warmUp` readied goes. Switched back on by hand while that file finished, the tool stays on with the sources
