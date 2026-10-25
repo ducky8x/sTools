@@ -58,7 +58,7 @@ Press your Start-timer key and a countdown pops up over the game, 2:30 by defaul
 
 ### NBB Overlay
 
-Reads Ninjabrain Bot's local API and shows its current result in a small plate over the game: predictions with certainty and distance, your eye throws, and its blind, divine and all-advancements modes. Ninjabrain Bot's boat sits at the top in its own colors (blue measuring, green ready, red error), and the whole plate can take the boat's color so you see it from the corner of your eye. If two Ninjabrain Bots are open, sTools tells you which one it reads and can quit the other, or restart one that isn't sharing its data. It shows only what Ninjabrain Bot itself shows. Drag it into place with snapping or type its position, and set its size and opacity.
+Reads Ninjabrain Bot's local API and shows its current result in a small plate over the game: predictions with certainty and distance, your eye throws, and its blind, divine and all-advancements modes. Ninjabrain Bot's boat sits at the top in its own colors (blue measuring, green ready, red error), and the whole plate can take the boat's color so you see it from the corner of your eye. If two Ninjabrain Bots are open, sTools tells you which one it reads and can quit the other, or restart one that isn't sharing its data. It fades out when you reset Ninjabrain Bot and back in with the next result. It shows only what Ninjabrain Bot itself shows. Drag it into place with snapping or type its position, and set its size and opacity.
 
 ### Screen Recording
 
@@ -66,7 +66,7 @@ Records Minecraft with sTools' overlays and backdrop, plus any windows, displays
 
 ### Window Backdrop
 
-Covers the display Minecraft is on, edge to edge and behind the menu bar and Dock, and keeps the backdrop directly under the Minecraft window, so every other window disappears. Fill it with a color, a linear or radial gradient, or an image, and cover your other displays too, each with its own fill. Clicking it does nothing. Switch to another app and its windows come forward as usual; switch back and the backdrop is under Minecraft again.
+Covers the display Minecraft is on, edge to edge and behind the menu bar and Dock, and keeps the backdrop directly under the Minecraft window, so every other window disappears. Fill it with a color, a linear or radial gradient, or an image (a new fill crossfades in), and cover your other displays too, each with its own fill. Clicking it does nothing. Switch to another app and its windows come forward as usual; switch back and the backdrop is under Minecraft again.
 
 ### Key Rebinder
 
