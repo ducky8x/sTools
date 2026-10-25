@@ -1,4 +1,6 @@
 import Foundation
+import KeyRebinder
+import SwiftUI
 
 /// A page of the main window.
 enum Route: Hashable, Sendable {
@@ -11,6 +13,26 @@ enum Route: Hashable, Sendable {
 enum PageAnchor: Hashable, Sendable {
     /// Home ▸ Hotkeys.
     case hotkeys
+    /// The Key Rebinder's panel for the selected key, after Home's Show on Keyboard.
+    case keyRebinderKeyPanel
+
+    /// The id the view is marked with: the anchor itself, or, for a view inside another module that can't see this
+    /// type, the id that module gives it.
+    var scrollID: AnyHashable {
+        switch self {
+        case .hotkeys: AnyHashable(self)
+        case .keyRebinderKeyPanel: AnyHashable(KeyRebinderView.keyPanelScrollID)
+        }
+    }
+
+    /// Where the view lands: a section starts at the top; the key panel sits mid-view, so the selected key on the
+    /// keyboard above it stays in sight.
+    var scrollAnchor: UnitPoint {
+        switch self {
+        case .hotkeys: .top
+        case .keyRebinderKeyPanel: .center
+        }
+    }
 }
 
 /// Browser-style back/forward history. Pure value type.

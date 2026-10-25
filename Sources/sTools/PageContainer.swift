@@ -6,12 +6,16 @@ struct PageContainer<Content: View>: View {
     private let content: Content
     private let maxWidth: CGFloat
     @Binding private var anchor: PageAnchor?
+    private let accepts: Set<PageAnchor>
 
     /// `maxWidth` widens the column for a page whose plate needs the room (the Key Rebinder's keyboard). `anchor`
-    /// scrolls the page to the view marked `.id(anchor)` when it's set, then clears it.
-    init(maxWidth: CGFloat = 640, anchor: Binding<PageAnchor?> = .constant(nil), @ViewBuilder content: () -> Content) {
+    /// scrolls the page to the view marked with the anchor's `scrollID` when it's set to one this page `accepts`, then
+    /// clears it; an anchor meant for another page is left for that page.
+    init(maxWidth: CGFloat = 640, anchor: Binding<PageAnchor?> = .constant(nil), accepts: Set<PageAnchor> = [],
+         @ViewBuilder content: () -> Content) {
         self.maxWidth = maxWidth
         _anchor = anchor
+        self.accepts = accepts
         self.content = content()
     }
 
@@ -35,12 +39,12 @@ struct PageContainer<Content: View>: View {
 
     /// Jumps rather than glides, so it needs nothing from Reduce animations.
     private func scroll(_ proxy: ScrollViewProxy) {
-        guard let target = anchor else { return }
+        guard let target = anchor, accepts.contains(target) else { return }
         // A moment later, once a newly opened page has laid out what it scrolls to.
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(60))
-            proxy.scrollTo(target, anchor: .top)
-            anchor = nil
+            proxy.scrollTo(target.scrollID, anchor: target.scrollAnchor)
+            if anchor == target { anchor = nil }
         }
     }
 }
