@@ -2,6 +2,8 @@ import AppKit
 import CoreGraphics
 import Foundation
 import ImageIO
+import STDesign
+import SwiftUI
 import Testing
 import UniformTypeIdentifiers
 @testable import Backdrop
@@ -59,6 +61,45 @@ struct BackdropControllerTests {
         #expect(controller.drawCount == 2)
         controller.settings.opacityPercent = 50
         #expect(controller.drawCount == 3)
+    }
+
+    /// Spec 5.2.4: a new fill crossfades from the old one in the same panel; while motion is reduced it's instant.
+    @MainActor
+    @Test func aNewFillGoesIntoTheSamePanelAndCrossfadesUnlessMotionIsReduced() {
+        let display = offScreenDisplay
+        let window = MinecraftWindow(windowNumber: 42, processID: 4242, title: "Minecraft* 1.16.1", frame: display.frame)
+        let minecraft = MinecraftInstance(window: window, launchDate: Date(timeIntervalSince1970: 1), isFrontmost: true, displayID: display.id)
+        let services = makeServices(tempDirectory: tempDirectory(), instances: [minecraft])
+        services.minecraft.refresh()
+        let controller = BackdropController(services: services, imagesDirectory: tempDirectory(), showsPanels: false)
+        controller.setEnabled(true)
+        defer { controller.setEnabled(false) }
+        #expect(controller.fillTransitionSeconds == 0.3)
+        controller.settings.fill.color = "#223344"
+        #expect(controller.shownFill(on: display.id)?.color == "#223344")
+        #expect(controller.panelCount == 1)
+
+        let reduced = STTheme(motionMode: .reduced)
+        let calm = BackdropController(services: services, imagesDirectory: tempDirectory(), showsPanels: false, theme: reduced)
+        #expect(calm.fillTransitionSeconds == 0)
+    }
+
+    @MainActor
+    @Test func theCrossfadeViewDrawsTheCurrentFill() throws {
+        var fill = BackdropSettings.Fill()
+        fill.kind = .color
+        fill.color = "#FF0000"
+        let layers = BackdropLayers(fill: fill, image: nil, opacity: 1)
+        var next = fill
+        next.color = "#0000FF"
+        layers.show(next, image: nil)
+        let renderer = ImageRenderer(content: BackdropCrossfadeView(layers: layers).frame(width: 20, height: 20))
+        let image = try #require(renderer.cgImage)
+        let context = try #require(CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.draw(image, in: CGRect(x: -10, y: -10, width: image.width, height: image.height))
+        let pixel = try #require(context.data?.assumingMemoryBound(to: UInt8.self))
+        #expect(pixel[2] > 200 && pixel[0] < 50, "the new blue fill, not the old red")
     }
 
     // A hidden panel keeps its full-screen layer, and a decoded image is tens of megabytes: switching off lets
