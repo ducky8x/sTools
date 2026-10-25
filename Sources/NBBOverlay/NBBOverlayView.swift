@@ -9,6 +9,8 @@ struct NBBOverlayView: View {
     let content: NBBOverlayContent
     let messages: [(severity: NBBEvents.MessageSeverity, text: String)]
     let settings: NBBOverlaySettings
+    /// Ninjabrain Bot's latest boat state, for the boat indicator and the plate's color.
+    var boat: NBBEvents.Boat?
 
     /// Placement mode (spec 5.1.5): drag the body to move, drag the corner handle to resize. Each
     /// `changed` callback receives the gesture's cumulative translation from where it started; `ended`
@@ -22,7 +24,9 @@ struct NBBOverlayView: View {
     /// (the default) renders text at its natural, un-scaled size.
     private static let baseWidth: CGFloat = 320
 
-    private var isEmpty: Bool { content == .hidden && messages.isEmpty }
+    private var shownBoat: NBBEvents.BoatState? { NBBOverlayLayout.boatToShow(boat, settings: settings) }
+    private var isEmpty: Bool { content == .hidden && messages.isEmpty && !NBBOverlayLayout.boatCountsAsData(boat, settings: settings) }
+    private var plateTint: Color? { NBBOverlayLayout.plateTint(boat, settings: settings).map { STColorWellHex.color(from: $0.colorHex) } }
     private var targetSize: CGSize { CGSize(width: CGFloat(settings.width), height: CGFloat(settings.width) / settings.aspectRatio) }
 
     /// A plain `width / baseWidth` ratio, not a measure-then-fit scale: resizing the box (by the Width
@@ -33,7 +37,7 @@ struct NBBOverlayView: View {
     private var contentScale: CGFloat { CGFloat(settings.width) / Self.baseWidth }
 
     var body: some View {
-        STPlate {
+        STPlate(tint: plateTint) {
             plateContent
                 .padding(14)
                 .scaleEffect(contentScale, anchor: .topLeading)
@@ -63,9 +67,12 @@ struct NBBOverlayView: View {
 
     @ViewBuilder private var plateContent: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if let shownBoat {
+                NBBBoatIndicator(look: NBBBoatLook(shownBoat))
+            }
             switch content {
             case .hidden:
-                if settings.placementModeEnabled {
+                if settings.placementModeEnabled, shownBoat == nil {
                     Text("NBB Overlay").stStyle(.caption).foregroundStyle(STColor.inkTertiary)
                 }
             case .triangulation(let data):
@@ -132,12 +139,6 @@ struct NBBTriangulationBlock: View {
                     }
                 }
             }
-            if settings.showsBoatState, let boatState = data.boatState, boatState != .none {
-                HStack(spacing: 6) {
-                    NBBHeading(text: "Boat")
-                    Text(boatState.rawValue.capitalized).font(nbbLabel()).foregroundStyle(STColor.ink)
-                }
-            }
         }
     }
 }
@@ -162,6 +163,44 @@ private struct NBBPredictionRowView: View {
             }
         }
         .foregroundStyle(STColor.ink)
+    }
+}
+
+// MARK: - Boat
+
+/// Ninjabrain Bot's boat, as large as a heading: a boat drawn in the state's color, then what it means.
+struct NBBBoatIndicator: View {
+    let look: NBBBoatLook
+
+    var body: some View {
+        HStack(spacing: 8) {
+            NBBBoatGlyph()
+                .fill(STColorWellHex.color(from: look.colorHex))
+                .frame(width: 26, height: 14)
+            Text(look.title)
+                .font(.system(size: 14, weight: .semibold, design: .serif))
+                .foregroundStyle(STColor.ink)
+        }
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(look.title)
+    }
+}
+
+/// A boat seen from the side: a hull wider at the top, with a gunwale along it.
+struct NBBBoatGlyph: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let w = rect.width, h = rect.height, x = rect.minX, y = rect.minY
+        // Gunwale.
+        path.addRoundedRect(in: CGRect(x: x, y: y, width: w, height: h * 0.22), cornerSize: CGSize(width: h * 0.08, height: h * 0.08))
+        // Hull.
+        path.move(to: CGPoint(x: x + w * 0.03, y: y + h * 0.34))
+        path.addLine(to: CGPoint(x: x + w * 0.97, y: y + h * 0.34))
+        path.addLine(to: CGPoint(x: x + w * 0.80, y: y + h))
+        path.addLine(to: CGPoint(x: x + w * 0.20, y: y + h))
+        path.closeSubpath()
+        return path
     }
 }
 

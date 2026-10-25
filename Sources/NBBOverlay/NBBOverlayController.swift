@@ -37,6 +37,7 @@ public final class NBBOverlayController: ToolController {
     private struct DrawnOverlay: Equatable {
         var content: NBBOverlayContent
         var messages: [String]
+        var boat: NBBEvents.Boat?
         var settings: NBBOverlaySettings
     }
 
@@ -70,6 +71,9 @@ public final class NBBOverlayController: ToolController {
             stronghold: connection.stronghold, blind: connection.blind, divine: connection.divine,
             boat: connection.boat, allAdvancements: connection.allAdvancements, maxPredictionRows: settings.maxPredictionRows)
     }
+
+    /// Ninjabrain Bot's latest boat state, for the page's preview.
+    var previewBoat: NBBEvents.Boat? { connection.boat }
 
     /// Ninjabrain Bot's information messages as the overlay shows them, for the page's preview.
     var previewMessages: [(severity: NBBEvents.MessageSeverity, text: String)] {
@@ -196,7 +200,8 @@ public final class NBBOverlayController: ToolController {
                 panel.hide()
                 return
             }
-            if settings.requiresData, content == .hidden, messages.isEmpty {
+            if settings.requiresData, content == .hidden, messages.isEmpty,
+               !NBBOverlayLayout.boatCountsAsData(connection.boat, settings: settings) {
                 panel.hide()
                 return
             }
@@ -212,10 +217,11 @@ public final class NBBOverlayController: ToolController {
         var drawnSettings = settings
         drawnSettings.offsetX = 0
         drawnSettings.offsetY = 0
-        let key = DrawnOverlay(content: content, messages: messages.map { "\($0.severity.rawValue)|\($0.text)" }, settings: drawnSettings)
+        let key = DrawnOverlay(
+            content: content, messages: messages.map { "\($0.severity.rawValue)|\($0.text)" }, boat: connection.boat, settings: drawnSettings)
         if drawn != key {
             panel.setContent(NBBOverlayView(
-                content: content, messages: messages, settings: settings,
+                content: content, messages: messages, settings: settings, boat: connection.boat,
                 onMoveChanged: { [weak self] in self?.placementMoveChanged($0) },
                 onMoveEnded: { [weak self] in self?.placementMoveEnded() },
                 onResizeChanged: { [weak self] in self?.placementResizeChanged($0) },
