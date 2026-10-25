@@ -128,6 +128,32 @@ struct ToolHotkeyRowTests {
         #expect(ToolHotkey.refusal(for: f13, action: .toggle(.crosshair), in: hotkeys) == nil)
     }
 
+    /// A tool's own key that an earlier hotkey already has gets the red note in the words for outside Home's list:
+    /// a tool page has no rows above it, so the note never says "above". Timer Overlay's row is the same row.
+    @Test func aConflictNoteOnAToolPageNeverSaysAbove() throws {
+        let harness = Harness(accessibility: .granted)
+        let hotkeys = harness.model.hotkeys
+        hotkeys.isEnabled = true
+        ToolHotkey.set(ctrlOptC, for: .toggle(.crosshair), in: hotkeys)
+        let crosshair = try #require(ToolHotkeyRow(model: harness.model, tool: .crosshair))
+        #expect(crosshair.problemNote == nil)
+
+        for tool in [ToolID.timerOverlay, .nbbOverlay] {
+            let row = try #require(ToolHotkeyRow(model: harness.model, tool: tool))
+            ToolHotkey.set(ctrlOptC, for: row.action, in: hotkeys)
+            let own = try #require(ToolHotkey.own(for: row.action, in: hotkeys.bindings))
+            guard case .conflict(.alreadyUsedByYou)? = hotkeys.status(of: own.id) else {
+                Issue.record("\(tool)'s key should conflict with the crosshair's")
+                continue
+            }
+            let note = try #require(row.problemNote)
+            #expect(note == HotkeyWording.statusNote(hotkeys.status(of: own.id), combo: own.combo, inList: false))
+            #expect(!note.localizedCaseInsensitiveContains("above"))
+            ToolHotkey.set(nil, for: row.action, in: hotkeys)
+            #expect(row.problemNote == nil)
+        }
+    }
+
     /// Under the key, the row says where hotkeys work and which key set the tools follow, with Change… to Home ▸
     /// Hotkeys, so neither is set only where Home shows it.
     @Test func theRowSaysWhereHotkeysWorkAndTheKeySet() throws {
