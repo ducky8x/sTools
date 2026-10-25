@@ -14,7 +14,9 @@ public struct NBBOverlaySettingsView: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            if controller.isEnabled, !controller.isReachable {
+            if let message = controller.copies.situation.message {
+                NBBCopiesNote(monitor: controller.copies, message: message)
+            } else if controller.isEnabled, !controller.isReachable {
                 STRequirementStrip(
                     kind: .warning,
                     message: "Ninjabrain Bot isn't reachable at localhost:52533 — enable its API under Settings ▸ Advanced in Ninjabrain Bot.")
@@ -66,7 +68,10 @@ public struct NBBOverlaySettingsView: View {
                 }
                 STSettingsRow("Predictions") { STSwitch(isOn: $controller.settings.showsPredictions, label: "Predictions") }
                 STSettingsRow("Eye throws") { STSwitch(isOn: $controller.settings.showsEyeThrows, label: "Eye throws") }
-                STSettingsRow("Boat state") { STSwitch(isOn: $controller.settings.showsBoatState, label: "Boat state") }
+                STSettingsRow("Boat indicator") { STSwitch(isOn: $controller.settings.showsBoatState, label: "Boat indicator") }
+                STSettingsRow("Color the plate by boat") {
+                    STSwitch(isOn: $controller.settings.tintsPlateByBoat, label: "Color the plate by boat")
+                }
                 STSettingsRow("Information messages", showsRule: false) {
                     STSwitch(isOn: $controller.settings.showsInformationMessages, label: "Information messages")
                 }
@@ -77,6 +82,9 @@ public struct NBBOverlaySettingsView: View {
                     STSettingsRow("Location column") { STSwitch(isOn: $controller.settings.showsLocationColumn, label: "Location column") }
                     STSettingsRow("Certainty column") { STSwitch(isOn: $controller.settings.showsCertaintyColumn, label: "Certainty column") }
                     STSettingsRow("Distance column") { STSwitch(isOn: $controller.settings.showsDistanceColumn, label: "Distance column") }
+                    STSettingsRow("Show the gray boat") {
+                        STSwitch(isOn: $controller.settings.showsGrayBoat, label: "Show the gray boat")
+                    }
                     STSettingsRow("Prediction rows") {
                         STSlider(value: maxRowsBinding, in: Double(NBBOverlaySettings.maxPredictionRowsRange.lowerBound)...Double(NBBOverlaySettings.maxPredictionRowsRange.upperBound), label: "Prediction rows", valueText: { "\(Int($0))" })
                     }
@@ -196,7 +204,8 @@ private struct NBBPagePreview: View {
     var body: some View {
         let content = controller.previewContent
         let messages = controller.previewMessages
-        if content == .hidden && messages.isEmpty {
+        let boat = controller.previewBoat
+        if content == .hidden && messages.isEmpty && !NBBOverlayLayout.boatCountsAsData(boat, settings: settings) {
             Text("Ninjabrain Bot\u{2019}s result appears here as it will over the game, once it has one.")
                 .stStyle(.caption)
                 .foregroundStyle(theme.inkTertiary)
@@ -206,11 +215,24 @@ private struct NBBPagePreview: View {
         } else {
             GeometryReader { proxy in
                 let scale = min(1, (proxy.size.width - 20) / overlaySize.width)
-                NBBOverlayView(content: content, messages: messages, settings: settings)
+                NBBOverlayView(content: content, messages: messages, settings: settings, boat: boat)
                     .scaleEffect(scale)
                     .frame(width: proxy.size.width, height: proxy.size.height)
             }
             .frame(height: overlaySize.height * min(1, 600 / overlaySize.width) + 20)
         }
+    }
+}
+
+/// What sTools sees when several Ninjabrain Bots are open, or one that isn't sharing its data, with the one-click fix.
+private struct NBBCopiesNote: View {
+    let monitor: NBBCopiesMonitor
+    let message: String
+
+    var body: some View {
+        STRequirementStrip(
+            kind: .warning, message: monitor.actionError ?? message,
+            actionTitle: monitor.isActing ? nil : monitor.situation.actionTitle,
+            action: { Task { await monitor.performAction() } })
     }
 }

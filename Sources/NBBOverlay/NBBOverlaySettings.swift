@@ -49,7 +49,13 @@ public struct NBBOverlaySettings: SettingsDocument {
 
     public var showsPredictions = true
     public var showsEyeThrows = true
+    /// The boat indicator at the top of the overlay.
     public var showsBoatState = true
+    /// Also shows the gray boat (no boat angle yet). Off, the gray boat is left out so the overlay stays clean for runs
+    /// without a boat.
+    public var showsGrayBoat = false
+    /// Colors the plate blue, green or red with the boat.
+    public var tintsPlateByBoat = true
     public var showsInformationMessages = true
 
     public var showsLocationColumn = true
@@ -88,6 +94,8 @@ public struct NBBOverlaySettings: SettingsDocument {
         showsPredictions = container.lossy(Bool.self, .showsPredictions) ?? defaults.showsPredictions
         showsEyeThrows = container.lossy(Bool.self, .showsEyeThrows) ?? defaults.showsEyeThrows
         showsBoatState = container.lossy(Bool.self, .showsBoatState) ?? defaults.showsBoatState
+        showsGrayBoat = container.lossy(Bool.self, .showsGrayBoat) ?? defaults.showsGrayBoat
+        tintsPlateByBoat = container.lossy(Bool.self, .tintsPlateByBoat) ?? defaults.tintsPlateByBoat
         showsInformationMessages = container.lossy(Bool.self, .showsInformationMessages) ?? defaults.showsInformationMessages
         showsLocationColumn = container.lossy(Bool.self, .showsLocationColumn) ?? defaults.showsLocationColumn
         showsCertaintyColumn = container.lossy(Bool.self, .showsCertaintyColumn) ?? defaults.showsCertaintyColumn

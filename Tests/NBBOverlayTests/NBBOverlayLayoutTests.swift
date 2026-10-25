@@ -1,4 +1,6 @@
 import Foundation
+import STDesign
+import SwiftUI
 import Testing
 @testable import NBBOverlay
 
@@ -22,13 +24,79 @@ struct NBBOverlayLayoutTests {
         #expect(content == .hidden)
     }
 
-    @Test func triangulationCarriesPredictionsEyeThrowsAndBoatState() {
+    @Test func triangulationCarriesPredictionsAndEyeThrows() {
         let boat = NBBEvents.Boat(boatState: .valid, boatAngle: 10)
         let content = NBBOverlayLayout.content(
             stronghold: stronghold(.triangulation, predictions: [prediction(0.8)]), blind: nil, divine: nil, boat: boat, allAdvancements: nil, maxPredictionRows: 5)
         guard case .triangulation(let data) = content else { Issue.record("expected triangulation"); return }
         #expect(data.predictions.count == 1)
-        #expect(data.boatState == .valid)
+    }
+
+    // MARK: - Boat
+
+    @Test(arguments: [
+        (NBBEvents.BoatState.none, NBBBoatLook.Tone.gray, "No boat"),
+        (.measuring, .blue, "Measuring boat"),
+        (.valid, .green, "Boat ready"),
+        (.error, .red, "Boat error"),
+    ])
+    func eachBoatStateHasNinjabrainBotsColorAndAWord(state: NBBEvents.BoatState, tone: NBBBoatLook.Tone, title: String) {
+        let look = NBBBoatLook(state)
+        #expect(look.tone == tone)
+        #expect(look.title == title)
+        #expect(look.tintsPlate == (tone != .gray))
+    }
+
+    @Test func theBoatShowsInEveryModeButGrayIsHiddenByDefault() {
+        let settings = NBBOverlaySettings()
+        #expect(NBBOverlayLayout.boatToShow(NBBEvents.Boat(boatState: .measuring, boatAngle: nil), settings: settings) == .measuring)
+        #expect(NBBOverlayLayout.boatToShow(NBBEvents.Boat(boatState: .none, boatAngle: nil), settings: settings) == nil)
+        #expect(NBBOverlayLayout.boatToShow(nil, settings: settings) == nil)
+        var withGray = settings
+        withGray.showsGrayBoat = true
+        #expect(NBBOverlayLayout.boatToShow(NBBEvents.Boat(boatState: .none, boatAngle: nil), settings: withGray) == NBBEvents.BoatState.none)
+        var off = settings
+        off.showsBoatState = false
+        #expect(NBBOverlayLayout.boatToShow(NBBEvents.Boat(boatState: .valid, boatAngle: 0), settings: off) == nil)
+    }
+
+    @Test func anActiveBoatAloneIsReasonToShowTheOverlay() {
+        let settings = NBBOverlaySettings()
+        for state in [NBBEvents.BoatState.measuring, .valid, .error] {
+            #expect(NBBOverlayLayout.boatCountsAsData(NBBEvents.Boat(boatState: state, boatAngle: nil), settings: settings))
+        }
+        var withGray = settings
+        withGray.showsGrayBoat = true
+        #expect(!NBBOverlayLayout.boatCountsAsData(NBBEvents.Boat(boatState: .none, boatAngle: nil), settings: withGray))
+    }
+
+    @Test func thePlateTakesTheBoatsColorUnlessGrayOrTurnedOff() {
+        let settings = NBBOverlaySettings()
+        #expect(NBBOverlayLayout.plateTint(NBBEvents.Boat(boatState: .valid, boatAngle: 0), settings: settings)?.tone == .green)
+        #expect(NBBOverlayLayout.plateTint(NBBEvents.Boat(boatState: .error, boatAngle: nil), settings: settings)?.tone == .red)
+        #expect(NBBOverlayLayout.plateTint(NBBEvents.Boat(boatState: .none, boatAngle: nil), settings: settings) == nil)
+        var off = settings
+        off.tintsPlateByBoat = false
+        #expect(NBBOverlayLayout.plateTint(NBBEvents.Boat(boatState: .valid, boatAngle: 0), settings: off) == nil)
+    }
+
+    /// Ink must stay readable on every tinted plate, at the plate's lowest opacity too.
+    @Test func inkStaysReadableOnEveryTintedPlate() throws {
+        for state in [NBBEvents.BoatState.measuring, .valid, .error] {
+            let tint = try #require(STColorWellHex.components(from: NBBBoatLook(state).colorHex))
+            let surface = try #require(STColorWellHex.components(from: STPalette.surface))
+            let ink = try #require(STColorWellHex.components(from: STPalette.ink))
+            let a = STPlate<EmptyView>.tintStrength
+            let mixed = (surface.red * (1 - a) + tint.red * a, surface.green * (1 - a) + tint.green * a, surface.blue * (1 - a) + tint.blue * a)
+            #expect(contrast(ink, mixed) >= 4.5, "ink on the \(state) plate")
+        }
+    }
+
+    private func contrast(_ a: (red: Double, green: Double, blue: Double), _ b: (Double, Double, Double)) -> Double {
+        func channel(_ c: Double) -> Double { c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4) }
+        func luminance(_ r: Double, _ g: Double, _ b: Double) -> Double { 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b) }
+        let la = luminance(a.red, a.green, a.blue), lb = luminance(b.0, b.1, b.2)
+        return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
     }
 
     @Test func failedCarriesEyeThrowsOnly() {

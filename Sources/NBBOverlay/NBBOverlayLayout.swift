@@ -18,7 +18,37 @@ enum NBBOverlayContent: Equatable, Sendable {
 struct TriangulationContent: Equatable, Sendable {
     var predictions: [PredictionRow]
     var eyeThrows: [NBBEvents.EyeThrow]
-    var boatState: NBBEvents.BoatState?
+}
+
+/// How the overlay shows Ninjabrain Bot's boat state: the same gray, blue, green and red boat Ninjabrain Bot's own window
+/// shows, with a word for each, so the boat reads at a glance during a run.
+struct NBBBoatLook: Equatable, Sendable {
+    enum Tone: Equatable, Sendable { case gray, blue, green, red }
+
+    var tone: Tone
+    var title: String
+
+    init(_ state: NBBEvents.BoatState) {
+        switch state {
+        case .none: tone = .gray; title = "No boat"
+        case .measuring: tone = .blue; title = "Measuring boat"
+        case .valid: tone = .green; title = "Boat ready"
+        case .error: tone = .red; title = "Boat error"
+        }
+    }
+
+    /// The boat's color: Ninjabrain Bot's four, lifted to read on the dark plate.
+    var colorHex: String {
+        switch tone {
+        case .gray: "#9A968E"
+        case .blue: "#5C9DF0"
+        case .green: "#6FCB7A"
+        case .red: "#E8695C"
+        }
+    }
+
+    /// Whether this boat colors the plate: blue, green and red do; gray leaves the plate as it is.
+    var tintsPlate: Bool { tone != .gray }
 }
 
 /// One predictions-table row: only fields the API provides directly (spec 5.1.5's "nether" and
@@ -42,7 +72,7 @@ enum NBBOverlayLayout {
             return .hidden
         case .triangulation:
             let rows = predictionRows(from: stronghold.predictions, maxRows: maxPredictionRows)
-            return .triangulation(TriangulationContent(predictions: rows, eyeThrows: stronghold.eyeThrows, boatState: boat?.boatState))
+            return .triangulation(TriangulationContent(predictions: rows, eyeThrows: stronghold.eyeThrows))
         case .failed:
             return .failed(eyeThrows: stronghold.eyeThrows)
         case .blind:
@@ -55,6 +85,28 @@ enum NBBOverlayLayout {
             guard let allAdvancements, allAdvancements.isAllAdvancementsModeEnabled else { return .hidden }
             return .allAdvancements(allAdvancements)
         }
+    }
+
+    /// The boat state the overlay shows, or nil to show no boat: off in the settings, nothing from Ninjabrain Bot yet, or
+    /// gray (no boat angle) while the gray boat is hidden.
+    static func boatToShow(_ boat: NBBEvents.Boat?, settings: NBBOverlaySettings) -> NBBEvents.BoatState? {
+        guard settings.showsBoatState, let state = boat?.boatState else { return nil }
+        if state == .none, !settings.showsGrayBoat { return nil }
+        return state
+    }
+
+    /// Whether the boat alone is reason to show the overlay: measuring, ready or failed. A runner sets the boat before the
+    /// first throw, when there is nothing else to show yet.
+    static func boatCountsAsData(_ boat: NBBEvents.Boat?, settings: NBBOverlaySettings) -> Bool {
+        guard let state = boatToShow(boat, settings: settings) else { return false }
+        return state != .none
+    }
+
+    /// The boat color the plate takes, or nil to leave the plate as it is.
+    static func plateTint(_ boat: NBBEvents.Boat?, settings: NBBOverlaySettings) -> NBBBoatLook? {
+        guard settings.tintsPlateByBoat, let state = boat?.boatState else { return nil }
+        let look = NBBBoatLook(state)
+        return look.tintsPlate ? look : nil
     }
 
     /// Up to `maxRows` predictions, dropping any whose certainty rounds to 0% (spec 5.1.3), in the
