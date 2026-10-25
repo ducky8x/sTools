@@ -17,11 +17,10 @@ public struct NBBWindowSnapshot: Equatable, Sendable {
     }
 }
 
-/// Reads a copy's window. The live one uses Accessibility; tests use a fake.
-@MainActor
-public protocol NBBWindowReading: AnyObject {
+/// Reads a copy's window, off the main actor. The live one uses Accessibility; tests use a fake.
+public protocol NBBWindowReading: Sendable {
     /// The window's contents, or nil when it can't be read (no Accessibility, no window, the copy quit).
-    func read(pid: Int32) -> NBBWindowSnapshot?
+    func read(pid: Int32) async -> NBBWindowSnapshot?
 }
 
 /// Turns the window's text, in the order Accessibility lists it, into a result. Pure, so it can be checked against
@@ -140,12 +139,13 @@ enum NBBWindowParser {
     }
 }
 
-/// Reads a copy's window through Accessibility. It walks the window once (about 50 ms for Ninjabrain Bot 1.5.2's
-/// ~170 elements), keeps the static texts and buttons it found, and then reads only their values (a few ms) until the
-/// window's shape changes or an element goes away, when it walks again. sTools already holds Accessibility for finding
-/// Minecraft; without it, nothing is read.
-@MainActor
-public final class AXNBBWindowReader: NBBWindowReading {
+/// Reads a copy's window through Accessibility, on a queue of its own (never the main actor, and never the shared
+/// threads the app's tasks run on, as each call waits for the other app). It walks the window once (60–75 ms for
+/// Ninjabrain Bot 1.5.2's ~170 elements), keeps the static texts and buttons it found, and then reads only their values
+/// (about 20 ms, nearly all of it waiting for Ninjabrain Bot's answers) until the window's shape changes or an element
+/// goes away, when it walks again. sTools already holds Accessibility for finding Minecraft; without it, nothing is
+/// read.
+public actor AXNBBWindowReader: NBBWindowReading {
     private struct Walked {
         var pid: Int32
         var elements: [(role: String, element: AXUIElement)]
@@ -155,6 +155,10 @@ public final class AXNBBWindowReader: NBBWindowReading {
     private var walked: Walked?
     /// Walks again at least this often, in case a panel changed which labels it shows.
     private let rewalkInterval: TimeInterval = 5
+
+    private let queue = DispatchSerialQueue(label: "com.ducky8x.sTools.nbb-window-reader", qos: .utility)
+
+    public nonisolated var unownedExecutor: UnownedSerialExecutor { queue.asUnownedSerialExecutor() }
 
     public init() {}
 

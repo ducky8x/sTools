@@ -146,10 +146,14 @@ struct NBBOverlayControllerTests {
     /// ducky's case: an old copy holds the API with nothing in it, and the newer copy in use has a result. The overlay
     /// follows the newer copy, read from its window; picking the old one switches back to the API.
     @MainActor @Test func theOverlayFollowsTheChosenCopyReadFromItsWindow() async {
-        final class FakeWindow: NBBWindowReading {
-            var reads: [Int32] = []
-            func read(pid: Int32) -> NBBWindowSnapshot? {
-                reads.append(pid)
+        /// Records each read and whether it ran on the main thread.
+        final class FakeWindow: NBBWindowReading, @unchecked Sendable {
+            private let lock = NSLock()
+            private var recorded: [(pid: Int32, onMainThread: Bool)] = []
+            var reads: [Int32] { lock.withLock { recorded.map(\.pid) } }
+            var readsOnMainThread: Int { lock.withLock { recorded.filter(\.onMainThread).count } }
+            func read(pid: Int32) async -> NBBWindowSnapshot? {
+                lock.withLock { recorded.append((pid, pthread_main_np() != 0)) }
                 return NBBWindowSnapshot(stronghold: NBBOverlayControllerTests.result, messages: ["A note from the window."])
             }
         }
@@ -171,6 +175,8 @@ struct NBBOverlayControllerTests {
         #expect(controller.isReachable)
         #expect(controller.previewMessages.map(\.text) == ["A note from the window."])
         #expect(controller.isOverlayVisible)
+        await waitUntil { window.reads.count >= 3 }
+        #expect(window.reads.count >= 3 && window.readsOnMainThread == 0, "the window is read off the main actor")
 
         monitor.choice = .copy(873)
         await waitUntil { controller.windowSnapshot == nil }
