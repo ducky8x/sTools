@@ -3,6 +3,7 @@ import CoreImage.CIFilterBuiltins
 import CoreVideo
 import Foundation
 import Metal
+import VideoToolbox
 
 public enum CompositorError: Error, Equatable {
     case noMetalDevice
@@ -27,6 +28,10 @@ public final class Compositor: @unchecked Sendable {
     private let context: CIContext
     private let pool: CVPixelBufferPool
     private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+    /// For `passThrough`, made at its first use.
+    private var copier: FrameCopier?
+    /// The color spaces of the frames' color tags seen so far (`image(of:)`).
+    private var colorSpaces = FrameColorSpaces()
 
     public init(outputSize: PixelSize) throws {
         guard let device = MTLCreateSystemDefaultDevice() else { throw CompositorError.noMetalDevice }
@@ -64,6 +69,34 @@ public final class Compositor: @unchecked Sendable {
         return buffer
     }
 
+    /// The frame `plan` shows unchanged over the whole output (`CompositionPlan.passThroughSource`), handed on without
+    /// Core Image: one hardware copy into a buffer in the encoder's own format (4:2:0, video range), which the encoder
+    /// takes as it is. The file is the same as from `render`: the encoder turns `render`'s untagged BGRA into 4:2:0
+    /// with the same Rec. 709 matrix, and the copy carries no color tags either, whatever tags the captured frame has.
+    /// Nil when the plan draws anything else or the copy fails; `render` then draws it.
+    public func passThrough(_ plan: CompositionPlan, frames: [SourceKey: VideoFrame]) -> CVPixelBuffer? {
+        guard let key = plan.passThroughSource(bufferSizes: frames.mapValues(\.pixelSize)), let frame = frames[key] else { return nil }
+        if copier == nil { copier = FrameCopier(size: outputSize) }
+        return copier?.copy(frame.pixelBuffer)
+    }
+
+    /// `picture` (one of `render`'s) as the encoder takes it: copied into an untagged 4:2:0 buffer by the same
+    /// conversion the encoder makes (`FrameCopier`), so a picture written again and again (`RecordingSession`'s reuse)
+    /// is converted once instead of by the encoder for every frame. Nil if the copy fails.
+    public func encoderCopy(of picture: CVPixelBuffer) -> CVPixelBuffer? {
+        if copier == nil { copier = FrameCopier(size: outputSize) }
+        return copier?.copy(picture)
+    }
+
+    /// Readies `passThrough` with one throwaway copy of `frame` (any size), so a recording's first frame doesn't wait
+    /// for VideoToolbox to set up (`RecordingWarmUp`).
+    func preparePassThrough(with frame: CVPixelBuffer) {
+        if copier == nil { copier = FrameCopier(size: outputSize) }
+        _ = copier?.copy(frame)
+    }
+
+    var isPreparedForPassThrough: Bool { copier != nil }
+
     /// The same composite as an image, for the page's live preview.
     public func renderImage(_ plan: CompositionPlan, frames: [SourceKey: VideoFrame]) -> CGImage? {
         guard let buffer = render(plan, frames: frames) else { return nil }
@@ -81,7 +114,7 @@ public final class Compositor: @unchecked Sendable {
         let destination = CGRect(
             x: layer.destination.x, y: Double(outputSize.height) - layer.destination.maxY,
             width: layer.destination.width, height: layer.destination.height)
-        var image = CIImage(cvPixelBuffer: frame.pixelBuffer)
+        var image = colorSpaces.image(of: frame.pixelBuffer)
             .cropped(to: crop)
             .transformed(by: CGAffineTransform(translationX: -crop.minX, y: -crop.minY))
             .transformed(by: CGAffineTransform(scaleX: destination.width / crop.width, y: destination.height / crop.height))
@@ -129,5 +162,87 @@ public final class Compositor: @unchecked Sendable {
         let b = CGFloat((value >> (hasAlpha ? 8 : 0)) & 0xFF) / 255
         let a = hasAlpha ? CGFloat(value & 0xFF) / 255 : 1
         return CIColor(red: r, green: g, blue: b, alpha: a, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!) ?? .white
+    }
+}
+
+/// Copies frames into untagged 4:2:0 video-range buffers with VideoToolbox's pixel transfer, the same conversion the
+/// encoder makes from BGRA (Rec. 709 matrix, no color matching). Call from one queue.
+final class FrameCopier {
+    static let pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+
+    private let session: VTPixelTransferSession
+    private let pool: CVPixelBufferPool
+
+    init?(size: PixelSize) {
+        var session: VTPixelTransferSession?
+        guard VTPixelTransferSessionCreate(allocator: nil, pixelTransferSessionOut: &session) == noErr, let session else { return nil }
+        VTSessionSetProperty(session, key: kVTPixelTransferPropertyKey_RealTime, value: kCFBooleanTrue)
+        VTSessionSetProperty(session, key: kVTPixelTransferPropertyKey_DestinationYCbCrMatrix, value: kCVImageBufferYCbCrMatrix_ITU_R_709_2)
+        let attributes: [String: Any] = [
+            kCVPixelBufferPixelFormatTypeKey as String: Self.pixelFormat,
+            kCVPixelBufferWidthKey as String: size.width,
+            kCVPixelBufferHeightKey as String: size.height,
+            kCVPixelBufferIOSurfacePropertiesKey as String: [:] as [String: Any],
+        ]
+        var pool: CVPixelBufferPool?
+        CVPixelBufferPoolCreate(nil, [kCVPixelBufferPoolMinimumBufferCountKey as String: 4] as CFDictionary, attributes as CFDictionary, &pool)
+        guard let pool else { return nil }
+        self.session = session
+        self.pool = pool
+    }
+
+    deinit { VTPixelTransferSessionInvalidate(session) }
+
+    /// A copy of `source` with no attachments, so the encoder tags the file as it does `Compositor.render`'s pictures;
+    /// nil if no buffer is free or the transfer fails.
+    func copy(_ source: CVPixelBuffer) -> CVPixelBuffer? {
+        var buffer: CVPixelBuffer?
+        CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer)
+        guard let buffer, VTPixelTransferSessionTransferImage(session, from: source, to: buffer) == noErr else { return nil }
+        CVBufferRemoveAllAttachments(buffer)
+        return buffer
+    }
+}
+
+/// Makes Core Image images of captured frames in the color space their tags give, worked out once per set of tags.
+/// `CIImage(cvPixelBuffer:)` builds that color space from the tags again for every frame (a ColorSync profile, made
+/// and validated each time), the largest part of drawing a layer on the frame thread; a source's tags stay the same
+/// from frame to frame. Call from one queue.
+struct FrameColorSpaces {
+    /// The tags a color space is made from. Other attachments (a camera's per-frame metadata) don't count, so they
+    /// can't make every frame look new.
+    nonisolated(unsafe) private static let colorKeys: [CFString] = [
+        kCVImageBufferCGColorSpaceKey, kCVImageBufferICCProfileKey, kCVImageBufferColorPrimariesKey,
+        kCVImageBufferTransferFunctionKey, kCVImageBufferGammaLevelKey, kCVImageBufferYCbCrMatrixKey,
+    ]
+
+    private var known: [(tags: [CFTypeRef?], space: CGColorSpace?)] = []
+
+    /// The image `CIImage(cvPixelBuffer:)` makes of `buffer`.
+    mutating func image(of buffer: CVPixelBuffer) -> CIImage {
+        guard let space = colorSpace(of: buffer) else { return CIImage(cvPixelBuffer: buffer) }
+        return CIImage(cvPixelBuffer: buffer, options: [.colorSpace: space])
+    }
+
+    /// The color space Core Image reads from `buffer`'s tags; nil for an untagged buffer, which Core Image treats
+    /// as it does with no tags.
+    mutating func colorSpace(of buffer: CVPixelBuffer) -> CGColorSpace? {
+        let attachments = CVBufferCopyAttachments(buffer, .shouldPropagate) ?? ([:] as CFDictionary)
+        let tags = Self.colorKeys.map { key in CFDictionaryGetValue(attachments, Unmanaged.passUnretained(key).toOpaque()).map { Unmanaged<CFTypeRef>.fromOpaque($0).takeUnretainedValue() } }
+        if let entry = known.first(where: { Self.same($0.tags, tags) }) { return entry.space }
+        let space = CVImageBufferCreateColorSpaceFromAttachments(attachments)?.takeRetainedValue()
+        if known.count >= 8 { known.removeFirst() }
+        known.append((tags, space))
+        return space
+    }
+
+    private static func same(_ a: [CFTypeRef?], _ b: [CFTypeRef?]) -> Bool {
+        zip(a, b).allSatisfy { x, y in
+            switch (x, y) {
+            case (nil, nil): true
+            case let (x?, y?): CFEqual(x, y)
+            default: false
+            }
+        }
     }
 }

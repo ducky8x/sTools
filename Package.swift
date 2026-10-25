@@ -24,6 +24,8 @@ let package = Package(
             dependencies: ["STDesign", "STPlatform", .product(name: "Sparkle", package: "Sparkle")] + tools.map { .byName(name: $0) },
             // Sparkle.framework is embedded in the app's Contents/Frameworks by scripts/build-app.sh.
             linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]),
+        // Measures a recording's CPU cost with fake sources (`swift run -c release RecordingBench`); never shipped.
+        .executableTarget(name: "RecordingBench", dependencies: ["ScreenRecording", "STPlatform"], path: "Benchmarks/RecordingBench"),
         .testTarget(name: "STDesignTests", dependencies: ["STDesign"]),
         .testTarget(name: "STPlatformTests", dependencies: ["STPlatform"]),
         // The test bundle finds Sparkle.framework next to it in the build folder.

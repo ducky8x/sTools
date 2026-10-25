@@ -68,7 +68,8 @@ public enum RecordingWarmUp {
     }
 
     /// A compositor for `outputSize` that has drawn once, so Core Image's Metal pipeline (and the kernels `layout`'s
-    /// sources use: crop, scale, opacity, rounded corners, borders) is built before the recording's first frame.
+    /// sources use: crop, scale, opacity, rounded corners, borders) is built before the recording's first frame, and
+    /// has made one pass-through copy, so VideoToolbox's is too.
     /// Nil when there's no Metal device; the recording then makes its own and says why it can't.
     static func compositor(outputSize: PixelSize, layout: RecordingLayout = RecordingLayout(), canvas: PixelSize? = nil) -> Compositor? {
         guard let compositor = try? Compositor(outputSize: outputSize) else { return nil }
@@ -80,6 +81,7 @@ public enum RecordingWarmUp {
         let plan = CompositionPlan.make(
             layout: layout, canvas: canvas ?? size, output: size, frames: frames.mapValues(CompositionPlan.FrameGeometry.init))
         _ = compositor.render(plan, frames: frames)
+        compositor.preparePassThrough(with: frame)
         return compositor
     }
 

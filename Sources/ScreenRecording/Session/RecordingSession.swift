@@ -54,6 +54,17 @@ public final class RecordingSession: @unchecked Sendable {
     /// first and none runs after: otherwise a late tick could write older sound after the final block.
     private let tickGate = NSLock()
     private var isStopped = false
+    /// The picture the last drawing tick made and the sources it shows. A tick whose sources brought nothing new
+    /// writes it again instead of drawing the same picture once more (a still screen, Minecraft closed). Touched only by
+    /// `tick`, under `tickGate`.
+    private var lastPicture: CVPixelBuffer?
+    private var lastPictureSources: Set<SourceKey> = []
+    /// `lastPicture` is already in the encoder's 4:2:0 (passed through, or converted the first time it was written
+    /// again), so the encoder doesn't convert it for every frame it's written.
+    private var lastPictureIsConverted = false
+    /// A source brought a frame, or came or went, since `lastPicture` was drawn. It stays set across ticks the
+    /// encoder was too busy to take, so the next one draws.
+    private var sourcesChanged = true
 
     private struct TickState {
         var lastTick: FrameTick?
@@ -61,6 +72,13 @@ public final class RecordingSession: @unchecked Sendable {
         var compositorMisses = 0
         /// Ticks skipped because the encoder wasn't ready; nothing was drawn for them.
         var encoderBusy = 0
+        /// Pictures drawn, of them the ones handed on without drawing (`Compositor.passThrough`), and ticks that wrote
+        /// the last picture again because nothing had changed.
+        var drawn = 0
+        var passedThrough = 0
+        var reused = 0
+        /// Drawn pictures converted to 4:2:0 as they were written again.
+        var converted = 0
     }
 
     public init(
@@ -134,6 +152,12 @@ public final class RecordingSession: @unchecked Sendable {
         return writer.droppedFrameCount + local
     }
 
+    /// Pictures the compositor drew, and ticks that wrote the last one again because no source had changed.
+    var picturesDrawn: Int { state.withLock { $0.drawn } }
+    var picturesPassedThrough: Int { state.withLock { $0.passedThrough } }
+    var picturesReused: Int { state.withLock { $0.reused } }
+    var picturesConverted: Int { state.withLock { $0.converted } }
+
     // MARK: Ticking
 
     private func tick(_ tick: FrameTick) {
@@ -145,13 +169,32 @@ public final class RecordingSession: @unchecked Sendable {
             $0.skippedSlots += tick.skippedSlots
         }
         let snapshot = rig.hub.snapshot()
-        let frames = snapshot.frames.mapValues(\.frame)
+        let sources = Set(snapshot.frames.keys)
+        if sources != lastPictureSources || snapshot.frames.values.contains(where: \.isNew) { sourcesChanged = true }
         if writer.canAcceptFrame {
-            let plan = CompositionPlan.make(
-                layout: configuration.layout, canvas: configuration.canvas, output: compositor.outputSize,
-                frames: frames.mapValues(CompositionPlan.FrameGeometry.init))
-            if let buffer = compositor.render(plan, frames: frames) {
-                writer.append(frame: buffer, at: tick.time)
+            if !sourcesChanged, var picture = lastPicture {
+                // The same frames make the same picture: write it again rather than draw it again. A drawn one is
+                // converted to the encoder's 4:2:0 now, once, rather than by the encoder on every tick it stays.
+                if !lastPictureIsConverted {
+                    lastPictureIsConverted = true
+                    if let converted = compositor.encoderCopy(of: picture) {
+                        picture = converted
+                        lastPicture = converted
+                        state.withLock { $0.converted += 1 }
+                    }
+                }
+                writer.append(frame: picture, at: tick.time)
+                state.withLock { $0.reused += 1 }
+            } else if let (picture, passedThrough) = draw(snapshot) {
+                writer.append(frame: picture, at: tick.time)
+                lastPicture = picture
+                lastPictureIsConverted = passedThrough
+                lastPictureSources = sources
+                sourcesChanged = false
+                state.withLock {
+                    $0.drawn += 1
+                    if passedThrough { $0.passedThrough += 1 }
+                }
             } else {
                 state.withLock { $0.compositorMisses += 1 }
             }
@@ -161,6 +204,18 @@ public final class RecordingSession: @unchecked Sendable {
         if let bus, let block = bus.drain(upTo: CMTimeSubtract(tick.hostTime, CMTime(seconds: Self.audioLag, preferredTimescale: 1_000_000))) {
             write(block)
         }
+    }
+
+    /// The snapshot's frames as one output picture, and whether it's a captured frame handed on as it is (the layout
+    /// shows one source unchanged over the whole output: Minecraft alone, at the output size); nil if the compositor
+    /// had no buffer free.
+    private func draw(_ snapshot: FrameSnapshot) -> (CVPixelBuffer, passedThrough: Bool)? {
+        let frames = snapshot.frames.mapValues(\.frame)
+        let plan = CompositionPlan.make(
+            layout: configuration.layout, canvas: configuration.canvas, output: compositor.outputSize,
+            frames: frames.mapValues(CompositionPlan.FrameGeometry.init))
+        if let frame = compositor.passThrough(plan, frames: frames) { return (frame, true) }
+        return compositor.render(plan, frames: frames).map { ($0, false) }
     }
 
     private func write(_ block: AudioBlock) {
