@@ -29,14 +29,26 @@ public enum NBBEvents {
         /// neither; over the API they're worked out from `playerPosition` the way Ninjabrain Bot does.
         var shownAngle: Double? = nil
         var shownAngleChange: Double? = nil
+        /// The window's own Location and Nether columns and its distance (which Ninjabrain Bot already gives in the
+        /// player's dimension), as a Ninjabrain Bot window showed them. The API sends none of them; over the API they're
+        /// worked out from the chunk and `playerPosition` the way Ninjabrain Bot does (`NBBStrongholdCoordinates`).
+        var shownLocation: NBBBlock? = nil
+        var shownNether: NBBBlock? = nil
+        var shownDistance: Int? = nil
 
-        init(chunkX: Int, chunkZ: Int, certainty: Double, overworldDistance: Double, shownAngle: Double? = nil, shownAngleChange: Double? = nil) {
+        init(
+            chunkX: Int, chunkZ: Int, certainty: Double, overworldDistance: Double, shownAngle: Double? = nil, shownAngleChange: Double? = nil,
+            shownLocation: NBBBlock? = nil, shownNether: NBBBlock? = nil, shownDistance: Int? = nil
+        ) {
             self.chunkX = chunkX
             self.chunkZ = chunkZ
             self.certainty = certainty
             self.overworldDistance = overworldDistance
             self.shownAngle = shownAngle
             self.shownAngleChange = shownAngleChange
+            self.shownLocation = shownLocation
+            self.shownNether = shownNether
+            self.shownDistance = shownDistance
         }
 
         private enum CodingKeys: String, CodingKey { case chunkX, chunkZ, certainty, overworldDistance }

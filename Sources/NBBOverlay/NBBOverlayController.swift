@@ -105,7 +105,8 @@ public final class NBBOverlayController: ToolController {
     var previewContent: NBBOverlayContent {
         NBBOverlayLayout.content(
             stronghold: stronghold, blind: currentBlind, divine: currentDivine,
-            boat: currentBoat, allAdvancements: currentAllAdvancements, maxPredictionRows: settings.maxPredictionRows)
+            boat: currentBoat, allAdvancements: currentAllAdvancements, maxPredictionRows: settings.maxPredictionRows,
+            locationDisplay: settings.locationDisplay, netherCoordinatesInNether: settings.showsNetherCoordinatesInNether)
     }
 
     /// Ninjabrain Bot's latest boat state, for the page's preview.
@@ -258,7 +259,8 @@ public final class NBBOverlayController: ToolController {
         let showsSample = stronghold == nil && sample != nil
         let content = NBBOverlayLayout.content(
             stronghold: stronghold ?? sample, blind: currentBlind, divine: currentDivine,
-            boat: currentBoat, allAdvancements: currentAllAdvancements, maxPredictionRows: settings.maxPredictionRows)
+            boat: currentBoat, allAdvancements: currentAllAdvancements, maxPredictionRows: settings.maxPredictionRows,
+            locationDisplay: settings.locationDisplay, netherCoordinatesInNether: settings.showsNetherCoordinatesInNether)
         var messages = currentMessages
         if showsSample { messages.append((severity: .info, text: Self.sampleNote)) }
 

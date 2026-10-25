@@ -39,6 +39,48 @@ struct NBBWindowParserTests {
         #expect(NBBWindowParser.turn(" (-> 47.4)") == 47.4 && NBBWindowParser.turn("(<- 2.0)") == -2 && NBBWindowParser.turn("1") == nil)
     }
 
+    @Test func keepsTheWindowsOwnLocationNetherAndDistanceTexts() throws {
+        let predictions = try #require(NBBWindowParser.parse(recordedWindow)).stronghold.predictions
+        #expect(predictions[0].shownLocation == NBBBlock(x: -1340, z: 84) && predictions[0].shownNether == NBBBlock(x: -168, z: 10))
+        #expect(predictions[0].shownDistance == 1)
+        #expect(predictions[2].shownLocation == NBBBlock(x: 116, z: 324) && predictions[2].shownNether == NBBBlock(x: 14, z: 40))
+        #expect(predictions[2].shownDistance == 1474)
+    }
+
+    /// A window set to show chunks, in the Nether: its Location column reads chunks and its distance is the Nether
+    /// distance, and the overlay keeps both exactly as the window shows them.
+    @Test func keepsAChunkLocationAndANetherDistanceAsTheWindowShowsThem() throws {
+        let t = Item.text
+        let window = [t("Location"), t("%"), t("Dist."), t("Nether"), t("Angle"),
+                      t("(-84, 5)"), t("92.1%"), t("197"), t("(-168, 10)"), t("118.30"), t(" (<- 113.7)"),
+                      t("(-85, 5)"), t("4.0%"), t("199"), t("(-170, 10)"), t("118.90"), t(" (<- 113.1)"),
+                      t("s1"), t("Ender eye throws"), t("x"), t("z"), t("Angle"), t("Error"), .button]
+        let snapshot = try #require(NBBWindowParser.parse(window))
+        let first = try #require(snapshot.stronghold.predictions.first)
+        #expect(first.shownLocation == NBBBlock(x: -84, z: 5) && first.shownNether == NBBBlock(x: -168, z: 10) && first.shownDistance == 197)
+        guard case .triangulation(let data) = NBBOverlayLayout.content(
+            stronghold: snapshot.stronghold, blind: nil, divine: nil, boat: nil, allAdvancements: nil, maxPredictionRows: 5) else {
+            Issue.record("expected triangulation"); return
+        }
+        #expect(data.column == .windowLocation)
+        #expect(data.predictions.map(\.coordinates) == [NBBBlock(x: -84, z: 5), NBBBlock(x: -85, z: 5)])
+        #expect(data.predictions.map(\.distance) == [197, 199])
+    }
+
+    /// Ninjabrain Bot can hide its Nether column (Show nether coordinates); the row is still read.
+    @Test func readsARowWithoutTheNetherColumn() throws {
+        let t = Item.text
+        let window = [t("Location"), t("%"), t("Dist."), t("Angle"),
+                      t("(-1340, 84)"), t("100.0%"), t("1"), t("118.30"), t(" (<- 113.7)"), t("s1")]
+        let first = try #require(NBBWindowParser.parse(window)?.stronghold.predictions.first)
+        #expect(first.shownLocation == NBBBlock(x: -1340, z: 84) && first.shownNether == nil && first.shownDistance == 1)
+        #expect(first.shownAngle == 118.30 && first.shownAngleChange == -113.7)
+        // With the angle hidden too, the next row's location isn't taken for this row's Nether column.
+        let bare = [t("Location"), t("%"), t("Dist."), t("(-1340, 84)"), t("90.0%"), t("1"), t("(20, 308)"), t("5.0%"), t("1376"), t("s1")]
+        let rows = try #require(NBBWindowParser.parse(bare)).stronghold.predictions
+        #expect(rows.count == 2 && rows[0].shownNether == nil && rows[1].shownLocation == NBBBlock(x: 20, z: 308))
+    }
+
     @Test func readsTheEyeThrows() throws {
         let throwsRead = try #require(NBBWindowParser.parse(recordedWindow)).stronghold.eyeThrows
         #expect(throwsRead.count == 1)

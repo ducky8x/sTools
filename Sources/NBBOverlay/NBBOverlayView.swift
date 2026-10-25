@@ -119,7 +119,13 @@ struct NBBTriangulationBlock: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if settings.showsPredictions, !data.predictions.isEmpty {
-                NBBHeading(text: "Predictions")
+                HStack(alignment: .center, spacing: 8) {
+                    NBBHeading(text: "Predictions")
+                    // Says whose coordinates and distance the table shows, whenever either column is on.
+                    if settings.showsLocationColumn || settings.showsDistanceColumn {
+                        NBBColumnMark(column: data.column)
+                    }
+                }
                 // A grid, so each column lines up from row to row.
                 Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
                     ForEach(Array(data.predictions.enumerated()), id: \.element.id) { index, row in
@@ -152,7 +158,7 @@ private struct NBBPredictionRowView: View {
     var body: some View {
         GridRow {
             if settings.showsLocationColumn {
-                Text("\(row.chunkX), \(row.chunkZ)").font(nbbNumber(weight: isTop ? .semibold : .regular))
+                Text(row.coordinates.text).font(nbbNumber(weight: isTop ? .semibold : .regular))
             }
             if settings.showsCertaintyColumn {
                 Text("\(row.certaintyPercent)%")
@@ -160,7 +166,8 @@ private struct NBBPredictionRowView: View {
                     .foregroundStyle(isTop ? STColor.gold : STColor.ink)
             }
             if settings.showsDistanceColumn {
-                Text("\(Int(row.overworldDistance))m").font(nbbNumber()).foregroundStyle(STColor.inkSecondary)
+                // Verbatim, so the number reads as Ninjabrain Bot writes it ("1579", no grouping separator).
+                Text(verbatim: "\(row.distance)m").font(nbbNumber()).foregroundStyle(STColor.inkSecondary)
             }
             if settings.showsAngleColumn, let angle = row.angle {
                 Text(String(format: "%.2f\u{00B0}", angle)).font(nbbNumber())
@@ -173,6 +180,33 @@ private struct NBBPredictionRowView: View {
             }
         }
         .foregroundStyle(STColor.ink)
+    }
+}
+
+/// A small tag beside the Predictions heading: Overworld, Nether, or (from a window, which doesn't say) Location, in the
+/// heading's own letters, tinted faintly green for the Overworld and red for the Nether.
+struct NBBColumnMark: View {
+    let column: NBBCoordinateColumn
+
+    static func colorHex(_ column: NBBCoordinateColumn) -> String? {
+        switch column {
+        case .overworld: "#6FCB7A"
+        case .nether: "#E8695C"
+        case .windowLocation: nil
+        }
+    }
+
+    private var color: Color { Self.colorHex(column).map { STColorWellHex.color(from: $0) } ?? STColor.inkSecondary }
+
+    var body: some View {
+        Text(column.title.uppercased())
+            .font(nbbLabel(9))
+            .tracking(0.8)
+            .foregroundStyle(color)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1.5)
+            .overlay(Capsule().strokeBorder(color.opacity(0.45), lineWidth: 0.75))
+            .accessibilityLabel(column.spoken)
     }
 }
 

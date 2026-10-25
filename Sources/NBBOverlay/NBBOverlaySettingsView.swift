@@ -83,6 +83,14 @@ public struct NBBOverlaySettingsView: View {
             STAdvancedDisclosure(isExpanded: $advancedExpanded) {
                 VStack(alignment: .leading, spacing: 0) {
                     STSettingsRow("Location column") { STSwitch(isOn: $controller.settings.showsLocationColumn, label: "Location column") }
+                    STSettingsRow("Nether coordinates in the Nether") {
+                        STSwitch(isOn: $controller.settings.showsNetherCoordinatesInNether, label: "Nether coordinates in the Nether")
+                    }
+                    STSettingsRow("Location shown as", combinesForAccessibility: false) {
+                        STSegmented(
+                            selection: $controller.settings.locationDisplay,
+                            options: NBBLocationDisplay.allCases.map { STSegmentedOption($0, $0.title) })
+                    }
                     STSettingsRow("Certainty column") { STSwitch(isOn: $controller.settings.showsCertaintyColumn, label: "Certainty column") }
                     STSettingsRow("Distance column") { STSwitch(isOn: $controller.settings.showsDistanceColumn, label: "Distance column") }
                     STSettingsRow("Angle column") { STSwitch(isOn: $controller.settings.showsAngleColumn, label: "Angle column") }
