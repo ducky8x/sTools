@@ -7,14 +7,13 @@ import Observation
 /// and whether it holds the API's port.
 ///
 /// Ninjabrain Bot always opens its API on port 52533 on every address. A second copy started while another holds the
-/// port gets no API at all, and it doesn't try again when the first one quits; only a restart (or turning Enable API off
-/// and on in it) gives it the port. So with two copies open, sTools can read only the one that started first.
+/// port gets no API at all, and it doesn't try again when the first one quits. Such a copy is read from its window.
 public struct NBBCopy: Equatable, Sendable, Identifiable {
     public var id: Int32 { pid }
     public var pid: Int32
     /// When the process started, if macOS reported it.
     public var startedAt: Date?
-    /// The command that started it, to start it again.
+    /// The command that started it.
     public var arguments: [String]
     /// Whether it listens on Ninjabrain Bot's API port.
     public var holdsAPI: Bool
@@ -27,53 +26,12 @@ public struct NBBCopy: Equatable, Sendable, Identifiable {
     }
 }
 
-/// What sTools sees of Ninjabrain Bot's copies, and what to tell the person.
-public enum NBBCopiesSituation: Equatable, Sendable {
-    /// No copy, or one copy sharing its data: nothing to say.
-    case normal
-    /// Several copies; sTools reads the one holding the API. `others` can't share their data.
-    case severalOneShares(reading: NBBCopy, others: [NBBCopy])
-    /// Copies are open but none holds the API: the one that had it quit, or the API is off in all of them.
-    case noneShares(copies: [NBBCopy])
-
-    public init(copies: [NBBCopy]) {
-        let sharing = copies.filter(\.holdsAPI)
-        if copies.isEmpty {
-            self = .normal
-        } else if sharing.isEmpty {
-            self = .noneShares(copies: copies)
-        } else if copies.count == 1 {
-            self = .normal
-        } else {
-            // Ninjabrain Bot's own bind lets only one copy hold the port; should two ever both listen (one per address
-            // family), the first started is the one `localhost` reaches.
-            let reading = sharing.min { ($0.startedAt ?? .distantPast) < ($1.startedAt ?? .distantPast) }!
-            self = .severalOneShares(reading: reading, others: copies.filter { $0.pid != reading.pid })
-        }
-    }
-
-    /// The page's line, or nil when there's nothing to say.
-    public var message: String? {
-        switch self {
-        case .normal:
-            nil
-        case .severalOneShares(_, let others):
-            "\(others.count == 1 ? "Two" : "\(others.count + 1)") Ninjabrain Bots are open. Only the one opened first can share its data, so sTools reads that one. Quit the \(others.count == 1 ? "other" : "others") so you don\u{2019}t mix them up."
-        case .noneShares(let copies):
-            copies.count == 1
-                ? "Ninjabrain Bot is open but isn\u{2019}t sharing its data: it started while another copy had the API, or its API is off. Restart it to let sTools read it."
-                : "\(copies.count) Ninjabrain Bots are open but none is sharing its data. Restart one to let sTools read it."
-        }
-    }
-
-    /// The button beside the line, or nil for none.
-    public var actionTitle: String? {
-        switch self {
-        case .normal: nil
-        case .severalOneShares(_, let others): others.count == 1 ? "Quit the Other Copy" : "Quit the Other Copies"
-        case .noneShares: "Restart Ninjabrain Bot"
-        }
-    }
+/// Which Ninjabrain Bot the overlay follows.
+public enum NBBCopyChoice: Equatable, Sendable {
+    /// The newest copy: most likely the window the person just opened, for instance with Minecraft.
+    case automatic
+    /// The copy with this process number, for as long as it runs; then back to automatic.
+    case copy(Int32)
 }
 
 /// Lists the running Ninjabrain Bots. The live one reads the process table; tests use a fake.
@@ -81,45 +39,59 @@ public protocol NBBCopiesScanning: Sendable {
     func scan() -> [NBBCopy]
 }
 
-/// Quits and starts Ninjabrain Bot copies. The live one asks a copy to quit as its Quit menu would, and starts a copy
-/// with the command it was started with; tests use a fake.
+/// Finds no copy, so the API at localhost is read and no window ever is: for tests and previews, which must never
+/// look at the person's real Ninjabrain Bots.
+public struct NoNBBCopiesScanner: NBBCopiesScanning {
+    public init() {}
+    public func scan() -> [NBBCopy] { [] }
+}
+
+/// Quits a Ninjabrain Bot copy, as its Quit menu would; tests use a fake.
 @MainActor
 public protocol NBBCopiesControlling: AnyObject {
     func quit(_ copy: NBBCopy)
-    func start(_ arguments: [String]) throws
 }
 
 /// Watches Ninjabrain Bot's copies while the NBB Overlay is on (every 2 s; a scan reads only the process table) and
-/// offers the fix for the situation it finds.
+/// says which one the overlay reads. A copy holding the API is read over it; any other copy is read from its window
+/// (`NBBWindowReader`), so the person can pick the copy they use while every copy stays open.
 @MainActor
 @Observable
 public final class NBBCopiesMonitor {
     public private(set) var copies: [NBBCopy] = []
-    public var situation: NBBCopiesSituation { NBBCopiesSituation(copies: copies) }
-    /// Whether an action is still waiting for Ninjabrain Bot to quit or start.
-    public private(set) var isActing = false
-    /// Why the last action couldn't finish, or nil.
-    public private(set) var actionError: String?
+    public var choice: NBBCopyChoice = .automatic
 
     @ObservationIgnored private let scanner: any NBBCopiesScanning
     @ObservationIgnored private let control: any NBBCopiesControlling
     @ObservationIgnored private let interval: Duration
-    @ObservationIgnored private let quitWait: Duration
     @ObservationIgnored private var watch: Task<Void, Never>?
 
     public init(
         scanner: any NBBCopiesScanning = LiveNBBCopiesScanner(),
         control: any NBBCopiesControlling = LiveNBBCopiesControl(),
-        interval: Duration = .seconds(2),
-        quitWait: Duration = .milliseconds(100)
+        interval: Duration = .seconds(2)
     ) {
         self.scanner = scanner
         self.control = control
         self.interval = interval
-        self.quitWait = quitWait
     }
 
     public var isWatching: Bool { watch != nil }
+
+    /// The copy the overlay reads: the chosen one while it runs, else the newest. Nil when no copy was found (the API
+    /// at localhost is read then, in case Ninjabrain Bot runs in a way the scan doesn't recognize).
+    public var readCopy: NBBCopy? {
+        if case .copy(let pid) = choice, let chosen = copies.first(where: { $0.pid == pid }) { return chosen }
+        return copies.last
+    }
+
+    /// Whether the overlay reads a copy's window instead of the API: the copy it follows doesn't hold the port.
+    public var readsWindow: Bool { readCopy.map { !$0.holdsAPI } ?? false }
+
+    /// Whether the page lists the copies: more than one is open, or the one open can only be read from its window.
+    public var showsCopies: Bool { copies.count > 1 || readsWindow }
+
+    public func isRead(_ copy: NBBCopy) -> Bool { readCopy?.pid == copy.pid }
 
     public func start() {
         guard watch == nil else { return }
@@ -143,35 +115,25 @@ public final class NBBCopiesMonitor {
     public func refresh() {
         let found = scanner.scan().sorted { ($0.startedAt ?? .distantPast, $0.pid) < ($1.startedAt ?? .distantPast, $1.pid) }
         if found != copies { copies = found }
+        if case .copy(let pid) = choice, !found.contains(where: { $0.pid == pid }) { choice = .automatic }
     }
 
-    /// Runs the situation's fix: quits the copies sTools can't read, or restarts the newest copy so it takes the API.
-    public func performAction() async {
-        guard !isActing else { return }
-        actionError = nil
-        switch situation {
-        case .normal:
-            return
-        case .severalOneShares(_, let others):
-            isActing = true
-            for copy in others { control.quit(copy) }
-        case .noneShares(let copies):
-            // The newest copy is most likely the window the person is using.
-            guard let copy = copies.last else { return }
-            isActing = true
-            for other in copies { control.quit(other) }
-            // Ninjabrain Bot frees the port as it quits; start it again once every copy is gone (5 s at most).
-            for _ in 0..<50 where !scanner.scan().isEmpty {
-                try? await Task.sleep(for: quitWait)
-            }
-            do {
-                try control.start(copy.arguments)
-            } catch {
-                actionError = "Ninjabrain Bot couldn\u{2019}t be started again. Open it yourself."
-            }
-        }
+    /// Asks a copy to quit, as its Quit menu would.
+    public func quit(_ copy: NBBCopy) {
+        control.quit(copy)
         refresh()
-        isActing = false
+    }
+
+    /// How the page names a copy: when it was opened and how sTools reads it.
+    public static func description(of copy: NBBCopy, now: Date = Date(), calendar: Calendar = .current) -> String {
+        let opened: String
+        if let started = copy.startedAt {
+            let time = started.formatted(date: .omitted, time: .shortened)
+            opened = calendar.isDate(started, inSameDayAs: now) ? "Opened at \(time)" : "Opened \(started.formatted(.dateTime.month(.abbreviated).day())) at \(time)"
+        } else {
+            opened = "Open"
+        }
+        return opened + (copy.holdsAPI ? " \u{00B7} shares its data" : " \u{00B7} read from its window")
     }
 }
 
@@ -265,8 +227,7 @@ public struct LiveNBBCopiesScanner: NBBCopiesScanning {
     }
 }
 
-/// Quits a copy the way its Quit menu would (falling back to a polite terminate signal), and starts a copy with the
-/// command it was started with.
+/// Quits a copy the way its Quit menu would, falling back to a polite terminate signal.
 @MainActor
 public final class LiveNBBCopiesControl: NBBCopiesControlling {
     public init() {}
@@ -274,15 +235,5 @@ public final class LiveNBBCopiesControl: NBBCopiesControlling {
     public func quit(_ copy: NBBCopy) {
         if let app = NSRunningApplication(processIdentifier: copy.pid), app.terminate() { return }
         kill(copy.pid, SIGTERM)
-    }
-
-    public func start(_ arguments: [String]) throws {
-        guard let executable = arguments.first else { throw CocoaError(.executableNotLoadable) }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = Array(arguments.dropFirst())
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        try process.run()
     }
 }

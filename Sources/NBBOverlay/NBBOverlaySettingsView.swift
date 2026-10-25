@@ -14,12 +14,15 @@ public struct NBBOverlaySettingsView: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            if let message = controller.copies.situation.message {
-                NBBCopiesNote(monitor: controller.copies, message: message)
-            } else if controller.isEnabled, !controller.isReachable {
+            if controller.isEnabled, !controller.isReachable {
                 STRequirementStrip(
                     kind: .warning,
-                    message: "Ninjabrain Bot isn't reachable at localhost:52533 — enable its API under Settings ▸ Advanced in Ninjabrain Bot.")
+                    message: controller.readsWindow
+                        ? "sTools can\u{2019}t read this Ninjabrain Bot\u{2019}s window. It needs Accessibility, and the window must be open."
+                        : "Ninjabrain Bot isn't reachable at localhost:52533 — enable its API under Settings ▸ Advanced in Ninjabrain Bot.")
+            }
+            if controller.copies.showsCopies {
+                NBBCopiesList(monitor: controller.copies)
             }
             if let version = controller.nbbVersion {
                 Text("Ninjabrain Bot \(version)").stStyle(.caption).foregroundStyle(STColor.inkSecondary)
@@ -230,15 +233,56 @@ private struct NBBPagePreview: View {
     }
 }
 
-/// What sTools sees when several Ninjabrain Bots are open, or one that isn't sharing its data, with the one-click fix.
-private struct NBBCopiesNote: View {
+/// The open Ninjabrain Bots, with the one the overlay reads marked. Pick another with Read This One; every copy stays
+/// open. A copy holding the API is read over it, any other from its window (predictions, eye throws and notes; no boat).
+private struct NBBCopiesList: View {
     let monitor: NBBCopiesMonitor
-    let message: String
+    @Environment(\.stTheme) private var theme
 
     var body: some View {
-        STRequirementStrip(
-            kind: .warning, message: monitor.actionError ?? message,
-            actionTitle: monitor.isActing ? nil : monitor.situation.actionTitle,
-            action: { Task { await monitor.performAction() } })
+        VStack(alignment: .leading, spacing: 0) {
+            Text(monitor.copies.count > 1 ? "Ninjabrain Bots open" : "Ninjabrain Bot")
+                .stStyle(.label).foregroundStyle(theme.inkTertiary).padding(.bottom, 6)
+            ForEach(Array(monitor.copies.enumerated()), id: \.element.pid) { index, copy in
+                HStack(spacing: 10) {
+                    Circle()
+                        .fill(monitor.isRead(copy) ? STColor.gold : Color.clear)
+                        .overlay(Circle().strokeBorder(monitor.isRead(copy) ? STColor.gold : theme.stroke, lineWidth: 1))
+                        .frame(width: 9, height: 9)
+                        .accessibilityHidden(true)
+                    Text(NBBCopiesMonitor.description(of: copy))
+                        .stStyle(.body)
+                        .foregroundStyle(STColor.ink)
+                    Spacer(minLength: 8)
+                    if monitor.isRead(copy) {
+                        Text("Reading").stStyle(.caption).foregroundStyle(STColor.gold)
+                    } else {
+                        Button("Read This One") { monitor.choice = .copy(copy.pid) }
+                            .buttonStyle(STButtonStyle(.secondary))
+                    }
+                    if monitor.copies.count > 1 {
+                        Button("Quit") { monitor.quit(copy) }
+                            .buttonStyle(STButtonStyle(.quiet))
+                    }
+                }
+                .padding(.vertical, 6)
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Ninjabrain Bot \(index + 1)\(monitor.isRead(copy) ? ", read by the overlay" : "")")
+            }
+            Text(caption)
+                .stStyle(.caption).foregroundStyle(theme.inkSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 4)
+            if monitor.choice != .automatic {
+                Button("Follow the Newest Copy") { monitor.choice = .automatic }
+                    .buttonStyle(STButtonStyle(.quiet))
+                    .padding(.top, 4)
+            }
+        }
+    }
+
+    private var caption: String {
+        let api = "Only one Ninjabrain Bot can share its data over the API; sTools reads any other from its window: predictions, eye throws and notes, without the boat."
+        return monitor.choice == .automatic ? "The overlay follows the newest copy. " + api : api
     }
 }

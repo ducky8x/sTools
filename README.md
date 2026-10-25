@@ -58,7 +58,7 @@ Press your Start-timer key and a countdown pops up over the game, 2:30 by defaul
 
 ### NBB Overlay
 
-Reads Ninjabrain Bot's local API and shows its current result in a small plate over the game: predictions with certainty and distance, your eye throws, and its blind, divine and all-advancements modes. Ninjabrain Bot's boat sits at the top in its own colors (blue measuring, green ready, red error), and the whole plate can take the boat's color so you see it from the corner of your eye. If two Ninjabrain Bots are open, sTools tells you which one it reads and can quit the other, or restart one that isn't sharing its data. It fades out when you reset Ninjabrain Bot and back in with the next result. It shows only what Ninjabrain Bot itself shows. Drag it into place with snapping or type its position, and set its size and opacity.
+Reads Ninjabrain Bot's local API and shows its current result in a small plate over the game: predictions with certainty and distance, your eye throws, and its blind, divine and all-advancements modes. Ninjabrain Bot's boat sits at the top in its own colors (blue measuring, green ready, red error), and the whole plate can take the boat's color so you see it from the corner of your eye. If two Ninjabrain Bots are open, pick which one the overlay follows on its page; a copy that can't share its data over the API is read from its own window instead (everything but the boat). It fades out when you reset Ninjabrain Bot and back in with the next result. It shows only what Ninjabrain Bot itself shows. Drag it into place with snapping or type its position, and set its size and opacity.
 
 ### Screen Recording
 

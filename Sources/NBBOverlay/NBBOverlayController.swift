@@ -20,8 +20,15 @@ public final class NBBOverlayController: ToolController {
 
     @ObservationIgnored private let services: ToolServices
     @ObservationIgnored private let connection: NBBConnection
-    /// The running Ninjabrain Bots, watched while the tool is on, for the page's note when more than one is open.
+    /// The running Ninjabrain Bots, watched while the tool is on: which one the overlay reads, and the page's list.
     public let copies: NBBCopiesMonitor
+    /// What the followed copy's window shows, while it's read from its window (it doesn't hold the API).
+    public private(set) var windowSnapshot: NBBWindowSnapshot?
+    @ObservationIgnored private let windowReader: any NBBWindowReading
+    @ObservationIgnored private var windowPoll: Task<Void, Never>?
+    @ObservationIgnored private var windowPollPID: Int32?
+    /// How often a copy's window is read: twice a second, a few milliseconds each.
+    @ObservationIgnored private let windowPollInterval: Duration
     @ObservationIgnored private let panel = OverlayPanel(role: .topmost)
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
     /// For Reduce animations: while motion is reduced, the overlay shows and hides at once.
@@ -51,10 +58,13 @@ public final class NBBOverlayController: ToolController {
     }
 
     public init(
-        services: ToolServices, connection: NBBConnection = NBBConnection(), copies: NBBCopiesMonitor? = nil, theme: STTheme? = nil
+        services: ToolServices, connection: NBBConnection = NBBConnection(), copies: NBBCopiesMonitor? = nil, theme: STTheme? = nil,
+        windowReader: (any NBBWindowReading)? = nil, windowPollInterval: Duration = .milliseconds(500)
     ) {
         self.services = services
         self.theme = theme
+        self.windowReader = windowReader ?? AXNBBWindowReader()
+        self.windowPollInterval = windowPollInterval
         self.connection = connection
         self.copies = copies ?? NBBCopiesMonitor()
         settings = services.settings.load(NBBOverlaySettings.self)
@@ -66,32 +76,43 @@ public final class NBBOverlayController: ToolController {
         didSet { if sample != oldValue { refreshIfEnabled() } }
     }
 
-    /// Ninjabrain Bot's latest stronghold result, as it sent it.
-    public var stronghold: NBBEvents.Stronghold? { connection.stronghold }
+    /// Ninjabrain Bot's latest stronghold result: from the API, or from the followed copy's window.
+    public var stronghold: NBBEvents.Stronghold? { readsWindow ? windowSnapshot?.stronghold : connection.stronghold }
+
+    /// Whether the overlay follows a copy it reads from its window.
+    public var readsWindow: Bool { copies.readsWindow }
+
+    // The window gives predictions, eye throws and notes only; the boat and the other views come over the API.
+    private var currentBlind: NBBEvents.Blind? { readsWindow ? nil : connection.blind }
+    private var currentDivine: NBBEvents.Divine? { readsWindow ? nil : connection.divine }
+    private var currentBoat: NBBEvents.Boat? { readsWindow ? nil : connection.boat }
+    private var currentAllAdvancements: NBBEvents.AllAdvancements? { readsWindow ? nil : connection.allAdvancements }
+    private var currentMessages: [(severity: NBBEvents.MessageSeverity, text: String)] {
+        if readsWindow { return (windowSnapshot?.messages ?? []).map { (severity: .info, text: $0) } }
+        return NBBOverlayLayout.plainTextMessages(from: connection.informationMessages?.informationMessages ?? [])
+    }
 
     /// The line under a sample result.
     public static let sampleNote = "Sample result: Ninjabrain Bot isn\u{2019}t connected."
 
     /// Ninjabrain Bot's reported version, for the page's requirement strip.
     public var nbbVersion: String? { connection.version }
-    /// Whether the stronghold subscription is currently connected.
-    public var isReachable: Bool { connection.isReachable }
+    /// Whether sTools can read the copy it follows: its window, or the API's stronghold subscription.
+    public var isReachable: Bool { readsWindow ? windowSnapshot != nil : connection.isReachable }
 
     /// What the overlay shows for Ninjabrain Bot's live result, for the page's preview. Never the intro's sample,
     /// which is shown only in the intro's trial.
     var previewContent: NBBOverlayContent {
         NBBOverlayLayout.content(
-            stronghold: connection.stronghold, blind: connection.blind, divine: connection.divine,
-            boat: connection.boat, allAdvancements: connection.allAdvancements, maxPredictionRows: settings.maxPredictionRows)
+            stronghold: stronghold, blind: currentBlind, divine: currentDivine,
+            boat: currentBoat, allAdvancements: currentAllAdvancements, maxPredictionRows: settings.maxPredictionRows)
     }
 
     /// Ninjabrain Bot's latest boat state, for the page's preview.
-    var previewBoat: NBBEvents.Boat? { connection.boat }
+    var previewBoat: NBBEvents.Boat? { currentBoat }
 
     /// Ninjabrain Bot's information messages as the overlay shows them, for the page's preview.
-    var previewMessages: [(severity: NBBEvents.MessageSeverity, text: String)] {
-        NBBOverlayLayout.plainTextMessages(from: connection.informationMessages?.informationMessages ?? [])
-    }
+    var previewMessages: [(severity: NBBEvents.MessageSeverity, text: String)] { currentMessages }
 
     /// Resets every setting to its shipped default.
     public func resetToDefault() {
@@ -104,11 +125,13 @@ public final class NBBOverlayController: ToolController {
         if enabled {
             connection.start()
             copies.start()
+            syncWindowReading()
             observeChanges()
             refreshIfEnabled()
         } else {
             connection.stop()
             copies.stop()
+            syncWindowReading()
             for observer in observers { NotificationCenter.default.removeObserver(observer) }
             observers.removeAll()
             fadeGeneration += 1
@@ -189,10 +212,37 @@ public final class NBBOverlayController: ToolController {
             _ = connection.informationMessages
             _ = connection.allAdvancements
             _ = services.minecraft.active
+            _ = copies.copies
+            _ = copies.choice
+            _ = windowSnapshot
         } onChange: { [weak self] in
             Task { @MainActor in
+                self?.syncWindowReading()
                 self?.refreshIfEnabled()
                 self?.watchForUpdates()
+            }
+        }
+    }
+
+    /// Reads the followed copy's window twice a second while the tool is on and that copy doesn't hold the API; stops
+    /// otherwise.
+    private func syncWindowReading() {
+        let pid = isEnabled && copies.readsWindow ? copies.readCopy?.pid : nil
+        guard pid != windowPollPID else { return }
+        windowPoll?.cancel()
+        windowPoll = nil
+        windowPollPID = pid
+        guard let pid else {
+            if windowSnapshot != nil { windowSnapshot = nil }
+            return
+        }
+        windowSnapshot = windowReader.read(pid: pid)
+        windowPoll = Task { [weak self, interval = windowPollInterval] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: interval)
+                guard !Task.isCancelled, let self, self.windowPollPID == pid else { return }
+                let snapshot = self.windowReader.read(pid: pid)
+                if snapshot != self.windowSnapshot { self.windowSnapshot = snapshot }
             }
         }
     }
@@ -205,11 +255,11 @@ public final class NBBOverlayController: ToolController {
             return
         }
         currentDisplay = display
-        let showsSample = connection.stronghold == nil && sample != nil
+        let showsSample = stronghold == nil && sample != nil
         let content = NBBOverlayLayout.content(
-            stronghold: connection.stronghold ?? sample, blind: connection.blind, divine: connection.divine,
-            boat: connection.boat, allAdvancements: connection.allAdvancements, maxPredictionRows: settings.maxPredictionRows)
-        var messages = NBBOverlayLayout.plainTextMessages(from: connection.informationMessages?.informationMessages ?? [])
+            stronghold: stronghold ?? sample, blind: currentBlind, divine: currentDivine,
+            boat: currentBoat, allAdvancements: currentAllAdvancements, maxPredictionRows: settings.maxPredictionRows)
+        var messages = currentMessages
         if showsSample { messages.append((severity: .info, text: Self.sampleNote)) }
 
         // Placement mode always shows the plate (so there's something to grab), regardless of data or
@@ -220,7 +270,7 @@ public final class NBBOverlayController: ToolController {
                 return
             }
             if settings.requiresData, content == .hidden, messages.isEmpty,
-               !NBBOverlayLayout.boatCountsAsData(connection.boat, settings: settings) {
+               !NBBOverlayLayout.boatCountsAsData(currentBoat, settings: settings) {
                 hidePanel(fading: true)
                 return
             }
@@ -237,10 +287,10 @@ public final class NBBOverlayController: ToolController {
         drawnSettings.offsetX = 0
         drawnSettings.offsetY = 0
         let key = DrawnOverlay(
-            content: content, messages: messages.map { "\($0.severity.rawValue)|\($0.text)" }, boat: connection.boat, settings: drawnSettings)
+            content: content, messages: messages.map { "\($0.severity.rawValue)|\($0.text)" }, boat: currentBoat, settings: drawnSettings)
         if drawn != key {
             panel.setContent(NBBOverlayView(
-                content: content, messages: messages, settings: settings, boat: connection.boat,
+                content: content, messages: messages, settings: settings, boat: currentBoat,
                 onMoveChanged: { [weak self] in self?.placementMoveChanged($0) },
                 onMoveEnded: { [weak self] in self?.placementMoveEnded() },
                 onResizeChanged: { [weak self] in self?.placementResizeChanged($0) },
