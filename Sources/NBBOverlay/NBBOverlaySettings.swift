@@ -9,12 +9,8 @@ import STPlatform
 /// (`snappingEnabled`). Dragging writes back to the same typed fields, so either path always reflects
 /// the other.
 ///
-/// The predictions table also leaves out the "nether coordinates" and "angle and turn hint" columns
-/// spec 5.1.3 describes: the API gives chunk coordinates and overworld distance directly, but not a
-/// nether conversion or a travel bearing, and spec 5.1.3 itself requires checking any such derived
-/// value "against a running Ninjabrain Bot 1.5.2 so the overlay never shows a value Ninjabrain Bot
-/// wouldn't" — a live check this build couldn't do. Showing only the API's own fields keeps the
-/// speedrun-rule guardrail (5.1.4) unambiguous until that check happens.
+/// The predictions table leaves out spec 5.1.3's "nether coordinates" column. Its angle and turn hint come from
+/// Ninjabrain Bot's own formula over the API (`NBBTravelAngle`, from 1.5.2's source) or straight from its window.
 public struct NBBOverlaySettings: SettingsDocument {
     public static let name = "nbbOverlay"
     public static let version = 1
@@ -61,6 +57,10 @@ public struct NBBOverlaySettings: SettingsDocument {
     public var showsLocationColumn = true
     public var showsCertaintyColumn = true
     public var showsDistanceColumn = true
+    /// The angle to travel at.
+    public var showsAngleColumn = true
+    /// The turn from where the player faces to that angle, with an arrow.
+    public var showsAngleChangeColumn = true
     public var maxPredictionRows = 5
 
     public var fadeOnResetEnabled = true
@@ -100,6 +100,8 @@ public struct NBBOverlaySettings: SettingsDocument {
         showsLocationColumn = container.lossy(Bool.self, .showsLocationColumn) ?? defaults.showsLocationColumn
         showsCertaintyColumn = container.lossy(Bool.self, .showsCertaintyColumn) ?? defaults.showsCertaintyColumn
         showsDistanceColumn = container.lossy(Bool.self, .showsDistanceColumn) ?? defaults.showsDistanceColumn
+        showsAngleColumn = container.lossy(Bool.self, .showsAngleColumn) ?? defaults.showsAngleColumn
+        showsAngleChangeColumn = container.lossy(Bool.self, .showsAngleChangeColumn) ?? defaults.showsAngleChangeColumn
         maxPredictionRows = container.lossy(Int.self, .maxPredictionRows) ?? defaults.maxPredictionRows
         fadeOnResetEnabled = container.lossy(Bool.self, .fadeOnResetEnabled) ?? defaults.fadeOnResetEnabled
         fadeSeconds = container.lossy(Double.self, .fadeSeconds) ?? defaults.fadeSeconds

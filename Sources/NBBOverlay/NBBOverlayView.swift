@@ -120,7 +120,8 @@ struct NBBTriangulationBlock: View {
         VStack(alignment: .leading, spacing: 8) {
             if settings.showsPredictions, !data.predictions.isEmpty {
                 NBBHeading(text: "Predictions")
-                VStack(alignment: .leading, spacing: 4) {
+                // A grid, so each column lines up from row to row.
+                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
                     ForEach(Array(data.predictions.enumerated()), id: \.element.id) { index, row in
                         NBBPredictionRowView(row: row, isTop: index == 0, settings: settings)
                     }
@@ -149,7 +150,7 @@ private struct NBBPredictionRowView: View {
     let settings: NBBOverlaySettings
 
     var body: some View {
-        HStack(spacing: 12) {
+        GridRow {
             if settings.showsLocationColumn {
                 Text("\(row.chunkX), \(row.chunkZ)").font(nbbNumber(weight: isTop ? .semibold : .regular))
             }
@@ -160,6 +161,15 @@ private struct NBBPredictionRowView: View {
             }
             if settings.showsDistanceColumn {
                 Text("\(Int(row.overworldDistance))m").font(nbbNumber()).foregroundStyle(STColor.inkSecondary)
+            }
+            if settings.showsAngleColumn, let angle = row.angle {
+                Text(String(format: "%.2f\u{00B0}", angle)).font(nbbNumber())
+            }
+            if settings.showsAngleChangeColumn, let change = row.angleChange {
+                Text(NBBAngleChange.text(change))
+                    .font(nbbNumber())
+                    .foregroundStyle(NBBAngleChange.color(change))
+                    .accessibilityLabel(NBBAngleChange.spoken(change))
             }
         }
         .foregroundStyle(STColor.ink)
@@ -201,6 +211,26 @@ struct NBBBoatGlyph: Shape {
         path.addLine(to: CGPoint(x: x + w * 0.20, y: y + h))
         path.closeSubpath()
         return path
+    }
+}
+
+/// The turn to the travel angle as the overlay writes it: an arrow the way to turn and how far, to a tenth of a degree,
+/// as Ninjabrain Bot's " (-> 47.4)"; it goes from red when the stronghold is behind to green when it's ahead, as
+/// Ninjabrain Bot shades it.
+enum NBBAngleChange {
+    static func text(_ change: Double) -> String {
+        String(format: "%@ %.1f", change > 0 ? "\u{2192}" : "\u{2190}", abs(change))
+    }
+
+    static func spoken(_ change: Double) -> String {
+        String(format: "Turn %@ %.1f degrees", change > 0 ? "right" : "left", abs(change))
+    }
+
+    /// 1 when facing the stronghold, 0 when it's straight behind.
+    static func closeness(_ change: Double) -> Double { 1 - min(abs(change), 180) / 180 }
+
+    static func color(_ change: Double) -> Color {
+        STColor.danger.mix(with: STColor.success, by: closeness(change))
     }
 }
 

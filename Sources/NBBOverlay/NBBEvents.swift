@@ -25,6 +25,21 @@ public enum NBBEvents {
         public var chunkZ: Int
         public var certainty: Double
         public var overworldDistance: Double
+        /// The travel angle and the turn to it, as a Ninjabrain Bot window showed them (`NBBWindowReader`). The API sends
+        /// neither; over the API they're worked out from `playerPosition` the way Ninjabrain Bot does.
+        var shownAngle: Double? = nil
+        var shownAngleChange: Double? = nil
+
+        init(chunkX: Int, chunkZ: Int, certainty: Double, overworldDistance: Double, shownAngle: Double? = nil, shownAngleChange: Double? = nil) {
+            self.chunkX = chunkX
+            self.chunkZ = chunkZ
+            self.certainty = certainty
+            self.overworldDistance = overworldDistance
+            self.shownAngle = shownAngle
+            self.shownAngleChange = shownAngleChange
+        }
+
+        private enum CodingKeys: String, CodingKey { case chunkX, chunkZ, certainty, overworldDistance }
     }
 
     public struct EyeThrow: Codable, Equatable, Sendable {

@@ -59,6 +59,26 @@ struct PredictionRow: Equatable, Sendable, Identifiable {
     var chunkZ: Int
     var certaintyPercent: Int
     var overworldDistance: Double
+    /// The angle to travel at and the turn from where the player faces (+ right, − left), when known.
+    var angle: Double? = nil
+    var angleChange: Double? = nil
+}
+
+/// Ninjabrain Bot's travel angle and turn hint (`StructureInformation.updateWithPlayerPos` in 1.5.2): the angle from
+/// the player's last F3+C position to the chunk's 4,4 block, in Minecraft's yaw (south 0°, west 90°), and the turn
+/// from the player's facing to it, wrapped into −180…180 (+ is a turn right, shown "->").
+enum NBBTravelAngle {
+    static func angle(chunkX: Int, chunkZ: Int, from player: NBBEvents.PlayerPosition?) -> (angle: Double, change: Double?)? {
+        guard let player, let x = player.xInOverworld, let z = player.zInOverworld else { return nil }
+        let xDiff = Double(16 * chunkX + 4) - x
+        let zDiff = Double(16 * chunkZ + 4) - z
+        let angle = -atan2(xDiff, zDiff) * 180 / .pi
+        guard let facing = player.horizontalAngle else { return (angle, nil) }
+        var change = (angle - facing).truncatingRemainder(dividingBy: 360)
+        if change > 180 { change -= 360 }
+        if change < -180 { change += 360 }
+        return (angle, change)
+    }
 }
 
 enum NBBOverlayLayout {
@@ -71,7 +91,7 @@ enum NBBOverlayLayout {
         case .none:
             return .hidden
         case .triangulation:
-            let rows = predictionRows(from: stronghold.predictions, maxRows: maxPredictionRows)
+            let rows = predictionRows(from: stronghold.predictions, maxRows: maxPredictionRows, player: stronghold.playerPosition)
             return .triangulation(TriangulationContent(predictions: rows, eyeThrows: stronghold.eyeThrows))
         case .failed:
             return .failed(eyeThrows: stronghold.eyeThrows)
@@ -111,15 +131,17 @@ enum NBBOverlayLayout {
 
     /// Up to `maxRows` predictions, dropping any whose certainty rounds to 0% (spec 5.1.3), in the
     /// order the API gave them (Ninjabrain Bot already sends them certainty-sorted, highest first).
-    static func predictionRows(from predictions: [NBBEvents.Prediction], maxRows: Int) -> [PredictionRow] {
+    static func predictionRows(from predictions: [NBBEvents.Prediction], maxRows: Int, player: NBBEvents.PlayerPosition? = nil) -> [PredictionRow] {
         var rows: [PredictionRow] = []
         for prediction in predictions {
             guard rows.count < maxRows else { break }
             let percent = Int((prediction.certainty * 100).rounded())
             guard percent > 0 else { continue }
+            let worked = NBBTravelAngle.angle(chunkX: prediction.chunkX, chunkZ: prediction.chunkZ, from: player)
             rows.append(PredictionRow(
                 id: rows.count, chunkX: prediction.chunkX, chunkZ: prediction.chunkZ,
-                certaintyPercent: percent, overworldDistance: prediction.overworldDistance))
+                certaintyPercent: percent, overworldDistance: prediction.overworldDistance,
+                angle: prediction.shownAngle ?? worked?.angle, angleChange: prediction.shownAngleChange ?? worked?.change))
         }
         return rows
     }

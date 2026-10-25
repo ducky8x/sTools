@@ -85,6 +85,10 @@ public struct NBBOverlaySettingsView: View {
                     STSettingsRow("Location column") { STSwitch(isOn: $controller.settings.showsLocationColumn, label: "Location column") }
                     STSettingsRow("Certainty column") { STSwitch(isOn: $controller.settings.showsCertaintyColumn, label: "Certainty column") }
                     STSettingsRow("Distance column") { STSwitch(isOn: $controller.settings.showsDistanceColumn, label: "Distance column") }
+                    STSettingsRow("Angle column") { STSwitch(isOn: $controller.settings.showsAngleColumn, label: "Angle column") }
+                    STSettingsRow("Angle change column") {
+                        STSwitch(isOn: $controller.settings.showsAngleChangeColumn, label: "Angle change column")
+                    }
                     STSettingsRow("Show the gray boat") {
                         STSwitch(isOn: $controller.settings.showsGrayBoat, label: "Show the gray boat")
                     }

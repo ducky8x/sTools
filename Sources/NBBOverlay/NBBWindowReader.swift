@@ -57,9 +57,13 @@ enum NBBWindowParser {
         var index = start
         while index + 2 < texts.count, !stops.contains(texts[index]) {
             if let block = coordinates(texts[index]), let certainty = percent(texts[index + 1]) {
+                // Then the nether location, the angle ("118.30") and its turn (" (<- 113.7)"), when the window shows them.
+                let angle = index + 4 < texts.count && coordinates(texts[index + 3]) != nil ? Double(texts[index + 4]) : nil
+                let change = angle != nil && index + 5 < texts.count ? turn(texts[index + 5]) : nil
                 predictions.append(NBBEvents.Prediction(
                     chunkX: Int((block.x / 16).rounded(.down)), chunkZ: Int((block.z / 16).rounded(.down)),
-                    certainty: certainty / 100, overworldDistance: Double(texts[index + 2]) ?? 0))
+                    certainty: certainty / 100, overworldDistance: Double(texts[index + 2]) ?? 0,
+                    shownAngle: angle, shownAngleChange: change))
                 index += 3
             } else {
                 index += 1
@@ -101,6 +105,14 @@ enum NBBWindowParser {
         let parts = text.dropFirst().dropLast().split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
         guard parts.count == 2, let x = Double(parts[0]), let z = Double(parts[1]) else { return nil }
         return (x, z)
+    }
+
+    /// "(-> 47.4)" is a turn right (+), "(<- 113.7)" a turn left (−).
+    static func turn(_ text: String) -> Double? {
+        let inner = text.trimmingCharacters(in: CharacterSet(charactersIn: " ()"))
+        if inner.hasPrefix("->"), let value = Double(inner.dropFirst(2).trimmingCharacters(in: .whitespaces)) { return value }
+        if inner.hasPrefix("<-"), let value = Double(inner.dropFirst(2).trimmingCharacters(in: .whitespaces)) { return -value }
+        return nil
     }
 
     static func percent(_ text: String) -> Double? {
