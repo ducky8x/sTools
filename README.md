@@ -150,6 +150,7 @@ scripts/build-app.sh debug      # build/sTools.app for this Mac: the app you act
 scripts/build-app.sh release    # build/sTools.app as a universal (Apple silicon and Intel) release
 scripts/build-dmg.sh            # wrap build/sTools.app in the styled DMG
 swift run -c release RecordingBench   # what a Screen Recording costs in CPU, with fake sources (never shipped)
+swift run -c release NBBBench scan     # what the NBB Overlay's Ninjabrain Bot scan and window reads cost (never shipped)
 ```
 
 - `swift build` alone doesn't make the app. `scripts/build-app.sh` assembles `build/sTools.app` with its icon and resources, then signs it.
