@@ -30,6 +30,8 @@ public final class Compositor: @unchecked Sendable {
     private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
     /// For `passThrough`, made at its first use.
     private var copier: FrameCopier?
+    /// The color spaces of the frames' color tags seen so far (`image(of:)`).
+    private var colorSpaces = FrameColorSpaces()
 
     public init(outputSize: PixelSize) throws {
         guard let device = MTLCreateSystemDefaultDevice() else { throw CompositorError.noMetalDevice }
@@ -104,7 +106,7 @@ public final class Compositor: @unchecked Sendable {
         let destination = CGRect(
             x: layer.destination.x, y: Double(outputSize.height) - layer.destination.maxY,
             width: layer.destination.width, height: layer.destination.height)
-        var image = CIImage(cvPixelBuffer: frame.pixelBuffer)
+        var image = colorSpaces.image(of: frame.pixelBuffer)
             .cropped(to: crop)
             .transformed(by: CGAffineTransform(translationX: -crop.minX, y: -crop.minY))
             .transformed(by: CGAffineTransform(scaleX: destination.width / crop.width, y: destination.height / crop.height))
@@ -191,5 +193,30 @@ final class FrameCopier {
         guard let buffer, VTPixelTransferSessionTransferImage(session, from: source, to: buffer) == noErr else { return nil }
         CVBufferRemoveAllAttachments(buffer)
         return buffer
+    }
+}
+
+/// Makes Core Image images of captured frames in the color space their tags give, worked out once per set of tags.
+/// `CIImage(cvPixelBuffer:)` builds that color space from the tags again for every frame (a ColorSync profile, made
+/// and validated each time), which costs more than the rest of a frame's drawing; a source's tags stay the same from
+/// frame to frame. Call from one queue.
+struct FrameColorSpaces {
+    private var known: [(tags: CFDictionary, space: CGColorSpace?)] = []
+
+    /// The image `CIImage(cvPixelBuffer:)` makes of `buffer`.
+    mutating func image(of buffer: CVPixelBuffer) -> CIImage {
+        guard let space = colorSpace(of: buffer) else { return CIImage(cvPixelBuffer: buffer) }
+        return CIImage(cvPixelBuffer: buffer, options: [.colorSpace: space])
+    }
+
+    /// The color space Core Image reads from `buffer`'s tags; nil for an untagged buffer, which Core Image treats
+    /// as it does with no tags.
+    mutating func colorSpace(of buffer: CVPixelBuffer) -> CGColorSpace? {
+        let tags = CVBufferCopyAttachments(buffer, .shouldPropagate) ?? ([:] as CFDictionary)
+        if let entry = known.first(where: { CFEqual($0.tags, tags) }) { return entry.space }
+        let space = CVImageBufferCreateColorSpaceFromAttachments(tags)?.takeRetainedValue()
+        if known.count >= 8 { known.removeFirst() }
+        known.append((tags, space))
+        return space
     }
 }

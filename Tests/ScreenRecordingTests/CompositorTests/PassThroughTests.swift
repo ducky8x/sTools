@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreImage
 import CoreMedia
 import CoreVideo
 import Foundation
@@ -177,5 +178,68 @@ private func writeMovie(_ pictures: [CVPixelBuffer], size: PixelSize, name: Stri
             let largest = zip(x, y).map { abs(Int($0) - Int($1)) }.max() ?? 0
             #expect(largest == 0)
         }
+    }
+}
+
+/// Core Image reads each frame's color space from its tags; the compositor works it out once per set of tags and
+/// hands it over, which must give exactly the image Core Image makes on its own.
+@Suite("Frame color spaces") struct FrameColorSpacesTests {
+    private func buffer(_ format: OSType, tags: [CFString: CFTypeRef]) -> CVPixelBuffer {
+        var buffer: CVPixelBuffer?
+        CVPixelBufferCreate(nil, 64, 36, format, [kCVPixelBufferIOSurfacePropertiesKey as String: [:] as [String: Any]] as CFDictionary, &buffer)
+        let pixelBuffer = buffer!
+        CVPixelBufferLockBaseAddress(pixelBuffer, [])
+        for plane in 0..<max(1, CVPixelBufferGetPlaneCount(pixelBuffer)) {
+            let planar = CVPixelBufferIsPlanar(pixelBuffer)
+            let base = (planar ? CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, plane) : CVPixelBufferGetBaseAddress(pixelBuffer))!
+                .assumingMemoryBound(to: UInt8.self)
+            let rowBytes = planar ? CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, plane) : CVPixelBufferGetBytesPerRow(pixelBuffer)
+            let rows = planar ? CVPixelBufferGetHeightOfPlane(pixelBuffer, plane) : CVPixelBufferGetHeight(pixelBuffer)
+            for row in 0..<rows {
+                for x in 0..<rowBytes { base[row * rowBytes + x] = UInt8(truncatingIfNeeded: x * 7 + row * 13 + plane * 50) | (format == kCVPixelFormatType_32BGRA && x % 4 == 3 ? 255 : 0) }
+            }
+        }
+        CVPixelBufferUnlockBaseAddress(pixelBuffer, [])
+        for (key, value) in tags { CVBufferSetAttachment(pixelBuffer, key, value, .shouldPropagate) }
+        return pixelBuffer
+    }
+
+    private func bytes(of image: CIImage, with context: CIContext) -> [UInt8] {
+        var bytes = [UInt8](repeating: 0, count: 64 * 36 * 4)
+        context.render(image, toBitmap: &bytes, rowBytes: 64 * 4, bounds: CGRect(x: 0, y: 0, width: 64, height: 36),
+                       format: .BGRA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+        return bytes
+    }
+
+    @Test func theImageIsTheOneCoreImageMakesFromTheTags() {
+        let context = CIContext(options: [.workingColorSpace: CGColorSpace(name: CGColorSpace.sRGB)!])
+        let srgb: [CFString: CFTypeRef] = [
+            kCVImageBufferColorPrimariesKey: kCVImageBufferColorPrimaries_ITU_R_709_2,
+            kCVImageBufferTransferFunctionKey: kCVImageBufferTransferFunction_sRGB,
+        ]
+        let camera: [CFString: CFTypeRef] = [
+            kCVImageBufferColorPrimariesKey: kCVImageBufferColorPrimaries_ITU_R_709_2,
+            kCVImageBufferTransferFunctionKey: kCVImageBufferTransferFunction_ITU_R_709_2,
+            kCVImageBufferYCbCrMatrixKey: kCVImageBufferYCbCrMatrix_ITU_R_709_2,
+        ]
+        let p3: [CFString: CFTypeRef] = [kCVImageBufferCGColorSpaceKey: CGColorSpace(name: CGColorSpace.displayP3)!]
+        let cases: [CVPixelBuffer] = [
+            buffer(kCVPixelFormatType_32BGRA, tags: [:]),
+            buffer(kCVPixelFormatType_32BGRA, tags: srgb),
+            buffer(kCVPixelFormatType_32BGRA, tags: p3),
+            buffer(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, tags: camera),
+        ]
+        var spaces = FrameColorSpaces()
+        for pixelBuffer in cases {
+            for _ in 0..<2 {
+                #expect(bytes(of: spaces.image(of: pixelBuffer), with: context) == bytes(of: CIImage(cvPixelBuffer: pixelBuffer), with: context))
+            }
+        }
+        // Each set of tags is worked out once: the same tags give the very same color space.
+        let again = buffer(kCVPixelFormatType_32BGRA, tags: srgb)
+        let first = spaces.colorSpace(of: cases[1])
+        #expect(first != nil)
+        #expect(spaces.colorSpace(of: again) === first)
+        #expect(spaces.colorSpace(of: cases[0]) == nil)
     }
 }
