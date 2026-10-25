@@ -320,6 +320,24 @@ struct ScreenRecordingControllerTests {
         harness.controller.setEnabled(false)
     }
 
+    /// The page's preview is drawn off the main actor, and only when something changed: a still picture is drawn once.
+    @Test func thePreviewIsDrawnOnlyWhenTheFramesChange() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        await harness.arm()
+        harness.pushFrame()
+        harness.controller.setPreviewVisible(true)
+        #expect(await harness.waitUntil { harness.controller.preview != nil })
+        // Three refreshes go by with the same frame.
+        try await Task.sleep(for: .milliseconds(350))
+        #expect(harness.controller.previewsDrawn == 1)
+        harness.pushFrame()
+        #expect(await harness.waitUntil { harness.controller.previewsDrawn == 2 })
+        harness.controller.setPreviewVisible(false)
+        harness.controller.setEnabled(false)
+        #expect(await harness.waitUntil { harness.controller.preview == nil })
+    }
+
     /// Timer Overlay's alarm feed (spec 5.4.1, plan decision 3): armed, the rig listens to every feed; a recording
     /// gets the feed's track only when the feed wants recording as it starts.
     @Test(arguments: [true, false])

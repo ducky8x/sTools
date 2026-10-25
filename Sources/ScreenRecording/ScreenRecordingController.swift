@@ -1,4 +1,5 @@
 import AppKit
+import CoreMedia
 import Foundation
 import Observation
 import OSLog
@@ -227,6 +228,12 @@ public final class ScreenRecordingController: ToolController {
     @ObservationIgnored private var readoutTask: Task<Void, Never>?
     @ObservationIgnored private var previewTask: Task<Void, Never>?
     @ObservationIgnored private var previewCompositor: Compositor?
+    /// What the preview shows now, so a refresh with nothing new draws nothing (`PreviewContent`).
+    @ObservationIgnored private var previewContent: PreviewContent?
+    /// A preview is being drawn off the main actor; the next refresh waits for it.
+    @ObservationIgnored private var previewIsDrawing = false
+    /// Previews drawn and shown so far, for tests.
+    @ObservationIgnored private(set) var previewsDrawn = 0
     /// The Minecraft window the rig captures (`MinecraftTarget`), nil without one.
     @ObservationIgnored private var armedMinecraft: MinecraftTarget?
     /// The displays changed while a start, a recording, its finishing or the Save/Delete question had the phase. A
@@ -502,6 +509,7 @@ public final class ScreenRecordingController: ToolController {
         eventsTask?.cancel()
         eventsTask = nil
         preview = nil
+        previewContent = nil
         let old = rig
         rig = nil
         rigStart = nil
@@ -1112,15 +1120,31 @@ public final class ScreenRecordingController: ToolController {
         }
     }
 
+    /// Draws the preview from the rig's latest frames, off the main actor, and shows it when it's done. Nothing is drawn
+    /// when the frames, the layout and the size are what the preview already shows (a still screen), or while the last
+    /// one is still being drawn.
     private func renderPreview(_ rig: CaptureRig) {
+        guard !previewIsDrawing else { return }
         let canvas = canvas
         let width = 640
         let size = PixelSize(width: width, height: max(2, Int(Double(width) / canvas.aspectRatio))).evenSized
         if previewCompositor?.outputSize != size { previewCompositor = try? Compositor(outputSize: size) }
         guard let compositor = previewCompositor else { return }
         let frames = rig.hub.peek()
+        let content = PreviewContent(frames: frames, layout: layout, canvas: canvas, size: size)
+        guard content != previewContent else { return }
         let plan = CompositionPlan.make(layout: layout, canvas: canvas, output: size, frames: frames.mapValues(CompositionPlan.FrameGeometry.init))
-        preview = compositor.renderImage(plan, frames: frames)
+        previewIsDrawing = true
+        Task { [weak self] in
+            let image = await Task.detached(priority: .userInitiated) { compositor.renderImage(plan, frames: frames) }.value
+            guard let self else { return }
+            self.previewIsDrawing = false
+            // The sources were taken away (or the page left) while it was drawn: it's not theirs to show.
+            guard self.rig === rig, self.previewTask != nil else { return }
+            self.preview = image
+            self.previewContent = content
+            self.previewsDrawn += 1
+        }
     }
 
     // MARK: Permission and source sizes
@@ -1211,5 +1235,27 @@ public final class ScreenRecordingController: ToolController {
                 ? "Armed, \(CountText.of(layout.videoSources.count, "video source")) and \(CountText.of(layout.audioSources.count, "audio source"))"
                 : "Off"
         }
+    }
+}
+
+/// What a preview picture shows: each source's frame (by buffer and capture time), the layout, the canvas and the
+/// picture's size. The same content draws the same picture.
+struct PreviewContent: Equatable {
+    struct Frame: Equatable {
+        let buffer: ObjectIdentifier
+        let hostTime: CMTime
+        let contentRect: PixelRect?
+    }
+
+    let frames: [SourceKey: Frame]
+    let layout: RecordingLayout
+    let canvas: PixelSize
+    let size: PixelSize
+
+    init(frames: [SourceKey: VideoFrame], layout: RecordingLayout, canvas: PixelSize, size: PixelSize) {
+        self.frames = frames.mapValues { Frame(buffer: ObjectIdentifier($0.pixelBuffer), hostTime: $0.hostTime, contentRect: $0.contentRect) }
+        self.layout = layout
+        self.canvas = canvas
+        self.size = size
     }
 }
