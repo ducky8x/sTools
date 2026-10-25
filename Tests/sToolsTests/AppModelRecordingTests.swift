@@ -201,7 +201,7 @@ struct AppModelRecordingTests {
         let harness = RecordingHarness()
         let id = harness.addKey()
         harness.model.setTool(.screenRecording, on: true)
-        try await Task.sleep(for: .milliseconds(200))
+        #expect(await waitUntil(timeout: RecordingHarness.patience) { harness.recording.sourcesAreReady })
         harness.press(id)
         #expect(harness.hud.lines.isEmpty)
         #expect(await waitUntil(timeout: RecordingHarness.patience) { harness.recording.phase == .recording })
