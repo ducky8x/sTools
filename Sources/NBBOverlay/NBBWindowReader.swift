@@ -48,22 +48,30 @@ enum NBBWindowParser {
             messages: resultType == .none ? [] : messages)
     }
 
-    /// Rows of location "(x, z)", certainty "87.4%" and distance; the nether and angle columns after them are skipped
-    /// (a nether location isn't followed by a certainty). Ninjabrain Bot names a chunk by a block inside it, so the chunk
-    /// is that block divided by 16. The table ends at the next panel's first label.
+    /// Rows of location "(x, z)", certainty "87.4%" and distance, then the Nether location, the angle and its turn when
+    /// the window shows them (a nether location isn't followed by a certainty, so it never starts a row). The window's
+    /// own Location, Nether and distance texts are kept as they are (`shownLocation`, `shownNether`, `shownDistance`):
+    /// its distance is already in the player's dimension, and its Location follows its own display choice. The chunk is
+    /// the location block divided by 16 (unused for what's shown, which is the window's text). The table ends at the
+    /// next panel's first label.
     private static func parsePredictions(_ texts: [String], from start: Int) -> [NBBEvents.Prediction] {
         let stops: Set<String> = ["s1", "Safe:", "Ender eye throws"]
         var predictions: [NBBEvents.Prediction] = []
         var index = start
         while index + 2 < texts.count, !stops.contains(texts[index]) {
             if let block = coordinates(texts[index]), let certainty = percent(texts[index + 1]) {
-                // Then the nether location, the angle ("118.30") and its turn (" (<- 113.7)"), when the window shows them.
-                let angle = index + 4 < texts.count && coordinates(texts[index + 3]) != nil ? Double(texts[index + 4]) : nil
-                let change = angle != nil && index + 5 < texts.count ? turn(texts[index + 5]) : nil
+                // A location followed by a certainty is the next row's, when the window hides its Nether column.
+                let startsNextRow = index + 4 < texts.count && percent(texts[index + 4]) != nil
+                let nether = index + 3 < texts.count && !startsNextRow ? coordinates(texts[index + 3]) : nil
+                // Then the angle ("118.30") and its turn (" (<- 113.7)"), after the Nether column when it's shown.
+                let angleIndex = index + (nether != nil ? 4 : 3)
+                let angle = angleIndex < texts.count ? Double(texts[angleIndex]) : nil
+                let change = angle != nil && angleIndex + 1 < texts.count ? turn(texts[angleIndex + 1]) : nil
                 predictions.append(NBBEvents.Prediction(
                     chunkX: Int((block.x / 16).rounded(.down)), chunkZ: Int((block.z / 16).rounded(.down)),
                     certainty: certainty / 100, overworldDistance: Double(texts[index + 2]) ?? 0,
-                    shownAngle: angle, shownAngleChange: change))
+                    shownAngle: angle, shownAngleChange: change,
+                    shownLocation: whole(block), shownNether: nether.flatMap(whole), shownDistance: Int(texts[index + 2])))
                 index += 3
             } else {
                 index += 1
@@ -105,6 +113,12 @@ enum NBBWindowParser {
         let parts = text.dropFirst().dropLast().split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
         guard parts.count == 2, let x = Double(parts[0]), let z = Double(parts[1]) else { return nil }
         return (x, z)
+    }
+
+    /// The window's "(x, z)" as the whole numbers it writes.
+    private static func whole(_ pair: (x: Double, z: Double)) -> NBBBlock? {
+        guard let x = Int(exactly: pair.x), let z = Int(exactly: pair.z) else { return nil }
+        return NBBBlock(x: x, z: z)
     }
 
     /// "(-> 47.4)" is a turn right (+), "(<- 113.7)" a turn left (−).
