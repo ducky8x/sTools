@@ -20,6 +20,8 @@ public final class NBBOverlayController: ToolController {
 
     @ObservationIgnored private let services: ToolServices
     @ObservationIgnored private let connection: NBBConnection
+    /// The running Ninjabrain Bots, watched while the tool is on, for the page's note when more than one is open.
+    public let copies: NBBCopiesMonitor
     @ObservationIgnored private let panel = OverlayPanel(role: .topmost)
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
 
@@ -41,9 +43,10 @@ public final class NBBOverlayController: ToolController {
         var settings: NBBOverlaySettings
     }
 
-    public init(services: ToolServices, connection: NBBConnection = NBBConnection()) {
+    public init(services: ToolServices, connection: NBBConnection = NBBConnection(), copies: NBBCopiesMonitor? = nil) {
         self.services = services
         self.connection = connection
+        self.copies = copies ?? NBBCopiesMonitor()
         settings = services.settings.load(NBBOverlaySettings.self)
     }
 
@@ -90,10 +93,12 @@ public final class NBBOverlayController: ToolController {
         isEnabled = enabled
         if enabled {
             connection.start()
+            copies.start()
             observeChanges()
             refreshIfEnabled()
         } else {
             connection.stop()
+            copies.stop()
             for observer in observers { NotificationCenter.default.removeObserver(observer) }
             observers.removeAll()
             panel.hide()

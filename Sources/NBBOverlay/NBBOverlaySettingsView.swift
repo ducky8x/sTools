@@ -14,7 +14,9 @@ public struct NBBOverlaySettingsView: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            if controller.isEnabled, !controller.isReachable {
+            if let message = controller.copies.situation.message {
+                NBBCopiesNote(monitor: controller.copies, message: message)
+            } else if controller.isEnabled, !controller.isReachable {
                 STRequirementStrip(
                     kind: .warning,
                     message: "Ninjabrain Bot isn't reachable at localhost:52533 — enable its API under Settings ▸ Advanced in Ninjabrain Bot.")
@@ -219,5 +221,18 @@ private struct NBBPagePreview: View {
             }
             .frame(height: overlaySize.height * min(1, 600 / overlaySize.width) + 20)
         }
+    }
+}
+
+/// What sTools sees when several Ninjabrain Bots are open, or one that isn't sharing its data, with the one-click fix.
+private struct NBBCopiesNote: View {
+    let monitor: NBBCopiesMonitor
+    let message: String
+
+    var body: some View {
+        STRequirementStrip(
+            kind: .warning, message: monitor.actionError ?? message,
+            actionTitle: monitor.isActing ? nil : monitor.situation.actionTitle,
+            action: { Task { await monitor.performAction() } })
     }
 }
