@@ -80,6 +80,14 @@ public final class Compositor: @unchecked Sendable {
         return copier?.copy(frame.pixelBuffer)
     }
 
+    /// `picture` (one of `render`'s) as the encoder takes it: copied into an untagged 4:2:0 buffer by the same
+    /// conversion the encoder makes (`FrameCopier`), so a picture written again and again (`RecordingSession`'s reuse)
+    /// is converted once instead of by the encoder for every frame. Nil if the copy fails.
+    public func encoderCopy(of picture: CVPixelBuffer) -> CVPixelBuffer? {
+        if copier == nil { copier = FrameCopier(size: outputSize) }
+        return copier?.copy(picture)
+    }
+
     /// Readies `passThrough` with one throwaway copy of `frame` (any size), so a recording's first frame doesn't wait
     /// for VideoToolbox to set up (`RecordingWarmUp`).
     func preparePassThrough(with frame: CVPixelBuffer) {

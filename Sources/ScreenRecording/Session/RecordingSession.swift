@@ -59,6 +59,9 @@ public final class RecordingSession: @unchecked Sendable {
     /// `tick`, under `tickGate`.
     private var lastPicture: CVPixelBuffer?
     private var lastPictureSources: Set<SourceKey> = []
+    /// `lastPicture` is already in the encoder's 4:2:0 (passed through, or converted the first time it was written
+    /// again), so the encoder doesn't convert it for every frame it's written.
+    private var lastPictureIsConverted = false
     /// A source brought a frame, or came or went, since `lastPicture` was drawn. It stays set across ticks the
     /// encoder was too busy to take, so the next one draws.
     private var sourcesChanged = true
@@ -74,6 +77,8 @@ public final class RecordingSession: @unchecked Sendable {
         var drawn = 0
         var passedThrough = 0
         var reused = 0
+        /// Drawn pictures converted to 4:2:0 as they were written again.
+        var converted = 0
     }
 
     public init(
@@ -151,6 +156,7 @@ public final class RecordingSession: @unchecked Sendable {
     var picturesDrawn: Int { state.withLock { $0.drawn } }
     var picturesPassedThrough: Int { state.withLock { $0.passedThrough } }
     var picturesReused: Int { state.withLock { $0.reused } }
+    var picturesConverted: Int { state.withLock { $0.converted } }
 
     // MARK: Ticking
 
@@ -166,13 +172,23 @@ public final class RecordingSession: @unchecked Sendable {
         let sources = Set(snapshot.frames.keys)
         if sources != lastPictureSources || snapshot.frames.values.contains(where: \.isNew) { sourcesChanged = true }
         if writer.canAcceptFrame {
-            if !sourcesChanged, let lastPicture {
-                // The same frames make the same picture: write it again rather than draw it again.
-                writer.append(frame: lastPicture, at: tick.time)
+            if !sourcesChanged, var picture = lastPicture {
+                // The same frames make the same picture: write it again rather than draw it again. A drawn one is
+                // converted to the encoder's 4:2:0 now, once, rather than by the encoder on every tick it stays.
+                if !lastPictureIsConverted {
+                    lastPictureIsConverted = true
+                    if let converted = compositor.encoderCopy(of: picture) {
+                        picture = converted
+                        lastPicture = converted
+                        state.withLock { $0.converted += 1 }
+                    }
+                }
+                writer.append(frame: picture, at: tick.time)
                 state.withLock { $0.reused += 1 }
             } else if let (picture, passedThrough) = draw(snapshot) {
                 writer.append(frame: picture, at: tick.time)
                 lastPicture = picture
+                lastPictureIsConverted = passedThrough
                 lastPictureSources = sources
                 sourcesChanged = false
                 state.withLock {

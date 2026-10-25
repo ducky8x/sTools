@@ -150,15 +150,16 @@ private func writeMovie(_ pictures: [CVPixelBuffer], size: PixelSize, name: Stri
         #expect(try Compositor(outputSize: wide).passThrough(drawn, frames: frames) == nil)
     }
 
-    /// The point of the whole path: a movie made of passed-through frames is the movie the compositor's pictures make,
-    /// pixel for pixel and tag for tag, whether or not the captured frames carry color tags.
+    /// The point of the whole path: a movie made of passed-through frames, or of drawn pictures converted to 4:2:0
+    /// before the encoder, is the movie the compositor's BGRA pictures make, pixel for pixel and tag for tag, whether
+    /// or not the captured frames carry color tags.
     @Test(arguments: [false, true])
     func passedThroughFramesMakeTheSameMovieAsDrawnOnes(tagged: Bool) async throws {
         let directory = try WriterFixture.makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let size = PixelSize(width: 640, height: 360)
         let compositor = try Compositor(outputSize: size)
-        var drawn: [CVPixelBuffer] = [], passed: [CVPixelBuffer] = []
+        var drawn: [CVPixelBuffer] = [], passed: [CVPixelBuffer] = [], converted: [CVPixelBuffer] = []
         for index in 0..<4 {
             let frames: [SourceKey: VideoFrame] = [
                 .base: VideoFrame(pixelBuffer: patternBuffer(size, tags: tagged ? captureTags : [:], seed: index * 9), hostTime: .zero),
@@ -167,16 +168,23 @@ private func writeMovie(_ pictures: [CVPixelBuffer], size: PixelSize, name: Stri
                                             frames: frames.mapValues(CompositionPlan.FrameGeometry.init))
             drawn.append(try #require(compositor.render(plan, frames: frames)))
             passed.append(try #require(compositor.passThrough(plan, frames: frames)))
+            let forEncoder = try #require(compositor.encoderCopy(of: drawn[index]))
+            #expect(CVPixelBufferGetPixelFormatType(forEncoder) == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
+            converted.append(forEncoder)
         }
         let a = try await decodedFrames(of: try await writeMovie(drawn, size: size, name: "drawn", in: directory))
         let b = try await decodedFrames(of: try await writeMovie(passed, size: size, name: "passed", in: directory))
+        // Drawn pictures as the session writes them again: converted to 4:2:0 once, before the encoder.
+        let c = try await decodedFrames(of: try await writeMovie(converted, size: size, name: "converted", in: directory))
         #expect(a.tags == ["none", "none", "none"])
-        #expect(b.tags == a.tags)
-        #expect(a.frames.count == 4 && b.frames.count == 4)
-        for (x, y) in zip(a.frames, b.frames) {
-            #expect(x.count == y.count)
-            let largest = zip(x, y).map { abs(Int($0) - Int($1)) }.max() ?? 0
-            #expect(largest == 0)
+        #expect(b.tags == a.tags && c.tags == a.tags)
+        #expect(a.frames.count == 4 && b.frames.count == 4 && c.frames.count == 4)
+        for other in [b, c] {
+            for (x, y) in zip(a.frames, other.frames) {
+                #expect(x.count == y.count)
+                let largest = zip(x, y).map { abs(Int($0) - Int($1)) }.max() ?? 0
+                #expect(largest == 0)
+            }
         }
     }
 }

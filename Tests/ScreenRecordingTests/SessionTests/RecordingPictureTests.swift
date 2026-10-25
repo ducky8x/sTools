@@ -69,6 +69,8 @@ struct RecordingPictureTests {
         #expect(result.framesWritten > 10)
         #expect(session.picturesDrawn == 1)
         #expect(session.picturesReused == result.framesWritten - 1)
+        // Passed through, so already in the encoder's 4:2:0: nothing to convert.
+        #expect(session.picturesConverted == 0)
         let times = try await videoSampleTimes(of: try #require(result.files.first))
         #expect(times.count == result.framesWritten)
         // Every frame keeps its own slot's time: reused pictures are stamped like drawn ones.
@@ -85,6 +87,8 @@ struct RecordingPictureTests {
         #expect(result.framesWritten + session.droppedFrames == 12)
         #expect(session.picturesDrawn == 1)
         #expect(session.picturesReused == result.framesWritten - 1)
+        // Drawn by Core Image, then converted to the encoder's 4:2:0 once, as it's first written again.
+        #expect(session.picturesConverted == 1)
     }
 
     @Test func eachNewFrameIsDrawnAndTheTicksBetweenReuseIt() async throws {
