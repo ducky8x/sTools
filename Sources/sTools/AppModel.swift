@@ -141,7 +141,7 @@ final class AppModel {
             permissions: PermissionCenter())
         self.init(services: services, theme: theme, sound: sound, controllers: [
             .nbbOverlay: NBBOverlayController(services: services, theme: theme),
-            .windowBackdrop: BackdropController(services: services),
+            .windowBackdrop: BackdropController(services: services, theme: theme),
             .crosshair: CrosshairController(services: services),
             // The app's own theme, so the overlay follows Reduce animations even while the window is closed.
             .timerOverlay: TimerOverlayController(services: services, theme: theme),
