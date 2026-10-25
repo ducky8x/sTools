@@ -211,9 +211,11 @@ struct PrologueFooter: View {
                     Button(Copy.skipStep) { model.skipStep() }
                         .buttonStyle(STButtonStyle(.quiet))
                         .help("Skip step (\u{2318}])")
+                    // Grayed out, Return included, until the step is done (`canContinue`); Skip step always works.
                     Button(Copy.next) { model.next() }
                         .buttonStyle(STButtonStyle(.primary))
                         .keyboardShortcut(.defaultAction)
+                        .disabled(!model.canContinue)
                         .help("Continue (Return)")
                 }
             }

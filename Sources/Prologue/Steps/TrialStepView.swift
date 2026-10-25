@@ -102,6 +102,8 @@ private struct TrialChecklist: View {
 
     var body: some View {
         let list = model.checklist(for: trial, items: items)
+        // The same condition as Continue's (`PrologueModel.canContinue`): every item, optional ones too, done or skipped.
+        let isComplete = list.isComplete
         VStack(alignment: .leading, spacing: 0) {
             let next = items.first { list.state(of: $0.id) == .pending }?.id
             ForEach(items) { item in
@@ -110,12 +112,12 @@ private struct TrialChecklist: View {
                     Rectangle().fill(STColor.rule).frame(height: 1).accessibilityHidden(true)
                 }
             }
-            Text(list.isComplete ? Copy.allDone : Copy.progress(list.doneCount, of: items.count))
+            Text(isComplete ? Copy.allDone : Copy.progress(list.doneCount, of: items.count))
                 .stStyle(.caption)
-                .foregroundStyle(list.isComplete ? theme.accent : theme.inkTertiary)
+                .foregroundStyle(isComplete ? theme.accent : theme.inkTertiary)
                 .padding(.top, 14)
                 .contentTransition(.opacity)
-                .stAnimation(STMotion.standard, value: list.isComplete)
+                .stAnimation(STMotion.standard, value: isComplete)
         }
     }
 

@@ -61,11 +61,14 @@ struct ChecklistTests {
         #expect(list.state(of: "on") == .done)
     }
 
-    @Test func completeOnceEveryRequiredItemIsDoneOrSkipped() {
+    /// Every item counts, optional ones too; an unavailable one has nothing to do or skip, so it never holds it back.
+    @Test func completeOnceEveryItemIsDoneOrSkipped() {
         var list = Checklist(items: items)
         list.markDone(["on"])
         #expect(!list.isComplete)
         list.skip("shape")
+        #expect(!list.isComplete, "the optional item is still to do")
+        list.skip("image")
         #expect(list.isComplete)
         #expect(list.doneCount == 1)
     }

@@ -45,6 +45,8 @@ final class FakeHost: PrologueHost {
     var switchedOff: [PrologueTrial] = []
     var relaunches = 0
     var outcomes: [PrologueFlow.Outcome] = []
+    /// Each trial's checklist items; a trial not listed has none.
+    var trialItems: [PrologueTrial: [ChecklistItem]] = [:]
 
     func check(_ companion: PrologueCompanion) async -> CompanionStatus {
         companionStatuses[companion] ?? CompanionStatus(isReady: false, detail: "Missing")
@@ -53,7 +55,8 @@ final class FakeHost: PrologueHost {
     func performAction(for companion: PrologueCompanion) { performedActions.append(companion) }
 
     func trial(_ trial: PrologueTrial) -> TrialContent {
-        TrialContent(items: { [] }, completed: { [] }, controls: { AnyView(EmptyView()) })
+        TrialContent(items: { [weak self] in self?.trialItems[trial] ?? [] }, completed: { [] },
+                     controls: { AnyView(EmptyView()) })
     }
 
     func toolsToSwitchOff() -> [PrologueTrial] { toolsOn }
