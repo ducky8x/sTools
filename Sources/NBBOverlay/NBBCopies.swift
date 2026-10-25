@@ -139,18 +139,75 @@ public final class NBBCopiesMonitor {
 
 // MARK: - Live
 
+/// What the process table says about a process before its command line is read.
+struct NBBProcessSummary: Equatable, Sendable {
+    /// The user it runs as.
+    var uid: uid_t
+    /// Its executable's name as the process table's short call gives it: the first 15 bytes.
+    var name: String
+}
+
+/// The parts of the process table a scan reads. The live one is `libproc` and `sysctl`; tests use a fake.
+protocol NBBProcessTable {
+    func pids() -> [pid_t]
+    /// Nil when the process is gone or can't be read.
+    func summary(of pid: pid_t) -> NBBProcessSummary?
+    func executablePath(of pid: pid_t) -> String?
+    func arguments(of pid: pid_t) -> [String]?
+    func startDate(of pid: pid_t) -> Date?
+    func listens(_ pid: pid_t, on port: UInt16) -> Bool
+}
+
 /// Reads the process table: every process of this user whose command line names Ninjabrain, and whether it listens on
 /// port 52533. Uses `sysctl` and `libproc`, which need no permission for one's own processes.
+///
+/// One short call per process (its user and name) rules out other users' processes, and the executable's path most of
+/// the rest: only Java, and executables named after Ninjabrain or kept in a Ninjabrain app bundle, have their command
+/// line read, and only Ninjabrain Bots their start and sockets. About 1 ms on a Mac with 1,100 processes; reading every
+/// process's command line took about 9 ms.
 public struct LiveNBBCopiesScanner: NBBCopiesScanning {
     public static let apiPort: UInt16 = 52533
 
     public init() {}
 
     public func scan() -> [NBBCopy] {
-        Self.allPIDs().compactMap { pid -> NBBCopy? in
-            guard pid > 0, pid != getpid(), let arguments = Self.arguments(of: pid), Self.isNinjabrainBot(arguments) else { return nil }
-            return NBBCopy(pid: pid, startedAt: Self.startDate(of: pid), arguments: arguments, holdsAPI: Self.listens(pid, on: Self.apiPort))
+        Self.scan(LiveProcessTable(), user: getuid(), excluding: getpid())
+    }
+
+    /// The copies in `table` that run as `user`, leaving out the kernel, launchd and `ownPID` (sTools itself).
+    static func scan(_ table: some NBBProcessTable, user: uid_t, excluding ownPID: pid_t) -> [NBBCopy] {
+        table.pids().compactMap { pid -> NBBCopy? in
+            guard pid > 1, pid != ownPID, let process = table.summary(of: pid), process.uid == user,
+                  mightBeNinjabrainBot(name: process.name, executablePath: { table.executablePath(of: pid) }),
+                  let arguments = table.arguments(of: pid), isNinjabrainBot(arguments) else { return nil }
+            return NBBCopy(pid: pid, startedAt: table.startDate(of: pid), arguments: arguments, holdsAPI: table.listens(pid, on: apiPort))
         }
+    }
+
+    /// Whether a process may be a Ninjabrain Bot, from its executable alone, before its command line is read: Java
+    /// (`java`, `javaw` and the like, whose command line then names the jar), or an executable named after Ninjabrain
+    /// or kept in a Ninjabrain app bundle. The path is read only when the name doesn't already say so.
+    static func mightBeNinjabrainBot(name: String, executablePath: () -> String?) -> Bool {
+        if name.utf8.starts(with: "java".utf8, by: equalIgnoringASCIICase) || contains(name.utf8, "ninjabrain") { return true }
+        return executablePath().map { contains($0.utf8, "ninjabrain") } ?? false
+    }
+
+    /// Whether `text` contains `word` (lowercase ASCII), ignoring ASCII case: without making a lowercased copy, as the
+    /// scan checks the path of most processes.
+    private static func contains(_ text: String.UTF8View, _ word: StaticString) -> Bool {
+        let word = UnsafeBufferPointer(start: word.utf8Start, count: word.utf8CodeUnitCount)
+        guard let first = word.first, text.count >= word.count else { return false }
+        var index = text.startIndex
+        while let start = text[index...].firstIndex(where: { equalIgnoringASCIICase($0, first) }) {
+            if text[start...].starts(with: word, by: equalIgnoringASCIICase) { return true }
+            index = text.index(after: start)
+        }
+        return false
+    }
+
+    /// `byte` against a lowercase ASCII `lowercase`, ignoring case.
+    private static func equalIgnoringASCIICase(_ byte: UInt8, _ lowercase: UInt8) -> Bool {
+        byte == lowercase || (byte >= 0x41 && byte <= 0x5A && byte | 0x20 == lowercase)
     }
 
     /// A Ninjabrain Bot's command line: Java running a Ninjabrain jar, or an app bundle named after it.
@@ -168,6 +225,22 @@ public struct LiveNBBCopiesScanner: NBBCopiesScanning {
         let filled = pids.withUnsafeMutableBytes { proc_listallpids($0.baseAddress, Int32($0.count)) }
         guard filled > 0 else { return [] }
         return Array(pids.prefix(Int(filled)))
+    }
+
+    /// The process's user and executable name, in the process table's shortest call.
+    static func summary(of pid: pid_t) -> NBBProcessSummary? {
+        var info = proc_bsdshortinfo()
+        let size = Int32(MemoryLayout<proc_bsdshortinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDT_SHORTBSDINFO, 0, &info, size) == size else { return nil }
+        let name = withUnsafeBytes(of: info.pbsi_comm) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
+        return NBBProcessSummary(uid: info.pbsi_uid, name: name)
+    }
+
+    static func executablePath(of pid: pid_t) -> String? {
+        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 4 * Int(MAXPATHLEN)) { buffer in
+            let length = proc_pidpath(pid, buffer.baseAddress, UInt32(buffer.count))
+            return length > 0 ? String(decoding: buffer.prefix(Int(length)), as: UTF8.self) : nil
+        }
     }
 
     /// The process's argv, from `KERN_PROCARGS2`: an argument count, the executable path, then the arguments.
@@ -225,6 +298,16 @@ public struct LiveNBBCopiesScanner: NBBCopiesScanning {
         }
         return false
     }
+}
+
+/// The real process table.
+struct LiveProcessTable: NBBProcessTable {
+    func pids() -> [pid_t] { LiveNBBCopiesScanner.allPIDs() }
+    func summary(of pid: pid_t) -> NBBProcessSummary? { LiveNBBCopiesScanner.summary(of: pid) }
+    func executablePath(of pid: pid_t) -> String? { LiveNBBCopiesScanner.executablePath(of: pid) }
+    func arguments(of pid: pid_t) -> [String]? { LiveNBBCopiesScanner.arguments(of: pid) }
+    func startDate(of pid: pid_t) -> Date? { LiveNBBCopiesScanner.startDate(of: pid) }
+    func listens(_ pid: pid_t, on port: UInt16) -> Bool { LiveNBBCopiesScanner.listens(pid, on: port) }
 }
 
 /// Quits a copy the way its Quit menu would, falling back to a polite terminate signal.

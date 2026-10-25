@@ -124,4 +124,121 @@ struct NBBCopiesTests {
     @Test func theLiveScanRunsWithoutPermissions() {
         _ = LiveNBBCopiesScanner().scan()
     }
+
+    /// The live table's calls, checked on the test process itself (never on a Ninjabrain Bot): a call that read nothing
+    /// would make every scan come back empty.
+    @Test func theLiveTableReadsThisProcess() throws {
+        let table = LiveProcessTable()
+        let pid = getpid()
+        #expect(table.pids().contains(pid))
+        let summary = try #require(table.summary(of: pid))
+        let path = try #require(table.executablePath(of: pid))
+        #expect(summary.uid == getuid())
+        #expect(summary.name == String((path as NSString).lastPathComponent.utf8.prefix(15))!)
+        #expect(table.arguments(of: pid) == CommandLine.arguments)
+        let started = try #require(table.startDate(of: pid))
+        #expect(started <= Date() && started > Date().addingTimeInterval(-86_400))
+        #expect(!LiveNBBCopiesScanner.mightBeNinjabrainBot(name: summary.name, executablePath: { path }))
+    }
+
+    @Test(arguments: [
+        ("java", nil, true),
+        ("javaw", nil, true),
+        ("JavaAppLauncher", nil, true),
+        ("Ninjabrain-Bot", nil, true),
+        ("NINJABRAIN", nil, true),
+        ("launcher", "/Applications/Ninjabrain Bot.app/Contents/MacOS/launcher", true),
+        ("zsh", "/bin/zsh", false),
+        ("grep", "/usr/bin/grep", false),
+        ("node", nil, false),
+        ("ninja", "/opt/homebrew/bin/ninja", false),
+    ] as [(String, String?, Bool)])
+    func picksTheProcessesWhoseCommandLineIsRead(name: String, path: String?, expected: Bool) {
+        #expect(LiveNBBCopiesScanner.mightBeNinjabrainBot(name: name, executablePath: { path }) == expected)
+    }
+
+    @Test func theNameAloneDecidesForJavaAndNinjabrainWithoutReadingThePath() {
+        var pathsRead = 0
+        for name in ["java", "Ninjabrain-Bot"] {
+            #expect(LiveNBBCopiesScanner.mightBeNinjabrainBot(name: name, executablePath: { pathsRead += 1; return nil }))
+        }
+        #expect(pathsRead == 0)
+    }
+
+    /// The scan finds every Ninjabrain Bot of this user, reads the command line only of Java and Ninjabrain-named
+    /// executables, and lists sockets only for the copies it found.
+    @Test func theScanReadsCommandLinesOnlyOfLikelyProcesses() {
+        let jar = "/Users/x/Downloads/Ninjabrain-Bot-1.5.2.jar"
+        let table = FakeProcessTable([
+            .init(pid: 0, uid: 0, name: "kernel_task", path: nil, arguments: nil),
+            .init(pid: 1, uid: 0, name: "launchd", path: "/sbin/launchd", arguments: ["/sbin/launchd"]),
+            .init(pid: 50, uid: 501, name: "java", path: "/Library/Java/bin/java", arguments: ["/usr/bin/java", "-jar", jar], listens: true),
+            .init(pid: 51, uid: 501, name: "java", path: "/Library/Java/bin/java", arguments: ["/usr/bin/java", "-jar", jar]),
+            .init(pid: 52, uid: 501, name: "java", path: "/Library/Java/bin/java", arguments: ["/usr/bin/java", "-jar", "/tmp/other.jar"]),
+            .init(pid: 53, uid: 501, name: "JavaLauncher", path: "/System/Library/CoreServices/JavaLauncher.app/Contents/MacOS/JavaLauncher",
+                  arguments: ["/System/Library/CoreServices/JavaLauncher.app/Contents/MacOS/JavaLauncher"]),
+            .init(pid: 60, uid: 501, name: "Ninjabrain-Bot", path: "/Applications/Ninjabrain-Bot.app/Contents/MacOS/Ninjabrain-Bot",
+                  arguments: ["/Applications/Ninjabrain-Bot.app/Contents/MacOS/Ninjabrain-Bot"]),
+            .init(pid: 61, uid: 501, name: "launcher", path: "/Applications/Ninjabrain Bot.app/Contents/MacOS/launcher",
+                  arguments: ["/Applications/Ninjabrain Bot.app/Contents/MacOS/launcher", "-jar", "/Applications/Ninjabrain Bot.app/Contents/app/Ninjabrain-Bot.jar"]),
+            .init(pid: 70, uid: 501, name: "zsh", path: "/bin/zsh", arguments: ["zsh", "-c", "java -jar \(jar)"]),
+            .init(pid: 71, uid: 501, name: "grep", path: "/usr/bin/grep", arguments: ["/usr/bin/grep", "ninjabrain"]),
+            .init(pid: 80, uid: 502, name: "java", path: "/Library/Java/bin/java", arguments: ["/usr/bin/java", "-jar", jar]),
+            .init(pid: 90, uid: 501, name: "java", path: "/Library/Java/bin/java", arguments: ["/usr/bin/java", "-jar", jar]),
+        ])
+        let copies = LiveNBBCopiesScanner.scan(table, user: 501, excluding: 90)
+        #expect(copies.map(\.pid) == [50, 51, 60, 61])
+        #expect(copies.map(\.holdsAPI) == [true, false, false, false])
+        #expect(copies.allSatisfy { $0.startedAt == Date(timeIntervalSince1970: TimeInterval($0.pid)) })
+        #expect(table.summarized == [50, 51, 52, 53, 60, 61, 70, 71, 80], "never the kernel, launchd or sTools itself")
+        #expect(table.pathsRead == [61, 70, 71], "only when the name doesn't decide")
+        #expect(table.argumentsRead == [50, 51, 52, 53, 60, 61], "never another user's, a shell's or grep's")
+        #expect(table.socketsListed == [50, 51, 60, 61])
+    }
+}
+
+/// A process table made up for a test, which records what a scan read.
+final class FakeProcessTable: NBBProcessTable {
+    struct Process {
+        var pid: pid_t
+        var uid: uid_t
+        var name: String
+        var path: String?
+        var arguments: [String]?
+        var listens = false
+    }
+
+    private let processes: [Process]
+    private(set) var summarized: [pid_t] = []
+    private(set) var pathsRead: [pid_t] = []
+    private(set) var argumentsRead: [pid_t] = []
+    private(set) var socketsListed: [pid_t] = []
+
+    init(_ processes: [Process]) { self.processes = processes }
+
+    private func process(_ pid: pid_t) -> Process? { processes.first { $0.pid == pid } }
+
+    func pids() -> [pid_t] { processes.map(\.pid) }
+
+    func summary(of pid: pid_t) -> NBBProcessSummary? {
+        summarized.append(pid)
+        return process(pid).map { NBBProcessSummary(uid: $0.uid, name: $0.name) }
+    }
+
+    func executablePath(of pid: pid_t) -> String? {
+        pathsRead.append(pid)
+        return process(pid)?.path
+    }
+
+    func arguments(of pid: pid_t) -> [String]? {
+        argumentsRead.append(pid)
+        return process(pid)?.arguments
+    }
+
+    func startDate(of pid: pid_t) -> Date? { Date(timeIntervalSince1970: TimeInterval(pid)) }
+
+    func listens(_ pid: pid_t, on port: UInt16) -> Bool {
+        socketsListed.append(pid)
+        return port == LiveNBBCopiesScanner.apiPort && process(pid)?.listens == true
+    }
 }
