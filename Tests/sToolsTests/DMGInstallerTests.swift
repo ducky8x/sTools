@@ -149,6 +149,13 @@ struct DMGInstallerTests {
         #expect(marker(of: setup.installed) == "old")
     }
 
+    @Test func aCopyRunningFromATemporaryPlaceSaysToMoveItFirst() throws {
+        #expect(DMGInstaller.isTemporaryCopy(URL(fileURLWithPath: "/private/var/folders/xy/T/AppTranslocation/1234/d/sTools.app")))
+        #expect(!DMGInstaller.isTemporaryCopy(try tempFolder().appending(path: "sTools.app")))
+        #expect(DMGInstallError.runningFromTemporaryCopy.message(installedApp: URL(fileURLWithPath: "/x/sTools.app"))
+            == "This sTools is running from the DMG or a temporary copy macOS made. Drag sTools into Applications, open it from there, then install again.")
+    }
+
     @Test func buildsCompareByNumber() {
         #expect(DMGInstaller.compare(AppVersion(short: nil, build: "10"), AppVersion(short: nil, build: "9")) == .newer)
         #expect(DMGInstaller.compare(AppVersion(short: nil, build: "9"), AppVersion(short: nil, build: "10")) == .older)
