@@ -94,8 +94,9 @@ func monitorMode(seconds: Double) async {
     let cpu = (mainThreadCPUSeconds() - cpu0) * 1e3 / wall
     let (onMain, offMain) = scanner.results
     print(String(format: "monitor: main thread CPU %.2f ms/s over %.1f s", cpu, wall))
-    print(String(format: "  scans on the main thread: %d, %.2f ms/s", onMain.count, onMain.reduce(0, +) / wall))
-    print(String(format: "  scans off the main thread: %d, %.2f ms/s", offMain.count, offMain.reduce(0, +) / wall))
+    for (label, times) in [("on", onMain), ("off", offMain)] where !times.isEmpty {
+        print(String(format: "  scans %@ the main thread: %.2f ms/s; ", label, times.reduce(0, +) / wall) + summary(times))
+    }
 }
 
 @MainActor
