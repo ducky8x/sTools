@@ -138,7 +138,8 @@ public final class NBBCopiesMonitor {
         let scanner = scanner, interval = interval, idleInterval = idleInterval
         return Task.detached(priority: .utility) { [weak self] in
             var last: [NBBCopy]?
-            while !Task.isCancelled {
+            // Ends with the monitor too, should it go without being stopped.
+            while !Task.isCancelled, self != nil {
                 let found = Self.ordered(scanner.scan())
                 if found != last {
                     last = found

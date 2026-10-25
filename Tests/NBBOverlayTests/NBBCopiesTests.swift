@@ -201,6 +201,23 @@ struct NBBCopiesTests {
         #expect(monitor.copies.isEmpty && monitor.publishCount == 0)
     }
 
+    /// A monitor let go of without being stopped takes its watch with it.
+    @Test func aMonitorLetGoOfStopsScanning() async throws {
+        let scanner = FakeCopiesScanner([copy(1, at: 10, sharing: true)])
+        var monitor: NBBCopiesMonitor? = NBBCopiesMonitor(
+            scanner: scanner, control: FakeCopiesControl(scanner: scanner), interval: .milliseconds(10))
+        monitor?.start()
+        await waitUntil { scanner.scanCount >= 2 }
+        weak let released = monitor
+        monitor = nil
+        await waitUntil { released == nil }
+        #expect(released == nil)
+        try await Task.sleep(for: .milliseconds(30))
+        let scans = scanner.scanCount
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(scanner.scanCount == scans)
+    }
+
     /// While no copy is open the scan waits the longer interval.
     @Test func withNoCopyOpenTheScanWaitsLonger() async throws {
         let scanner = FakeCopiesScanner([])

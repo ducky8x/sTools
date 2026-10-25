@@ -250,7 +250,7 @@ public final class NBBOverlayController: ToolController {
         let reader = windowReader, interval = windowPollInterval
         windowPoll = Task.detached(priority: .utility) { [weak self] in
             var last: NBBWindowSnapshot??
-            while !Task.isCancelled {
+            while !Task.isCancelled, self != nil {
                 let snapshot = await reader.read(pid: pid)
                 if last != .some(snapshot) {
                     last = .some(snapshot)
