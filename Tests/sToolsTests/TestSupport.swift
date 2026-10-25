@@ -155,7 +155,7 @@ final class Harness {
                                     minecraft: MinecraftLocator(source: source), permissions: permissions)
         timer = timerFakes.makeController(services: services, theme: theme)
         var all: [ToolID: any ToolController] = usesRealControllers
-            ? [.nbbOverlay: NBBOverlayController(services: services),
+            ? [.nbbOverlay: NBBOverlayController(services: services, copies: NBBCopiesMonitor(scanner: NoNBBCopiesScanner())),
                .windowBackdrop: BackdropController(services: services),
                .crosshair: CrosshairController(services: services)]
             : fakes.mapValues { $0 as any ToolController }

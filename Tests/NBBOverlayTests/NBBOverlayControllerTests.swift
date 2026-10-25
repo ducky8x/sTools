@@ -26,6 +26,14 @@ private struct NeverPromptingProber: PermissionProbing {
     func request(_ permission: Permission) async -> PermissionStatus { .granted }
 }
 
+/// A controller that never scans for the person's real Ninjabrain Bots or reads their windows.
+@MainActor
+private func inertNBBController(
+    services: ToolServices, connection: NBBConnection = NBBConnection(source: FakeEventSource([])), theme: STTheme? = nil
+) -> NBBOverlayController {
+    NBBOverlayController(services: services, connection: connection, copies: NBBCopiesMonitor(scanner: NoNBBCopiesScanner()), theme: theme)
+}
+
 @MainActor
 private func tempDirectory() -> URL {
     let url = FileManager.default.temporaryDirectory.appending(path: "sTools-nbb-tests-\(UUID().uuidString)")
@@ -38,7 +46,7 @@ struct NBBOverlayControllerTests {
     @MainActor
     @Test func loadsDefaultsWhenNothingIsStored() {
         let connection = NBBConnection(source: FakeEventSource([]))
-        let controller = NBBOverlayController(services: makeServices(tempDirectory: tempDirectory()), connection: connection)
+        let controller = inertNBBController(services: makeServices(tempDirectory: tempDirectory()), connection: connection)
         #expect(controller.settings == NBBOverlaySettings.defaultValue)
         #expect(controller.isEnabled == false)
     }
@@ -47,12 +55,12 @@ struct NBBOverlayControllerTests {
     @Test func changingSettingsPersistsAndReloads() async {
         let directory = tempDirectory()
         let services = makeServices(tempDirectory: directory)
-        let controller = NBBOverlayController(services: services, connection: NBBConnection(source: FakeEventSource([])))
+        let controller = inertNBBController(services: services, connection: NBBConnection(source: FakeEventSource([])))
         controller.settings.offsetX = 77
         controller.settings.width = 400
         await services.settings.flush()
 
-        let reloaded = NBBOverlayController(services: makeServices(tempDirectory: directory), connection: NBBConnection(source: FakeEventSource([])))
+        let reloaded = inertNBBController(services: makeServices(tempDirectory: directory), connection: NBBConnection(source: FakeEventSource([])))
         #expect(reloaded.settings.offsetX == 77)
         #expect(reloaded.settings.width == 400)
     }
@@ -61,7 +69,7 @@ struct NBBOverlayControllerTests {
     /// look or switching off and on again builds it again.
     @MainActor
     @Test func onlyAChangeInWhatItDrawsRebuildsTheOverlay() {
-        let controller = NBBOverlayController(services: makeServices(tempDirectory: tempDirectory()), connection: NBBConnection(source: FakeEventSource([])))
+        let controller = inertNBBController(services: makeServices(tempDirectory: tempDirectory()), connection: NBBConnection(source: FakeEventSource([])))
         controller.sample = NBBEvents.Stronghold(
             resultType: .triangulation,
             predictions: [NBBEvents.Prediction(chunkX: -41, chunkZ: 108, certainty: 0.94, overworldDistance: 1580)],
@@ -82,7 +90,7 @@ struct NBBOverlayControllerTests {
         #expect(controller.drawCount == 3, "switching off let the content go")
     }
 
-    private static let result = NBBEvents.Stronghold(
+    static let result = NBBEvents.Stronghold(
         resultType: .triangulation,
         predictions: [NBBEvents.Prediction(chunkX: -41, chunkZ: 108, certainty: 0.94, overworldDistance: 1580)],
         eyeThrows: [], playerPosition: nil)
@@ -95,7 +103,7 @@ struct NBBOverlayControllerTests {
 
     /// Spec 5.1.1: when Ninjabrain Bot resets, the overlay fades out; new data fades it back in.
     @MainActor @Test func aResetFadesTheOverlayOutThenHidesIt() async {
-        let controller = NBBOverlayController(services: makeServices(tempDirectory: tempDirectory()), connection: NBBConnection(source: FakeEventSource([])))
+        let controller = inertNBBController(services: makeServices(tempDirectory: tempDirectory()), connection: NBBConnection(source: FakeEventSource([])))
         controller.settings.fadeSeconds = 0.15
         controller.sample = Self.result
         controller.setEnabled(true)
@@ -108,7 +116,7 @@ struct NBBOverlayControllerTests {
     }
 
     @MainActor @Test func newDataDuringTheFadeBringsTheOverlayStraightBack() async throws {
-        let controller = NBBOverlayController(services: makeServices(tempDirectory: tempDirectory()), connection: NBBConnection(source: FakeEventSource([])))
+        let controller = inertNBBController(services: makeServices(tempDirectory: tempDirectory()), connection: NBBConnection(source: FakeEventSource([])))
         controller.settings.fadeSeconds = 0.2
         controller.sample = Self.result
         controller.setEnabled(true)
@@ -123,7 +131,7 @@ struct NBBOverlayControllerTests {
         let reduced = STTheme()
         reduced.motionMode = .reduced
         for (fadeOn, theme) in [(false, STTheme?.none), (true, reduced)] {
-            let controller = NBBOverlayController(
+            let controller = inertNBBController(
                 services: makeServices(tempDirectory: tempDirectory()), connection: NBBConnection(source: FakeEventSource([])), theme: theme)
             controller.settings.fadeOnResetEnabled = fadeOn
             controller.sample = Self.result
@@ -135,11 +143,48 @@ struct NBBOverlayControllerTests {
         }
     }
 
+    /// ducky's case: an old copy holds the API with nothing in it, and the newer copy in use has a result. The overlay
+    /// follows the newer copy, read from its window; picking the old one switches back to the API.
+    @MainActor @Test func theOverlayFollowsTheChosenCopyReadFromItsWindow() async {
+        final class FakeWindow: NBBWindowReading {
+            var reads: [Int32] = []
+            func read(pid: Int32) -> NBBWindowSnapshot? {
+                reads.append(pid)
+                return NBBWindowSnapshot(stronghold: NBBOverlayControllerTests.result, messages: ["A note from the window."])
+            }
+        }
+        let scanner = FakeCopiesScanner([
+            NBBCopy(pid: 873, startedAt: Date(timeIntervalSince1970: 10), arguments: [], holdsAPI: true),
+            NBBCopy(pid: 92616, startedAt: Date(timeIntervalSince1970: 20), arguments: [], holdsAPI: false),
+        ])
+        let monitor = NBBCopiesMonitor(scanner: scanner, control: FakeCopiesControl(scanner: scanner))
+        let window = FakeWindow()
+        let controller = NBBOverlayController(
+            services: makeServices(tempDirectory: tempDirectory()), connection: NBBConnection(source: FakeEventSource([])),
+            copies: monitor, windowReader: window, windowPollInterval: .milliseconds(20))
+        controller.setEnabled(true)
+        defer { controller.setEnabled(false) }
+        #expect(controller.readsWindow)
+        #expect(window.reads.first == 92616)
+        #expect(controller.stronghold == Self.result)
+        #expect(controller.isReachable)
+        #expect(controller.previewMessages.map(\.text) == ["A note from the window."])
+        #expect(controller.isOverlayVisible)
+
+        monitor.choice = .copy(873)
+        await waitUntil { controller.windowSnapshot == nil }
+        #expect(!controller.readsWindow)
+        #expect(controller.stronghold == nil, "the API copy has nothing yet")
+        let readsBefore = window.reads.count
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(window.reads.count == readsBefore, "the window isn't read while the API copy is followed")
+    }
+
     /// The page's preview shows only Ninjabrain Bot's live result: the intro's sample stays in the intro (spec 4,
     /// step 12).
     @MainActor
     @Test func thePreviewNeverShowsTheIntrosSample() {
-        let controller = NBBOverlayController(services: makeServices(tempDirectory: tempDirectory()), connection: NBBConnection(source: FakeEventSource([])))
+        let controller = inertNBBController(services: makeServices(tempDirectory: tempDirectory()), connection: NBBConnection(source: FakeEventSource([])))
         controller.sample = NBBEvents.Stronghold(
             resultType: .triangulation,
             predictions: [NBBEvents.Prediction(chunkX: -41, chunkZ: 108, certainty: 0.94, overworldDistance: 1580)],
@@ -150,7 +195,7 @@ struct NBBOverlayControllerTests {
 
     @MainActor
     @Test func setEnabledIsIdempotentAndToggles() {
-        let controller = NBBOverlayController(services: makeServices(tempDirectory: tempDirectory()), connection: NBBConnection(source: FakeEventSource([])))
+        let controller = inertNBBController(services: makeServices(tempDirectory: tempDirectory()), connection: NBBConnection(source: FakeEventSource([])))
         #expect(controller.isEnabled == false)
         controller.setEnabled(true)
         #expect(controller.isEnabled == true)
@@ -167,7 +212,7 @@ struct NBBOverlayControllerTests {
         // All six subscriptions plus the version check share this one fake; it must keep succeeding
         // for every one of them, not just whichever happens to connect first.
         let connection = NBBConnection(source: FakeEventSource([.event(#"{"resultType":"NONE"}"#)], repeatsLastOutcome: true))
-        let controller = NBBOverlayController(services: makeServices(tempDirectory: tempDirectory()), connection: connection)
+        let controller = inertNBBController(services: makeServices(tempDirectory: tempDirectory()), connection: connection)
         #expect(controller.isReachable == false)
         controller.setEnabled(true)
         try? await Task.sleep(for: .milliseconds(500))
