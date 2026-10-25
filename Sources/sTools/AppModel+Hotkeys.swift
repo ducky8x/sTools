@@ -18,11 +18,12 @@ extension AppModel {
     }
 
     /// Home's "Show on Keyboard": asks the Key Rebinder to select the drawn key that sends `combo`'s key, then
-    /// opens its page. False, with the page left as it was, when there is no Key Rebinder or no drawn key sends it.
+    /// opens its page scrolled to that key's panel. False, with the page left as it was, when there is no Key Rebinder or no drawn key sends it.
     @discardableResult
     func showHotkeyOnKeyboard(_ combo: HotkeyCombo) -> Bool {
         guard hotkeys.advisor?.selectKey(for: combo) == true else { return false }
         navigate(to: .tool(.keyRebinder))
+        pendingPageAnchor = .keyRebinderKeyPanel
         return true
     }
 

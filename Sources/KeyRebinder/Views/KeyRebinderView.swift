@@ -34,6 +34,9 @@ public struct KeyRebinderView: View {
     /// keyboard can be drawn big enough to use.
     private static let columnWidth: CGFloat = 640
 
+    /// The id of the selected key's panel, for the app to scroll to it (Home's Show on Keyboard).
+    public nonisolated static let keyPanelScrollID = "keyRebinder.keyPanel"
+
     public var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             strips.frame(maxWidth: Self.columnWidth, alignment: .leading)
@@ -44,6 +47,7 @@ public struct KeyRebinderView: View {
                         KeyEditorPanel(controller: controller, key: key, showsHotkeys: showsHotkeys, openHotkeys: openHotkeys) {
                             ruleBeingEdited = RuleSheetItem(index: $0)
                         }
+                        .id(Self.keyPanelScrollID)
                     }
                     if Self.showsFindings(controller: controller, showsHotkeys: showsHotkeys) {
                         FindingsSection(controller: controller, showsHotkeyFindings: showsHotkeys)

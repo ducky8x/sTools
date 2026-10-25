@@ -14,7 +14,7 @@ struct HomePage: View {
     let model: AppModel
 
     var body: some View {
-        PageContainer(anchor: Binding(get: { model.pendingPageAnchor }, set: { model.pendingPageAnchor = $0 })) {
+        PageContainer(anchor: Binding(get: { model.pendingPageAnchor }, set: { model.pendingPageAnchor = $0 }), accepts: [.hotkeys]) {
             STPageHeader(title: "Home", tagline: "Every tool and what it needs, at a glance.") { EmptyView() }
             HotkeysSection(model: model)
                 .id(PageAnchor.hotkeys)
