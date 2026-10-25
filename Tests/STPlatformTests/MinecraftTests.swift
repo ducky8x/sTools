@@ -149,7 +149,7 @@ private func windowRow(number: Int, pid: Int, rect: CGRect, layer: Int = 0) -> [
 
 @MainActor
 private func eventually(timeout: Duration = .seconds(3), _ condition: @MainActor () -> Bool) async -> Bool {
-    let clock = ContinuousClock()
+    let clock = SuspendingClock()
     let deadline = clock.now + timeout
     while clock.now < deadline {
         if condition() { return true }

@@ -41,15 +41,41 @@ struct PrologueModelTests {
         #expect(relaunched.step == .timerTrial)
     }
 
-    /// A build from before the Timer trial saved Window Backdrop's trial as index 9; it resumes there, now step 11.
+    /// A build from before the Timer trial saved its NBB Overlay trial as index 10; it resumes there, now step 11.
     @Test func resumesAtTheSameStepSavedByABuildWithoutTheTimerTrial() async throws {
         let box = StoreBox()
         try FileManager.default.createDirectory(at: box.directory, withIntermediateDirectories: true)
         let url = box.directory.appending(path: "appState.json")
-        try Data(#"{"version":1,"value":{"prologueCompleted":false,"prologueStep":9}}"#.utf8).write(to: url)
+        try Data(#"{"version":1,"value":{"prologueCompleted":false,"prologueStep":10}}"#.utf8).write(to: url)
         let model = PrologueModel(store: box.reopened(), host: FakeHost())
-        #expect(model.step == .backdropTrial)
+        #expect(model.step == .nbbOverlayTrial)
         #expect(model.step.number == 11)
+    }
+
+    /// A build that showed Window Backdrop's trial before NBB Overlay's saved it (index 10) without
+    /// `trialsInSidebarOrder`; it resumes at NBB Overlay's trial, so NBB Overlay and Screen Recording aren't skipped,
+    /// and Window Backdrop's follows them.
+    @Test func aBackdropTrialSavedInTheOldOrderResumesAtNBBOverlaysTrial() async throws {
+        let box = StoreBox()
+        try FileManager.default.createDirectory(at: box.directory, withIntermediateDirectories: true)
+        let url = box.directory.appending(path: "appState.json")
+        try Data(#"{"version":1,"value":{"prologueCompleted":false,"prologueStep":9,"prologueStepWithTimerTrial":10}}"#.utf8)
+            .write(to: url)
+        let model = PrologueModel(store: box.reopened(), host: FakeHost())
+        #expect(model.step == .nbbOverlayTrial)
+        model.next()
+        model.next()
+        #expect(model.step == .backdropTrial)
+    }
+
+    /// Today's builds save Window Backdrop's trial with `trialsInSidebarOrder`, so it resumes right there.
+    @Test func aBackdropTrialSavedInSidebarOrderResumesThere() async {
+        let box = StoreBox()
+        let first = makeModel(box, host: FakeHost(), at: .backdropTrial)
+        #expect(first.step.number == 13)
+        await box.store.flush()
+        let relaunched = PrologueModel(store: box.reopened(), host: FakeHost())
+        #expect(relaunched.step == .backdropTrial)
     }
 
     @Test func replayStartsAtTheGreetingWhateverWasSaved() {
@@ -256,9 +282,9 @@ struct PrologueModelTests {
 
 @MainActor
 func waitUntil(timeout: Duration = .seconds(3), _ condition: @MainActor () -> Bool) async -> Bool {
-    let deadline = ContinuousClock.now + timeout
+    let deadline = SuspendingClock.now + timeout
     while !condition() {
-        if ContinuousClock.now > deadline { return false }
+        if SuspendingClock.now > deadline { return false }
         try? await Task.sleep(for: .milliseconds(5))
     }
     return true

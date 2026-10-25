@@ -146,3 +146,43 @@ enum STFlowLayoutMath {
         return Arrangement(origins: origins, size: CGSize(width: widest, height: sizes.isEmpty ? 0 : y + rowHeight))
     }
 }
+
+/// Chips with their visible small-caps label beside them ("Hold", "Does"), as both hotkey editors show them. The label
+/// is hidden from VoiceOver, because the chips already name their own group with it.
+public struct STLabeledChips<Chips: View>: View {
+    private let label: String
+    private let chips: Chips
+
+    public init(_ label: String, @ViewBuilder chips: () -> Chips) {
+        self.label = label
+        self.chips = chips()
+    }
+
+    public var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            STChipsLabel(label)
+                .padding(.top, 6)
+                .accessibilityHidden(true)
+            chips
+        }
+    }
+}
+
+/// "Hold" or "Does", in small caps, in a column as wide for both. The column grows with the text size, so the label
+/// stays on one line up to 130%.
+public struct STChipsLabel: View {
+    private let title: String
+    @Environment(\.stTheme) private var theme
+
+    public init(_ title: String) {
+        self.title = title
+    }
+
+    public var body: some View {
+        Text(title)
+            .stStyle(.label)
+            .foregroundStyle(theme.inkSecondary)
+            .lineLimit(1)
+            .frame(width: 44 * theme.textScale, alignment: .leading)
+    }
+}

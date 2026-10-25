@@ -57,6 +57,16 @@ extension KeyRebinderController {
         hotkeyCenter?.isEnabled = true
     }
 
+    /// What Home ▸ Hotkeys has set for every hotkey, for the key panel's Hotkeys part: "Hotkeys work in sTools and
+    /// Minecraft · Key set: ⌘1–⌘5", or only in sTools while Accessibility is missing, as Home says. Nil without a
+    /// hotkey list.
+    public var hotkeyWhereLine: String? {
+        let accessibilityGranted = services.permissions.status(.accessibility) == .granted
+        return hotkeyCenter.map {
+            HotkeyWording.whereAndKeySet(scope: $0.scope, keySet: $0.keySet, accessibilityGranted: accessibilityGranted)
+        }
+    }
+
     /// What `key` can do for hotkeys, by what it sends now in the current scope (the preview while a change waits).
     public func hotkeyTarget(for key: KarabinerEvent) -> HotkeyTarget {
         HotkeyTarget.of(key, bindings: derived.bindings)
@@ -79,7 +89,7 @@ extension KeyRebinderController {
     }
 
     /// What the tooltip and VoiceOver add to `key`: "sTools hotkey F18: Crosshair and NBB Overlay.", or "sTools
-    /// hotkeys: F18, Crosshair; Option F18, Start/stop recording, not working: Refused by macOS." Nil when it fires no
+    /// hotkeys: F18, Crosshair; Option F18, Screen Recording, not working: Refused by macOS." Nil when it fires no
     /// hotkey.
     public func hotkeyDescription(for key: KarabinerEvent) -> String? {
         let hotkeys = hotkeys(on: key)
@@ -189,21 +199,37 @@ extension KeyRebinderController {
 
     /// Saves a hotkey on what `key` sends now with `modifiers` held: a new one, or the hotkey `editing`, which keeps
     /// its id. Actions are kept in the pickers' order (`HotkeyAction.allCases`). Returns the hotkey's id, or nil when
-    /// nothing was saved: no hotkey list, a key that can't carry hotkeys, no action, or a combination that is reserved
-    /// or already used by another hotkey.
+    /// nothing was saved: no hotkey list, a key that can't carry hotkeys, no action, a combination that is reserved or
+    /// already used by another hotkey, or a second key for a tool's action alone (`ownHotkeyReplaced(bySaving:editing:)`),
+    /// which the panel asks about first. With `replacingOwnHotkey`, that tool's own hotkey gets this key instead, as
+    /// on Home (spec 6.1), and its id comes back.
     @discardableResult
     public func saveHotkey(
-        on key: KarabinerEvent, editing id: UUID?, modifiers: HotkeyCombo.Modifiers, actions: [HotkeyAction]
+        on key: KarabinerEvent, editing id: UUID?, modifiers: HotkeyCombo.Modifiers, actions: [HotkeyAction],
+        replacingOwnHotkey: Bool = false
     ) -> UUID? {
         guard let center = hotkeyCenter, let keyCode = hotkeyTarget(for: key).keyCode, !actions.isEmpty else { return nil }
         let combo = HotkeyCombo(keyCode: keyCode, modifiers: modifiers)
         guard center.conflict(for: combo, excluding: id) == nil else { return nil }
         let ordered = HotkeyAction.allCases.filter(actions.contains)
-        if let id, center.bindings.contains(where: { $0.id == id }) {
-            center.update(id, combo: combo, actions: ordered)
-            return id
+        let editing = id.flatMap { id in center.bindings.contains { $0.id == id } ? id : nil }
+        if let own = center.ownHotkeyReplaced(bySaving: ordered, editing: editing) {
+            guard replacingOwnHotkey, let action = own.actions.first else { return nil }
+            center.replaceOwnHotkey(for: action, with: combo, removing: editing)
+            return own.id
+        }
+        if let editing {
+            center.update(editing, combo: combo, actions: ordered)
+            return editing
         }
         return center.add(combo: combo, actions: ordered)
+    }
+
+    /// The tool's own hotkey that saving `actions` (on the hotkey `id`, nil for a new one) would duplicate, so the key
+    /// panel asks before Replace: a tool has one key of its own (spec 6.1). Nil when saving needs no question, or
+    /// without a hotkey list.
+    public func ownHotkeyReplaced(bySaving actions: [HotkeyAction], editing id: UUID?) -> HotkeyBinding? {
+        hotkeyCenter?.ownHotkeyReplaced(bySaving: actions, editing: id)
     }
 
     public func deleteHotkey(_ id: UUID) {

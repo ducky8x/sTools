@@ -11,6 +11,10 @@ import VideoToolbox
 public final class RecordingWriter: @unchecked Sendable {
     public static let fragmentInterval = CMTime(seconds: 1, preferredTimescale: 600)
     private static let diskCheckInterval = CMTime(seconds: 1, preferredTimescale: 600)
+    /// How long a part that was split off waits for the rest of its sound once the picture has moved on: the session
+    /// writes sound a quarter second behind the picture (`RecordingSession.audioLag`), so this leaves room to spare. A
+    /// part closes sooner, as soon as every track's sound has passed its cut.
+    static let lateSoundAllowance = CMTime(seconds: 1, preferredTimescale: 600)
 
     public let events: AsyncStream<WriterEvent>
 
@@ -26,8 +30,17 @@ public final class RecordingWriter: @unchecked Sendable {
 
     private var phase = Phase.idle
     private var segment: Segment?
+    /// The part split off last, while it still takes the sound up to its cut (`lateSoundAllowance`): its picture has
+    /// ended there and the next part's has begun.
+    private var closing: ClosingSegment?
     private var segmentIndex = 0
+    /// The name the files are written under: the configuration's, or the next free one when a recording in the folder
+    /// holds it (`RecordingNames`). Chosen at `start`.
+    private var baseName = ""
     private var finishedFiles: [URL] = []
+    /// The parts finished so far, by number: each is finished once, whichever way the recording ends
+    /// (`finalize(_:endTime:)`).
+    private var finalizedParts: Set<Int> = []
     private var finalizers: [Task<Void, Never>] = []
     private var lastVideoTime: CMTime?
     private var lastAudioEnd: [Int: CMTime] = [:]
@@ -94,6 +107,7 @@ public final class RecordingWriter: @unchecked Sendable {
                 throw RecordingWriterError.invalidConfiguration("frame rate and canvas must be positive")
             }
             try FileManager.default.createDirectory(at: configuration.directory, withIntermediateDirectories: true)
+            baseName = RecordingNames.freeBase(configuration.baseName, in: configuration.directory)
             segmentIndex = 1
             segment = try makeSegment(index: 1, start: time)
             phase = .recording
@@ -106,6 +120,7 @@ public final class RecordingWriter: @unchecked Sendable {
     public func finish() async -> WriterResult {
         let pending: [Task<Void, Never>] = locked {
             if case .recording = phase { phase = .stopped(.finished) }
+            closeSplitOffPart()
             if let segment {
                 finalize(segment, endTime: segment.lastEnd)
                 self.segment = nil
@@ -132,18 +147,23 @@ public final class RecordingWriter: @unchecked Sendable {
                 return countDroppedFrame()
             }
             if checkDisk(at: time, events: &events) { return .stopped }
+            if let closing, time - closing.cut >= Self.lateSoundAllowance { closeSplitOffPart() }
             if let interval = configuration.splitIntervalSeconds,
                (time - current.start).seconds >= interval {
+                // The old part is the split-off one from here on, never the current one too, so a next part that
+                // can't open (the folder gone, the drive unplugged or full) stops the writer without finishing the old
+                // part a second time.
+                splitOff(current, at: time)
+                segment = nil
+                segmentIndex += 1
                 do {
-                    finalize(current, endTime: time)
-                    segmentIndex += 1
                     current = try makeSegment(index: segmentIndex, start: time)
-                    segment = current
-                    events.append(.segmentStarted(index: segmentIndex, url: current.url))
                 } catch {
-                    stop(.failed(String(describing: error)), events: &events)
+                    stop(.failed(Self.message(for: error)), events: &events)
                     return .stopped
                 }
+                segment = current
+                events.append(.segmentStarted(index: segmentIndex, url: current.url))
             }
             guard current.video.isReadyForMoreMediaData, readinessOverride?() ?? true else {
                 return countDroppedFrame()
@@ -155,45 +175,86 @@ public final class RecordingWriter: @unchecked Sendable {
             current.lastEnd = time + CMTime(value: 1, timescale: CMTimeScale(configuration.frameRate))
             segment = current
             framesWritten += 1
+            if framesWritten == 1 { events.append(.firstFrameWritten) }
             return .written
         }
         for event in events { continuation.yield(event) }
         return disposition
     }
 
+    /// Tests only: makes the part being written fail partway through, as a disk that fills or a drive that's unplugged
+    /// does. A frame from its start goes straight to its encoder again, which AVFoundation refuses when it writes the
+    /// part's next fragment: the part's writer fails, and the frames appended after that are refused.
+    func failCurrentPartForTesting() {
+        locked {
+            guard let segment else { return }
+            var copy: CVPixelBuffer?
+            CVPixelBufferCreate(nil, canvas.width, canvas.height, kCVPixelFormatType_32BGRA, nil, &copy)
+            guard let copy else { return }
+            _ = segment.adaptor.append(copy, withPresentationTime: segment.start)
+        }
+    }
+
     // MARK: Audio
 
     /// Appends a chunk to its track. Returns false if the chunk was discarded.
+    ///
+    /// Sound from before the last split's cut goes to the part split off there, which takes it until every track has
+    /// passed the cut; a chunk that spans the cut is divided at it, so the parts meet with no gap and no overlap.
     @discardableResult
     public func append(audio chunk: TrackAudio) -> Bool {
         var events: [WriterEvent] = []
         let accepted: Bool = locked {
-            guard case .recording = phase, var current = segment else { return false }
+            guard case .recording = phase, let current = segment else { return false }
             guard chunk.frameCount > 0, current.audio.indices.contains(chunk.track) else {
                 droppedAudioChunks += 1
                 return false
             }
             if let last = lastAudioEnd[chunk.track], chunk.time < last { return countDroppedAudio() }
-            if chunk.endTime <= current.start { return countDroppedAudio() }
-            let input = current.audio[chunk.track]
-            guard input.isReadyForMoreMediaData, let buffer = makeSampleBuffer(chunk) else {
-                return countDroppedAudio()
+            var rest = chunk
+            if var closing, chunk.time < closing.cut {
+                let (before, after) = chunk.divided(at: closing.cut)
+                if let before {
+                    switch write(before, to: &closing.segment, events: &events) {
+                    case .written: break
+                    case .dropped: return countDroppedAudio()
+                    case .failed: return false
+                    }
+                    self.closing = closing
+                }
+                if closing.hasSoundUpToItsCut(lastAudioEnd) { closeSplitOffPart() }
+                guard let after else { return true }
+                rest = after
             }
-            guard input.append(buffer) else {
-                stop(.failed(current.writer.error?.localizedDescription ?? "audio append failed"), events: &events)
-                return false
+            if rest.endTime <= current.start { return countDroppedAudio() }
+            var written = current
+            switch write(rest, to: &written, events: &events) {
+            case .written:
+                // The file ends with whichever runs longer, so sound past the last written frame (frames the
+                // encoder dropped at the end) isn't cut off.
+                if rest.endTime > written.lastEnd { written.lastEnd = rest.endTime }
+                segment = written
+                return true
+            case .dropped: return countDroppedAudio()
+            case .failed: return false
             }
-            lastAudioEnd[chunk.track] = chunk.endTime
-            // The file ends with whichever runs longer, so sound past the last written frame (frames the
-            // encoder dropped at the end) isn't cut off.
-            if chunk.endTime > current.lastEnd {
-                current.lastEnd = chunk.endTime
-                segment = current
-            }
-            return true
         }
         for event in events { continuation.yield(event) }
         return accepted
+    }
+
+    private enum AudioWrite { case written, dropped, failed }
+
+    /// Appends `chunk` to its track in `segment`; a failure stops the writer.
+    private func write(_ chunk: TrackAudio, to segment: inout Segment, events: inout [WriterEvent]) -> AudioWrite {
+        let input = segment.audio[chunk.track]
+        guard input.isReadyForMoreMediaData, let buffer = makeSampleBuffer(chunk) else { return .dropped }
+        guard input.append(buffer) else {
+            stop(.failed(segment.writer.error?.localizedDescription ?? "audio append failed"), events: &events)
+            return .failed
+        }
+        lastAudioEnd[chunk.track] = chunk.endTime
+        return .written
     }
 
     // MARK: Internals (all require the lock)
@@ -217,8 +278,9 @@ public final class RecordingWriter: @unchecked Sendable {
     private func makeResult() -> WriterResult {
         let reason: WriterStopReason
         if case .stopped(let stopReason) = phase { reason = stopReason } else { reason = .finished }
+        // A part whose folder went (removed, or its drive unplugged) went with it: only what's on disk is offered.
         return WriterResult(
-            files: finishedFiles,
+            files: finishedFiles.filter { FileManager.default.fileExists(atPath: $0.path) },
             framesWritten: framesWritten,
             droppedFrames: droppedFrames,
             droppedAudioChunks: droppedAudioChunks,
@@ -244,6 +306,7 @@ public final class RecordingWriter: @unchecked Sendable {
 
     private func stop(_ reason: WriterStopReason, events: inout [WriterEvent], announce: Bool = true) {
         phase = .stopped(reason)
+        closeSplitOffPart()
         if let segment {
             finalize(segment, endTime: segment.lastEnd)
             self.segment = nil
@@ -252,11 +315,15 @@ public final class RecordingWriter: @unchecked Sendable {
     }
 
     private func makeSegment(index: Int, start: CMTime) throws -> Segment {
-        let name = index == 1 ? configuration.baseName : "\(configuration.baseName) part \(index)"
-        let url = configuration.directory.appendingPathComponent(name).appendingPathExtension("mov")
-        guard !FileManager.default.fileExists(atPath: url.path) else { throw RecordingWriterError.fileExists(url) }
+        // The name was free at the start; a part's name that turned up in the folder since takes the next free one.
+        let url = RecordingNames.freeURL(RecordingNames.partName(baseName, index: index), fileExtension: "mov", in: configuration.directory)
 
         let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
+        var opened = false
+        defer {
+            // A part that couldn't open leaves nothing behind: its name was free, so whatever is there now is its own.
+            if !opened, FileManager.default.fileExists(atPath: url.path) { try? FileManager.default.removeItem(at: url) }
+        }
         writer.movieFragmentInterval = Self.fragmentInterval
         writer.shouldOptimizeForNetworkUse = false
 
@@ -293,6 +360,7 @@ public final class RecordingWriter: @unchecked Sendable {
             throw RecordingWriterError.writerFailed(writer.error?.localizedDescription ?? "startWriting failed")
         }
         writer.startSession(atSourceTime: start)
+        opened = true
         return Segment(index: index, url: url, writer: writer, video: video, adaptor: adaptor, audio: audio, start: start)
     }
 
@@ -369,21 +437,58 @@ public final class RecordingWriter: @unchecked Sendable {
         AVEncoderBitRateKey: 160_000,
     ] }
 
+    /// Ends `segment`'s picture at `cut`, where the next part's begins, and keeps it open for the sound up to the cut,
+    /// which arrives a little later than the picture. A part without sound tracks closes at once. A part split off
+    /// earlier and still waiting for its sound closes first.
+    private func splitOff(_ segment: Segment, at cut: CMTime) {
+        closeSplitOffPart()
+        var ended = segment
+        ended.video.markAsFinished()
+        ended.videoIsFinished = true
+        closing = ClosingSegment(segment: ended, cut: cut)
+        if ended.audio.isEmpty || closing?.hasSoundUpToItsCut(lastAudioEnd) == true { closeSplitOffPart() }
+    }
+
+    /// Finishes the part split off last, at its cut: whatever sound it hasn't had by now is the next part's or lost.
+    private func closeSplitOffPart() {
+        guard let closing else { return }
+        self.closing = nil
+        finalize(closing.segment, endTime: closing.cut)
+    }
+
     /// Closes the segment's inputs and finishes the file in the background; `finish()` awaits every such task.
+    ///
+    /// Each part is finished once, however the recording ends. AVFoundation ends sTools with an exception when a file
+    /// that's finishing or finished is ended or finished again, so only a part still writing is ended at `endTime`,
+    /// and only one still writing or failed (a full disk, an unplugged drive) is finished: a failed part keeps what
+    /// reached it.
     private func finalize(_ segment: Segment, endTime: CMTime) {
+        guard finalizedParts.insert(segment.index).inserted else { return }
         let writer = segment.writer
-        segment.video.markAsFinished()
-        for input in segment.audio { input.markAsFinished() }
-        writer.endSession(atSourceTime: endTime)
         let url = segment.url
         let index = segment.index
+        finishedFiles.append(url)
+        let status = writer.status
+        if status == .writing {
+            if !segment.videoIsFinished { segment.video.markAsFinished() }
+            for input in segment.audio { input.markAsFinished() }
+            writer.endSession(atSourceTime: endTime)
+        }
+        guard status == .writing || status == .failed else {
+            continuation.yield(.segmentFinished(index: index, url: url))
+            return
+        }
         let box = WriterBox(writer)
         let continuation = continuation
         finalizers.append(Task {
             await box.finish()
             continuation.yield(.segmentFinished(index: index, url: url))
         })
-        finishedFiles.append(url)
+    }
+
+    /// A few words on why a part couldn't open, for the page's note.
+    private static func message(for error: any Error) -> String {
+        (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
     }
 
     private func makeSampleBuffer(_ chunk: TrackAudio) -> CMSampleBuffer? {
@@ -430,6 +535,8 @@ private struct Segment {
     let audio: [AVAssetWriterInput]
     let start: CMTime
     var lastEnd: CMTime
+    /// Its picture has ended (it was split off) and only its sound still comes in.
+    var videoIsFinished = false
 
     init(index: Int, url: URL, writer: AVAssetWriter, video: AVAssetWriterInput,
          adaptor: AVAssetWriterInputPixelBufferAdaptor, audio: [AVAssetWriterInput], start: CMTime) {
@@ -441,6 +548,35 @@ private struct Segment {
         self.audio = audio
         self.start = start
         self.lastEnd = start
+    }
+}
+
+/// A part split off at `cut`, still taking the sound up to it.
+private struct ClosingSegment {
+    var segment: Segment
+    let cut: CMTime
+
+    /// Whether every one of its tracks has had its sound up to the cut (`lastAudioEnd`, by track), to the nearest
+    /// sample frame.
+    func hasSoundUpToItsCut(_ lastAudioEnd: [Int: CMTime]) -> Bool {
+        segment.audio.indices.allSatisfy { track in
+            lastAudioEnd[track].map { (cut - $0).seconds * Double(TrackAudio.sampleRate) < 0.5 } ?? false
+        }
+    }
+}
+
+private extension TrackAudio {
+    /// The part of the chunk before `time` and the rest from `time` on, each nil when empty. `time` falls on the
+    /// nearest sample frame.
+    func divided(at time: CMTime) -> (before: TrackAudio?, after: TrackAudio?) {
+        let frames = Int(((time - self.time).seconds * Double(Self.sampleRate)).rounded())
+        guard frames < frameCount else { return (self, nil) }
+        guard frames > 0 else { return (nil, self) }
+        let before = TrackAudio(track: track, time: self.time, samples: Array(samples[..<(frames * Self.channelCount)]))
+        let after = TrackAudio(
+            track: track, time: self.time + CMTime(value: CMTimeValue(frames), timescale: CMTimeScale(Self.sampleRate)),
+            samples: Array(samples[(frames * Self.channelCount)...]))
+        return (before, after)
     }
 }
 

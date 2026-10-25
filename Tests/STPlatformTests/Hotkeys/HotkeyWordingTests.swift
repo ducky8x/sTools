@@ -24,8 +24,7 @@ struct HotkeyWordingTests {
         #expect(HotkeyAction.toggle(.nbbOverlay).title == "NBB Overlay")
         #expect(HotkeyAction.toggle(.windowBackdrop).title == "Window Backdrop")
         #expect(HotkeyAction.toggle(.crosshair).title == "Crosshair")
-        #expect(HotkeyAction.toggle(.screenRecording).title == "Screen Recording")
-        #expect(HotkeyAction.startStopRecording.title == "Start/stop recording")
+        #expect(HotkeyAction.startStopRecording.title == "Screen Recording")
         #expect(HotkeyAction.startTimer.title == "Start timer")
     }
 
@@ -40,7 +39,7 @@ struct HotkeyWordingTests {
 
     @Test func summaryJoinsWithPlusInActionOrder() {
         #expect(HotkeyWording.summary([.toggle(.crosshair), .toggle(.nbbOverlay)]) == "Crosshair + NBB Overlay")
-        #expect(HotkeyWording.summary([.startStopRecording, .toggle(.crosshair)]) == "Start/stop recording + Crosshair")
+        #expect(HotkeyWording.summary([.startStopRecording, .toggle(.crosshair)]) == "Screen Recording + Crosshair")
         #expect(HotkeyWording.summary([.toggle(.windowBackdrop)]) == "Window Backdrop")
         #expect(HotkeyWording.summary([.toggle(.crosshair), .startTimer]) == "Crosshair + Start timer")
         #expect(HotkeyWording.summary([]) == "")
@@ -51,7 +50,7 @@ struct HotkeyWordingTests {
         #expect(HotkeyWording.spokenSummary([.toggle(.crosshair), .toggle(.nbbOverlay)]) == "Crosshair and NBB Overlay")
         #expect(HotkeyWording.spokenSummary([.startTimer, .toggle(.crosshair)]) == "Start timer and Crosshair")
         #expect(HotkeyWording.spokenSummary([.toggle(.crosshair), .toggle(.nbbOverlay), .startStopRecording])
-                == "Crosshair, NBB Overlay and Start/stop recording")
+                == "Crosshair, NBB Overlay and Screen Recording")
         #expect(HotkeyWording.spokenSummary([]) == "")
     }
 
@@ -116,6 +115,34 @@ struct HotkeyWordingTests {
         #expect(HotkeyWording.functionKeyNote(for: HotkeyCombo(keyCode: 111, modifiers: [])) != nil) // F12
         #expect(HotkeyWording.functionKeyNote(for: f13) == nil)
         #expect(HotkeyWording.functionKeyNote(for: c) == nil)
+    }
+
+    // MARK: Where hotkeys work and the key set
+
+    /// The line every other place that edits a hotkey shows (a tool page's Hotkey row, Timer Overlay's Hotkey row, the
+    /// Key Rebinder's key panel), so what Home ▸ Hotkeys sets is in view there too.
+    @Test func theLineSaysWhereHotkeysWorkAndTheKeySet() {
+        #expect(HotkeyWording.whereAndKeySet(scope: .sToolsAndMinecraft, keySet: .command, accessibilityGranted: true)
+            == "Hotkeys work in sTools and Minecraft · Key set: ⌘1–⌘5")
+        #expect(HotkeyWording.whereAndKeySet(scope: .everywhere, keySet: .functionKeys, accessibilityGranted: true)
+            == "Hotkeys work in every app · Key set: F13–F17")
+        #expect(HotkeyWording.whereAndKeySet(scope: .sToolsAndMinecraft, keySet: .noKeys, accessibilityGranted: true)
+            == "Hotkeys work in sTools and Minecraft · Key set: None")
+        #expect(HotkeyWording.whereAndKeySet(scope: .everywhere, keySet: nil, accessibilityGranted: true)
+            == "Hotkeys work in every app · Key set: Custom")
+        #expect(HotkeyKeySet.name(of: nil) == "Custom")
+        #expect(HotkeyKeySet.name(of: .control) == "⌃1–⌃5")
+    }
+
+    /// Recognizing Minecraft needs Accessibility, so without it In sTools and Minecraft works only in sTools, as Home
+    /// says under Where hotkeys work; Everywhere doesn't need it.
+    @Test func withoutAccessibilityTheLineSaysOnlyInSTools() {
+        #expect(HotkeyWording.whereAndKeySet(scope: .sToolsAndMinecraft, keySet: .command, accessibilityGranted: false)
+            == "Hotkeys work only in sTools until Accessibility is allowed · Key set: ⌘1–⌘5")
+        #expect(HotkeyWording.whereAndKeySet(scope: .sToolsAndMinecraft, keySet: nil, accessibilityGranted: false)
+            == "Hotkeys work only in sTools until Accessibility is allowed · Key set: Custom")
+        #expect(HotkeyWording.whereAndKeySet(scope: .everywhere, keySet: .functionKeys, accessibilityGranted: false)
+            == "Hotkeys work in every app · Key set: F13–F17")
     }
 
     // MARK: Spoken names

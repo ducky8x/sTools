@@ -82,7 +82,7 @@ struct TimerAdvancedSection: View {
             }
             .transition(.opacity)
         }
-        STSettingsRow("Progress") {
+        STSettingsRow("Progress", combinesForAccessibility: false) {
             STSegmented(selection: $controller.settings.progress, options: [.init(.off, "None"), .init(.bar, "Bar"), .init(.ring, "Ring")])
         }
         STSettingsRow("Color near zero") {
@@ -107,7 +107,7 @@ struct TimerAdvancedSection: View {
     // MARK: - The time
 
     @ViewBuilder private var timeRows: some View {
-        STSettingsRow("Time format") {
+        STSettingsRow("Time format", combinesForAccessibility: false) {
             STSegmented(selection: $controller.settings.timeFormat, options: [
                 .init(.minutesAndSeconds, "MM:SS"), .init(.shortMinutes, "M:SS"), .init(.secondsOnly, "Seconds"),
             ])
@@ -115,7 +115,7 @@ struct TimerAdvancedSection: View {
         STSettingsRow("Tenths in the last 10 s") {
             STSwitch(isOn: $controller.settings.showsTenths, label: "Tenths in the last 10 s")
         }
-        STSettingsRow("At zero, show") {
+        STSettingsRow("At zero, show", combinesForAccessibility: false) {
             STSegmented(selection: $controller.settings.atZero, options: [
                 .init(.holdZero, "00:00"), .init(.word, "A word"), .init(.overtime, "Overtime"),
             ])
@@ -131,7 +131,7 @@ struct TimerAdvancedSection: View {
     // MARK: - Motion
 
     @ViewBuilder private var motionRows: some View {
-        STSettingsRow("Pop-up motion") {
+        STSettingsRow("Pop-up motion", combinesForAccessibility: false) {
             STSegmented(selection: $controller.settings.popUpMotion, options: [
                 .init(.springPop, "Pop"), .init(.fade, "Fade"), .init(.slide, "Slide"), .init(.instant, "None"),
             ])
@@ -180,10 +180,31 @@ struct TimerAdvancedSection: View {
                 .init(.ignore, "Is ignored"),
             ], label: "A press while ringing or lingering")
         }
-        STSettingsRow("Cancel gesture") {
+        STSettingsRow("Cancel gesture", showsRule: false, combinesForAccessibility: false) {
             STSegmented(selection: $controller.settings.cancelGesture, options: [
                 .init(.doublePress, "Double press"), .init(.hold, "Hold"), .init(.off, "None"),
             ])
+        }
+        STNoteLine(Self.cancelGestureNote(for: settings.cancelGesture))
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, 12)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(STColor.rule).frame(height: 1).accessibilityHidden(true)
+            }
+    }
+
+    /// What the cancel gesture does, under its row (spec 5.6.2): either gesture switches Timer Overlay off, and the
+    /// next press switches it back on. Placeholder wording for M9.
+    static func cancelGestureNote(for gesture: TimerOverlaySettings.CancelGesture) -> String {
+        let back = "The next press switches it back on and starts."
+        return switch gesture {
+        case .doublePress:
+            "A second press within \(points(PressPolicy.doublePressWindow)) s switches Timer Overlay off. \(back)"
+        case .hold:
+            "Holding the key for \(points(PressPolicy.holdDuration)) s switches Timer Overlay off. \(back)"
+        case .off:
+            "The key never switches Timer Overlay off; its switch does."
         }
     }
 
@@ -220,7 +241,7 @@ struct TimerAdvancedSection: View {
         STSettingsRow("Pause while Minecraft isn\u{2019}t focused") {
             STSwitch(isOn: $controller.settings.pausesWhileMinecraftNotFocused, label: "Pause while Minecraft isn\u{2019}t focused")
         }
-        STSettingsRow("Display") {
+        STSettingsRow("Display", combinesForAccessibility: false) {
             STSegmented(selection: $controller.settings.displayChoice, options: [
                 .init(.followMinecraft, "Follow Minecraft"), .init(.specific, "A specific display"),
             ])

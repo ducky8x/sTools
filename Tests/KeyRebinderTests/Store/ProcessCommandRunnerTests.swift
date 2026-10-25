@@ -33,12 +33,12 @@ import Testing
 
     @Test func aHungProcessIsTerminatedAtTheTimeout() async {
         let runner = ProcessCommandRunner(timeout: .milliseconds(300))
-        let started = ContinuousClock.now
+        let started = SuspendingClock.now
         await #expect {
             try await runner.run(shell, ["-c", "sleep 30"])
         } throws: { error in
             if case CommandRunnerError.timedOut = error { true } else { false }
         }
-        #expect(ContinuousClock.now - started < .seconds(10))
+        #expect(SuspendingClock.now - started < .seconds(10))
     }
 }

@@ -6,27 +6,117 @@ import STPlatform
 import Testing
 @testable import ScreenRecording
 
-final class FakeVideoCapture: VideoCapture, @unchecked Sendable {
-    private let handler = OSAllocatedUnfairLock<(@Sendable (VideoCaptureEvent) -> Void)?>(initialState: nil)
-    let failsToStart: Bool
+/// The order fake sources stopped in, by the names the test gave them.
+final class StopLog: @unchecked Sendable {
+    private let names = OSAllocatedUnfairLock(initialState: [String]())
+    func append(_ name: String) { names.withLock { $0.append(name) } }
+    var all: [String] { names.withLock { $0 } }
+}
 
-    init(failsToStart: Bool = false) { self.failsToStart = failsToStart }
+/// Waits `duration` whether or not the task is canceled, as ScreenCaptureKit, AVFoundation and Core Audio finish
+/// starting a source even when the task that asked has been canceled since.
+func uncancellableWait(_ duration: Duration) async {
+    await Task.detached { try? await Task.sleep(for: duration) }.value
+}
 
-    func start(deliver: @escaping @Sendable (VideoCaptureEvent) -> Void) async throws {
-        if failsToStart { throw CocoaError(.featureUnsupported) }
-        handler.withLock { $0 = deliver }
+/// Holds a fake source's start until the test opens it, canceled or not, so a test can check what happens while a
+/// source is still starting without racing a timer (a busy test process can stall the main actor for longer than any
+/// start time a test could afford to wait).
+final class StartGate: @unchecked Sendable {
+    private let state = OSAllocatedUnfairLock(initialState: (isOpen: false, waiting: [CheckedContinuation<Void, Never>]()))
+
+    func wait() async {
+        await withCheckedContinuation { continuation in
+            let goesNow = state.withLock { state in
+                if state.isOpen { return true }
+                state.waiting.append(continuation)
+                return false
+            }
+            if goesNow { continuation.resume() }
+        }
     }
 
-    func stop() async { handler.withLock { $0 = nil } }
+    /// Lets every start held so far, and every later one, finish.
+    func open() {
+        let waiting = state.withLock { state in
+            state.isOpen = true
+            defer { state.waiting = [] }
+            return state.waiting
+        }
+        waiting.forEach { $0.resume() }
+    }
+}
 
-    func push(_ event: VideoCaptureEvent) { handler.withLock { $0 }?(event) }
+final class FakeVideoCapture: VideoCapture, @unchecked Sendable {
+    private let handler = HandlerSlot<VideoCaptureEvent>()
+    let failsToStart: Bool
+    private let name: String
+    private let stops: StopLog?
+    /// How long starting takes, as a real stream's or camera's start can.
+    private let startTakes: Duration?
+    /// Delivered as it starts, as ScreenCaptureKit sends a stream's first frame.
+    private let firstFrame: VideoFrame?
+    /// How long stopping takes, as a real stream's or camera's stop can.
+    private let stopTakes: Duration?
+    /// Holds the start until the test opens it.
+    private let startGate: StartGate?
+
+    init(failsToStart: Bool = false, name: String = "video", stops: StopLog? = nil, startTakes: Duration? = nil,
+         firstFrame: VideoFrame? = nil, stopTakes: Duration? = nil, startGate: StartGate? = nil) {
+        self.failsToStart = failsToStart
+        self.name = name
+        self.stops = stops
+        self.startTakes = startTakes
+        self.firstFrame = firstFrame
+        self.stopTakes = stopTakes
+        self.startGate = startGate
+    }
+
+    func start(deliver: @escaping @Sendable (VideoCaptureEvent) -> Void) async throws {
+        if let startGate { await startGate.wait() }
+        if let startTakes { await uncancellableWait(startTakes) }
+        if failsToStart { throw CocoaError(.featureUnsupported) }
+        handler.set(deliver)
+        if let firstFrame { deliver(.frame(firstFrame)) }
+    }
+
+    func stop() async {
+        if let stopTakes { try? await Task.sleep(for: stopTakes) }
+        if handler.clear() { stops?.append(name) }
+    }
+
+    /// Started and not stopped since: a real camera's light, or macOS's recording indicator for a screen, would be on.
+    var isRunning: Bool { handler.isSet }
+
+    func push(_ event: VideoCaptureEvent) { handler(event) }
 }
 
 final class FakeAudioCapture: AudioCapture, @unchecked Sendable {
-    private let handler = OSAllocatedUnfairLock<(@Sendable (AudioChunk) -> Void)?>(initialState: nil)
+    private let handler = HandlerSlot<AudioChunk>()
+    private let name: String
+    private let stops: StopLog?
+    private let startTakes: Duration?
+    private let stopTakes: Duration?
 
-    func start(deliver: @escaping @Sendable (AudioChunk) -> Void) async throws { handler.withLock { $0 = deliver } }
-    func stop() async { handler.withLock { $0 = nil } }
+    init(name: String = "audio", stops: StopLog? = nil, startTakes: Duration? = nil, stopTakes: Duration? = nil) {
+        self.name = name
+        self.stops = stops
+        self.startTakes = startTakes
+        self.stopTakes = stopTakes
+    }
+
+    func start(deliver: @escaping @Sendable (AudioChunk) -> Void) async throws {
+        if let startTakes { await uncancellableWait(startTakes) }
+        handler.set(deliver)
+    }
+
+    func stop() async {
+        if let stopTakes { try? await Task.sleep(for: stopTakes) }
+        if handler.clear() { stops?.append(name) }
+    }
+
+    /// Started and not stopped since: macOS's indicator for recording sound would be on.
+    var isRunning: Bool { handler.isSet }
 
     /// `frames` of a quiet tone at 48 kHz stereo, stamped `hostSeconds`.
     func push(frames: Int, at hostSeconds: Double, frequency: Double) {
@@ -37,7 +127,7 @@ final class FakeAudioCapture: AudioCapture, @unchecked Sendable {
             samples[i * 2] = v
             samples[i * 2 + 1] = v
         }
-        handler.withLock { $0 }?(AudioChunk(samples: samples, sampleRate: 48_000, channelCount: 2, hostTime: .seconds(hostSeconds)))
+        handler(AudioChunk(samples: samples, sampleRate: 48_000, channelCount: 2, hostTime: .seconds(hostSeconds)))
     }
 }
 
@@ -228,6 +318,133 @@ struct CaptureRigTests {
         #expect(rig.hub.snapshot().frames[.source(id)] == nil)
         window.push(.minimized(false))
         #expect(rig.hub.snapshot().frames[.source(id)] != nil)
+        await rig.stop()
+    }
+
+    /// The sources of a recording start together (spec 5.4.4): switching the tool on with its key waits for the
+    /// slowest source, not for each in turn. Three pictures and two sounds that each take 200 ms to start are all up in
+    /// about 200 ms; one after another they would take a second.
+    @Test func everySourceStartsAtOnce() async {
+        let take = Duration.milliseconds(200)
+        let video: [SourceKey: any VideoCapture] = [
+            .base: FakeVideoCapture(startTakes: take),
+            .source(UUID()): FakeVideoCapture(startTakes: take),
+            .source(UUID()): FakeVideoCapture(startTakes: take),
+        ]
+        let audio: [AudioTrackID: any AudioCapture] = [
+            .minecraft: FakeAudioCapture(startTakes: take),
+            .source(UUID()): FakeAudioCapture(startTakes: take),
+        ]
+        let rig = CaptureRig(video: video, audio: audio, minimizedShowsNothing: false)
+        let began = SuspendingClock.now
+        await rig.start()
+        let took = SuspendingClock.now - began
+        #expect(took >= take)
+        #expect(took < .milliseconds(800))
+        #expect(video.values.allSatisfy { ($0 as? FakeVideoCapture)?.isRunning == true })
+        #expect(audio.values.allSatisfy { ($0 as? FakeAudioCapture)?.isRunning == true })
+        await rig.stop()
+    }
+
+    /// The stop ends every picture at once (spec 5.4.4: "stopping recording turns off the tool"): a camera that's slow
+    /// to stop doesn't keep the screen's recording indicator on behind it. Three pictures that each take 200 ms to stop
+    /// are all off in about 200 ms; one after another they would take 600 ms. The sound keeps running for the
+    /// recording's last samples.
+    @Test func everyPictureStopsAtOnce() async {
+        let take = Duration.milliseconds(200)
+        let pictures = [FakeVideoCapture(stopTakes: take), FakeVideoCapture(stopTakes: take), FakeVideoCapture(stopTakes: take)]
+        let sound = FakeAudioCapture()
+        let rig = CaptureRig(
+            video: [.base: pictures[0], .source(UUID()): pictures[1], .source(UUID()): pictures[2]],
+            audio: [.minecraft: sound], minimizedShowsNothing: false)
+        await rig.start()
+        let began = SuspendingClock.now
+        await rig.stopVideo()
+        let took = SuspendingClock.now - began
+        #expect(took >= take)
+        #expect(took < .milliseconds(450))
+        #expect(pictures.allSatisfy { !$0.isRunning })
+        #expect(sound.isRunning)
+        await rig.stop()
+        #expect(!sound.isRunning)
+    }
+
+    /// The full stop ends the sounds at once too, once the pictures are off.
+    @Test func everySoundStopsAtOnce() async {
+        let take = Duration.milliseconds(200)
+        let sounds = [FakeAudioCapture(stopTakes: take), FakeAudioCapture(stopTakes: take), FakeAudioCapture(stopTakes: take)]
+        let rig = CaptureRig(
+            video: [.base: FakeVideoCapture()],
+            audio: [.minecraft: sounds[0], .source(UUID()): sounds[1], .source(UUID()): sounds[2]], minimizedShowsNothing: false)
+        await rig.start()
+        let began = SuspendingClock.now
+        await rig.stop()
+        let took = SuspendingClock.now - began
+        #expect(took >= take)
+        #expect(took < .milliseconds(450))
+        #expect(sounds.allSatisfy { !$0.isRunning })
+    }
+
+    /// A stop that comes while the sources start (a second press of the key, the tool switched off) leaves nothing
+    /// running, even though each source finishes starting after the stop, as ScreenCaptureKit's stream, a camera and
+    /// a process tap can. The fakes ignore a stop that comes before their start finished, as a source without its own
+    /// guard would.
+    @Test func aStopWhileTheSourcesStartLeavesNothingRunning() async {
+        let take = Duration.milliseconds(200)
+        let pictures = [FakeVideoCapture(startTakes: take, firstFrame: solidFrame(PixelSize(width: 8, height: 8), at: 1)),
+                        FakeVideoCapture(startTakes: take)]
+        let sounds = [FakeAudioCapture(startTakes: take), FakeAudioCapture(startTakes: take)]
+        let rig = CaptureRig(
+            video: [.base: pictures[0], .source(UUID()): pictures[1]],
+            audio: [.minecraft: sounds[0], .source(UUID()): sounds[1]], minimizedShowsNothing: false)
+        let starting = Task { await rig.start() }
+        try? await Task.sleep(for: .milliseconds(50))
+        await rig.stop()
+        await starting.value
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(pictures.allSatisfy { !$0.isRunning })
+        #expect(sounds.allSatisfy { !$0.isRunning })
+        #expect(!rig.hasStarted(.base))
+        #expect(rig.hub.snapshot().frames.isEmpty)
+    }
+
+    /// A rig that was stopped before it started starts nothing.
+    @Test func aStoppedRigStartsNothing() async {
+        let picture = FakeVideoCapture(), sound = FakeAudioCapture()
+        let rig = CaptureRig(video: [.base: picture], audio: [.minecraft: sound], minimizedShowsNothing: false)
+        await rig.stop()
+        await rig.start()
+        #expect(!picture.isRunning)
+        #expect(!sound.isRunning)
+        #expect(!rig.hasStarted(.base))
+    }
+
+    /// Pictures stopped while they start (a recording stopped at once) stay stopped; the sound runs on until the full
+    /// stop.
+    @Test func picturesStoppedWhileTheyStartStayStopped() async {
+        let take = Duration.milliseconds(200)
+        let picture = FakeVideoCapture(startTakes: take), sound = FakeAudioCapture()
+        let rig = CaptureRig(video: [.base: picture], audio: [.minecraft: sound], minimizedShowsNothing: false)
+        let starting = Task { await rig.start() }
+        try? await Task.sleep(for: .milliseconds(50))
+        await rig.stopVideo()
+        await starting.value
+        #expect(!picture.isRunning)
+        #expect(sound.isRunning)
+        await rig.stop()
+        #expect(!sound.isRunning)
+    }
+
+    /// It knows which pictures are running: a start waits for Minecraft's first frame only when its capture started.
+    @Test func itKnowsWhichPicturesStarted() async {
+        let camera = SourceKey.source(UUID())
+        let rig = CaptureRig(
+            video: [.base: FakeVideoCapture(failsToStart: true), camera: FakeVideoCapture()], audio: [:],
+            minimizedShowsNothing: false)
+        #expect(!rig.hasStarted(.base) && !rig.hasStarted(camera))
+        await rig.start()
+        #expect(!rig.hasStarted(.base))
+        #expect(rig.hasStarted(camera))
         await rig.stop()
     }
 }

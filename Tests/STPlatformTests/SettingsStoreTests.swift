@@ -339,6 +339,27 @@ private func modificationDate(of url: URL) throws -> Date {
         }
     }
 
+    /// What a document that writes its upgrade back reads: the file's version, never a guess, and nothing while a save
+    /// waits (that save writes the current version).
+    @Test func storedVersionReadsTheFilesVersion() async throws {
+        try await withTempDirectory { directory throws in
+            let store = SettingsStore(directory: directory, debounce: .seconds(60))
+            #expect(store.storedVersion(Chain.self) == nil, "no file")
+            try write("{\"version\": 1, \"value\": {\"a\": \"hey\"}}", to: "chain.json", in: directory)
+            #expect(store.storedVersion(Chain.self) == 1)
+            _ = store.load(Chain.self)
+            #expect(store.storedVersion(Chain.self) == 1, "loading alone writes nothing")
+
+            store.save(store.load(Chain.self))
+            #expect(store.storedVersion(Chain.self) == nil, "a save is waiting")
+            await store.flush()
+            #expect(store.storedVersion(Chain.self) == 3)
+
+            try write("not json", to: "chain.json", in: directory)
+            #expect(store.storedVersion(Chain.self) == nil)
+        }
+    }
+
     // MARK: Debounce, flush, atomicity
 
     @Test func rapidSavesCoalesceIntoOneWriteOfTheLatestValue() async throws {

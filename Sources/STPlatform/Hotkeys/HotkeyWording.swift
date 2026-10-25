@@ -8,28 +8,51 @@ extension HotkeyAction {
         case .toggle(.nbbOverlay): "NBB Overlay"
         case .toggle(.windowBackdrop): "Window Backdrop"
         case .toggle(.crosshair): "Crosshair"
-        case .toggle(.screenRecording): "Screen Recording"
-        case .startStopRecording: "Start/stop recording"
+        case .startStopRecording: "Screen Recording"
         case .startTimer: "Start timer"
         }
+    }
+
+    /// The tool the action belongs to, by name, for what's said about the tool's own key: Start timer is Timer
+    /// Overlay's. The same names as the sidebar's.
+    public var toolTitle: String {
+        self == .startTimer ? "Timer Overlay" : title
     }
 }
 
 /// The words both hotkey editors use (Home ▸ Hotkeys and the Key Rebinder's key panel), so they always match.
 /// Plain placeholder wording until M9.
 public enum HotkeyWording {
+    /// The name of a hotkey editor's action chips, the same in both editors (Home ▸ Hotkeys and the Key Rebinder's
+    /// key panel), shown beside them in the key panel and read by VoiceOver in both. Placeholder wording for M9.
+    public static let actionChipsLabel = "Does"
+
     /// The actions in order, joined with " + ": "Crosshair + NBB Overlay".
     public static func summary(_ actions: [HotkeyAction]) -> String {
         actions.map(\.title).joined(separator: " + ")
     }
 
     /// The actions as VoiceOver says them: "Crosshair", "Crosshair and NBB Overlay",
-    /// "Crosshair, NBB Overlay and Start/stop recording".
+    /// "Crosshair, NBB Overlay and Screen Recording".
     public static func spokenSummary(_ actions: [HotkeyAction]) -> String {
         let titles = actions.map(\.title)
         guard let last = titles.last else { return "" }
         guard titles.count > 1 else { return last }
         return titles.dropLast().joined(separator: ", ") + " and " + last
+    }
+
+    /// The question before `combo` replaces a tool's own key instead of becoming a second one
+    /// (`HotkeyCenter.ownHotkeyReplaced(bySaving:editing:)`): "Use F6 for Crosshair?".
+    public static func replaceOwnKeyQuestion(_ own: HotkeyBinding, with combo: HotkeyCombo) -> String {
+        "Use \(combo.displayString) for \(own.actions.first?.toolTitle ?? "")?"
+    }
+
+    /// What Replace does, under the question: "Crosshair has one key of its own, ⌘1. This replaces it with F6. Your
+    /// other hotkeys stay as they are."
+    public static func replaceOwnKeyWarning(_ own: HotkeyBinding, with combo: HotkeyCombo) -> String {
+        let tool = own.actions.first?.toolTitle ?? ""
+        return "\(tool) has one key of its own, \(own.combo.displayString). This replaces it with \(combo.displayString). "
+            + "Your other hotkeys stay as they are."
     }
 
     /// Why a combination can't be a hotkey: "Unsupported key", "Reserved: Spotlight".

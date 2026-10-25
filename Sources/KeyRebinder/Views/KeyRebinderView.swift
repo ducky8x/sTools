@@ -15,7 +15,8 @@ public struct KeyRebinderView: View {
     ///   - showsHotkeys: whether the page shows sTools hotkeys (spec 5.5.2, 5.5.3): rings on keys, the key panel's
     ///     Hotkeys part, hotkey findings and their dots, the tester's hotkey sentence, Advanced ▸ Show hotkeys.
     ///     False in the Prologue's trial.
-    ///   - openHotkeys: opens Home ▸ Hotkeys, from a key a rule drives; nil leaves that button out.
+    ///   - openHotkeys: opens Home ▸ Hotkeys, from the key panel's Change… and a key a rule drives; nil leaves those
+    ///     buttons out.
     public init(controller: KeyRebinderController, showsHotkeys: Bool = true, openHotkeys: (() -> Void)? = nil) {
         self.controller = controller
         self.showsHotkeys = showsHotkeys
@@ -33,6 +34,9 @@ public struct KeyRebinderView: View {
     /// keyboard can be drawn big enough to use.
     private static let columnWidth: CGFloat = 640
 
+    /// The id of the selected key's panel, for the app to scroll to it (Home's Show on Keyboard).
+    public nonisolated static let keyPanelScrollID = "keyRebinder.keyPanel"
+
     public var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             strips.frame(maxWidth: Self.columnWidth, alignment: .leading)
@@ -43,6 +47,7 @@ public struct KeyRebinderView: View {
                         KeyEditorPanel(controller: controller, key: key, showsHotkeys: showsHotkeys, openHotkeys: openHotkeys) {
                             ruleBeingEdited = RuleSheetItem(index: $0)
                         }
+                        .id(Self.keyPanelScrollID)
                     }
                     if Self.showsFindings(controller: controller, showsHotkeys: showsHotkeys) {
                         FindingsSection(controller: controller, showsHotkeyFindings: showsHotkeys)

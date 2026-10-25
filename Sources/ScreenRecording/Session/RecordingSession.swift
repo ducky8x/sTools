@@ -20,6 +20,9 @@ public final class RecordingSession: @unchecked Sendable {
         /// The in-process feeds that wanted recording when it started (`InProcessAudioFeed.wantsRecording`), each a
         /// track after the layout's sources for the whole recording.
         public var feeds: [String]
+        /// Media seconds after which the recording continues in a new file; the options' split when nil. Tests split
+        /// a short recording with it.
+        var splitIntervalSeconds: TimeInterval?
 
         public init(layout: RecordingLayout, options: RecordingOptions, canvas: PixelSize, baseName: String,
                     directory: URL? = nil, feeds: [String] = []) {
@@ -40,7 +43,8 @@ public final class RecordingSession: @unchecked Sendable {
 
     private let rig: CaptureRig
     private let writer: RecordingWriter
-    private let compositor: Compositor
+    /// Draws each frame: the one readied while the tool was armed (`RecordingWarmUp`) when it's for this output size.
+    let compositor: Compositor
     private let clock: any MediaClock
     private let driver: any TickDriver
     private var frameClock: FrameClock?
@@ -61,7 +65,8 @@ public final class RecordingSession: @unchecked Sendable {
 
     public init(
         configuration: Configuration, rig: CaptureRig, clock: any MediaClock = HostMediaClock(),
-        driver: (any TickDriver)? = nil, freeSpace: any FreeSpaceProvider = VolumeFreeSpaceProvider()
+        driver: (any TickDriver)? = nil, freeSpace: any FreeSpaceProvider = VolumeFreeSpaceProvider(),
+        compositor warmed: Compositor? = nil
     ) throws {
         self.configuration = configuration
         self.rig = rig
@@ -75,8 +80,13 @@ public final class RecordingSession: @unchecked Sendable {
             options: configuration.options, baseName: configuration.baseName, canvas: output,
             audioTrackNames: trackNames, directory: configuration.directory)
         writerConfiguration.canvas = output
+        if let split = configuration.splitIntervalSeconds { writerConfiguration.splitIntervalSeconds = split }
         writer = RecordingWriter(configuration: writerConfiguration, freeSpace: freeSpace)
-        compositor = try Compositor(outputSize: output)
+        if let warmed, warmed.outputSize == output.evenSized {
+            compositor = warmed
+        } else {
+            compositor = try Compositor(outputSize: output)
+        }
     }
 
     /// Starts writing now.
@@ -93,10 +103,16 @@ public final class RecordingSession: @unchecked Sendable {
         frameClock.start(origin: origin)
     }
 
-    /// Stops ticking, writes the last of the sound, and finalizes the file(s).
-    public func stop() async -> WriterResult {
+    /// Stops the frame clock: no frame is drawn or written after this returns (a tick already running finishes first).
+    /// `stop()` does it too; calling it first ends the picture right at a press.
+    public func stopTicking() {
         frameClock?.stop()
         tickGate.withLock { isStopped = true }
+    }
+
+    /// Stops ticking, writes the last of the sound, and finalizes the file(s).
+    public func stop() async -> WriterResult {
+        stopTicking()
         let last = state.withLock { $0.lastTick }
         if let last, let bus {
             // Give late sound its lag's worth of time to arrive, then close every track at the last frame's end.
@@ -104,7 +120,7 @@ public final class RecordingSession: @unchecked Sendable {
             let end = CMTimeAdd(last.hostTime, CMTime(value: 1, timescale: CMTimeScale(configuration.options.frameRate.framesPerSecond)))
             if let block = bus.finish(at: end) { write(block) }
         }
-        rig.attach(nil)
+        if let bus { rig.detach(bus) }
         return await writer.finish()
     }
 

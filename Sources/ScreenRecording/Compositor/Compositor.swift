@@ -9,6 +9,16 @@ public enum CompositorError: Error, Equatable {
     case poolCreationFailed
 }
 
+/// Words for the page's note when a recording can't start (spec 5.4.4), instead of an error number.
+extension CompositorError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .noMetalDevice: "This Mac has no Metal device to put the video together with."
+        case .poolCreationFailed: "sTools couldn\u{2019}t set aside memory for the video."
+        }
+    }
+}
+
 /// Draws one output frame from a `CompositionPlan` with Core Image on Metal, into buffers from a pool
 /// (spec 5.4.2: crop, scale, opacity, rounded corners, borders; no custom shaders). Call from one queue.
 public final class Compositor: @unchecked Sendable {

@@ -14,41 +14,69 @@ public final class ProcessTapCapture: AudioCapture, @unchecked Sendable {
     }
 
     private let target: Target
+    /// The app's audio processes; Core Audio's list unless a test passes its own.
+    private let findProcesses: @Sendable (Target) -> [AudioObjectID]
+    /// How often a silent app is looked at again.
+    private let retryInterval: Duration
     private let queue = DispatchQueue(label: "sTools.capture.tap", qos: .userInteractive)
     private let state = OSAllocatedUnfairLock(initialState: State())
-    private var waiter: Task<Void, Never>?
+    /// A stop while the tap starts, or while it waits for the app's first sound, wins (`CaptureStartGate`).
+    private let gate = CaptureStartGate()
 
     private struct State {
         var tapID = AudioObjectID(kAudioObjectUnknown)
         var deviceID = AudioObjectID(kAudioObjectUnknown)
         var procID: AudioDeviceIOProcID?
-        var running = false
+        /// Looks for the app's audio process until it has one.
+        var waiter: Task<Void, Never>?
     }
 
-    public init(target: Target) {
+    public convenience init(target: Target) {
+        self.init(target: target, findProcesses: { Self.processObjects(for: $0) }, retryInterval: .seconds(2))
+    }
+
+    init(target: Target, findProcesses: @escaping @Sendable (Target) -> [AudioObjectID], retryInterval: Duration) {
         self.target = target
+        self.findProcesses = findProcesses
+        self.retryInterval = retryInterval
     }
 
+    /// A stop that comes before or while this runs, or while it waits for the app's first sound, leaves no tap and
+    /// no looking behind.
     public func start(deliver: @escaping @Sendable (AudioChunk) -> Void) async throws {
-        state.withLock { $0.running = true }
-        if (try? attach(deliver)) == true { return }
-        // Nothing to tap yet: keep looking while the recorder is armed.
-        waiter = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(2))
-                guard let self, self.state.withLock({ $0.running }) else { return }
-                if (try? self.attach(deliver)) == true { return }
+        try gate.check()
+        if (try? attach(deliver)) != true {
+            // Nothing to tap yet: keep looking while the recorder is armed.
+            let interval = retryInterval
+            let waiter = Task { [weak self] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: interval)
+                    guard let self, !self.gate.isClosed else { return }
+                    if (try? self.attach(deliver)) == true {
+                        // A stop while it attached found the tap not yet stored.
+                        if self.gate.isClosed { await self.tearDown() }
+                        return
+                    }
+                }
             }
+            state.withLock { $0.waiter = waiter }
         }
+        try await gate.finish { await tearDown() }
     }
 
     public func stop() async {
-        waiter?.cancel()
-        waiter = nil
+        gate.close()
+        await tearDown()
+    }
+
+    /// Stops the looking and takes down the tap, its device and its callback, whatever of them is there. Running it
+    /// again finds nothing.
+    private func tearDown() async {
         let old = state.withLock { state -> State in
             defer { state = State() }
             return state
         }
+        old.waiter?.cancel()
         if let procID = old.procID {
             AudioDeviceStop(old.deviceID, procID)
             AudioDeviceDestroyIOProcID(old.deviceID, procID)
@@ -60,8 +88,9 @@ public final class ProcessTapCapture: AudioCapture, @unchecked Sendable {
     /// Creates the tap, its private aggregate device and the IO callback. False when the app has no audio
     /// process yet.
     private func attach(_ deliver: @escaping @Sendable (AudioChunk) -> Void) throws -> Bool {
-        let processes = Self.processObjects(for: target)
-        guard !processes.isEmpty, state.withLock({ $0.running }) else { return false }
+        guard !gate.isClosed else { return false }
+        let processes = findProcesses(target)
+        guard !processes.isEmpty, !gate.isClosed else { return false }
 
         let description = CATapDescription(stereoMixdownOfProcesses: processes)
         description.name = "sTools recording"

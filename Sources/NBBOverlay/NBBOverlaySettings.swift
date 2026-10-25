@@ -9,12 +9,10 @@ import STPlatform
 /// (`snappingEnabled`). Dragging writes back to the same typed fields, so either path always reflects
 /// the other.
 ///
-/// The predictions table also leaves out the "nether coordinates" and "angle and turn hint" columns
-/// spec 5.1.3 describes: the API gives chunk coordinates and overworld distance directly, but not a
-/// nether conversion or a travel bearing, and spec 5.1.3 itself requires checking any such derived
-/// value "against a running Ninjabrain Bot 1.5.2 so the overlay never shows a value Ninjabrain Bot
-/// wouldn't" — a live check this build couldn't do. Showing only the API's own fields keeps the
-/// speedrun-rule guardrail (5.1.4) unambiguous until that check happens.
+/// The predictions table's coordinate column shows Ninjabrain Bot's Location column in the Overworld and its Nether
+/// column in the Nether, by the last F3+C's dimension (`NBBCoordinateColumn`), and its distance column follows the same
+/// dimension. Its angle and turn hint come from Ninjabrain Bot's own formula over the API (`NBBTravelAngle`, from
+/// 1.5.2's source) or straight from its window.
 public struct NBBOverlaySettings: SettingsDocument {
     public static let name = "nbbOverlay"
     public static let version = 1
@@ -49,12 +47,28 @@ public struct NBBOverlaySettings: SettingsDocument {
 
     public var showsPredictions = true
     public var showsEyeThrows = true
+    /// The boat indicator at the top of the overlay.
     public var showsBoatState = true
+    /// Also shows the gray boat (no boat angle yet). Off, the gray boat is left out so the overlay stays clean for runs
+    /// without a boat.
+    public var showsGrayBoat = false
+    /// Colors the plate blue, green or red with the boat.
+    public var tintsPlateByBoat = true
     public var showsInformationMessages = true
 
     public var showsLocationColumn = true
     public var showsCertaintyColumn = true
     public var showsDistanceColumn = true
+    /// The angle to travel at.
+    public var showsAngleColumn = true
+    /// The turn from where the player faces to that angle, with an arrow.
+    public var showsAngleChangeColumn = true
+    /// After an F3+C in the Nether, the coordinate column shows Ninjabrain Bot's Nether coordinates and the distance
+    /// column its Nether distance. Off, the table always shows the Overworld location and distance.
+    public var showsNetherCoordinatesInNether = true
+    /// How the Overworld location is written, as Ninjabrain Bot's stronghold display choice. Ninjabrain Bot 1.5.2's
+    /// default (`stronghold_display_type`) is the 4,4 block.
+    public var locationDisplay: NBBLocationDisplay = .fourFour
     public var maxPredictionRows = 5
 
     public var fadeOnResetEnabled = true
@@ -88,14 +102,35 @@ public struct NBBOverlaySettings: SettingsDocument {
         showsPredictions = container.lossy(Bool.self, .showsPredictions) ?? defaults.showsPredictions
         showsEyeThrows = container.lossy(Bool.self, .showsEyeThrows) ?? defaults.showsEyeThrows
         showsBoatState = container.lossy(Bool.self, .showsBoatState) ?? defaults.showsBoatState
+        showsGrayBoat = container.lossy(Bool.self, .showsGrayBoat) ?? defaults.showsGrayBoat
+        tintsPlateByBoat = container.lossy(Bool.self, .tintsPlateByBoat) ?? defaults.tintsPlateByBoat
         showsInformationMessages = container.lossy(Bool.self, .showsInformationMessages) ?? defaults.showsInformationMessages
         showsLocationColumn = container.lossy(Bool.self, .showsLocationColumn) ?? defaults.showsLocationColumn
         showsCertaintyColumn = container.lossy(Bool.self, .showsCertaintyColumn) ?? defaults.showsCertaintyColumn
         showsDistanceColumn = container.lossy(Bool.self, .showsDistanceColumn) ?? defaults.showsDistanceColumn
+        showsAngleColumn = container.lossy(Bool.self, .showsAngleColumn) ?? defaults.showsAngleColumn
+        showsAngleChangeColumn = container.lossy(Bool.self, .showsAngleChangeColumn) ?? defaults.showsAngleChangeColumn
+        showsNetherCoordinatesInNether = container.lossy(Bool.self, .showsNetherCoordinatesInNether) ?? defaults.showsNetherCoordinatesInNether
+        locationDisplay = container.lossy(NBBLocationDisplay.self, .locationDisplay) ?? defaults.locationDisplay
         maxPredictionRows = container.lossy(Int.self, .maxPredictionRows) ?? defaults.maxPredictionRows
         fadeOnResetEnabled = container.lossy(Bool.self, .fadeOnResetEnabled) ?? defaults.fadeOnResetEnabled
         fadeSeconds = container.lossy(Double.self, .fadeSeconds) ?? defaults.fadeSeconds
         self = clamped()
+    }
+}
+
+/// Ninjabrain Bot's stronghold display choices (its Settings ▸ "Display stronghold location using"): the chunk's 4,4 block,
+/// its 8,8 block, or the chunk itself.
+public enum NBBLocationDisplay: String, Codable, CaseIterable, Sendable {
+    case fourFour, eightEight, chunk
+
+    /// Ninjabrain Bot's own names for the choices.
+    public var title: String {
+        switch self {
+        case .fourFour: "(4, 4)"
+        case .eightEight: "(8, 8)"
+        case .chunk: "Chunk"
+        }
     }
 }
 

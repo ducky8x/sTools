@@ -75,6 +75,15 @@ public final class SettingsStore {
         return D.defaultValue
     }
 
+    /// The version the document's file on disk was written with. Nil when there is no file with a version (missing,
+    /// unreadable, moved aside), or while a save waits to be written. For a document that writes its upgraded value
+    /// back once it has loaded, so its migration runs once.
+    public func storedVersion<D: SettingsDocument>(_ type: D.Type) -> Int? {
+        guard pending[D.name] == nil, let data = try? Data(contentsOf: fileURL(D.name)),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return root["version"] as? Int
+    }
+
     /// Queues `value` for writing. Rapid saves of the same document coalesce into one write
     /// of the latest value, `debounce` after the last save.
     public func save<D: SettingsDocument>(_ value: D) {

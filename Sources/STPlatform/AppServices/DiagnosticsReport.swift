@@ -110,6 +110,22 @@ public struct SettingsFileInfo: Sendable, Equatable {
     }
 }
 
+/// How hotkeys are set, for the report's header: the master switch, Where hotkeys work and the key set the tools' own
+/// keys follow, each in the words Home uses.
+public struct DiagnosticsHotkeys: Sendable, Equatable {
+    public var isEnabled: Bool
+    /// Where hotkeys work, by its name in the chooser (`HotkeyScope.title`).
+    public var scope: String
+    /// The key set by name (`HotkeyKeySet.name(of:)`): its title, or Custom.
+    public var keySet: String
+
+    public init(isEnabled: Bool, scope: String, keySet: String) {
+        self.isEnabled = isEnabled
+        self.scope = scope
+        self.keySet = keySet
+    }
+}
+
 /// The plain-text report behind "Copy Diagnostics". It contains no settings values, and every
 /// user-home path is shortened to `~`. Nothing is sent anywhere; the text goes to the clipboard.
 public struct DiagnosticsReport: Sendable {
@@ -130,6 +146,7 @@ public struct DiagnosticsReport: Sendable {
     private let logError: String?
     private let generatedAt: Date
     private let homeDirectory: String
+    private let hotkeys: DiagnosticsHotkeys?
 
     /// - Parameters:
     ///   - permissions: states by permission; a permission left out reads "not reported".
@@ -139,6 +156,7 @@ public struct DiagnosticsReport: Sendable {
     ///   - enabledTools: names of the tools that are switched on.
     ///   - logReader: asked for `logLineLimit` lines from the last `logWindow` seconds before `now`.
     ///   - homeDirectory: the path shortened to `~`.
+    ///   - hotkeys: how hotkeys are set, in the header; left out when nil.
     public init(
         system: DiagnosticsSystemInfo,
         displays: [DisplayInfo],
@@ -150,7 +168,8 @@ public struct DiagnosticsReport: Sendable {
         settingsFiles: [SettingsFileInfo],
         logReader: any LogLineReading,
         now: Date = Date(),
-        homeDirectory: String = NSHomeDirectory()
+        homeDirectory: String = NSHomeDirectory(),
+        hotkeys: DiagnosticsHotkeys? = nil
     ) {
         self.system = system
         self.displays = displays.map(Self.summary)
@@ -164,6 +183,7 @@ public struct DiagnosticsReport: Sendable {
         self.settingsFiles = settingsFiles
         generatedAt = now
         self.homeDirectory = homeDirectory
+        self.hotkeys = hotkeys
         do {
             let lines = try logReader.recentLines(since: now.addingTimeInterval(-Self.logWindow), limit: Self.logLineLimit)
             logLines = Array(lines.suffix(Self.logLineLimit))
@@ -179,6 +199,11 @@ public struct DiagnosticsReport: Sendable {
         var out: [String] = []
         out.append("sTools \(system.appVersion) (\(system.appBuild)) diagnostics")
         out.append("Generated: \(generatedAt.formatted(.iso8601))")
+        if let hotkeys {
+            out.append("Hotkeys: \(hotkeys.isEnabled ? "on" : "off")")
+            out.append("Where hotkeys work: \(hotkeys.scope)")
+            out.append("Key set: \(hotkeys.keySet)")
+        }
         out.append("")
         out.append("macOS: \(system.macOSVersion)")
         out.append("Architecture: \(system.architecture)")
@@ -195,7 +220,7 @@ public struct DiagnosticsReport: Sendable {
         out.append("Enabled tools: \(enabledTools.isEmpty ? "none" : enabledTools.joined(separator: ", "))")
         out.append("")
         out.append(settingsFiles.isEmpty ? "Settings files: none" : "Settings files (names and sizes only):")
-        out += settingsFiles.map { "  - \($0.name) (\($0.bytes) bytes)" }
+        out += settingsFiles.map { "  - \($0.name) (\(CountText.of($0.bytes, "byte")))" }
         out.append("")
         out.append("Recent sTools log (last \(Int(Self.logWindow / 60)) minutes, up to \(Self.logLineLimit) lines):")
         if let logError {

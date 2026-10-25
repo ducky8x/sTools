@@ -64,7 +64,7 @@ struct AppModelPrologueTests {
         harness.model.beginPrologue(at: .youreSet)
         harness.model.setTool(.crosshair, on: true)
         harness.model.setTool(.windowBackdrop, on: true)
-        #expect(harness.model.toolsToSwitchOff() == [.windowBackdrop, .crosshair])
+        #expect(harness.model.toolsToSwitchOff() == [.crosshair, .windowBackdrop], "in sidebar order")
         let prologue = try #require(harness.model.prologue)
         prologue.runFinale()
         prologue.completeFinale()
@@ -96,10 +96,10 @@ struct AppModelPrologueTests {
     @Test func aLaunchMidwaySavedByABuildWithoutTheTimerTrialResumesAtTheSameStep() async throws {
         let harness = Harness()
         await harness.store.flush()
-        try Data(#"{"version":1,"value":{"prologueCompleted":false,"prologueStep":9}}"#.utf8)
+        try Data(#"{"version":1,"value":{"prologueCompleted":false,"prologueStep":10}}"#.utf8)
             .write(to: harness.directory.appending(path: "appState.json"))
         harness.model.beginPrologue()
-        #expect(harness.model.prologue?.step == .backdropTrial)
+        #expect(harness.model.prologue?.step == .nbbOverlayTrial)
     }
 
     @Test func skippingTheIntroductionSwitchesTrialToolsOff() throws {

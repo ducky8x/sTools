@@ -130,9 +130,12 @@ final class Harness {
     /// `prologueCompleted: false` launches as a first launch, with the introduction showing. `withKeyRebinder`
     /// adds a Key Rebinder over the harness's folder, connected like the app's: Karabiner-Elements reads as not
     /// installed and `karabiner_cli` never runs, so nothing touches `~/.config/karabiner`.
+    ///
+    /// `hotkeys` is the `hotkeys.json` the launch finds: an existing, empty list by default; nil for a new install,
+    /// which starts with ⌘1–⌘5.
     init(accessibility: PermissionStatus = .granted, instances: [MinecraftInstance] = [],
          theme: STTheme = STTheme(), usesRealControllers: Bool = false, hotkeyRegistrar: any HotkeyRegistering = FakeHotkeyRegistrar(),
-         prologueCompleted: Bool = true, withKeyRebinder: Bool = false) {
+         prologueCompleted: Bool = true, withKeyRebinder: Bool = false, hotkeys: HotkeySettings? = HotkeySettings()) {
         self.hotkeyRegistrar = hotkeyRegistrar
         directory = FileManager.default.temporaryDirectory.appending(path: "sTools-app-\(UUID().uuidString)")
         karabinerConfigURL = directory.appending(path: "karabiner", directoryHint: .isDirectory).appending(path: "karabiner.json")
@@ -140,6 +143,7 @@ final class Harness {
         source = StaticMinecraftWindowSource(instances: instances)
         store = SettingsStore(directory: directory, debounce: .milliseconds(10))
         if prologueCompleted { store.save(AppState(prologueCompleted: true)) }
+        if let hotkeys { store.save(hotkeys) }
         var fakes: [ToolID: FakeController] = [:]
         if !usesRealControllers {
             for tool in ToolID.allCases where tool.hasSwitch && tool != .timerOverlay { fakes[tool] = FakeController() }
@@ -151,7 +155,7 @@ final class Harness {
                                     minecraft: MinecraftLocator(source: source), permissions: permissions)
         timer = timerFakes.makeController(services: services, theme: theme)
         var all: [ToolID: any ToolController] = usesRealControllers
-            ? [.nbbOverlay: NBBOverlayController(services: services),
+            ? [.nbbOverlay: NBBOverlayController(services: services, copies: NBBCopiesMonitor(scanner: NoNBBCopiesScanner())),
                .windowBackdrop: BackdropController(services: services),
                .crosshair: CrosshairController(services: services)]
             : fakes.mapValues { $0 as any ToolController }
@@ -184,11 +188,16 @@ func fakeInstance(pid: Int32 = 100, version: String = "1.16.1", launched: TimeIn
 }
 
 /// Waits (bounded) for `condition`, yielding to the main actor between checks.
+///
+/// The bound counts only time the Mac is awake (`SuspendingClock`). `ContinuousClock` keeps running while the Mac
+/// sleeps, so a sleep in the middle of a test (an unattended run in Deep Idle with dark wakes) used up the whole bound
+/// at once, and the wait gave up right after wake although what it waited for came a moment later.
 @MainActor
 func waitUntil(timeout: Duration = .seconds(3), _ condition: @MainActor () -> Bool) async -> Bool {
-    let deadline = ContinuousClock.now + timeout
+    let clock = SuspendingClock()
+    let deadline = clock.now + timeout
     while !condition() {
-        if ContinuousClock.now > deadline { return false }
+        if clock.now > deadline { return false }
         try? await Task.sleep(for: .milliseconds(5))
     }
     return true

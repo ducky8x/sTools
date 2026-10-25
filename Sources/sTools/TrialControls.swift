@@ -8,7 +8,7 @@ import SwiftUI
 
 /// A tool's real controls inside its trial: its switch (or, for the Key Rebinder, its profile menu), the
 /// Accessibility strip when it's missing, then the same settings as its page, without sTools hotkeys. Timer
-/// Overlay's trial adds its own Start-timer key under the switch.
+/// Overlay's trial adds its own Hotkey row, for the Start-timer key, under the switch.
 struct TrialToolControls: View {
     let model: AppModel
     let tool: ToolID
@@ -47,18 +47,20 @@ struct TrialToolControls: View {
     }
 }
 
-/// The Timer trial's own Start-timer key (spec 5.6.9). The page's Set in Hotkeys\u{2026} is hidden in the trials, so
-/// the key is recorded right here as a Home \u{25B8} Hotkeys hotkey whose only action starts the timer.
+/// The Timer trial's own Hotkey row for the Start-timer key (spec 5.6.9), named as the Timer page's Hotkey row is. The
+/// trials leave out the page's row, so the key is recorded right here as a Home \u{25B8} Hotkeys hotkey whose only
+/// action starts the timer.
 struct TrialStartTimerKeyRow: View {
     let model: AppModel
 
-    private enum Copy {
-        static let title = "Start-timer key"
+    enum Copy {
+        static let title = "Hotkey"
+        static let recorderLabel = "\(ToolID.timerOverlay.title) hotkey"
     }
 
     var body: some View {
         STSettingsRow(Copy.title) {
-            STShortcutRecorder(shortcut: shortcutBinding, label: Copy.title,
+            STShortcutRecorder(shortcut: shortcutBinding, label: Copy.recorderLabel,
                                validate: { TrialStartTimerKey.refusal(for: $0.hotkeyCombo, in: model.hotkeys) })
                 .frame(width: 200)
         }
@@ -78,22 +80,14 @@ enum TrialStartTimerKey {
         bindings.first { $0.actions == [.startTimer] }
     }
 
-    /// Sets the key: changes that hotkey's key, or adds it at the end of the list. While Hotkeys are off it asks
-    /// before turning them on, and keeps nothing if the answer is no. Nil clears the key.
+    /// Sets the key: changes that hotkey's key, or adds it in Timer Overlay's sidebar place among the tools' own
+    /// hotkeys, as its page would. While Hotkeys are off it asks before turning them on, and keeps nothing if the
+    /// answer is no. Nil clears the key.
     static func set(_ combo: HotkeyCombo?, in model: AppModel) {
-        let center = model.hotkeys
-        switch (combo, own(in: center.bindings)) {
-        case (let combo?, let own?):
+        if combo != nil {
             guard turnOnHotkeys(model) else { return }
-            center.update(own.id, combo: combo)
-        case (let combo?, nil):
-            guard turnOnHotkeys(model) else { return }
-            center.add(combo: combo, actions: [.startTimer])
-        case (nil, let own?):
-            center.remove(own.id)
-        case (nil, nil):
-            break
         }
+        model.hotkeys.setOwnHotkey(combo, for: .startTimer)
     }
 
     /// Why the recorder refuses `combo`, with the same rules as Home's editor. Nil when it's fine.

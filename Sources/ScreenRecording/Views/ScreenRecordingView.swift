@@ -58,9 +58,7 @@ public struct ScreenRecordingView: View {
             controller.setPreviewVisible(false)
         }
         .onChange(of: windowIsVisible) { _, visible in controller.setPreviewVisible(isAppeared && visible) }
-        .sheet(isPresented: Binding(get: { controller.phase == .deciding }, set: { _ in })) {
-            // A sheet is a window of its own, so it gets its own motion root.
-            SaveDeleteSheet(controller: controller).stMotionRoot(theme)
-        }
+        // The Save/Delete question after Stop is the controller's own floating panel (`RecordingDecisionPanel`), so
+        // it shows whichever page is open, with the window closed and with Minecraft in front.
     }
 }

@@ -2,12 +2,12 @@ import STDesign
 import STPlatform
 import SwiftUI
 
-/// The key panel's Hotkeys part (spec 5.5.3, 6.1): the sTools hotkeys on what the selected key sends after
-/// Karabiner, an inline editor that adds or changes one with Hold and Does chips, and, for a key that can't carry
-/// hotkeys, why not and the spare key it could become. Hotkeys live in `hotkeys.json`, never in `karabiner.json`, so
-/// all of this works without Karabiner-Elements; only Use F20 needs it. The panel gives the block a new identity
-/// (`identity(of:controller:)`) per key and per key code the key sends, so selecting another key, or a rebind of this
-/// one, closes the editor unsaved.
+/// The key panel's Hotkeys part (spec 5.5.3, 6.1): where hotkeys work and the key set, as Home ▸ Hotkeys sets them,
+/// the sTools hotkeys on what the selected key sends after Karabiner, an inline editor that adds or changes one with
+/// Hold and Does chips, and, for a key that can't carry hotkeys, why not and the spare key it could become. Hotkeys
+/// live in `hotkeys.json`, never in `karabiner.json`, so all of this works without Karabiner-Elements; only Use F20
+/// needs it. The panel gives the block a new identity (`identity(of:controller:)`) per key and per key code the key
+/// sends, so selecting another key, or a rebind of this one, closes the editor unsaved.
 struct KeyHotkeysBlock: View {
     /// What the block shows for a key.
     enum Content: Equatable {
@@ -24,12 +24,21 @@ struct KeyHotkeysBlock: View {
     let key: KarabinerEvent
     /// The panel's Becomes. Use F20 only puts the spare key there; nothing is written until the panel's Save.
     @Binding var chosen: KarabinerEvent?
-    /// Opens Home ▸ Hotkeys, for a key a rule drives. Nil leaves Open Hotkeys out.
+    /// Opens Home ▸ Hotkeys: Change… beside where hotkeys work, and Open Hotkeys for a key a rule drives. Nil leaves
+    /// both out.
     let openHotkeys: (() -> Void)?
 
     /// The inline editor's choices; nil while it's closed.
     @State private var draft: HotkeyDraft?
+    /// The tool's own hotkey Save Hotkey would duplicate, with the key it would get instead: the question's subject.
+    @State private var replacing: Replacement?
     @Environment(\.stTheme) private var theme
+
+    /// A tool's own hotkey and the key Replace would give it (spec 6.1: a tool has one key of its own).
+    struct Replacement: Equatable {
+        let own: HotkeyBinding
+        let combo: HotkeyCombo
+    }
 
     /// - Parameter draft: opens the editor with these choices (for tests and previews).
     init(
@@ -133,6 +142,9 @@ struct KeyHotkeysBlock: View {
         let place = Self.editorPlace(for: draft, among: hotkeys)
         let controls = Self.controls(for: draft, on: keyCode, controller: controller)
         VStack(alignment: .leading, spacing: 0) {
+            if let line = controller.hotkeyWhereLine {
+                whereLine(line)
+            }
             if let note = controller.hotkeySourceNote(for: key) {
                 Text(note)
                     .stStyle(.caption)
@@ -156,6 +168,36 @@ struct KeyHotkeysBlock: View {
                     .padding(.top, 10)
             }
         }
+        // Home's question, for a second key for a tool's action alone: Replace gives the tool's own key this one.
+        .confirmationDialog(
+            replacing.map { HotkeyWording.replaceOwnKeyQuestion($0.own, with: $0.combo) } ?? "",
+            isPresented: replaceQuestionIsShown, titleVisibility: .visible, presenting: replacing,
+            actions: { _ in
+                Button("Replace", role: .destructive) { save(replacingOwnHotkey: true) }
+                Button("Cancel", role: .cancel) {}
+            },
+            message: { replacement in Text(HotkeyWording.replaceOwnKeyWarning(replacement.own, with: replacement.combo)) })
+    }
+
+    private var replaceQuestionIsShown: Binding<Bool> {
+        Binding(get: { replacing != nil }, set: { if !$0 { replacing = nil } })
+    }
+
+    /// Where sTools hotkeys work and the key set, as Home ▸ Hotkeys sets them, with Change… to go there (left out in
+    /// the Prologue's trial, which has no `openHotkeys`).
+    private func whereLine(_ line: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(line)
+                .stStyle(.caption)
+                .foregroundStyle(theme.inkTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let openHotkeys {
+                Button("Change\u{2026}", action: openHotkeys)
+                    .buttonStyle(STButtonStyle(.quiet))
+                    .accessibilityLabel("Change where hotkeys work and the key set")
+            }
+        }
+        .padding(.bottom, 6)
     }
 
     /// One hotkey: its combination, what it does and what's wrong with it, then Edit. VoiceOver reads the first
@@ -210,11 +252,12 @@ struct KeyHotkeysBlock: View {
                 .foregroundStyle(theme.accent)
                 .accessibilityLabel(HotkeyWording.spokenName(for: combo))
             Group {
-                chipsRow("Hold") {
+                STLabeledChips("Hold") {
                     STChips(selection: holdSelection, options: HotkeyDraft.holdChoices, label: "Hold")
                 }
-                chipsRow("Does") {
-                    STChips(selection: doesSelection, options: HotkeyAction.allCases.map { STSegmentedOption($0, $0.title) }, label: "Does")
+                STLabeledChips(HotkeyWording.actionChipsLabel) {
+                    STChips(selection: doesSelection, options: HotkeyAction.allCases.map { STSegmentedOption($0, $0.title) },
+                            label: HotkeyWording.actionChipsLabel)
                 }
             }
             .disabled(!controls.edits)
@@ -248,35 +291,6 @@ struct KeyHotkeysBlock: View {
         }
     }
 
-    /// A small-caps label beside its chips. The chips name their own group for VoiceOver.
-    private func chipsRow<Chips: View>(_ label: String, @ViewBuilder chips: () -> Chips) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            ChipsLabel(label)
-                .padding(.top, 6)
-                .accessibilityHidden(true)
-            chips()
-        }
-    }
-
-    /// "Hold" or "Does", in small caps, in a column as wide for both. The column grows with the text size, so the
-    /// label stays on one line up to 130%.
-    struct ChipsLabel: View {
-        let title: String
-        @Environment(\.stTheme) private var theme
-
-        init(_ title: String) {
-            self.title = title
-        }
-
-        var body: some View {
-            Text(title)
-                .stStyle(.label)
-                .foregroundStyle(theme.inkSecondary)
-                .lineLimit(1)
-                .frame(width: 44 * theme.textScale, alignment: .leading)
-        }
-    }
-
     private var holdSelection: Binding<Set<HotkeyCombo.Modifiers>> {
         Binding(get: { draft?.hold ?? [] }, set: { draft?.hold = $0 })
     }
@@ -286,14 +300,21 @@ struct KeyHotkeysBlock: View {
     }
 
     /// Saves the draft: a new hotkey, or the one it changes while that is still on this key (never one the key
-    /// stopped sending, which would move it).
-    private func save() {
+    /// stopped sending, which would move it). A second key for a tool's action alone asks first (`replacing`), and
+    /// Replace saves it with `replacingOwnHotkey`, giving the tool's own hotkey this key.
+    private func save(replacingOwnHotkey: Bool = false) {
         guard let draft, Self.editorPlace(for: draft, among: controller.hotkeys(on: key)) != nil else {
             self.draft = nil
             return
         }
         let actions = HotkeyAction.allCases.filter(draft.does.contains)
-        if controller.saveHotkey(on: key, editing: draft.editing, modifiers: draft.modifiers, actions: actions) != nil {
+        if !replacingOwnHotkey, let keyCode = controller.hotkeyTarget(for: key).keyCode,
+           let own = controller.ownHotkeyReplaced(bySaving: actions, editing: draft.editing) {
+            replacing = Replacement(own: own, combo: draft.combo(on: keyCode))
+            return
+        }
+        if controller.saveHotkey(on: key, editing: draft.editing, modifiers: draft.modifiers, actions: actions,
+                                 replacingOwnHotkey: replacingOwnHotkey) != nil {
             self.draft = nil
         }
     }

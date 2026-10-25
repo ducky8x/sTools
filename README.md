@@ -23,50 +23,50 @@
   <a href="#license">License</a>
 </p>
 
-sTools puts the tools around a speedrun into one native Mac app: Ninjabrain Bot's answer drawn over the game, a backdrop that hides everything behind Minecraft, a crosshair placed to the pixel, a countdown that pops up over the game on one key, a screen recorder that lays out a whole scene, and a visual editor for your Karabiner-Elements rebinds.
+sTools puts the tools around a speedrun into one native Mac app: a crosshair placed to the pixel, a countdown that pops up over the game on one key, Ninjabrain Bot's answer drawn over the game, a screen recorder that lays out a whole scene, a backdrop that hides everything behind Minecraft, and a visual editor for your Karabiner-Elements rebinds.
 
 It's built for the game first. Overlays are click-through and never take focus from Minecraft, and anything with a reasonable alternative is a setting. The app itself is always dark, set in serif type with gold accents.
 
 <p align="center">
-  <img src="docs/images/key-rebinder.png" alt="The Key Rebinder page: a drawn keyboard and mouse with Caps Lock rebound to F3 in gold and Minecraft's keybinds in small capitals under each key">
+  <img src="docs/images/key-rebinder.png" alt="The Key Rebinder page: the sidebar with its six tools, and a drawn keyboard and mouse with Caps Lock rebound to F3 in gold, Minecraft's keybinds in small capitals under each key and gold rings on the keys of sTools hotkeys">
 </p>
 
 ## The tools
 
 | | Tool | What it does | Needs |
 |---|------|--------------|-------|
-| 1 | [NBB Overlay](#nbb-overlay) | Shows Ninjabrain Bot's current result over the game. | Accessibility, Ninjabrain Bot |
-| 2 | [Window Backdrop](#window-backdrop) | Hides everything behind the Minecraft window. | Accessibility |
-| 3 | [Crosshair](#crosshair) | Draws a crosshair at the exact center of the screen. | Accessibility |
-| 4 | [Timer Overlay](#timer-overlay) | Pops a countdown over the game on one key, rings and leaves. | Accessibility |
-| 5 | [Screen Recording](#screen-recording) | Records Minecraft and your other sources on one canvas. | Accessibility, Screen & System Audio Recording |
+| 1 | [Crosshair](#crosshair) | Draws a crosshair at the exact center of the screen. | Accessibility |
+| 2 | [Timer Overlay](#timer-overlay) | Pops a countdown over the game on one key, rings and leaves. | Accessibility |
+| 3 | [NBB Overlay](#nbb-overlay) | Shows Ninjabrain Bot's current result over the game. | Accessibility, Ninjabrain Bot |
+| 4 | [Screen Recording](#screen-recording) | Records Minecraft and your other sources on one canvas. | Accessibility, Screen & System Audio Recording |
+| 5 | [Window Backdrop](#window-backdrop) | Hides everything behind the Minecraft window. | Accessibility |
 | 6 | [Key Rebinder](#key-rebinder) | Shows and edits your rebinds on a drawn keyboard and mouse. | Karabiner-Elements 16+, to edit |
 
 Each tool has its own page: a live preview where it helps, then its settings, with the rarely needed ones under **Advanced**. Switch tools on and off from the sidebar or their pages.
-
-### NBB Overlay
-
-Reads Ninjabrain Bot's local API and shows its current result in a small plate over the game: predictions with certainty and distance, your eye throws, the boat state, and its blind, divine and all-advancements modes. It shows only what Ninjabrain Bot itself shows and fades out when you reset Ninjabrain Bot. Drag it into place with snapping or type its position, and set its size and opacity.
-
-### Window Backdrop
-
-Covers the display Minecraft is on, edge to edge and behind the menu bar and Dock, and keeps the backdrop directly under the Minecraft window, so every other window disappears. Fill it with a color, a linear or radial gradient, or an image, and cover your other displays too, each with its own fill. Clicking it does nothing. Switch to another app and its windows come forward as usual; switch back and the backdrop is under Minecraft again.
 
 ### Crosshair
 
 Draws a click-through crosshair at the exact center of Minecraft's display, above everything, a full-screen game included. Pick a plus, dot, circle or X, or use your own image, SVG or PDF with one of five anchor points. Set its color and outline, and its size, thickness, gap and offset in real pixels. Out of the box it sits exactly on Minecraft's own crosshair at GUI scale 3 on a 1920 × 1080 display, with Minecraft filling the screen.
 
 <p align="center">
-  <img src="docs/images/crosshair.png" width="640" alt="The Crosshair page: a preview plate with a white plus outlined in black, and rows for shape, fill color and outline">
+  <img src="docs/images/crosshair.png" width="640" alt="The Crosshair page: its Hotkey row with ⌘1, a preview plate with a white plus outlined in black, and the Shape row">
 </p>
 
 ### Timer Overlay
 
-Press your Start-timer key and a countdown pops up over the game, 2:30 by default or any length you set. At zero it rings an alarm, pulses with each ring and leaves by itself; press again to restart, or twice quickly to cancel. Choose a look (a plate, digits only or a compact pill) and its colors, font and size, and an alarm from macOS's sounds, four sTools alarms or your own files. Drag it into place with guides that show when it covers the hotbar, chat, toasts or anything else the rules need visible. It can also count down on the Dock icon, and it shows in your sTools recordings, with the alarm on its own track if you want it.
+Press your Start-timer key and a countdown pops up over the game, 2:30 by default or any length you set. At zero it rings an alarm, pulses with each ring and leaves by itself; press again to restart, or twice quickly to cancel and switch Timer Overlay off, which sTools confirms over the game (the next press switches it back on and starts again). Choose a look (a plate, digits only or a compact pill) and its colors, font and size, and an alarm from macOS's sounds, four sTools alarms or your own files. Drag it into place with guides that show when it covers the hotbar, chat, toasts or anything else the rules need visible. It can also count down on the Dock icon, and it shows in your sTools recordings, with the alarm on its own track if you want it.
+
+### NBB Overlay
+
+Reads Ninjabrain Bot's local API and shows its current result in a small plate over the game: predictions with certainty, distance, the angle to travel at and how far to turn, your eye throws, and its blind, divine and all-advancements modes. Ninjabrain Bot's boat sits at the top in its own colors (blue measuring, green ready, red error), and the whole plate can take the boat's color so you see it from the corner of your eye. If two Ninjabrain Bots are open, pick which one the overlay follows on its page; a copy that can't share its data over the API is read from its own window instead (everything but the boat). After an F3+C in the Overworld the predictions show Ninjabrain Bot's location (as its 4,4 block by default, or 8,8 or the chunk) and the distance there; after one in the Nether, its nether coordinates and the nether distance, with a small Overworld or Nether mark so you know which. A copy read from its window shows that window's own location and distance. It fades out when you reset Ninjabrain Bot and back in with the next result. It shows only what Ninjabrain Bot itself shows. Drag it into place with snapping or type its position, and set its size and opacity.
 
 ### Screen Recording
 
-Records Minecraft with sTools' overlays and backdrop, plus any windows, displays, cameras and web pages you arrange on one canvas. Sources don't have to be visible on your real screen. Sound from Minecraft, other apps and microphones is saved as one mixed track plus a track per source. Choose .mp4 or .mov, H.264 or HEVC, 30 or 60 fps. Files are written crash-safe, and when you stop, you choose Save or Delete.
+Records Minecraft with sTools' overlays and backdrop, plus any windows, displays, cameras and web pages you arrange on one canvas. Sources don't have to be visible on your real screen. Sound from Minecraft, other apps and microphones is saved as one mixed track plus a track per source. Choose .mp4 or .mov, H.264 or HEVC, 30 or 60 fps. Files are written crash-safe. One key switches Screen Recording on and starts recording, and stops it when pressed again. "Recording started" shows over the game once the first frame is in the file, so a run started on it loses nothing. A press before then cancels the start ("Recording canceled · Screen Recording off"), and a start that fails says why over the game ("Recording couldn't start: … · Screen Recording off"); either way Screen Recording switches off. The stop switches Screen Recording off right away, camera light and recording indicator included, and says so over the game ("Recording stopped · Screen Recording off"); a small panel then asks for a name and Save or Delete for the finished file right over the game, ready to type in without leaving it.
+
+### Window Backdrop
+
+Covers the display Minecraft is on, edge to edge and behind the menu bar and Dock, and keeps the backdrop directly under the Minecraft window, so every other window disappears. Fill it with a color, a linear or radial gradient, or an image (a new fill crossfades in), and cover your other displays too, each with its own fill. Clicking it does nothing. Switch to another app and its windows come forward as usual; switch back and the backdrop is under Minecraft again.
 
 ### Key Rebinder
 
@@ -74,11 +74,11 @@ Draws your keyboard (ANSI, ISO or JIS, laptop or full size) and mouse with every
 
 ## Around the tools
 
-- **Global hotkeys.** Your own shortcuts, set at the top of Home, on each tool's page or right on a key in the Key Rebinder: any key, alone or with ⌃ ⌥ ⇧ ⌘, that switches a set of tools on or off together, starts the timer, or starts and stops a recording. They work whichever app has focus, Minecraft and sTools included, need no permission and show a small confirmation over the game. A hotkey's key goes to sTools instead of the game, so sTools warns you when it's one Minecraft uses. Hotkeys are off until you turn them on, and they pause only while sTools records a key or you type in it.
+- **Global hotkeys.** Your own shortcuts, set at the top of Home, on each tool's page or right on a key in the Key Rebinder: any key, alone or with ⌃ ⌥ ⇧ ⌘, that switches a set of tools on or off together, starts the timer, or starts and stops a recording. By default they work only while sTools or Minecraft is in front, so other apps keep their own shortcuts (a browser's ⌘1 still switches tabs); Where hotkeys work, on Home, can make them work everywhere. Out of the box each tool but the Key Rebinder has a key in sidebar order, ⌘1–⌘5, and Key set, also on Home, swaps them all for ⌃1–⌃5, ⌥1–⌥5, F13–F17 or none; each tool's page says where its key works and which set it's from. Home lists them in sidebar order, and each tool keeps one key of its own: setting another asks whether to replace it. Recognizing Minecraft needs Accessibility, so until it's allowed they work only in sTools (Everywhere needs no permission). They show a small confirmation over the game. A hotkey's key goes to sTools instead of the game, so sTools warns you when it's one Minecraft uses. Hotkeys are on from the first launch, and they pause only while sTools records a key or you type in it.
 - **The Prologue.** On first launch, an animated welcome, then help with each permission, Ninjabrain Bot and Karabiner-Elements, then a hands-on try of every tool. Back and Skip work on every step, and Help ▸ Replay Introduction runs it again.
 - **Settings.** Open at login, sounds and volume, text size, accent color, update options, exporting and importing all your settings in one file, resetting the tools or all of sTools, and Copy Diagnostics for bug reports.
 - **Reduce animations.** sTools animates nearly everything: switches spring, numbers roll, successes stamp a gold seal, and the sidebar glides with a soft tick for each row it passes (and a tap on a Force Touch trackpad). One switch in Settings ▸ Appearance turns every animation off, and macOS's Reduce motion does the same.
-- **Updates.** sTools checks for new versions on its own and can download and install them when you quit. Settings ▸ Updates shows the version you're running, and Check for Updates… is there and in the app menu.
+- **Updates.** sTools checks for new versions on its own and can download and install them when you quit. Settings ▸ Updates shows the version you're running, and Check for Updates… is there and in the app menu. Got a newer DMG by hand? Choose **Install from DMG…** (or drop the DMG on it), and sTools checks it, installs it and opens again.
 
 Close the window and your tools keep running; click the Dock icon to bring it back. Quitting turns everything off.
 
@@ -104,13 +104,13 @@ The Prologue walks you through each one, and a tool's page offers **Allow…** w
 
 | Permission | Why | Used by |
 |------------|-----|---------|
-| Accessibility | Finds the Minecraft window and follows it: where it is, which display it's on, whether it has focus. | NBB Overlay, Window Backdrop, Crosshair, Timer Overlay, Screen Recording |
+| Accessibility | Finds the Minecraft window and follows it: where it is, which display it's on, whether it has focus. Hotkeys use it to recognize Minecraft in front. | Crosshair, Timer Overlay, NBB Overlay, Screen Recording, Window Backdrop, hotkeys in Minecraft |
 | Screen & System Audio Recording | Records Minecraft and the windows and displays you add. macOS may ask you to reopen sTools after you allow it. | Screen Recording |
 | App audio | Records the sound of Minecraft and other apps. | Screen Recording |
 | Microphone | Records your voice, once you add a microphone. | Screen Recording |
 | Camera | Puts your camera on the canvas, once you add one. | Screen Recording |
 
-Without Accessibility, the tools that need it stay off; the Key Rebinder works without it. sTools never asks for Input Monitoring: hotkeys go through macOS's own hotkey system, and the key tester only watches sTools' own window.
+Without Accessibility, the tools that need it stay off and hotkeys work only in sTools, unless Where hotkeys work is set to Everywhere; the Key Rebinder works without it. sTools never asks for Input Monitoring: hotkeys go through macOS's own hotkey system, and the key tester only watches sTools' own window.
 
 ## Install
 
@@ -122,6 +122,8 @@ Without Accessibility, the tools that need it stay off; the Key Rebinder works w
    3. Click **Open Anyway**, then confirm.
 
 After that it opens normally. Every release is signed with the same certificate, so macOS keeps the permissions you've granted when sTools updates itself.
+
+**Updating from a DMG.** You only drag sTools into Applications once. For the next version, download its DMG, then in sTools choose **Settings ▸ Updates ▸ Install from DMG…** (or **sTools ▸ Install from DMG…**) and pick it. sTools installs it only if it's a newer sTools signed with the same certificate, then opens again.
 
 ## Privacy
 

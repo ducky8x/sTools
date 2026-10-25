@@ -56,6 +56,7 @@ final class HotkeyViewRig {
         controller = KeyRebinderController(
             services: services, configURL: configURL,
             backupsDirectory: directory.appending(path: "backups", directoryHint: .isDirectory), cli: cli, probes: probes)
+        settings.save(HotkeySettings()) // an existing, empty list, rather than a new install's ⌘1–⌘5
         center = HotkeyCenter(store: settings, registrar: registrar, toolStates: { [:] }, handler: { _ in })
         if connected { controller.connect(hotkeys: center) }
     }
@@ -471,6 +472,12 @@ struct KeyPanelHotkeyRenderTests {
         #expect(rig.center.bindings.isEmpty)
     }
 
+    /// Both editors name their action chips the same ("Does") and show it beside them (`STLabeledChips`); VoiceOver
+    /// reads it as the chips' group name.
+    @Test func bothEditorsNameTheActionChipsTheSame() {
+        #expect(HotkeyWording.actionChipsLabel == "Does")
+    }
+
     /// "Hold" and "Does" stay on one line at every text size the app allows (Appearance ▸ Text size, 90–130%).
     @Test func theHoldAndDoesLabelsStayOnOneLineAtEveryTextSize() {
         _ = STFont.register()
@@ -480,8 +487,8 @@ struct KeyPanelHotkeyRenderTests {
                 NSHostingView(rootView: view.environment(\.stTheme, theme)).fittingSize.height
             }
             let line = height(Text("D").stStyle(.label))
-            for title in ["Hold", "Does"] {
-                #expect(abs(height(KeyHotkeysBlock.ChipsLabel(title)) - line) < 0.5, "\(title) at \(scale)")
+            for title in ["Hold", HotkeyWording.actionChipsLabel] {
+                #expect(abs(height(STChipsLabel(title)) - line) < 0.5, "\(title) at \(scale)")
             }
         }
     }

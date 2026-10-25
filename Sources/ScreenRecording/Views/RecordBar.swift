@@ -1,5 +1,6 @@
 import AppKit
 import STDesign
+import STPlatform
 import SwiftUI
 
 /// Record / Stop with elapsed time and file size (spec 5.4.4), and what the last recording was saved as.
@@ -39,15 +40,24 @@ struct RecordBar: View {
             Button("Stop") { Task { await controller.stopRecording(explanation: nil) } }
                 .buttonStyle(STButtonStyle(.primary))
                 .keyboardShortcut(".", modifiers: .command)
+        case .starting:
+            // Nothing is written yet; canceling switches the tool off, as the key does.
+            Button("Starting\u{2026} Cancel") { controller.cancelStart() }
+                .buttonStyle(STButtonStyle(.secondary))
         case .countingDown(let remaining):
-            Button("Recording in \(remaining)\u{2026} Cancel") { controller.cancelCountdown() }
+            Button("Recording in \(remaining)\u{2026} Cancel") { controller.cancelStart() }
                 .buttonStyle(STButtonStyle(.secondary))
         case .finishing:
             Button("Finishing\u{2026}") {}.buttonStyle(STButtonStyle(.secondary)).disabled(true)
-        case .idle, .deciding:
+        case .deciding:
+            // The question is in a panel of its own; this brings it forward, over this window.
+            Button("Save or Delete\u{2026}") { controller.presentDecision() }
+                .buttonStyle(STButtonStyle(.secondary))
+        case .idle:
             Button("Record") { Task { await controller.startRecording() } }
                 .buttonStyle(STButtonStyle(.primary))
-                .disabled(controller.phase == .deciding)
+                // Without the permission nothing would be recorded; the strip at the top of the page offers Allow….
+                .disabled(!canRecord)
         }
     }
 
@@ -55,66 +65,29 @@ struct RecordBar: View {
         switch controller.phase {
         case .recording:
             var parts = [ByteCountFormatter.string(fromByteCount: controller.fileSize, countStyle: .file)]
-            if controller.droppedFrames > 0 { parts.append("\(controller.droppedFrames) frames dropped") }
+            if controller.droppedFrames > 0 { parts.append(Self.droppedText(controller.droppedFrames)) }
             return parts.joined(separator: " \u{00B7} ")
+        case .starting: return "Starting the sources."
         case .countingDown: return "Get ready."
         case .finishing: return "Writing the file\u{2026}"
-        case .deciding: return "Choose Save or Delete."
-        case .idle: return controller.isEnabled ? "Ready." : "Record switches Screen Recording on first."
+        case .deciding:
+            // The stop switched the tool off; it's on again only if it was switched on by hand since.
+            return controller.isEnabled ? "Choose Save or Delete." : "Screen Recording is off. Choose Save or Delete."
+        case .idle:
+            if !canRecord { return "Allow Screen & System Audio Recording to record." }
+            return controller.isEnabled ? "Ready. Stopping switches Screen Recording off." : "Record switches Screen Recording on first."
         }
+    }
+
+    private var canRecord: Bool { controller.screenRecordingPermission == .granted }
+
+    /// "1 frame dropped", "3 frames dropped".
+    static func droppedText(_ count: Int) -> String {
+        "\(CountText.of(count, "frame")) dropped"
     }
 
     static func clock(_ seconds: Double) -> String {
         let total = Int(seconds)
         return String(format: "%02d:%02d:%02d", total / 3600, (total / 60) % 60, total % 60)
-    }
-}
-
-/// On Stop: Save with an optional name, or Delete (spec 5.4.4).
-struct SaveDeleteSheet: View {
-    @Bindable var controller: ScreenRecordingController
-    @State private var name = ""
-    @State private var confirmsDelete = false
-    @Environment(\.stTheme) private var theme
-
-    var body: some View {
-        let finished = controller.finished
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Save this recording?").stStyle(.sectionTitle).foregroundStyle(STColor.ink)
-            if let finished {
-                Text("\(RecordBar.clock(finished.seconds)) long\(finished.files.count > 1 ? ", in \(finished.files.count) files" : "").")
-                    .stStyle(.body).foregroundStyle(theme.inkSecondary)
-                if let explanation = finished.explanation {
-                    Text(explanation).stStyle(.body).foregroundStyle(STColor.danger).fixedSize(horizontal: false, vertical: true)
-                }
-                if finished.droppedFrames > 0 {
-                    Text("\(finished.droppedFrames) frames were dropped. If Game Mode was on, macOS may have lowered sTools\u{2019} priority; lower the frame rate or output size if this keeps happening.")
-                        .stStyle(.caption).foregroundStyle(theme.inkTertiary).fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            STTextField("Name (optional)", text: $name)
-            Text(name.trimmingCharacters(in: .whitespaces).isEmpty
-                 ? (finished?.files.first.map { "Without a name it\u{2019}s saved as \($0.deletingPathExtension().lastPathComponent).\(controller.options.fileType.fileExtension)." }
-                    ?? "Without a name it\u{2019}s named by the date and time.")
-                 : "Saved as \(RecordingFinisher.sanitizedName(name) ?? name).\(controller.options.fileType.fileExtension) in \((controller.options.folderPath as NSString).abbreviatingWithTildeInPath).")
-                .stStyle(.caption).foregroundStyle(theme.inkTertiary)
-            HStack {
-                Button("Delete\u{2026}") { confirmsDelete = true }.buttonStyle(STButtonStyle(.quiet))
-                Spacer()
-                Button("Save") { Task { await controller.save(name: name) } }
-                    .buttonStyle(STButtonStyle(.primary))
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(controller.phase == .finishing)
-            }
-        }
-        .padding(24)
-        .frame(width: 440)
-        .background(STColor.background)
-        .interactiveDismissDisabled()
-        .confirmationDialog("Delete this recording?", isPresented: $confirmsDelete) {
-            Button("Delete", role: .destructive) { controller.delete() }
-        } message: {
-            Text("The file is removed for good.")
-        }
     }
 }

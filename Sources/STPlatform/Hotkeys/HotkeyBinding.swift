@@ -34,26 +34,40 @@ public struct HotkeyBinding: Codable, Hashable, Identifiable, Sendable {
 /// falls back to its default.
 public struct HotkeySettings: SettingsDocument {
     public static let name = "hotkeys"
-    public static let version = 1
-    public static let defaultValue = HotkeySettings()
+    /// 2 since the key sets: a version 1 file with no hotkeys at all, the list every earlier build started with, becomes
+    /// ⌘1–⌘5 in sidebar order, once (`HotkeyListUpgrade`); a list with hotkeys in it is never moved. 3 since the sidebar
+    /// order of revision 10: a version 2 file holding exactly the list build 449 moved ducky's keys to goes back to
+    /// ⌘1–⌘5, which is ducky's list (`HotkeyListUpgrade.undoingBuild449`).
+    public static let version = 3
+    /// A new install's (no `hotkeys.json` yet): ⌘1–⌘5, one per tool in sidebar order, with hotkeys on. They work only
+    /// in sTools and Minecraft by default, so they take no other app's keys from the first launch.
+    public static let defaultValue = HotkeySettings(isEnabled: true, bindings: HotkeyKeySet.newInstall.bindings())
 
-    /// The master switch. Off by default; while off, nothing is registered with the system.
+    /// The master switch: on for a new install (`defaultValue`), off in a value built without saying (an existing
+    /// file without it, tests). While off, nothing is registered with the system.
     public var isEnabled: Bool
     public var bindings: [HotkeyBinding]
     /// Advanced: whether a press shows the on-screen confirmation (a seal and what changed). On by default;
     /// the sound plays either way.
     public var showsConfirmation: Bool
+    /// Where hotkeys work: in sTools and Minecraft only (the default), or everywhere.
+    public var scope: HotkeyScope
 
-    public init(isEnabled: Bool = false, bindings: [HotkeyBinding] = [], showsConfirmation: Bool = true) {
+    public init(isEnabled: Bool = false, bindings: [HotkeyBinding] = [], showsConfirmation: Bool = true,
+                scope: HotkeyScope = .sToolsAndMinecraft) {
         self.isEnabled = isEnabled
         self.bindings = bindings
         self.showsConfirmation = showsConfirmation
+        self.scope = scope
     }
 
     /// Files from builds that paused hotkeys whenever sTools was in front also carry `pausesWhileSToolsIsActive`.
     /// Hotkeys now pause only while sTools listens for raw keys, so that key is ignored and dropped on the next save.
-    private enum CodingKeys: String, CodingKey { case isEnabled, bindings, showsConfirmation }
+    private enum CodingKeys: String, CodingKey { case isEnabled, bindings, showsConfirmation, scope }
 
+    /// A file without `scope` (every file from before it existed) or with a scope this build doesn't know gets the
+    /// default, In sTools and Minecraft. A list with several keys for Screen Recording alone, one for each of its two
+    /// former actions, keeps one (`HotkeyListUpgrade.withOneScreenRecordingKey`).
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         func flag(_ key: CodingKeys, default value: Bool) -> Bool {
@@ -61,8 +75,20 @@ public struct HotkeySettings: SettingsDocument {
         }
         let bindings = try? container.decodeIfPresent([LossyElement<HotkeyBinding>].self, forKey: .bindings)
         self.init(isEnabled: flag(.isEnabled, default: false),
-                  bindings: bindings?.compactMap(\.value) ?? [],
-                  showsConfirmation: flag(.showsConfirmation, default: true))
+                  bindings: HotkeyListUpgrade.withOneScreenRecordingKey(bindings?.compactMap(\.value) ?? []),
+                  showsConfirmation: flag(.showsConfirmation, default: true),
+                  scope: (try? container.decodeIfPresent(HotkeyScope.self, forKey: .scope)) ?? .sToolsAndMinecraft)
+    }
+
+    /// Version 1 to 2: an empty list, the one earlier builds left everyone with, becomes the new install's key set
+    /// (`HotkeyListUpgrade`). Version 2 to 3: build 449's ⌘1–⌘5 list goes back to ducky's keys, only in a file that was
+    /// version 2 on disk, never one that started at version 1. Every other list, and every other setting, stays as it is.
+    public static func migrate(from oldVersion: Int, _ raw: [String: Any]) throws -> [String: Any] {
+        switch oldVersion {
+        case 1: HotkeyListUpgrade.markedAsFromVersionOne(HotkeyListUpgrade.upgrade(raw))
+        case 2: HotkeyListUpgrade.undoingBuild449(raw)
+        default: raw
+        }
     }
 }
 

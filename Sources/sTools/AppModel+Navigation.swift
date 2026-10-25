@@ -21,26 +21,15 @@ extension AppModel {
         navigate(to: .home)
     }
 
-    /// Timer Overlay's Set in Hotkeys…: opens Home ▸ Hotkeys with a new hotkey whose action is Start timer, ready
-    /// for its key. While hotkeys are off it asks first (plan decision 14); a no opens Home ▸ Hotkeys without the
-    /// new hotkey.
-    func openHotkeysForStartTimer() {
-        if !hotkeys.isEnabled {
-            guard confirmTurningOnHotkeys() else {
-                openHotkeys()
-                return
-            }
-            hotkeys.isEnabled = true
-        }
-        pendingNewHotkeyActions = [.startTimer]
-        openHotkeys()
-    }
+    /// Why the Timer trial asks before setting its hotkey, named as the Timer page's Hotkey row is.
+    static let turnOnHotkeysText =
+        "Hotkeys are off, so \(ToolID.timerOverlay.title)\u{2019}s hotkey would do nothing. Turn them on to set it."
 
     /// The live question behind `confirmTurningOnHotkeys`.
     static func askToTurnOnHotkeys() -> Bool {
         let alert = NSAlert()
         alert.messageText = "Turn on hotkeys?"
-        alert.informativeText = "Hotkeys are off, so the Start-timer key would do nothing. Turn them on to set it."
+        alert.informativeText = turnOnHotkeysText
         alert.addButton(withTitle: "Turn On")
         alert.addButton(withTitle: "Not Now")
         return alert.runModal() == .alertFirstButtonReturn

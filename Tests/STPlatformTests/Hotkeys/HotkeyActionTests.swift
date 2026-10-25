@@ -32,7 +32,7 @@ struct HotkeyResolveTests {
         #expect(changes(outcome) == ["crosshair=true", "nbbOverlay=true"])
     }
 
-    @Test func everyStateCombinationOfAllFourTools() {
+    @Test func everyStateCombinationOfEveryToggledTool() {
         let tools = HotkeyTool.allCases
         let actions = tools.map(HotkeyAction.toggle)
         for mask in 0..<(1 << tools.count) {
@@ -66,7 +66,7 @@ struct HotkeyResolveTests {
     }
 
     @Test func recordingFlipsSeparatelyAndDoesNotInfluenceTools() {
-        let alone = HotkeyAction.resolve([.startStopRecording], toolStates: [.screenRecording: false])
+        let alone = HotkeyAction.resolve([.startStopRecording], toolStates: [:])
         #expect(alone.toolChanges.isEmpty)
         #expect(alone.togglesRecording)
 
@@ -76,10 +76,14 @@ struct HotkeyResolveTests {
         #expect(together.togglesRecording)
     }
 
-    @Test func recordingToolAndRecordingActionAreIndependent() {
-        let outcome = HotkeyAction.resolve([.toggle(.screenRecording), .startStopRecording], toolStates: [.screenRecording: false])
-        #expect(changes(outcome) == ["screenRecording=true"])
-        #expect(outcome.togglesRecording)
+    /// Screen Recording's one action has no toggle of its own: it starts or stops a recording on every press, and
+    /// the tools beside it in the set follow the rule without it (spec 6.1).
+    @Test func screenRecordingNeverTakesPartInTheToggleDecision() {
+        for crosshairIsOn in [false, true] {
+            let outcome = HotkeyAction.resolve([.startStopRecording, .toggle(.crosshair)], toolStates: [.crosshair: crosshairIsOn])
+            #expect(changes(outcome) == ["crosshair=\(!crosshairIsOn)"])
+            #expect(outcome.togglesRecording)
+        }
     }
 
     @Test func emptySetDoesNothing() {
@@ -131,9 +135,13 @@ struct HotkeyActionTests {
         #expect(list.uniqued == [.toggle(.crosshair), .startStopRecording, .toggle(.nbbOverlay)])
     }
 
-    @Test func allCasesListsFourTogglesRecordingThenStartTimer() {
-        #expect(HotkeyAction.allCases == [.toggle(.nbbOverlay), .toggle(.windowBackdrop), .toggle(.crosshair),
-                                          .toggle(.screenRecording), .startStopRecording, .startTimer])
+    /// One chip per tool, in sidebar order: Crosshair, Start timer (Timer Overlay), NBB Overlay, Screen Recording's one
+    /// action, Window Backdrop. The key sets give the tools their keys in the same order.
+    @Test func allCasesFollowTheSidebar() {
+        #expect(HotkeyAction.allCases == [.toggle(.crosshair), .startTimer, .toggle(.nbbOverlay), .startStopRecording,
+                                          .toggle(.windowBackdrop)])
+        #expect(HotkeyAction.allCases == HotkeyKeySet.toolActions)
+        #expect(HotkeyTool.allCases == [.crosshair, .nbbOverlay, .windowBackdrop], "the toggles, in sidebar order too")
     }
 
     @Test func storedAsPlainStrings() throws {
@@ -150,5 +158,49 @@ struct HotkeyActionTests {
     @Test func unknownActionFailsToDecode() {
         #expect(throws: DecodingError.self) { try JSONDecoder().decode([HotkeyAction].self, from: Data(#"["toggle.hologram"]"#.utf8)) }
         #expect(throws: DecodingError.self) { try JSONDecoder().decode([HotkeyAction].self, from: Data(#"["explode"]"#.utf8)) }
+    }
+}
+
+/// Screen Recording once had two actions, "Toggle Screen Recording" and "Start/stop recording"; hotkeys saved with
+/// either keep working as the one action (spec 6.1).
+@Suite("Screen Recording's one action")
+struct ScreenRecordingActionTests {
+    @Test func bothOldNamesReadAsTheOneAction() throws {
+        let decoded = try JSONDecoder().decode([HotkeyAction].self, from: Data(#"["toggle.screenRecording","startStopRecording"]"#.utf8))
+        #expect(decoded == [.startStopRecording, .startStopRecording])
+        #expect(HotkeyTool(rawValue: "screenRecording") == nil)
+    }
+
+    /// Written under the name older builds read as Start/stop recording, so going back keeps the hotkey working.
+    @Test func itIsWrittenUnderTheNameOlderBuildsRead() throws {
+        let data = try JSONEncoder().encode([HotkeyAction.startStopRecording])
+        #expect(String(decoding: data, as: UTF8.self) == #"["startStopRecording"]"#)
+    }
+
+    /// An existing `hotkeys.json` keeps working: a hotkey that had both actions keeps one Screen Recording action, one
+    /// that had either with other actions keeps its place and its other actions, and two keys that each did one of
+    /// them alone are one key now, the first (spec 6.1), so the list never has two Screen Recording keys.
+    @MainActor
+    @Test func anExistingHotkeysFileKeepsOneScreenRecordingAction() throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "stools-hotkeys-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = """
+            {"version":1,"value":{"isEnabled":true,"showsConfirmation":true,"bindings":[
+             {"id":"00000000-0000-0000-0000-000000000001","combo":{"keyCode":96,"modifiers":0},
+              "actions":["toggle.screenRecording","startStopRecording"]},
+             {"id":"00000000-0000-0000-0000-000000000002","combo":{"keyCode":97,"modifiers":0},
+              "actions":["toggle.screenRecording"]},
+             {"id":"00000000-0000-0000-0000-000000000003","combo":{"keyCode":98,"modifiers":0},
+              "actions":["toggle.crosshair","toggle.screenRecording","startTimer"]}]}}
+            """
+        try Data(file.utf8).write(to: directory.appending(path: "hotkeys.json"))
+        let settings = SettingsStore(directory: directory).load(HotkeySettings.self)
+        #expect(settings.isEnabled)
+        #expect(settings.bindings.map(\.actions) == [
+            [.startStopRecording],
+            [.toggle(.crosshair), .startStopRecording, .startTimer],
+        ])
+        #expect(settings.bindings.map(\.id.uuidString) == ["00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000003"])
     }
 }

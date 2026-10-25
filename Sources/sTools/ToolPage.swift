@@ -17,7 +17,11 @@ struct ToolPage: View {
 
     var body: some View {
         // The Key Rebinder's keyboard needs more than the usual 640 pt column to be big enough to use.
-        PageContainer(maxWidth: tool == .keyRebinder ? 1400 : 640) {
+        PageContainer(
+            maxWidth: tool == .keyRebinder ? 1400 : 640,
+            anchor: Binding(get: { model.pendingPageAnchor }, set: { model.pendingPageAnchor = $0 }),
+            accepts: tool == .keyRebinder ? [.keyRebinderKeyPanel] : []
+        ) {
             STPageHeader(title: tool.title, tagline: tool.tagline) {
                 if tool.hasSwitch {
                     STSwitch(isOn: model.switchBinding(tool), label: tool.title)
@@ -79,10 +83,7 @@ struct ToolContent: View {
             }
         case .timerOverlay:
             if let controller = model.timerOverlay {
-                // Built here, inside the body, so the key row follows Home ▸ Hotkeys as it changes.
-                TimerOverlaySettingsView(
-                    controller: controller, keyStatus: TimerKeyStatus(hotkeys: model.hotkeys),
-                    onSetInHotkeys: isTrial ? nil : { @MainActor @Sendable [model] in model.openHotkeysForStartTimer() })
+                TimerOverlaySettingsView(controller: controller)
             }
         case .screenRecording:
             if let controller = model.controller(for: tool, as: ScreenRecordingController.self) {

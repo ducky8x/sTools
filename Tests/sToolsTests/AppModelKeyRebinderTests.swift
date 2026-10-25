@@ -58,6 +58,7 @@ struct AppModelKeyRebinderTests {
         #expect(harness.model.showHotkeyOnKeyboard(keypad1))
         #expect(keyRebinder.selectedKey == .key("keypad_1"))
         #expect(harness.model.route == .tool(.keyRebinder))
+        #expect(harness.model.pendingPageAnchor == .keyRebinderKeyPanel, "the page scrolls to the key's panel")
     }
 
     @Test func homesPlacementComesFromTheKeyRebinder() async throws {

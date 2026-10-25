@@ -112,3 +112,50 @@ import Testing
         #expect(hub.peek().isEmpty)
     }
 }
+
+/// A start waits for Minecraft's first frame, so the recording's first frame shows the game (spec 5.4.4), but never
+/// for long.
+@Suite struct FrameHubFirstFrameTests {
+    @Test func aFrameAlreadyThereNeedsNoWait() async {
+        let hub = FrameHub()
+        hub.submit(ClockTestFrames.frame(at: 1), for: .base)
+        let began = SuspendingClock.now
+        #expect(await hub.waitForFrame(of: .base, timeout: .seconds(5)))
+        #expect(SuspendingClock.now - began < .seconds(1))
+    }
+
+    @Test func theWaitEndsAsTheFirstFrameArrives() async {
+        let hub = FrameHub()
+        let began = SuspendingClock.now
+        Task {
+            try? await Task.sleep(for: .milliseconds(100))
+            hub.submit(ClockTestFrames.frame(at: 1), for: .source(UUID()))
+            hub.submit(ClockTestFrames.frame(at: 2), for: .base)
+        }
+        #expect(await hub.waitForFrame(of: .base, timeout: .seconds(5)))
+        let waited = SuspendingClock.now - began
+        #expect(waited >= .milliseconds(100))
+        #expect(waited < .seconds(4))
+    }
+
+    @Test func theWaitGivesUpAfterItsTimeout() async {
+        let hub = FrameHub()
+        let began = SuspendingClock.now
+        #expect(!(await hub.waitForFrame(of: .base, timeout: .milliseconds(150))))
+        #expect(SuspendingClock.now - began >= .milliseconds(150))
+        // A frame after the wait is kept as any other.
+        hub.submit(ClockTestFrames.frame(at: 1), for: .base)
+        #expect(hub.peek()[.base] != nil)
+    }
+
+    @Test func lettingGoOfTheFramesEndsTheWait() async {
+        let hub = FrameHub()
+        Task {
+            try? await Task.sleep(for: .milliseconds(100))
+            hub.removeAll()
+        }
+        let began = SuspendingClock.now
+        #expect(!(await hub.waitForFrame(of: .base, timeout: .seconds(5))))
+        #expect(SuspendingClock.now - began < .seconds(4))
+    }
+}

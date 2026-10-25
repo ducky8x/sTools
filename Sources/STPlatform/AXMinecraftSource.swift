@@ -34,10 +34,14 @@ public final class AXMinecraftSource: MinecraftWindowSource {
         self.stream = stream
         self.continuation = continuation
         let center = NSWorkspace.shared.notificationCenter
+        // Accessibility lists only the windows on the current Space, so a full-screen game (its own Space) or one on
+        // another Space appears only once its Space is the active one: a Space switch reads the windows again, after
+        // the switch has finished, which an app activation during it can't.
         let names: [Notification.Name] = [
             NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification,
             NSWorkspace.didActivateApplicationNotification, NSWorkspace.didDeactivateApplicationNotification,
             NSWorkspace.didHideApplicationNotification, NSWorkspace.didUnhideApplicationNotification,
+            NSWorkspace.activeSpaceDidChangeNotification,
         ]
         workspaceTokens = names.map { name in
             center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in

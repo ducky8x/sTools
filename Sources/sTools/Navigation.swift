@@ -1,4 +1,6 @@
 import Foundation
+import KeyRebinder
+import SwiftUI
 
 /// A page of the main window.
 enum Route: Hashable, Sendable {
@@ -11,6 +13,26 @@ enum Route: Hashable, Sendable {
 enum PageAnchor: Hashable, Sendable {
     /// Home ▸ Hotkeys.
     case hotkeys
+    /// The Key Rebinder's panel for the selected key, after Home's Show on Keyboard.
+    case keyRebinderKeyPanel
+
+    /// The id the view is marked with: the anchor itself, or, for a view inside another module that can't see this
+    /// type, the id that module gives it.
+    var scrollID: AnyHashable {
+        switch self {
+        case .hotkeys: AnyHashable(self)
+        case .keyRebinderKeyPanel: AnyHashable(KeyRebinderView.keyPanelScrollID)
+        }
+    }
+
+    /// Where the view lands: a section starts at the top; the key panel sits mid-view, so the selected key on the
+    /// keyboard above it stays in sight.
+    var scrollAnchor: UnitPoint {
+        switch self {
+        case .hotkeys: .top
+        case .keyRebinderKeyPanel: .center
+        }
+    }
 }
 
 /// Browser-style back/forward history. Pure value type.
@@ -83,7 +105,20 @@ enum GoCommand: Hashable, Sendable {
         }
     }
 
-    /// The key pressed with Command.
+    /// Whether the shortcut holds Control as well as Command. The pages do (⌃⌘0 Home, ⌃⌘1–⌃⌘6 the tools): hotkeys
+    /// fire with sTools in front, and a key set's ⌘1–⌘5 would take ⌘ with a digit. Settings, Back and Forward keep
+    /// their usual ⌘, ⌘[ and ⌘].
+    var shortcutHoldsControl: Bool {
+        switch self {
+        case .home, .tool: true
+        case .settings, .back, .forward: false
+        }
+    }
+
+    /// The shortcut as the menu shows it: "⌃⌘3", "⌘,".
+    var shortcutDisplay: String { (shortcutHoldsControl ? "⌃⌘" : "⌘") + String(shortcutKey) }
+
+    /// The key pressed with Command (and Control, `shortcutHoldsControl`).
     var shortcutKey: Character {
         switch self {
         case .home: "0"

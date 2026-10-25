@@ -14,6 +14,8 @@ struct GoCommands: Commands {
             Button("About sTools") { AboutPanel.show(version: model.updateCenter.version) }
             Button("Check for Updates\u{2026}") { model.updateCenter.checkNow(from: .menu) }
                 .disabled(!model.updateCenter.canCheck)
+            Button("Install from DMG\u{2026}") { model.dmgInstaller.chooseAndInstall() }
+                .disabled(model.dmgInstaller.isBusy)
         }
         CommandMenu("Go") {
             ForEach(GoCommand.menu, id: \.self) { command in
@@ -30,7 +32,8 @@ struct GoCommands: Commands {
     @ViewBuilder
     private func item(_ command: GoCommand, title: String) -> some View {
         Button(title) { model.perform(command) }
-            .keyboardShortcut(KeyEquivalent(command.shortcutKey), modifiers: .command)
+            .keyboardShortcut(KeyEquivalent(command.shortcutKey),
+                              modifiers: command.shortcutHoldsControl ? [.control, .command] : .command)
             .disabled(isDisabled(command))
     }
 

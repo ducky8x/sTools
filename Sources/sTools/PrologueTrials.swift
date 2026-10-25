@@ -20,8 +20,6 @@ final class TrialSession {
     /// A Test run is under way; when it leaves, `timerTestLeft` ticks its item.
     @ObservationIgnored var timerTestRunning = false
     var timerTestLeft = false
-    /// The Start-timer keys when the trial began, by hotkey.
-    var timerKeysAtStart: [UUID: HotkeyCombo]?
     var backdropStartFill: BackdropSettings.Fill?
     var nbbStartOffset: [Int]?
     @ObservationIgnored var nbbFirstResult: NBBEvents.Stronghold?
@@ -112,8 +110,8 @@ enum TrialCopy {
         static let testDetail = "A 5-second run pops up, counts down, rings and leaves. Your saved duration stays as it is."
         static let place = "Drag it into place and see the rule guides"
         static let placeDetail = "Turn on \u{201C}Move by dragging\u{201D}, then drag the timer."
-        static let key = "Set a Start-timer key"
-        static let keyDetail = "It\u{2019}s saved as a hotkey in Home \u{25B8} Hotkeys."
+        static let key = "Set its hotkey"
+        static let keyDetail = "It starts the timer and is saved in Home \u{25B8} Hotkeys, as on the Timer page."
     }
 
     enum Backdrop {
@@ -199,7 +197,8 @@ extension AppModel {
     }
 
     /// Timer Overlay's trial (spec 5.6.9). The Test item ticks when the controller reports that the run has left;
-    /// the trial keeps no timer of its own, and Test leaves the saved duration alone.
+    /// the trial keeps no timer of its own, and Test leaves the saved duration alone. The key item ticks whenever a
+    /// Start-timer key exists, one set before the trial too (a new install's ⌘2), not only once a key changes.
     private func timerTrial() -> TrialContent {
         guard let timer = timerOverlay else { return Self.emptyTrial }
         let session = trials
@@ -213,19 +212,17 @@ extension AppModel {
                 ChecklistItem(id: "key", title: TrialCopy.Timer.key, detail: TrialCopy.Timer.keyDetail, isOptional: true),
             ] },
             completed: {
-                guard let start = session.timerStartOffset, let keysAtStart = session.timerKeysAtStart else { return [] }
+                guard let start = session.timerStartOffset else { return [] }
                 var done: Set<String> = []
                 if self.isOn(.timerOverlay) { done.insert("on") }
                 if session.timerTestLeft { done.insert("test") }
                 if [timer.settings.offsetX, timer.settings.offsetY] != start { done.insert("place") }
-                let keys = Self.startTimerKeys(in: self.hotkeys.bindings)
-                if !keys.isEmpty && keys != keysAtStart { done.insert("key") }
+                if Self.hasStartTimerKey(in: self.hotkeys.bindings) { done.insert("key") }
                 return done
             },
             controls: { AnyView(TrialToolControls(model: self, tool: .timerOverlay)) },
             onAppear: {
                 if session.timerStartOffset == nil { session.timerStartOffset = [timer.settings.offsetX, timer.settings.offsetY] }
-                if session.timerKeysAtStart == nil { session.timerKeysAtStart = Self.startTimerKeys(in: self.hotkeys.bindings) }
                 session.watch(for: .timerOverlay) {
                     if timer.phase == .idle {
                         if session.timerTestRunning {
@@ -241,9 +238,9 @@ extension AppModel {
             onDisappear: { session.stopWatching(.timerOverlay) })
     }
 
-    /// The hotkeys that start the timer, with their keys.
-    static func startTimerKeys(in bindings: [HotkeyBinding]) -> [UUID: HotkeyCombo] {
-        Dictionary(uniqueKeysWithValues: bindings.filter { $0.actions.contains(.startTimer) }.map { ($0.id, $0.combo) })
+    /// Whether any hotkey starts the timer.
+    static func hasStartTimerKey(in bindings: [HotkeyBinding]) -> Bool {
+        bindings.contains { $0.actions.contains(.startTimer) }
     }
 
     private func backdropTrial() -> TrialContent {

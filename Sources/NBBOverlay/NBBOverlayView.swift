@@ -9,6 +9,8 @@ struct NBBOverlayView: View {
     let content: NBBOverlayContent
     let messages: [(severity: NBBEvents.MessageSeverity, text: String)]
     let settings: NBBOverlaySettings
+    /// Ninjabrain Bot's latest boat state, for the boat indicator and the plate's color.
+    var boat: NBBEvents.Boat?
 
     /// Placement mode (spec 5.1.5): drag the body to move, drag the corner handle to resize. Each
     /// `changed` callback receives the gesture's cumulative translation from where it started; `ended`
@@ -22,7 +24,9 @@ struct NBBOverlayView: View {
     /// (the default) renders text at its natural, un-scaled size.
     private static let baseWidth: CGFloat = 320
 
-    private var isEmpty: Bool { content == .hidden && messages.isEmpty }
+    private var shownBoat: NBBEvents.BoatState? { NBBOverlayLayout.boatToShow(boat, settings: settings) }
+    private var isEmpty: Bool { content == .hidden && messages.isEmpty && !NBBOverlayLayout.boatCountsAsData(boat, settings: settings) }
+    private var plateTint: Color? { NBBOverlayLayout.plateTint(boat, settings: settings).map { STColorWellHex.color(from: $0.colorHex) } }
     private var targetSize: CGSize { CGSize(width: CGFloat(settings.width), height: CGFloat(settings.width) / settings.aspectRatio) }
 
     /// A plain `width / baseWidth` ratio, not a measure-then-fit scale: resizing the box (by the Width
@@ -33,7 +37,7 @@ struct NBBOverlayView: View {
     private var contentScale: CGFloat { CGFloat(settings.width) / Self.baseWidth }
 
     var body: some View {
-        STPlate {
+        STPlate(tint: plateTint) {
             plateContent
                 .padding(14)
                 .scaleEffect(contentScale, anchor: .topLeading)
@@ -63,9 +67,12 @@ struct NBBOverlayView: View {
 
     @ViewBuilder private var plateContent: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if let shownBoat {
+                NBBBoatIndicator(look: NBBBoatLook(shownBoat))
+            }
             switch content {
             case .hidden:
-                if settings.placementModeEnabled {
+                if settings.placementModeEnabled, shownBoat == nil {
                     Text("NBB Overlay").stStyle(.caption).foregroundStyle(STColor.inkTertiary)
                 }
             case .triangulation(let data):
@@ -112,8 +119,15 @@ struct NBBTriangulationBlock: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if settings.showsPredictions, !data.predictions.isEmpty {
-                NBBHeading(text: "Predictions")
-                VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .center, spacing: 8) {
+                    NBBHeading(text: "Predictions")
+                    // Says whose coordinates and distance the table shows, whenever either column is on.
+                    if settings.showsLocationColumn || settings.showsDistanceColumn {
+                        NBBColumnMark(column: data.column)
+                    }
+                }
+                // A grid, so each column lines up from row to row.
+                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
                     ForEach(Array(data.predictions.enumerated()), id: \.element.id) { index, row in
                         NBBPredictionRowView(row: row, isTop: index == 0, settings: settings)
                     }
@@ -132,12 +146,6 @@ struct NBBTriangulationBlock: View {
                     }
                 }
             }
-            if settings.showsBoatState, let boatState = data.boatState, boatState != .none {
-                HStack(spacing: 6) {
-                    NBBHeading(text: "Boat")
-                    Text(boatState.rawValue.capitalized).font(nbbLabel()).foregroundStyle(STColor.ink)
-                }
-            }
         }
     }
 }
@@ -148,9 +156,9 @@ private struct NBBPredictionRowView: View {
     let settings: NBBOverlaySettings
 
     var body: some View {
-        HStack(spacing: 12) {
+        GridRow {
             if settings.showsLocationColumn {
-                Text("\(row.chunkX), \(row.chunkZ)").font(nbbNumber(weight: isTop ? .semibold : .regular))
+                Text(row.coordinates.text).font(nbbNumber(weight: isTop ? .semibold : .regular))
             }
             if settings.showsCertaintyColumn {
                 Text("\(row.certaintyPercent)%")
@@ -158,10 +166,105 @@ private struct NBBPredictionRowView: View {
                     .foregroundStyle(isTop ? STColor.gold : STColor.ink)
             }
             if settings.showsDistanceColumn {
-                Text("\(Int(row.overworldDistance))m").font(nbbNumber()).foregroundStyle(STColor.inkSecondary)
+                // Verbatim, so the number reads as Ninjabrain Bot writes it ("1579", no grouping separator).
+                Text(verbatim: "\(row.distance)m").font(nbbNumber()).foregroundStyle(STColor.inkSecondary)
+            }
+            if settings.showsAngleColumn, let angle = row.angle {
+                Text(String(format: "%.2f\u{00B0}", angle)).font(nbbNumber())
+            }
+            if settings.showsAngleChangeColumn, let change = row.angleChange {
+                Text(NBBAngleChange.text(change))
+                    .font(nbbNumber())
+                    .foregroundStyle(NBBAngleChange.color(change))
+                    .accessibilityLabel(NBBAngleChange.spoken(change))
             }
         }
         .foregroundStyle(STColor.ink)
+    }
+}
+
+/// A small tag beside the Predictions heading: Overworld, Nether, or (from a window, which doesn't say) Location, in the
+/// heading's own letters, tinted faintly green for the Overworld and red for the Nether.
+struct NBBColumnMark: View {
+    let column: NBBCoordinateColumn
+
+    static func colorHex(_ column: NBBCoordinateColumn) -> String? {
+        switch column {
+        case .overworld: "#6FCB7A"
+        case .nether: "#E8695C"
+        case .windowLocation: nil
+        }
+    }
+
+    private var color: Color { Self.colorHex(column).map { STColorWellHex.color(from: $0) } ?? STColor.inkSecondary }
+
+    var body: some View {
+        Text(column.title.uppercased())
+            .font(nbbLabel(9))
+            .tracking(0.8)
+            .foregroundStyle(color)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1.5)
+            .overlay(Capsule().strokeBorder(color.opacity(0.45), lineWidth: 0.75))
+            .accessibilityLabel(column.spoken)
+    }
+}
+
+// MARK: - Boat
+
+/// Ninjabrain Bot's boat, as large as a heading: a boat drawn in the state's color, then what it means.
+struct NBBBoatIndicator: View {
+    let look: NBBBoatLook
+
+    var body: some View {
+        HStack(spacing: 8) {
+            NBBBoatGlyph()
+                .fill(STColorWellHex.color(from: look.colorHex))
+                .frame(width: 26, height: 14)
+            Text(look.title)
+                .font(.system(size: 14, weight: .semibold, design: .serif))
+                .foregroundStyle(STColor.ink)
+        }
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(look.title)
+    }
+}
+
+/// A boat seen from the side: a hull wider at the top, with a gunwale along it.
+struct NBBBoatGlyph: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let w = rect.width, h = rect.height, x = rect.minX, y = rect.minY
+        // Gunwale.
+        path.addRoundedRect(in: CGRect(x: x, y: y, width: w, height: h * 0.22), cornerSize: CGSize(width: h * 0.08, height: h * 0.08))
+        // Hull.
+        path.move(to: CGPoint(x: x + w * 0.03, y: y + h * 0.34))
+        path.addLine(to: CGPoint(x: x + w * 0.97, y: y + h * 0.34))
+        path.addLine(to: CGPoint(x: x + w * 0.80, y: y + h))
+        path.addLine(to: CGPoint(x: x + w * 0.20, y: y + h))
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// The turn to the travel angle as the overlay writes it: an arrow the way to turn and how far, to a tenth of a degree,
+/// as Ninjabrain Bot's " (-> 47.4)"; it goes from red when the stronghold is behind to green when it's ahead, as
+/// Ninjabrain Bot shades it.
+enum NBBAngleChange {
+    static func text(_ change: Double) -> String {
+        String(format: "%@ %.1f", change > 0 ? "\u{2192}" : "\u{2190}", abs(change))
+    }
+
+    static func spoken(_ change: Double) -> String {
+        String(format: "Turn %@ %.1f degrees", change > 0 ? "right" : "left", abs(change))
+    }
+
+    /// 1 when facing the stronghold, 0 when it's straight behind.
+    static func closeness(_ change: Double) -> Double { 1 - min(abs(change), 180) / 180 }
+
+    static func color(_ change: Double) -> Color {
+        STColor.danger.mix(with: STColor.success, by: closeness(change))
     }
 }
 

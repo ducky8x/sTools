@@ -1,6 +1,8 @@
 import AppKit
 import Observation
+import STDesign
 import STPlatform
+import SwiftUI
 
 /// A window the backdrop sits under while Minecraft isn't running.
 public struct BackdropStandIn: Equatable, Sendable {
@@ -45,6 +47,10 @@ public final class BackdropController: ToolController {
     /// What each display's panel shows now, so re-ordering it (on every app switch while the tool is on) doesn't
     /// draw the same full-screen fill again.
     @ObservationIgnored private var drawnFills: [UInt32: DrawnFill] = [:]
+    /// What each display's panel shows, kept for as long as the panel so a new fill can crossfade from the old one.
+    @ObservationIgnored private var layers: [UInt32: BackdropLayers] = [:]
+    /// For Reduce animations: while motion is reduced, a new fill replaces the old one at once.
+    @ObservationIgnored private let theme: STTheme?
     /// How many times a fill was drawn into a panel. For tests.
     @ObservationIgnored private(set) var drawCount = 0
 
@@ -56,14 +62,19 @@ public final class BackdropController: ToolController {
 
     /// `imagesDirectory` defaults to `~/Library/Application Support/sTools/Images`; pass a temp
     /// directory in tests.
-    public convenience init(services: ToolServices, imagesDirectory: URL = SettingsStore.defaultDirectory().appending(path: "Images", directoryHint: .isDirectory)) {
-        self.init(services: services, imagesDirectory: imagesDirectory, showsPanels: true)
+    public convenience init(
+        services: ToolServices,
+        imagesDirectory: URL = SettingsStore.defaultDirectory().appending(path: "Images", directoryHint: .isDirectory),
+        theme: STTheme? = nil
+    ) {
+        self.init(services: services, imagesDirectory: imagesDirectory, showsPanels: true, theme: theme)
     }
 
     /// Tests pass `showsPanels: false`: panels still get their content and frame, but are never ordered onto a
     /// screen.
-    init(services: ToolServices, imagesDirectory: URL, showsPanels: Bool) {
+    init(services: ToolServices, imagesDirectory: URL, showsPanels: Bool, theme: STTheme? = nil) {
         self.services = services
+        self.theme = theme
         self.imagesDirectory = imagesDirectory
         self.showsPanels = showsPanels
         settings = services.settings.load(BackdropSettings.self)
@@ -234,15 +245,38 @@ public final class BackdropController: ToolController {
         }
     }
 
-    /// Gives `panel` the fill, unless it already shows exactly that.
+    /// Gives `panel` the fill, unless it already shows exactly that. A new fill crossfades from the old one over
+    /// *Fill transition* (spec 5.2.4); the opacity changes at once.
     private func draw(_ fill: BackdropSettings.Fill, in panel: OverlayPanel, displayID: UInt32) {
         let image = image(for: fill)
         let drawn = DrawnFill(fill: fill, opacityPercent: settings.opacityPercent, hasImage: image != nil)
         guard drawnFills[displayID] != drawn else { return }
-        panel.setContent(BackdropFillView(fill: fill, image: image, opacity: Double(settings.opacityPercent) / 100))
+        let opacity = Double(settings.opacityPercent) / 100
+        if let layers = layers[displayID] {
+            let previous = drawnFills[displayID]
+            layers.opacity = opacity
+            if previous?.fill != fill || previous?.hasImage != (image != nil) {
+                let seconds = fillTransitionSeconds
+                STMotion.animate(.easeInOut(duration: seconds), reduce: seconds == 0) {
+                    layers.show(fill, image: image)
+                }
+            }
+        } else {
+            let layers = BackdropLayers(fill: fill, image: image, opacity: opacity)
+            self.layers[displayID] = layers
+            panel.setContent(BackdropCrossfadeView(layers: layers))
+        }
         drawnFills[displayID] = drawn
         drawCount += 1
     }
+
+    /// How long a fill change crossfades: none while motion is reduced.
+    var fillTransitionSeconds: Double {
+        theme?.reduceMotion == true ? 0 : settings.fillTransitionSeconds
+    }
+
+    /// The fill a display's panel shows now, for tests.
+    func shownFill(on displayID: UInt32) -> BackdropSettings.Fill? { layers[displayID]?.current.fill }
 
     /// Minecraft's own display (while it's running) plus every additional display the user checked,
     /// limited to displays that actually exist right now.
@@ -269,6 +303,7 @@ public final class BackdropController: ToolController {
         }
         panels.removeAll()
         drawnFills.removeAll()
+        layers.removeAll()
         images.removeAll()
     }
 
@@ -276,5 +311,42 @@ public final class BackdropController: ToolController {
         guard let name, images[name] == nil else { return }
         let url = imagesDirectory.appending(path: (name as NSString).lastPathComponent)
         images[name] = BackdropImageImport.loadImage(at: url)
+    }
+}
+
+/// What one backdrop panel shows. A new fill gets a new id, so SwiftUI crossfades from the old layer to it.
+@MainActor
+@Observable
+final class BackdropLayers {
+    struct Layer {
+        var id: Int
+        var fill: BackdropSettings.Fill
+        var image: CGImage?
+    }
+
+    private(set) var current: Layer
+    var opacity: Double
+
+    init(fill: BackdropSettings.Fill, image: CGImage?, opacity: Double) {
+        current = Layer(id: 0, fill: fill, image: image)
+        self.opacity = opacity
+    }
+
+    func show(_ fill: BackdropSettings.Fill, image: CGImage?) {
+        current = Layer(id: current.id + 1, fill: fill, image: image)
+    }
+}
+
+/// The backdrop panel's content: the current fill, crossfading from the last one when it changes.
+struct BackdropCrossfadeView: View {
+    let layers: BackdropLayers
+
+    var body: some View {
+        ZStack {
+            BackdropFillView(fill: layers.current.fill, image: layers.current.image)
+                .id(layers.current.id)
+                .transition(.opacity)
+        }
+        .opacity(layers.opacity)
     }
 }

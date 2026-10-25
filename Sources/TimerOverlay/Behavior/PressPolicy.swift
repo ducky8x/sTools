@@ -4,15 +4,18 @@ import Foundation
 /// Advanced variant, plus the cancel gestures.
 ///
 /// A small value the controller keeps. It remembers only the last press, to tell a double press (0.4 s) and a
-/// hold (1 s), and reads no clock: the controller stamps each input with its own. A press always acts at once;
-/// a gesture cancels afterwards.
-/// - Double press: a second press within 0.4 s of the last one cancels a run that's under way (counting,
-///   paused, ringing or lingering). With nothing under way, as when the first press silenced and hid the alarm,
-///   it does nothing. The press after a double press is a first press again, so a third quick press starts a
-///   countdown (decision 15).
-/// - Hold: releasing the key 1 s or more after its press cancels a run that's under way.
+/// hold (1 s), and reads no clock: the controller stamps each input with its own, at the moment the key moved. A
+/// press always acts at once; a gesture cancels afterwards.
+/// - Double press: a second press within 0.4 s of the last one cancels whatever is under way (counting, paused,
+///   ringing or lingering) and switches the tool off. It switches the tool off even when the first press left
+///   nothing to cancel, as when it silenced and hid the alarm. The next press switches the tool back on and starts
+///   a countdown: the press after a double press is a first press again, so a third quick press starts a countdown
+///   (decision 15).
+/// - Hold: releasing the key 1 s or more after its press cancels and switches the tool off, as the double press
+///   does.
 ///
-/// A press while leaving counts as one while idle. Key repeats are filtered before they get here.
+/// Only the gestures switch the tool off. Pausing keeps it on, and so do the single presses that cancel or silence
+/// (Advanced). A press while leaving counts as one while idle. Key repeats are filtered before they get here.
 public struct PressPolicy: Equatable, Sendable {
     public enum Input: Equatable, Sendable {
         case press
@@ -24,8 +27,11 @@ public struct PressPolicy: Equatable, Sendable {
         case start
         /// Start the running or paused countdown again from the full duration.
         case restart
-        /// Cancel the run and hide the overlay, stopping the alarm if it rings.
+        /// Cancel the run and hide the overlay, stopping the alarm if it rings. The tool stays on.
         case cancel
+        /// Cancel whatever is under way, hide the overlay and switch the tool off: what the cancel gestures do
+        /// (spec 5.6.2). The next press switches the tool back on and starts a countdown.
+        case cancelAndSwitchOff
         /// Pause the running countdown.
         case pause
         /// Resume the paused countdown.
@@ -46,7 +52,8 @@ public struct PressPolicy: Equatable, Sendable {
     /// Absorbs float noise in the input times, so a press exactly 0.4 s later still counts as quick.
     private static let timeSlack: TimeInterval = 1e-9
 
-    private var lastPress: TimeInterval?
+    /// When the last press came, as its input was stamped; nil before the first and after `reset()`.
+    public private(set) var lastPress: TimeInterval?
     /// Whether the last press was the second of a double press, so the next one starts afresh.
     private var lastPressEndedDoublePress = false
 
@@ -58,7 +65,7 @@ public struct PressPolicy: Equatable, Sendable {
     ) -> Action {
         switch input {
         case .press: press(at: time, phase: phase, settings: settings)
-        case .release: release(at: time, phase: phase, settings: settings)
+        case .release: release(at: time, settings: settings)
         }
     }
 
@@ -94,25 +101,14 @@ public struct PressPolicy: Equatable, Sendable {
         let endsDoublePress = settings.cancelGesture == .doublePress && isQuick && !lastPressEndedDoublePress
         lastPress = time
         lastPressEndedDoublePress = endsDoublePress
-        if endsDoublePress {
-            return Self.hasRunUnderWay(phase) ? .cancel : .ignore
-        }
+        if endsDoublePress { return .cancelAndSwitchOff }
         return Self.action(forPressIn: phase, settings: settings)
     }
 
-    private func release(at time: TimeInterval, phase: TimerPhase, settings: TimerOverlaySettings) -> Action {
+    private func release(at time: TimeInterval, settings: TimerOverlaySettings) -> Action {
         guard settings.cancelGesture == .hold, let pressed = lastPress,
-              time - pressed >= Self.holdDuration - Self.timeSlack,
-              Self.hasRunUnderWay(phase)
+              time - pressed >= Self.holdDuration - Self.timeSlack
         else { return .ignore }
-        return .cancel
-    }
-
-    /// A run the cancel gestures can cancel: counting, paused, ringing or lingering.
-    private static func hasRunUnderWay(_ phase: TimerPhase) -> Bool {
-        switch phase {
-        case .counting, .paused, .ringing, .lingering: true
-        case .idle, .leaving: false
-        }
+        return .cancelAndSwitchOff
     }
 }

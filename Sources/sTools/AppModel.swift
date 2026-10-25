@@ -25,9 +25,6 @@ final class AppModel {
     var history = NavigationHistory()
     /// Where the next page shown should scroll to; the page clears it once it has.
     var pendingPageAnchor: PageAnchor?
-    /// The actions of a new hotkey Home ▸ Hotkeys opens its editor with (Timer Overlay's Set in Hotkeys…); Home
-    /// clears it once the editor is open.
-    var pendingNewHotkeyActions: Set<HotkeyAction>?
     var appearance: AppearanceSettings
     var general: GeneralSettings
     var updates: UpdateSettings
@@ -46,6 +43,8 @@ final class AppModel {
     @ObservationIgnored let keyRebinder: KeyRebinderController?
     /// Settings ▸ Updates and Check for Updates… (spec 6.3); its updater is Sparkle in the app, nil or a fake in tests.
     let updateCenter: UpdateCenter
+    /// Settings ▸ Updates ▸ Install from DMG…: replaces this copy with the sTools in a DMG someone downloaded.
+    let dmgInstaller: DMGInstaller
     @ObservationIgnored let loginItem: any LoginItemControlling
     @ObservationIgnored var wasAccessibilityGranted: Bool
     /// Held while a tool that needs Accessibility runs, so a revoked grant turns it off (`updateToolPolling()`).
@@ -64,7 +63,7 @@ final class AppModel {
     @ObservationIgnored var lastKarabinerRequirement: KarabinerRequirement?
     /// What the Prologue's trials have seen so far; fresh each time the introduction starts.
     @ObservationIgnored var trials = TrialSession()
-    /// Asks before Set in Hotkeys… turns hotkeys on (plan decision 14); true to turn them on. Tests replace it, so no
+    /// Asks before the Timer trial's Start-timer key turns hotkeys on (plan decision 14); true to turn them on. Tests replace it, so no
     /// test shows an alert.
     @ObservationIgnored var confirmTurningOnHotkeys: @MainActor () -> Bool = AppModel.askToTurnOnHotkeys
     /// Follows macOS's Reduce motion into the theme. Only the real app has one; tests set the theme themselves.
@@ -77,6 +76,9 @@ final class AppModel {
         store: services.settings, registrar: hotkeyRegistrar,
         toolStates: { [weak self] in self?.hotkeyToolStates() ?? [:] },
         handler: { [weak self] events in self?.handleHotkeyPress(events) })
+    /// Tells Hotkeys which app is in front, for Where hotkeys work (spec 6.1). Only the real app has one; a center
+    /// nobody tells acts as if sTools were in front.
+    @ObservationIgnored var hotkeyFrontApp: HotkeyFrontAppWatcher?
     /// Shows each press's confirmation over the game.
     @ObservationIgnored let hotkeyHUD: any HotkeyConfirmationPresenting
     /// The sidebar marker's glide and detents (spec 3.4); tests replace it with one on a fake player and clock.
@@ -84,7 +86,7 @@ final class AppModel {
 
     /// Every tool starts off (spec 3.5). `controllers` holds the tools that exist so far.
     init(services: ToolServices, theme: STTheme, sound: STSoundPlayer, controllers: [ToolID: any ToolController],
-         keyRebinder: KeyRebinderController? = nil, updater: (any AppUpdating)? = nil,
+         keyRebinder: KeyRebinderController? = nil, updater: (any AppUpdating)? = nil, dmgInstaller: DMGInstaller? = nil,
          hotkeyRegistrar: any HotkeyRegistering, hotkeyHUD: any HotkeyConfirmationPresenting,
          loginItem: any LoginItemControlling) {
         self.services = services
@@ -93,6 +95,7 @@ final class AppModel {
         self.controllers = controllers
         self.keyRebinder = keyRebinder
         updateCenter = UpdateCenter(updater: updater, notices: AlertUpdateNoticePresenter(theme: theme))
+        self.dmgInstaller = dmgInstaller ?? DMGInstaller()
         self.hotkeyRegistrar = hotkeyRegistrar
         self.hotkeyHUD = hotkeyHUD
         self.loginItem = loginItem
@@ -104,10 +107,17 @@ final class AppModel {
         wasAccessibilityGranted = services.permissions.status(.accessibility) == .granted
         watchAccessibility()
         updateCenter.apply(updates)
-        (controllers[.screenRecording] as? ScreenRecordingController)?.requestEnable = { [weak self] in
+        let recording = controllers[.screenRecording] as? ScreenRecordingController
+        recording?.requestEnable = { [weak self] in
             guard let self else { return false }
             self.setTool(.screenRecording, on: true)
             return self.isOn(.screenRecording)
+        }
+        // Stopping a recording turns the tool off right then (spec 5.4.4), through its switch.
+        recording?.requestDisable = { [weak self] in self?.setTool(.screenRecording, on: false) }
+        // The key's start is confirmed over the game once the recording writes, not at the press.
+        recording?.keyStartEnded = { [weak self] outcome in
+            self?.confirm([HotkeyConfirmation.recordingStartEffect(outcome)])
         }
         // Start, Test, placement mode and the Start-timer key switch the tool on through its switch, so rule R10 holds.
         (controllers[.timerOverlay] as? TimerOverlayController)?.requestEnable = { [weak self] in
@@ -123,22 +133,29 @@ final class AppModel {
     /// The production wiring: real services, the live Accessibility source and the tool controllers.
     convenience init() {
         let theme = STTheme()
+        let sound = STSoundPlayer(theme: theme)
         let services = ToolServices(
             settings: SettingsStore(directory: SettingsStore.defaultDirectory()),
             displays: DisplayDirectory(),
             minecraft: MinecraftLocator(source: AXMinecraftSource()),
             permissions: PermissionCenter())
-        self.init(services: services, theme: theme, sound: STSoundPlayer(theme: theme), controllers: [
-            .nbbOverlay: NBBOverlayController(services: services),
-            .windowBackdrop: BackdropController(services: services),
+        self.init(services: services, theme: theme, sound: sound, controllers: [
+            .nbbOverlay: NBBOverlayController(services: services, theme: theme),
+            .windowBackdrop: BackdropController(services: services, theme: theme),
             .crosshair: CrosshairController(services: services),
             // The app's own theme, so the overlay follows Reduce animations even while the window is closed.
             .timerOverlay: TimerOverlayController(services: services, theme: theme),
-            .screenRecording: ScreenRecordingController(services: services),
+            // The Save/Delete question after a stop floats in a panel of its own, so it shows over Minecraft too.
+            .screenRecording: ScreenRecordingController(
+                services: services, decisionPresenter: RecordingDecisionPanel(theme: theme, sound: sound)),
         ], keyRebinder: KeyRebinderController(services: services), updater: AppUpdater(),
         hotkeyRegistrar: CarbonHotkeyRegistrar(), hotkeyHUD: HotkeyHUD(theme: theme), loginItem: SystemLoginItem())
         minecraft.start()
         _ = hotkeys // starts registering any saved hotkeys immediately, matching the other services.
+        // From the first moment, hotkeys follow the app in front (Where hotkeys work), on each app switch.
+        let frontApp = HotkeyFrontAppWatcher(center: hotkeys, frontmost: WorkspaceFrontmostApp(), minecraft: minecraft)
+        frontApp.start()
+        hotkeyFrontApp = frontApp
         restoreToolsIfNeeded()
         systemMotion = SystemMotionWatcher(theme: theme)
     }
@@ -152,10 +169,8 @@ final class AppModel {
         case .alertFirstButtonReturn:
             break
         case .alertSecondButtonReturn:
-            Task {
-                await recording.stopRecording(explanation: nil)
-                if recording.phase == .deciding { await recording.save(name: nil) }
-            }
+            // Saved under its date-and-time name without the question; the tool switches off after, as after any stop.
+            Task { await recording.stopRecording(explanation: nil, savesWithoutAsking: true) }
         default:
             DispatchQueue.main.async { [weak self] in self?.openMainWindow?() }
         }

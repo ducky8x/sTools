@@ -4,12 +4,17 @@ import Testing
 
 @Suite("HotkeySettings")
 struct HotkeySettingsTests {
+    /// A new install (no `hotkeys.json`) has ⌘1–⌘5 with hotkeys on: by default they work only in sTools and
+    /// Minecraft, so they take no other app's keys. A value built in code starts off and empty, as before.
     @Test func identityAndDefaults() {
         #expect(HotkeySettings.name == "hotkeys")
-        #expect(HotkeySettings.version == 1)
-        #expect(HotkeySettings.defaultValue.isEnabled == false)
-        #expect(HotkeySettings.defaultValue.bindings.isEmpty)
+        #expect(HotkeySettings.version == 3)
+        #expect(HotkeySettings.defaultValue.isEnabled, "a new install starts with hotkeys on")
+        #expect(HotkeySettings.defaultValue.bindings.map(\.combo) == HotkeyKeySet.command.combos, "a new install's ⌘1–⌘5")
         #expect(HotkeySettings.defaultValue.showsConfirmation)
+        #expect(HotkeySettings.defaultValue.scope == .sToolsAndMinecraft)
+        #expect(!HotkeySettings().isEnabled)
+        #expect(HotkeySettings().bindings.isEmpty)
     }
 
     /// Documents saved before the confirmation setting existed keep their switch and bindings, and get it on.
@@ -45,9 +50,45 @@ struct HotkeySettingsTests {
         #expect(binding.actions == [.toggle(.crosshair), .startStopRecording])
     }
 
+    /// A file that exists keeps what it has: without a list it has none, and gets no new install's key set.
     @Test func missingKeysFallBackToDefaults() throws {
         let settings = try JSONDecoder().decode(HotkeySettings.self, from: Data("{}".utf8))
-        #expect(settings == .defaultValue)
+        #expect(settings == HotkeySettings())
+    }
+
+    // MARK: Where hotkeys work
+
+    @Test func scopeDefaultsToSToolsAndMinecraft() {
+        #expect(HotkeySettings.defaultValue.scope == .sToolsAndMinecraft)
+        #expect(HotkeySettings().scope == .sToolsAndMinecraft)
+    }
+
+    /// Every file from before the setting existed has no `scope`; it gets the default and keeps everything else.
+    @Test func filesWithoutScopeGetTheDefault() throws {
+        let older = """
+        {"isEnabled":true,"showsConfirmation":false,"bindings":[{"id":"5B0C8B8E-6D0B-4F1E-9B7B-0B7C1C3D4E5F",
+         "combo":{"keyCode":8,"modifiers":6144},"actions":["toggle.crosshair"]}]}
+        """
+        let settings = try JSONDecoder().decode(HotkeySettings.self, from: Data(older.utf8))
+        #expect(settings.scope == .sToolsAndMinecraft)
+        #expect(settings.isEnabled)
+        #expect(!settings.showsConfirmation)
+        #expect(settings.bindings.count == 1)
+    }
+
+    @Test func anUnknownOrWrongScopeFallsBackToTheDefaultAlone() throws {
+        for scope in [#""somewhereNew""#, "3", "true", #"{"a":1}"#, "null"] {
+            let json = #"{"isEnabled":true,"bindings":[],"showsConfirmation":false,"scope":\#(scope)}"#
+            let settings = try JSONDecoder().decode(HotkeySettings.self, from: Data(json.utf8))
+            #expect(settings == HotkeySettings(isEnabled: true, bindings: [], showsConfirmation: false), "\(scope)")
+        }
+    }
+
+    @Test func everywhereRoundTrips() throws {
+        let value = HotkeySettings(isEnabled: true, bindings: [], scope: .everywhere)
+        let data = try JSONEncoder().encode(value)
+        #expect(String(decoding: data, as: UTF8.self).contains(#""scope":"everywhere""#))
+        #expect(try JSONDecoder().decode(HotkeySettings.self, from: data) == value)
     }
 
     // MARK: The old pause setting
@@ -62,7 +103,7 @@ struct HotkeySettingsTests {
         let data = try JSONEncoder().encode(settings)
         let json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
         #expect(json["pausesWhileSToolsIsActive"] == nil)
-        #expect(Set(json.keys) == ["isEnabled", "bindings", "showsConfirmation"])
+        #expect(Set(json.keys) == ["isEnabled", "bindings", "showsConfirmation", "scope"])
     }
 
     // MARK: Lossy decoding (one bad entry never costs the rest)
@@ -126,7 +167,7 @@ struct HotkeySettingsTests {
 
     @Test func wrongTypesFallBackToDefaults() throws {
         let allWrong = #"{"isEnabled":"yes","showsConfirmation":3,"pausesWhileSToolsIsActive":"no","bindings":{"a":1}}"#
-        #expect(try JSONDecoder().decode(HotkeySettings.self, from: Data(allWrong.utf8)) == .defaultValue)
+        #expect(try JSONDecoder().decode(HotkeySettings.self, from: Data(allWrong.utf8)) == HotkeySettings())
 
         let oneWrong = #"{"isEnabled":true,"showsConfirmation":false,"pausesWhileSToolsIsActive":false,"bindings":"oops"}"#
         let settings = try JSONDecoder().decode(HotkeySettings.self, from: Data(oneWrong.utf8))
