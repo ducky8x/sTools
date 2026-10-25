@@ -19,15 +19,15 @@ struct RecordingSettingsSection: View {
                         Button("Choose\u{2026}", action: chooseFolder).buttonStyle(STButtonStyle(.secondary))
                     }
                 }
-                STSettingsRow("Frame rate") {
+                STSettingsRow("Frame rate", combinesForAccessibility: false) {
                     STSegmented(selection: $controller.options.frameRate, options: [.init(.fps60, "60 fps"), .init(.fps30, "30 fps")])
                 }
-                STSettingsRow("Output size") {
+                STSettingsRow("Output size", combinesForAccessibility: false) {
                     STSegmented(selection: $controller.options.outputSize, options: [
                         .init(.native, "Native"), .init(.p1440, "1440p"), .init(.p1080, "1080p"),
                     ])
                 }
-                STSettingsRow("File type", showsRule: false) {
+                STSettingsRow("File type", showsRule: false, combinesForAccessibility: false) {
                     STSegmented(selection: $controller.options.fileType, options: [.init(.mp4, ".mp4"), .init(.mov, ".mov")])
                 }
             }
@@ -35,7 +35,7 @@ struct RecordingSettingsSection: View {
 
             STAdvancedDisclosure(isExpanded: $showsAdvanced) {
                 VStack(alignment: .leading, spacing: 0) {
-                    STSettingsRow("Canvas size") {
+                    STSettingsRow("Canvas size", combinesForAccessibility: false) {
                         STSegmented(selection: canvasChoice, options: [.init(false, "Minecraft\u{2019}s display"), .init(true, "Custom")])
                     }
                     if case .custom(let size) = controller.options.canvas {
@@ -46,7 +46,7 @@ struct RecordingSettingsSection: View {
                             }
                         }
                     }
-                    STSettingsRow("Codec") {
+                    STSettingsRow("Codec", combinesForAccessibility: false) {
                         STSegmented(selection: $controller.options.codec, options: [.init(.h264, "H.264"), .init(.hevc, "HEVC")])
                     }
                     STSettingsRow("Quality") {
@@ -64,12 +64,12 @@ struct RecordingSettingsSection: View {
                     STSettingsRow("Ask Save or Delete on stop") {
                         STSwitch(isOn: $controller.options.askSaveDelete, label: "Ask Save or Delete on stop")
                     }
-                    STSettingsRow("Countdown") {
+                    STSettingsRow("Countdown", combinesForAccessibility: false) {
                         STSegmented(selection: $controller.options.countdown, options: [
                             .init(.off, "Off"), .init(.threeSeconds, "3 s"), .init(.fiveSeconds, "5 s"),
                         ])
                     }
-                    STSettingsRow("Split into files every") {
+                    STSettingsRow("Split into files every", combinesForAccessibility: false) {
                         STSegmented(selection: $controller.options.split, options: [
                             .init(.off, "Off"), .init(.thirtyMinutes, "30 min"), .init(.sixtyMinutes, "60 min"), .init(.twoHours, "120 min"),
                         ])
@@ -81,7 +81,7 @@ struct RecordingSettingsSection: View {
                     STSettingsRow("Live preview while recording") {
                         STSwitch(isOn: $controller.options.livePreview, label: "Live preview while recording")
                     }
-                    STSettingsRow("Minimized window source") {
+                    STSettingsRow("Minimized window source", combinesForAccessibility: false) {
                         STSegmented(selection: $controller.options.minimizedWindowBehavior, options: [
                             .init(.holdLastFrame, "Hold last frame"), .init(.showNothing, "Show nothing"),
                         ])

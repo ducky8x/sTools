@@ -9,7 +9,7 @@ struct CrosshairShapeRow: View {
     ]
 
     var body: some View {
-        STSettingsRow("Shape") {
+        STSettingsRow("Shape", combinesForAccessibility: false) {
             STSegmented(selection: $settings.shape, options: Self.options)
         }
     }

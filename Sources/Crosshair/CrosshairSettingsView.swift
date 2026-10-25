@@ -63,7 +63,7 @@ public struct CrosshairSettingsView: View {
                     STSettingsRow("Show only while Minecraft is focused") {
                         STSwitch(isOn: $controller.settings.visibleOnlyWhileMinecraftFocused, label: "Show only while Minecraft is focused")
                     }
-                    STSettingsRow("Display") {
+                    STSettingsRow("Display", combinesForAccessibility: false) {
                         STSegmented(selection: $controller.settings.displayChoice, options: [
                             .init(.followMinecraft, "Follow Minecraft"), .init(.specific, "A specific display"),
                         ])

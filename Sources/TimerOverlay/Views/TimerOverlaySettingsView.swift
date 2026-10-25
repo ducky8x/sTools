@@ -84,7 +84,7 @@ public struct TimerOverlaySettingsView: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 DurationPicker(settings: $controller.settings)
-                STSettingsRow("Look") {
+                STSettingsRow("Look", combinesForAccessibility: false) {
                     STSegmented(selection: $controller.settings.look, options: [
                         .init(.plate, "sTools plate"), .init(.digitsOnly, "Digits only"), .init(.compactPill, "Compact pill"),
                     ])
