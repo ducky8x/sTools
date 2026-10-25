@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import STDesign
 import Testing
 @testable import NBBOverlay
 @testable import STPlatform
@@ -79,6 +80,59 @@ struct NBBOverlayControllerTests {
         controller.setEnabled(false)
         controller.setEnabled(true)
         #expect(controller.drawCount == 3, "switching off let the content go")
+    }
+
+    private static let result = NBBEvents.Stronghold(
+        resultType: .triangulation,
+        predictions: [NBBEvents.Prediction(chunkX: -41, chunkZ: 108, certainty: 0.94, overworldDistance: 1580)],
+        eyeThrows: [], playerPosition: nil)
+
+    @MainActor private func waitUntil(_ condition: @MainActor () -> Bool, seconds: Double = 2) async {
+        let clock = SuspendingClock()
+        let deadline = clock.now.advanced(by: .seconds(seconds))
+        while !condition(), clock.now < deadline { try? await Task.sleep(for: .milliseconds(10)) }
+    }
+
+    /// Spec 5.1.1: when Ninjabrain Bot resets, the overlay fades out; new data fades it back in.
+    @MainActor @Test func aResetFadesTheOverlayOutThenHidesIt() async {
+        let controller = NBBOverlayController(services: makeServices(tempDirectory: tempDirectory()), connection: NBBConnection(source: FakeEventSource([])))
+        controller.settings.fadeSeconds = 0.15
+        controller.sample = Self.result
+        controller.setEnabled(true)
+        defer { controller.setEnabled(false) }
+        #expect(controller.isOverlayVisible)
+        controller.sample = nil
+        #expect(controller.isOverlayVisible, "still fading out")
+        await waitUntil { !controller.isOverlayVisible }
+        #expect(!controller.isOverlayVisible)
+    }
+
+    @MainActor @Test func newDataDuringTheFadeBringsTheOverlayStraightBack() async throws {
+        let controller = NBBOverlayController(services: makeServices(tempDirectory: tempDirectory()), connection: NBBConnection(source: FakeEventSource([])))
+        controller.settings.fadeSeconds = 0.2
+        controller.sample = Self.result
+        controller.setEnabled(true)
+        defer { controller.setEnabled(false) }
+        controller.sample = nil
+        controller.sample = Self.result
+        try await Task.sleep(for: .milliseconds(400))
+        #expect(controller.isOverlayVisible, "the fade-out's end didn't hide it")
+    }
+
+    @MainActor @Test func withFadingOffOrMotionReducedAResetHidesAtOnce() {
+        let reduced = STTheme()
+        reduced.motionMode = .reduced
+        for (fadeOn, theme) in [(false, STTheme?.none), (true, reduced)] {
+            let controller = NBBOverlayController(
+                services: makeServices(tempDirectory: tempDirectory()), connection: NBBConnection(source: FakeEventSource([])), theme: theme)
+            controller.settings.fadeOnResetEnabled = fadeOn
+            controller.sample = Self.result
+            controller.setEnabled(true)
+            #expect(controller.fadeDuration == 0)
+            controller.sample = nil
+            #expect(!controller.isOverlayVisible)
+            controller.setEnabled(false)
+        }
     }
 
     /// The page's preview shows only Ninjabrain Bot's live result: the intro's sample stays in the intro (spec 4,

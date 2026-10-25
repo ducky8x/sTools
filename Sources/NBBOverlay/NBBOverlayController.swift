@@ -24,6 +24,13 @@ public final class NBBOverlayController: ToolController {
     public let copies: NBBCopiesMonitor
     @ObservationIgnored private let panel = OverlayPanel(role: .topmost)
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
+    /// For Reduce animations: while motion is reduced, the overlay shows and hides at once.
+    @ObservationIgnored private let theme: STTheme?
+    /// Counts fades, so a fade-out's end hides the panel only if nothing showed it again since.
+    @ObservationIgnored private var fadeGeneration = 0
+    @ObservationIgnored private var isFadingOut = false
+    /// Whether the panel is down because Ninjabrain Bot had nothing to show (a reset), so new data fades it back in.
+    @ObservationIgnored private var hiddenForNoData = true
 
     /// The panel's frame and the display it's shown on, from the last `refreshIfEnabled()` — what a
     /// live placement-mode drag or resize starts from.
@@ -43,8 +50,11 @@ public final class NBBOverlayController: ToolController {
         var settings: NBBOverlaySettings
     }
 
-    public init(services: ToolServices, connection: NBBConnection = NBBConnection(), copies: NBBCopiesMonitor? = nil) {
+    public init(
+        services: ToolServices, connection: NBBConnection = NBBConnection(), copies: NBBCopiesMonitor? = nil, theme: STTheme? = nil
+    ) {
         self.services = services
+        self.theme = theme
         self.connection = connection
         self.copies = copies ?? NBBCopiesMonitor()
         settings = services.settings.load(NBBOverlaySettings.self)
@@ -101,7 +111,11 @@ public final class NBBOverlayController: ToolController {
             copies.stop()
             for observer in observers { NotificationCenter.default.removeObserver(observer) }
             observers.removeAll()
+            fadeGeneration += 1
+            isFadingOut = false
+            hiddenForNoData = true
             panel.hide()
+            panel.alphaValue = 1
             // Off, the overlay's view tree goes too; switching on builds it again.
             panel.contentView = nil
             drawn = nil
@@ -187,7 +201,7 @@ public final class NBBOverlayController: ToolController {
         guard isEnabled else { return }
         guard let display = targetDisplay() else {
             currentDisplay = nil
-            panel.hide()
+            hidePanel(fading: false)
             return
         }
         currentDisplay = display
@@ -202,12 +216,12 @@ public final class NBBOverlayController: ToolController {
         // focus; otherwise both independent restrictions apply (spec: "an option for both").
         if !settings.placementModeEnabled {
             if settings.requiresMinecraftFocus, services.minecraft.active?.isFrontmost != true {
-                panel.hide()
+                hidePanel(fading: false)
                 return
             }
             if settings.requiresData, content == .hidden, messages.isEmpty,
                !NBBOverlayLayout.boatCountsAsData(connection.boat, settings: settings) {
-                panel.hide()
+                hidePanel(fading: true)
                 return
             }
         }
@@ -239,7 +253,77 @@ public final class NBBOverlayController: ToolController {
         let origin = CGPoint(
             x: display.frame.midX + CGFloat(settings.offsetX) - size.width / 2,
             y: display.frame.midY - CGFloat(settings.offsetY) - size.height / 2)
-        panel.show(frame: CGRect(origin: origin, size: size))
+        showPanel(frame: CGRect(origin: origin, size: size))
+    }
+
+    // MARK: - Fade on reset (spec 5.1.1)
+
+    /// How long a reset's fade takes: none while it's off, while motion is reduced, or at 0 s.
+    var fadeDuration: TimeInterval {
+        guard settings.fadeOnResetEnabled, theme?.reduceMotion != true else { return 0 }
+        return settings.fadeSeconds
+    }
+
+    /// Whether the overlay is on screen (fading out counts as on screen), for tests.
+    var isOverlayVisible: Bool { panel.isVisible }
+
+    /// Hides the panel. `fading` is for Ninjabrain Bot running out of data (a reset): the panel fades out over
+    /// `fadeDuration`, and new data before the fade ends brings it straight back. Anything else (Minecraft losing
+    /// focus, no display) hides it at once.
+    private func hidePanel(fading: Bool) {
+        guard panel.isVisible, !isFadingOut || !fading else {
+            if !panel.isVisible { hiddenForNoData = fading }
+            return
+        }
+        fadeGeneration += 1
+        let generation = fadeGeneration
+        hiddenForNoData = fading
+        let duration = fading ? fadeDuration : 0
+        guard duration > 0 else {
+            isFadingOut = false
+            panel.hide()
+            panel.alphaValue = 1
+            return
+        }
+        isFadingOut = true
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = duration
+            panel.animator().alphaValue = 0
+        }
+        // The panel goes once the fade is over, unless something showed it again meanwhile. A timed task rather than
+        // the animation's completion handler, which AppKit doesn't call for a window it never draws.
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(duration))
+            guard let self, self.fadeGeneration == generation else { return }
+            self.isFadingOut = false
+            self.panel.hide()
+            self.panel.alphaValue = 1
+        }
+    }
+
+    /// Shows the panel at `frame`; after a reset it fades back in.
+    private func showPanel(frame: CGRect) {
+        let comingBack = !panel.isVisible || isFadingOut
+        guard comingBack else {
+            panel.show(frame: frame)
+            return
+        }
+        fadeGeneration += 1
+        let duration = hiddenForNoData ? fadeDuration : 0
+        let wasFadingOut = isFadingOut
+        isFadingOut = false
+        hiddenForNoData = false
+        guard duration > 0 else {
+            panel.alphaValue = 1
+            panel.show(frame: frame)
+            return
+        }
+        if !wasFadingOut { panel.alphaValue = 0 }
+        panel.show(frame: frame)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = duration
+            panel.animator().alphaValue = 1
+        }
     }
 
     private func targetDisplay() -> DisplayInfo? {

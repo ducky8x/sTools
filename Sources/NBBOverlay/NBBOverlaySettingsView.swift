@@ -88,8 +88,14 @@ public struct NBBOverlaySettingsView: View {
                     STSettingsRow("Prediction rows") {
                         STSlider(value: maxRowsBinding, in: Double(NBBOverlaySettings.maxPredictionRowsRange.lowerBound)...Double(NBBOverlaySettings.maxPredictionRowsRange.upperBound), label: "Prediction rows", valueText: { "\(Int($0))" })
                     }
-                    // "Fade on reset" and its duration (spec 5.1) stay hidden until the overlay can fade: today it
-                    // shows and hides at once. The stored values are kept for when it does.
+                    STSettingsRow("Fade on reset") {
+                        STSwitch(isOn: $controller.settings.fadeOnResetEnabled, label: "Fade on reset")
+                    }
+                    if controller.settings.fadeOnResetEnabled {
+                        STSettingsRow("Fade duration") {
+                            STSlider(value: $controller.settings.fadeSeconds, in: NBBOverlaySettings.fadeSecondsRange, step: 0.05, label: "Fade duration", valueText: { String(format: "%.2f s", $0) })
+                        }
+                    }
                     STSettingsRow("Reset", showsRule: false) {
                         Button("Reset to default\u{2026}") { isResetConfirming = true }
                             .buttonStyle(STButtonStyle(.secondary))
