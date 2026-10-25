@@ -67,8 +67,8 @@ private func eventually(
     timeout: Duration = .seconds(3),
     _ condition: @MainActor () -> Bool
 ) async -> Bool {
-    let deadline = ContinuousClock.now + timeout
-    while ContinuousClock.now < deadline {
+    let deadline = SuspendingClock.now + timeout
+    while SuspendingClock.now < deadline {
         if condition() { return true }
         try? await Task.sleep(for: .milliseconds(2))
     }

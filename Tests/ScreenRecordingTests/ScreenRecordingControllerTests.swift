@@ -277,8 +277,8 @@ private struct Harness {
     /// Waits (bounded, generously: arming and starting can take seconds while the whole suite runs) for `condition`,
     /// yielding between checks.
     func waitUntil(_ condition: () -> Bool) async -> Bool {
-        let deadline = ContinuousClock.now + .seconds(20)
-        while !condition(), ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(5)) }
+        let deadline = SuspendingClock.now + .seconds(20)
+        while !condition(), SuspendingClock.now < deadline { try? await Task.sleep(for: .milliseconds(5)) }
         return condition()
     }
 
@@ -1344,10 +1344,10 @@ struct ScreenRecordingQuickStartTests {
         #expect(harness.controller.minecraftFrameWait == .milliseconds(500))
         harness.factory.baseSendsFirstFrame = false
         harness.controller.minecraftFrameWait = .milliseconds(300)
-        let pressed = ContinuousClock.now
+        let pressed = SuspendingClock.now
         harness.controller.toggleRecording()
         #expect(await harness.waitUntil { harness.controller.phase == .recording })
-        let waited = ContinuousClock.now - pressed
+        let waited = SuspendingClock.now - pressed
         #expect(waited >= .milliseconds(300))
         #expect(waited < .seconds(5))
         await harness.controller.stopRecording(explanation: nil)

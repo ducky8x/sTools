@@ -237,13 +237,13 @@ struct TimerKeyLogTests {
         keys.tap(at: 0)
         keys.tap(at: 0.25)
         // The unified log can take a moment to hand back what was just written.
-        let deadline = ContinuousClock.now + .seconds(15)
+        let deadline = SuspendingClock.now + .seconds(15)
         var lines: [String] = []
         repeat {
             lines = try OSLogLineReader().recentLines(since: since, limit: 10_000)
             if lines.contains(where: { $0.contains("Timer Overlay on \u{2192} off") }) { break }
             try await Task.sleep(for: .milliseconds(50))
-        } while ContinuousClock.now < deadline
+        } while SuspendingClock.now < deadline
         #expect(lines.contains { $0.contains("\u{2318}2 from macOS at 7321.000 down: counted, Start timer") })
         #expect(lines.contains { $0.contains("\u{2318}2 from macOS at 7321.250 down: counted, Start timer") })
         #expect(lines.contains { $0.contains("counting \u{2192} cancelAndSwitchOff; Timer Overlay on \u{2192} off") })

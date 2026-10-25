@@ -41,6 +41,17 @@ private struct FakeSignatures: AppSignatureChecking {
     func isSignedLikeRunningApp(_ app: URL) -> Bool { passes }
 }
 
+/// Runs a tool and waits for it in a termination handler, never blocking the calling actor.
+private func runOffMain(_ tool: String, _ arguments: [String]) async throws -> Int32 {
+    try await withCheckedThrowingContinuation { continuation in
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: tool)
+        process.arguments = arguments
+        process.terminationHandler = { continuation.resume(returning: $0.terminationStatus) }
+        do { try process.run() } catch { continuation.resume(throwing: error) }
+    }
+}
+
 @Suite("Install from DMG")
 @MainActor
 struct DMGInstallerTests {
@@ -176,12 +187,11 @@ struct DMGInstallerTests {
         let source = root.appending(path: "source")
         try makeApp(at: source.appending(path: "sTools.app"), build: "42", marker: "dmg")
         let dmg = root.appending(path: "test.dmg")
-        let create = Process()
-        create.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
-        create.arguments = ["create", "-quiet", "-fs", "HFS+", "-volname", "sToolsTest", "-srcfolder", source.path, "-format", "UDZO", dmg.path]
-        try create.run()
-        create.waitUntilExit()
-        try #require(create.terminationStatus == 0)
+        // Waited for without blocking the main actor: under a full, parallel test run hdiutil takes a while, and other
+        // suites in this process need the main actor meanwhile.
+        let status = try await runOffMain("/usr/bin/hdiutil", [
+            "create", "-quiet", "-fs", "HFS+", "-volname", "sToolsTest", "-srcfolder", source.path, "-format", "UDZO", dmg.path])
+        try #require(status == 0)
         let mounter = HdiutilMounter()
         let mountPoint = try await mounter.attach(dmg)
         let app = DMGInstaller.findApp(in: mountPoint, bundleIdentifier: bundleID)

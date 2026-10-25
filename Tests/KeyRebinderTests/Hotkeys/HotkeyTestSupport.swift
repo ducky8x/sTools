@@ -98,7 +98,7 @@ enum HotkeyFixtures {
 /// later). False when it still doesn't after `timeout`.
 @MainActor
 func eventually(timeout: Duration = .seconds(2), _ condition: () -> Bool) async -> Bool {
-    let clock = ContinuousClock()
+    let clock = SuspendingClock()
     let deadline = clock.now.advanced(by: timeout)
     while !condition() {
         guard clock.now < deadline else { return false }

@@ -59,11 +59,11 @@ private final class SegmentedWindow {
     }
 
     func spin(_ seconds: TimeInterval) {
-        let end = Date().addingTimeInterval(seconds)
+        let end = SuspendingClock.now.advanced(by: .seconds(seconds))
         repeat {
             host.layoutSubtreeIfNeeded()
             RunLoop.current.run(until: Date().addingTimeInterval(0.03))
-        } while Date() < end
+        } while SuspendingClock.now < end
     }
 
     /// A click `x` points in from the left edge of `frame` (a control's, top-left origin), halfway down it.

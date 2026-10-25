@@ -57,7 +57,7 @@ import Testing
         let queue = DispatchQueue(label: "sTools.test.handler-slot", qos: .userInteractive)
         let (first, last) = await withCheckedContinuation { (continuation: CheckedContinuation<(Duration, Duration), Never>) in
             queue.async {
-                let clock = ContinuousClock()
+                let clock = SuspendingClock()
                 /// The quickest of five runs of 200 calls, so a pause from the rest of the suite doesn't count.
                 func quickestBatch() -> Duration {
                     (0..<5).map { _ in clock.measure { for _ in 0..<200 { slot(0) } } }.min()!

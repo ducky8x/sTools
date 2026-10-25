@@ -226,11 +226,11 @@ private final class Hosted {
     }
 
     func spin(_ seconds: TimeInterval) {
-        let end = Date().addingTimeInterval(seconds)
+        let end = SuspendingClock.now.advanced(by: .seconds(seconds))
         repeat {
             host.layoutSubtreeIfNeeded()
             RunLoop.current.run(until: Date().addingTimeInterval(0.04))
-        } while Date() < end
+        } while SuspendingClock.now < end
     }
 
     func capture() -> NSBitmapImageRep {
@@ -800,11 +800,11 @@ private final class FocusedField {
     }
 
     static func spin(_ host: NSView, _ seconds: TimeInterval = 0.25) {
-        let end = Date().addingTimeInterval(seconds)
+        let end = SuspendingClock.now.advanced(by: .seconds(seconds))
         repeat {
             host.layoutSubtreeIfNeeded()
             RunLoop.current.run(until: Date().addingTimeInterval(0.04))
-        } while Date() < end
+        } while SuspendingClock.now < end
     }
 
     static func findField(_ view: NSView) -> NSTextField? {
@@ -841,8 +841,8 @@ struct STTextFieldInputTests {
         var rep = focused.capture()
         let y = rep.pixelsHigh - 1
         // The underline grows with an animation; on a busy machine it can take longer than one spin to finish.
-        let deadline = Date().addingTimeInterval(3)
-        while Date() < deadline,
+        let deadline = SuspendingClock.now.advanced(by: .seconds(3))
+        while SuspendingClock.now < deadline,
               !(isClose(pixel(rep, x: 20, y: y), hex: STPalette.gold, tolerance: 12)
                 && isClose(pixel(rep, x: rep.pixelsWide - 20, y: y), hex: STPalette.gold, tolerance: 12)) {
             focused.spin()

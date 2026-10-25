@@ -71,8 +71,8 @@ final class FakeEventSource: NBBEventSource, @unchecked Sendable {
 /// duration — robust to the real scheduling delays that show up when the whole test suite is
 /// running under load, where a plain `Task.sleep` for "long enough" isn't always long enough.
 private func waitUntil(timeout: Duration, pollInterval: Duration = .milliseconds(20), _ condition: @Sendable () -> Bool) async {
-    let deadline = ContinuousClock.now + timeout
-    while !condition(), ContinuousClock.now < deadline {
+    let deadline = SuspendingClock.now + timeout
+    while !condition(), SuspendingClock.now < deadline {
         try? await Task.sleep(for: pollInterval)
     }
 }
