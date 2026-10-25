@@ -124,8 +124,8 @@ struct HotkeyWordingTests {
     @Test func theLineSaysWhereHotkeysWorkAndTheKeySet() {
         #expect(HotkeyWording.whereAndKeySet(scope: .sToolsAndMinecraft, keySet: .command, accessibilityGranted: true)
             == "Hotkeys work in sTools and Minecraft · Key set: ⌘1–⌘5")
-        #expect(HotkeyWording.whereAndKeySet(scope: .everywhere, keySet: .functionKeys, accessibilityGranted: true)
-            == "Hotkeys work in every app · Key set: F13–F17")
+        #expect(HotkeyWording.whereAndKeySet(scope: .everywhere, keySet: .option, accessibilityGranted: true)
+            == "Hotkeys work in every app · Key set: ⌥1–⌥5")
         #expect(HotkeyWording.whereAndKeySet(scope: .sToolsAndMinecraft, keySet: .noKeys, accessibilityGranted: true)
             == "Hotkeys work in sTools and Minecraft · Key set: None")
         #expect(HotkeyWording.whereAndKeySet(scope: .everywhere, keySet: nil, accessibilityGranted: true)
@@ -141,8 +141,8 @@ struct HotkeyWordingTests {
             == "Hotkeys work only in sTools until Accessibility is allowed · Key set: ⌘1–⌘5")
         #expect(HotkeyWording.whereAndKeySet(scope: .sToolsAndMinecraft, keySet: nil, accessibilityGranted: false)
             == "Hotkeys work only in sTools until Accessibility is allowed · Key set: Custom")
-        #expect(HotkeyWording.whereAndKeySet(scope: .everywhere, keySet: .functionKeys, accessibilityGranted: false)
-            == "Hotkeys work in every app · Key set: F13–F17")
+        #expect(HotkeyWording.whereAndKeySet(scope: .everywhere, keySet: .option, accessibilityGranted: false)
+            == "Hotkeys work in every app · Key set: ⌥1–⌥5")
     }
 
     // MARK: Spoken names

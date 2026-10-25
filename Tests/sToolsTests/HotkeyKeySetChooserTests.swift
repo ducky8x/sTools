@@ -70,7 +70,7 @@ struct HotkeyKeySetChooserTests {
     /// Every key set is in view on Home at once, in the order the arrow keys cycle through them, and so is each place
     /// hotkeys can work: neither waits behind a menu.
     @Test func everyChoiceIsInViewOnHome() {
-        #expect(HotkeysSection.keySetOptions.map(\.title) == ["⌘1–⌘5", "⌃1–⌃5", "⌥1–⌥5", "F13–F17", "None"])
+        #expect(HotkeysSection.keySetOptions.map(\.title) == ["⌘1–⌘5", "⌃1–⌃5", "⌥1–⌥5", "None"])
         #expect(HotkeysSection.keySetOptions.map(\.value) == HotkeyKeySet.allCases.map(Optional.some))
         #expect(HotkeysSection.scopeOptions.map(\.title) == ["In sTools and Minecraft", "Everywhere"])
         #expect(HotkeysSection.scopeOptions.map(\.value) == HotkeyScope.allCases)
@@ -79,7 +79,7 @@ struct HotkeyKeySetChooserTests {
     /// VoiceOver reads each key set by its name in words ("Command 1 to Command 5"), not its symbols.
     @Test func voiceOverReadsEveryKeySetInWords() {
         #expect(HotkeysSection.keySetOptions.map(\.accessibilityTitle) == [
-            "Command 1 to Command 5", "Control 1 to Control 5", "Option 1 to Option 5", "F13 to F17", "None",
+            "Command 1 to Command 5", "Control 1 to Control 5", "Option 1 to Option 5", "None",
         ])
         #expect(HotkeysSection.scopeOptions.map(\.accessibilityTitle) == ["In sTools and Minecraft", "Everywhere"])
     }
@@ -100,8 +100,6 @@ struct HotkeyKeySetChooserTests {
             == "⌃1 Crosshair · ⌃2 Start timer · ⌃3 NBB Overlay · ⌃4 Screen Recording · ⌃5 Window Backdrop")
         #expect(caption(.option)
             == "⌥1 Crosshair · ⌥2 Start timer · ⌥3 NBB Overlay · ⌥4 Screen Recording · ⌥5 Window Backdrop")
-        #expect(caption(.functionKeys)
-            == "F13 Crosshair · F14 Start timer · F15 NBB Overlay · F16 Screen Recording · F17 Window Backdrop")
         #expect(HotkeysSection.keySetCaption(.noKeys) == "No tool has a key of its own.")
         #expect(HotkeysSection.keySetCaption(nil)
             == "Custom: keys you set yourself. Pick a set for one key per tool, in sidebar order.")
@@ -135,12 +133,12 @@ struct HotkeyKeySetChooserTests {
                 size: CGSize(width: 640, height: 640)).representation(using: .png, properties: [:])
         }
         let command = png()
-        harness.model.hotkeys.apply(.functionKeys)
-        let functionKeys = png()
-        #expect(harness.model.hotkeys.bindings.map(\.combo.displayString) == ["F13", "F14", "F15", "F16", "F17"])
+        harness.model.hotkeys.apply(.option)
+        let option = png()
+        #expect(harness.model.hotkeys.bindings.map(\.combo.displayString) == ["⌥1", "⌥2", "⌥3", "⌥4", "⌥5"])
         ToolHotkey.set(f6, for: .toggle(.crosshair), in: harness.model.hotkeys)
         #expect(harness.model.hotkeys.keySet == nil)
         let custom = png()
-        #expect(Set([command, functionKeys, custom]).count == 3)
+        #expect(Set([command, option, custom]).count == 3)
     }
 }

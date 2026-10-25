@@ -41,20 +41,18 @@ struct HotkeyKeySetTests {
         #expect(HotkeyKeySet.command.combos == digits.map { combo($0, .command) })
         #expect(HotkeyKeySet.control.combos == digits.map { combo($0, .control) })
         #expect(HotkeyKeySet.option.combos == digits.map { combo($0, .option) })
-        #expect(HotkeyKeySet.functionKeys.combos == [105, 107, 113, 106, 64].map { combo($0) })
         #expect(HotkeyKeySet.noKeys.combos.isEmpty)
 
         #expect(HotkeyKeySet.command.combos.map(\.displayString) == ["⌘1", "⌘2", "⌘3", "⌘4", "⌘5"])
         #expect(HotkeyKeySet.control.combos.map(\.displayString) == ["⌃1", "⌃2", "⌃3", "⌃4", "⌃5"])
         #expect(HotkeyKeySet.option.combos.map(\.displayString) == ["⌥1", "⌥2", "⌥3", "⌥4", "⌥5"])
-        #expect(HotkeyKeySet.functionKeys.combos.map(\.displayString) == ["F13", "F14", "F15", "F16", "F17"])
-        #expect(HotkeyKeySet.allCases.map(\.title) == ["⌘1–⌘5", "⌃1–⌃5", "⌥1–⌥5", "F13–F17", "None"])
+        #expect(HotkeyKeySet.allCases.map(\.title) == ["⌘1–⌘5", "⌃1–⌃5", "⌥1–⌥5", "None"])
     }
 
     /// VoiceOver says each set's name in words, as it says a hotkey's keys, rather than reading its symbols.
     @Test func eachSetHasASpokenName() {
         #expect(HotkeyKeySet.allCases.map(\.spokenTitle) == [
-            "Command 1 to Command 5", "Control 1 to Control 5", "Option 1 to Option 5", "F13 to F17", "None",
+            "Command 1 to Command 5", "Control 1 to Control 5", "Option 1 to Option 5", "None",
         ])
     }
 
@@ -72,7 +70,7 @@ struct HotkeyKeySetTests {
         #expect(HotkeyKeySet.command.bindings().map { "\($0.combo.displayString) \(HotkeyWording.summary($0.actions))" }
             == ["⌘1 Crosshair", "⌘2 Start timer", "⌘3 NBB Overlay", "⌘4 Screen Recording", "⌘5 Window Backdrop"])
         #expect(HotkeyKeySet.command.combo(for: .startStopRecording)?.displayString == "⌘4")
-        #expect(HotkeyKeySet.functionKeys.combo(for: .startStopRecording)?.displayString == "F16")
+        #expect(HotkeyKeySet.option.combo(for: .startStopRecording)?.displayString == "⌥4")
     }
 
     // MARK: Which set the list follows
@@ -90,6 +88,19 @@ struct HotkeyKeySetTests {
         #expect(HotkeyKeySet.current(in: bindings) == nil, "a tool without its key: Custom")
     }
 
+    /// F13–F17 was a key set until spec revision 26. A list whose tools' own keys are F13 to F17 is Custom now: no
+    /// set claims it, its keys stay as they are, and picking a set asks first, as for any key set by hand.
+    @Test func aListOnF13ToF17IsCustom() {
+        let fKeys: [UInt16] = [105, 107, 113, 106, 64]
+        let bindings = zip(fKeys, HotkeyKeySet.toolActions).map { HotkeyBinding(combo: combo($0), actions: [$1]) }
+        #expect(bindings.map(\.combo.displayString) == ["F13", "F14", "F15", "F16", "F17"])
+        #expect(HotkeyKeySet.allCases.allSatisfy { set in set.combos.allSatisfy { !fKeys.contains($0.keyCode) } })
+        #expect(HotkeyKeySet.current(in: bindings) == nil)
+        #expect(HotkeyKeySet.name(of: HotkeyKeySet.current(in: bindings)) == "Custom")
+        #expect(HotkeyKeySet.ordered(bindings) == bindings, "already in sidebar order: nothing moves")
+        #expect(HotkeyKeySet.command.replacedEdits(in: bindings).map(\.id) == bindings.map(\.id))
+    }
+
     // MARK: Picking a set changes only its own hotkeys
 
     /// The tools' own hotkeys get the set's keys and come first, in sidebar order, each keeping its id; every other
@@ -99,13 +110,13 @@ struct HotkeyKeySetTests {
         let recordingAndTimer = HotkeyBinding(combo: f6, actions: [.startStopRecording, timer])
         let before = [custom] + HotkeyKeySet.command.bindings() + [recordingAndTimer]
 
-        let after = HotkeyKeySet.functionKeys.applied(to: before)
+        let after = HotkeyKeySet.control.applied(to: before)
         #expect(after.count == before.count)
-        #expect(Array(after[0...4]).map(\.combo) == HotkeyKeySet.functionKeys.combos)
+        #expect(Array(after[0...4]).map(\.combo) == HotkeyKeySet.control.combos)
         #expect(Array(after[0...4]).map(\.actions) == [[crosshair], [timer], [nbb], [recording], [backdrop]])
         #expect(Array(after[0...4]).map(\.id) == Array(before[1...5]).map(\.id), "each own hotkey keeps its id")
         #expect(Array(after[5...]) == [custom, recordingAndTimer], "other hotkeys stay as they are, in their order")
-        #expect(HotkeyKeySet.current(in: after) == .functionKeys)
+        #expect(HotkeyKeySet.current(in: after) == .control)
     }
 
     /// The ⌘1–⌘5 list in an earlier sidebar order (build 449's default: ⌘1 NBB Overlay, ⌘2 Window Backdrop, ⌘3
