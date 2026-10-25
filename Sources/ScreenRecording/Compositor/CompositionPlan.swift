@@ -88,4 +88,24 @@ public struct CompositionPlan: Equatable, Sendable {
         }
         return CompositionPlan(outputSize: output, layers: layers)
     }
+
+    /// The source whose frame the plan shows unchanged over the whole output: its only layer, holding the frame's whole
+    /// buffer at the output's size, pixel for pixel, opaque, without rounded corners or a border. Drawing such a plan
+    /// copies that buffer, so the buffer can go to the encoder as it is (`Compositor.passThrough`). Nil when anything
+    /// has to be drawn: another source, a crop, a scale, black bars, a corner or a border. `bufferSizes` holds each
+    /// layer's buffer size.
+    public func passThroughSource(bufferSizes: [SourceKey: PixelSize]) -> SourceKey? {
+        guard layers.count == 1, let layer = layers.first, let size = bufferSizes[layer.key], size == outputSize,
+              layer.opacity >= 1, layer.cornerRadius <= 0.5, layer.borderWidth <= 0.5 else { return nil }
+        let whole = PixelRect(x: 0, y: 0, width: Double(size.width), height: Double(size.height))
+        guard layer.sourceRect.isClose(to: whole), layer.destination.isClose(to: whole) else { return nil }
+        return layer.key
+    }
+}
+
+private extension PixelRect {
+    /// Within a hundredth of a pixel on every edge.
+    func isClose(to other: PixelRect) -> Bool {
+        abs(x - other.x) < 0.01 && abs(y - other.y) < 0.01 && abs(maxX - other.maxX) < 0.01 && abs(maxY - other.maxY) < 0.01
+    }
 }

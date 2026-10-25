@@ -3,6 +3,7 @@ import CoreImage.CIFilterBuiltins
 import CoreVideo
 import Foundation
 import Metal
+import VideoToolbox
 
 public enum CompositorError: Error, Equatable {
     case noMetalDevice
@@ -27,6 +28,8 @@ public final class Compositor: @unchecked Sendable {
     private let context: CIContext
     private let pool: CVPixelBufferPool
     private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+    /// For `passThrough`, made at its first use.
+    private var copier: FrameCopier?
 
     public init(outputSize: PixelSize) throws {
         guard let device = MTLCreateSystemDefaultDevice() else { throw CompositorError.noMetalDevice }
@@ -63,6 +66,26 @@ public final class Compositor: @unchecked Sendable {
         context.render(image, to: buffer, bounds: extent, colorSpace: colorSpace)
         return buffer
     }
+
+    /// The frame `plan` shows unchanged over the whole output (`CompositionPlan.passThroughSource`), handed on without
+    /// Core Image: one hardware copy into a buffer in the encoder's own format (4:2:0, video range), which the encoder
+    /// takes as it is. The file is the same as from `render`: the encoder turns `render`'s untagged BGRA into 4:2:0
+    /// with the same Rec. 709 matrix, and the copy carries no color tags either, whatever tags the captured frame has.
+    /// Nil when the plan draws anything else or the copy fails; `render` then draws it.
+    public func passThrough(_ plan: CompositionPlan, frames: [SourceKey: VideoFrame]) -> CVPixelBuffer? {
+        guard let key = plan.passThroughSource(bufferSizes: frames.mapValues(\.pixelSize)), let frame = frames[key] else { return nil }
+        if copier == nil { copier = FrameCopier(size: outputSize) }
+        return copier?.copy(frame.pixelBuffer)
+    }
+
+    /// Readies `passThrough` with one throwaway copy of `frame` (any size), so a recording's first frame doesn't wait
+    /// for VideoToolbox to set up (`RecordingWarmUp`).
+    func preparePassThrough(with frame: CVPixelBuffer) {
+        if copier == nil { copier = FrameCopier(size: outputSize) }
+        _ = copier?.copy(frame)
+    }
+
+    var isPreparedForPassThrough: Bool { copier != nil }
 
     /// The same composite as an image, for the page's live preview.
     public func renderImage(_ plan: CompositionPlan, frames: [SourceKey: VideoFrame]) -> CGImage? {
@@ -129,5 +152,44 @@ public final class Compositor: @unchecked Sendable {
         let b = CGFloat((value >> (hasAlpha ? 8 : 0)) & 0xFF) / 255
         let a = hasAlpha ? CGFloat(value & 0xFF) / 255 : 1
         return CIColor(red: r, green: g, blue: b, alpha: a, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!) ?? .white
+    }
+}
+
+/// Copies frames into untagged 4:2:0 video-range buffers with VideoToolbox's pixel transfer, the same conversion the
+/// encoder makes from BGRA (Rec. 709 matrix, no color matching). Call from one queue.
+final class FrameCopier {
+    static let pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+
+    private let session: VTPixelTransferSession
+    private let pool: CVPixelBufferPool
+
+    init?(size: PixelSize) {
+        var session: VTPixelTransferSession?
+        guard VTPixelTransferSessionCreate(allocator: nil, pixelTransferSessionOut: &session) == noErr, let session else { return nil }
+        VTSessionSetProperty(session, key: kVTPixelTransferPropertyKey_RealTime, value: kCFBooleanTrue)
+        VTSessionSetProperty(session, key: kVTPixelTransferPropertyKey_DestinationYCbCrMatrix, value: kCVImageBufferYCbCrMatrix_ITU_R_709_2)
+        let attributes: [String: Any] = [
+            kCVPixelBufferPixelFormatTypeKey as String: Self.pixelFormat,
+            kCVPixelBufferWidthKey as String: size.width,
+            kCVPixelBufferHeightKey as String: size.height,
+            kCVPixelBufferIOSurfacePropertiesKey as String: [:] as [String: Any],
+        ]
+        var pool: CVPixelBufferPool?
+        CVPixelBufferPoolCreate(nil, [kCVPixelBufferPoolMinimumBufferCountKey as String: 4] as CFDictionary, attributes as CFDictionary, &pool)
+        guard let pool else { return nil }
+        self.session = session
+        self.pool = pool
+    }
+
+    deinit { VTPixelTransferSessionInvalidate(session) }
+
+    /// A copy of `source` with no attachments, so the encoder tags the file as it does `Compositor.render`'s pictures;
+    /// nil if no buffer is free or the transfer fails.
+    func copy(_ source: CVPixelBuffer) -> CVPixelBuffer? {
+        var buffer: CVPixelBuffer?
+        CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer)
+        guard let buffer, VTPixelTransferSessionTransferImage(session, from: source, to: buffer) == noErr else { return nil }
+        CVBufferRemoveAllAttachments(buffer)
+        return buffer
     }
 }

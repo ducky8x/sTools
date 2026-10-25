@@ -69,8 +69,10 @@ public final class RecordingSession: @unchecked Sendable {
         var compositorMisses = 0
         /// Ticks skipped because the encoder wasn't ready; nothing was drawn for them.
         var encoderBusy = 0
-        /// Pictures drawn, and ticks that wrote the last picture again because nothing had changed.
+        /// Pictures drawn, of them the ones handed on without drawing (`Compositor.passThrough`), and ticks that wrote
+        /// the last picture again because nothing had changed.
         var drawn = 0
+        var passedThrough = 0
         var reused = 0
     }
 
@@ -147,6 +149,7 @@ public final class RecordingSession: @unchecked Sendable {
 
     /// Pictures the compositor drew, and ticks that wrote the last one again because no source had changed.
     var picturesDrawn: Int { state.withLock { $0.drawn } }
+    var picturesPassedThrough: Int { state.withLock { $0.passedThrough } }
     var picturesReused: Int { state.withLock { $0.reused } }
 
     // MARK: Ticking
@@ -167,12 +170,15 @@ public final class RecordingSession: @unchecked Sendable {
                 // The same frames make the same picture: write it again rather than draw it again.
                 writer.append(frame: lastPicture, at: tick.time)
                 state.withLock { $0.reused += 1 }
-            } else if let picture = draw(snapshot) {
+            } else if let (picture, passedThrough) = draw(snapshot) {
                 writer.append(frame: picture, at: tick.time)
                 lastPicture = picture
                 lastPictureSources = sources
                 sourcesChanged = false
-                state.withLock { $0.drawn += 1 }
+                state.withLock {
+                    $0.drawn += 1
+                    if passedThrough { $0.passedThrough += 1 }
+                }
             } else {
                 state.withLock { $0.compositorMisses += 1 }
             }
@@ -184,13 +190,16 @@ public final class RecordingSession: @unchecked Sendable {
         }
     }
 
-    /// Draws the snapshot's frames as one output picture; nil if the compositor had no buffer free.
-    private func draw(_ snapshot: FrameSnapshot) -> CVPixelBuffer? {
+    /// The snapshot's frames as one output picture, and whether it's a captured frame handed on as it is (the layout
+    /// shows one source unchanged over the whole output: Minecraft alone, at the output size); nil if the compositor
+    /// had no buffer free.
+    private func draw(_ snapshot: FrameSnapshot) -> (CVPixelBuffer, passedThrough: Bool)? {
         let frames = snapshot.frames.mapValues(\.frame)
         let plan = CompositionPlan.make(
             layout: configuration.layout, canvas: configuration.canvas, output: compositor.outputSize,
             frames: frames.mapValues(CompositionPlan.FrameGeometry.init))
-        return compositor.render(plan, frames: frames)
+        if let frame = compositor.passThrough(plan, frames: frames) { return (frame, true) }
+        return compositor.render(plan, frames: frames).map { ($0, false) }
     }
 
     private func write(_ block: AudioBlock) {

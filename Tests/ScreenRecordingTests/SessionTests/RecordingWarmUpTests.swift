@@ -26,6 +26,7 @@ struct RecordingWarmUpTests {
     @Test func aWarmedCompositorDrawsAtTheOutputSize() throws {
         let compositor = try #require(RecordingWarmUp.compositor(outputSize: PixelSize(width: 1281, height: 721)))
         #expect(compositor.outputSize == PixelSize(width: 1280, height: 720))
+        #expect(compositor.isPreparedForPassThrough)
     }
 
     /// A recording uses the warmed compositor when it's for its output size, and makes its own otherwise.

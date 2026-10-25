@@ -21,10 +21,11 @@ func videoSampleTimes(of url: URL) async throws -> [Double] {
     return times
 }
 
-/// A tick whose sources brought nothing new writes the last picture again instead of drawing it again; the file is
-/// the same either way: a frame for every tick, each at its own time.
-@Suite("Recording frame reuse", .serialized)
-struct RecordingFrameReuseTests {
+/// A tick whose sources brought nothing new writes the last picture again instead of drawing it again, and Minecraft
+/// alone at the output size is handed on without drawing; the file is the same either way: a frame for every tick,
+/// each at its own time.
+@Suite("Recording frame reuse and pass-through", .serialized)
+struct RecordingPictureTests {
     private let canvas = PixelSize(width: 320, height: 180)
 
     private func frame(_ index: Int, at seconds: Double, size: PixelSize? = nil) -> VideoFrame {
@@ -130,5 +131,69 @@ struct RecordingFrameReuseTests {
             #expect(session.picturesReused == 8)
         }
         #expect(session.picturesDrawn + session.picturesReused == result.framesWritten)
+    }
+
+    // MARK: Pass-through
+
+    @Test func minecraftAloneAtTheCanvasSizeIsHandedOnWithoutDrawing() async throws {
+        let directory = try WriterFixture.makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let base = FakeVideoCapture()
+        let (session, result) = try await record(video: [.base: base], ticks: 12, in: directory) { i in
+            if i % 2 == 0 { base.push(.frame(frame(i, at: 10 + Double(i) / 30))) }
+        }
+        #expect(session.picturesDrawn > 0)
+        #expect(session.picturesPassedThrough == session.picturesDrawn)
+        let times = try await videoSampleTimes(of: try #require(result.files.first))
+        #expect(times.count == result.framesWritten)
+        if session.droppedFrames == 0 { #expect(times == (0..<12).map { Double($0) / 30 }) }
+    }
+
+    @Test func aPictureThatMustBeDrawnIsDrawnAndTheFileTakesBothKinds() async throws {
+        let directory = try WriterFixture.makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let base = FakeVideoCapture()
+        // A window resized smaller fills only part of its buffer for a while: those frames are drawn, the rest handed on.
+        let (session, result) = try await record(video: [.base: base], ticks: 12, in: directory) { i in
+            let resized = (4..<8).contains(i)
+            base.push(.frame(VideoFrame(
+                pixelBuffer: WriterFixture.makeFrame(index: i, size: canvas),
+                contentRect: resized ? PixelRect(x: 0, y: 0, width: 160, height: 90) : nil,
+                hostTime: .seconds(10 + Double(i) / 30))))
+        }
+        #expect(session.picturesPassedThrough > 0)
+        #expect(session.picturesPassedThrough < session.picturesDrawn)
+        let info = try await MovieInfo.load(try #require(result.files.first))
+        #expect(info.videoSampleCount == result.framesWritten)
+        if session.droppedFrames == 0 { #expect(session.picturesDrawn - session.picturesPassedThrough == 4) }
+    }
+
+    @Test func aSmallerOutputIsAlwaysDrawn() async throws {
+        let directory = try WriterFixture.makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let base = FakeVideoCapture()
+        // 1080p of a canvas taller than 1080 pixels is scaled down, so nothing is handed on as it is.
+        let tall = PixelSize(width: 2560, height: 1440)
+        let rig = CaptureRig(video: [.base: base], audio: [:], minimizedShowsNothing: false)
+        await rig.start()
+        let clock = ManualClock(10)
+        let driver = ManualTickDriver()
+        var options = RecordingOptions()
+        options.frameRate = .fps30
+        options.outputSize = .p1080
+        let session = try RecordingSession(
+            configuration: .init(layout: RecordingLayout(), options: options, canvas: tall, baseName: "small", directory: directory),
+            rig: rig, clock: clock, driver: driver)
+        try session.start()
+        for i in 0..<6 {
+            base.push(.frame(VideoFrame(pixelBuffer: WriterFixture.makeFrame(index: i, size: tall), hostTime: .seconds(10 + Double(i) / 30))))
+            clock.set(10 + Double(i) / 30 + 0.001)
+            driver.fire()
+            try await Task.sleep(for: .milliseconds(4))
+        }
+        _ = await session.stop()
+        await rig.stop()
+        #expect(session.picturesDrawn > 0)
+        #expect(session.picturesPassedThrough == 0)
     }
 }
