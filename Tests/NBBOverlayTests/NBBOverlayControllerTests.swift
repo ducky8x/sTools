@@ -164,6 +164,7 @@ struct NBBOverlayControllerTests {
             copies: monitor, windowReader: window, windowPollInterval: .milliseconds(20))
         controller.setEnabled(true)
         defer { controller.setEnabled(false) }
+        await waitUntil { controller.readsWindow && controller.windowSnapshot != nil }
         #expect(controller.readsWindow)
         #expect(window.reads.first == 92616)
         #expect(controller.stronghold == Self.result)
@@ -178,6 +179,26 @@ struct NBBOverlayControllerTests {
         let readsBefore = window.reads.count
         try? await Task.sleep(for: .milliseconds(100))
         #expect(window.reads.count == readsBefore, "the window isn't read while the API copy is followed")
+    }
+
+    /// The copies are looked for only while the tool is on.
+    @MainActor @Test func theCopiesAreScannedOnlyWhileTheToolIsOn() async throws {
+        let scanner = FakeCopiesScanner([NBBCopy(pid: 873, startedAt: Date(timeIntervalSince1970: 10), arguments: [], holdsAPI: true)])
+        let monitor = NBBCopiesMonitor(
+            scanner: scanner, control: FakeCopiesControl(scanner: scanner), interval: .milliseconds(10), idleInterval: .milliseconds(10))
+        let controller = NBBOverlayController(
+            services: makeServices(tempDirectory: tempDirectory()), connection: NBBConnection(source: FakeEventSource([])), copies: monitor)
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(scanner.scanCount == 0)
+        controller.setEnabled(true)
+        await waitUntil { monitor.copies.count == 1 }
+        #expect(monitor.copies.count == 1 && scanner.scanCountOnMainThread == 0)
+        controller.setEnabled(false)
+        #expect(monitor.copies.isEmpty && !monitor.isWatching)
+        try await Task.sleep(for: .milliseconds(30))
+        let scans = scanner.scanCount
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(scanner.scanCount == scans)
     }
 
     /// The page's preview shows only Ninjabrain Bot's live result: the intro's sample stays in the intro (spec 4,

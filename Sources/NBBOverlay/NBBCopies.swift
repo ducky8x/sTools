@@ -52,9 +52,14 @@ public protocol NBBCopiesControlling: AnyObject {
     func quit(_ copy: NBBCopy)
 }
 
-/// Watches Ninjabrain Bot's copies while the NBB Overlay is on (every 2 s; a scan reads only the process table) and
-/// says which one the overlay reads. A copy holding the API is read over it; any other copy is read from its window
-/// (`NBBWindowReader`), so the person can pick the copy they use while every copy stays open.
+/// Watches Ninjabrain Bot's copies while the NBB Overlay is on and says which one the overlay reads. A copy holding the
+/// API is read over it; any other copy is read from its window (`NBBWindowReader`), so the person can pick the copy they
+/// use while every copy stays open.
+///
+/// The process table is scanned on a background task, never on the main actor: every 2 s while a copy is open, every
+/// 5 s while none is (the first copy to open takes the API, which the overlay reads without the scan's help, so only a
+/// second copy needs finding quickly, and by then one is open). A scan's result reaches the main actor only when it
+/// differs from the last one. Nothing is scanned while the tool is off.
 @MainActor
 @Observable
 public final class NBBCopiesMonitor {
@@ -64,16 +69,23 @@ public final class NBBCopiesMonitor {
     @ObservationIgnored private let scanner: any NBBCopiesScanning
     @ObservationIgnored private let control: any NBBCopiesControlling
     @ObservationIgnored private let interval: Duration
+    @ObservationIgnored private let idleInterval: Duration
     @ObservationIgnored private var watch: Task<Void, Never>?
+    /// Counts watches, so a scan that ends after its watch stopped or started over is dropped.
+    @ObservationIgnored private var generation = 0
+    /// How many scan results reached the main actor. For tests.
+    @ObservationIgnored private(set) var publishCount = 0
 
+    /// `interval` while a copy is open, `idleInterval` while none is.
     public init(
         scanner: any NBBCopiesScanning = LiveNBBCopiesScanner(),
         control: any NBBCopiesControlling = LiveNBBCopiesControl(),
-        interval: Duration = .seconds(2)
+        interval: Duration = .seconds(2), idleInterval: Duration = .seconds(5)
     ) {
         self.scanner = scanner
         self.control = control
         self.interval = interval
+        self.idleInterval = idleInterval
     }
 
     public var isWatching: Bool { watch != nil }
@@ -93,35 +105,60 @@ public final class NBBCopiesMonitor {
 
     public func isRead(_ copy: NBBCopy) -> Bool { readCopy?.pid == copy.pid }
 
+    /// Starts watching; the first scan runs at once, in the background.
     public func start() {
         guard watch == nil else { return }
-        refresh()
-        watch = Task { [weak self, interval] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: interval)
-                guard !Task.isCancelled else { return }
-                self?.refresh()
-            }
-        }
+        watch = makeWatch()
     }
 
     public func stop() {
         watch?.cancel()
         watch = nil
+        generation += 1
         if !copies.isEmpty { copies = [] }
     }
 
-    /// Scans now. A scan reads only the process table and takes well under a millisecond.
-    public func refresh() {
-        let found = scanner.scan().sorted { ($0.startedAt ?? .distantPast, $0.pid) < ($1.startedAt ?? .distantPast, $1.pid) }
-        if found != copies { copies = found }
-        if case .copy(let pid) = choice, !found.contains(where: { $0.pid == pid }) { choice = .automatic }
+    /// Scans again now rather than at the next interval, while watching.
+    public func rescan() {
+        guard watch != nil else { return }
+        watch?.cancel()
+        watch = makeWatch()
     }
 
-    /// Asks a copy to quit, as its Quit menu would.
+    /// Asks a copy to quit, as its Quit menu would, and looks again.
     public func quit(_ copy: NBBCopy) {
         control.quit(copy)
-        refresh()
+        rescan()
+    }
+
+    /// Scans on a background task until cancelled, and hands each result that differs from the last to the main actor.
+    private func makeWatch() -> Task<Void, Never> {
+        generation += 1
+        let generation = generation
+        let scanner = scanner, interval = interval, idleInterval = idleInterval
+        return Task.detached(priority: .utility) { [weak self] in
+            var last: [NBBCopy]?
+            while !Task.isCancelled {
+                let found = Self.ordered(scanner.scan())
+                if found != last {
+                    last = found
+                    await self?.publish(found, generation: generation)
+                }
+                try? await Task.sleep(for: found.isEmpty ? idleInterval : interval)
+            }
+        }
+    }
+
+    /// Oldest first, so the last copy is the newest.
+    private nonisolated static func ordered(_ copies: [NBBCopy]) -> [NBBCopy] {
+        copies.sorted { ($0.startedAt ?? .distantPast, $0.pid) < ($1.startedAt ?? .distantPast, $1.pid) }
+    }
+
+    private func publish(_ found: [NBBCopy], generation: Int) {
+        guard generation == self.generation else { return }
+        publishCount += 1
+        if found != copies { copies = found }
+        if case .copy(let pid) = choice, !found.contains(where: { $0.pid == pid }) { choice = .automatic }
     }
 
     /// How the page names a copy: when it was opened and how sTools reads it.
