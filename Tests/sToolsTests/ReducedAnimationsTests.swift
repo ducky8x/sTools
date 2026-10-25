@@ -456,7 +456,8 @@ struct ReduceAnimationsWindowTests {
         #expect(harness.model.prologue?.animations.isRunning == false)
     }
 
-    /// The whole introduction in the real window, Continue on every step: every step is complete when it appears,
+    /// The whole introduction in the real window, Continue on every step where it's enabled and Skip step where the
+    /// step isn't done (a permission not granted, a trial item left): every step is complete when it appears,
     /// so no key is ever spent completing something, the Finale switches the tried tools off with nothing pending,
     /// and it ends at Home.
     @Test(arguments: [false, true])
@@ -478,7 +479,12 @@ struct ReduceAnimationsWindowTests {
                 #expect(!prologue.isFinaleRunning)
             default: break
             }
-            prologue.next()
+            if prologue.canContinue {
+                prologue.next()
+            } else {
+                #expect([.preparations, .trials].contains(step.part), "only a step with something to do holds Continue back")
+                prologue.skipStep()
+            }
         }
         #expect(seen == PrologueStep.allCases)
         #expect(harness.model.prologue == nil)

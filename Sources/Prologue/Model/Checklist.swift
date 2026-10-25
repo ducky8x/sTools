@@ -4,7 +4,8 @@ public struct ChecklistItem: Identifiable, Equatable, Sendable {
     public var title: String
     /// A short hint under the title, when the title alone isn't enough.
     public var detail: String?
-    /// Shown as optional; never needed for the trial to count as complete.
+    /// Shown as optional. It still has to be done or skipped before the trial counts as complete (owner's report,
+    /// spec 4.2): Skip on its row is the way past it.
     public var isOptional: Bool
     /// Why the item can't be done right now ("Needs Karabiner-Elements"); nil when it can.
     public var unavailableReason: String?
@@ -61,11 +62,10 @@ public struct Checklist: Equatable, Sendable {
         return .pending
     }
 
-    /// Every required, available item is done or skipped.
+    /// Every item, optional ones included, is done or skipped. An item that can't be done right now (unavailable)
+    /// has nothing to do or skip, so it never holds the list back.
     public var isComplete: Bool {
-        items.allSatisfy { item in
-            item.isOptional || [.done, .skipped, .unavailable].contains(state(of: item.id))
-        }
+        items.allSatisfy { [.done, .skipped, .unavailable].contains(state(of: $0.id)) }
     }
 
     public var doneCount: Int { items.filter { state(of: $0.id) == .done }.count }

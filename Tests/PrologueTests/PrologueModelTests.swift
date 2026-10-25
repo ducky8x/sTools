@@ -20,6 +20,8 @@ struct PrologueModelTests {
     @Test func savesItsPlaceAfterEveryStep() async {
         let box = StoreBox()
         let host = FakeHost()
+        host.prober.set(.accessibility, .granted)
+        host.permissions.refresh()
         let model = makeModel(box, host: host)
         model.next()
         model.next()
@@ -120,8 +122,10 @@ struct PrologueModelTests {
         model.record(done: ["on"], items: items, for: .crosshair)
         model.back()
         model.back()
-        model.next()
-        model.next()
+        // Ninjabrain Bot and Karabiner-Elements aren't Ready, so Skip step is the way forward again.
+        model.skipStep()
+        model.skipStep()
+        #expect(model.step == .crosshairTrial)
         #expect(model.checklist(for: .crosshair, items: items).state(of: "on") == .done)
         #expect(model.status(of: .accessibility) == .granted)
         #expect(host.prober.requested.isEmpty)
@@ -194,7 +198,7 @@ struct PrologueModelTests {
         host.companionStatuses[.karabiner] = .ready
         let model = makeModel(StoreBox(), host: host, at: .ninjabrainBot)
         model.startWatching(.ninjabrainBot)
-        model.next()
+        model.skipStep()
         model.startWatching(.karabiner)
         model.stopWatching(.ninjabrainBot)
         #expect(await waitUntil { model.companionStatuses[.karabiner] == .ready })

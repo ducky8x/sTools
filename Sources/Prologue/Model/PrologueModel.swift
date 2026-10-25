@@ -59,7 +59,30 @@ public final class PrologueModel {
 
     // MARK: Navigation
 
-    public func next() { move { $0.next() } }
+    /// Continue (and Return) moves on only once the step is done; until then it's grayed out and Skip step is the
+    /// way on. A Preparations step is done once it's Ready, a trial once every item, optional ones included, is done
+    /// or skipped (the same condition as its "All done" line); the greeting and the Finale have nothing to finish.
+    public var canContinue: Bool {
+        guard flow.canMoveOn else { return false }
+        guard let host else { return true }
+        let step = flow.step
+        if let permission = step.permission { return host.permissions.status(permission) == .granted }
+        if let companion = step.companion { return companionStatuses[companion]?.isReady == true }
+        if let trial = step.trial { return isTrialComplete(trial) }
+        return true
+    }
+
+    /// Every item of the trial's checklist as it stands now is done or skipped: its "All done" line shows and
+    /// Continue is enabled.
+    public func isTrialComplete(_ trial: PrologueTrial) -> Bool {
+        guard let host else { return true }
+        return checklist(for: trial, items: host.trial(trial).items()).isComplete
+    }
+
+    public func next() {
+        guard canContinue else { return }
+        move { $0.next() }
+    }
     public func skipStep() { move { $0.skipStep() } }
     public func back() { move { $0.back() } }
 
