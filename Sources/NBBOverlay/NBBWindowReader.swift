@@ -139,73 +139,181 @@ enum NBBWindowParser {
     }
 }
 
-/// Reads a copy's window through Accessibility, on a queue of its own (never the main actor, and never the shared
-/// threads the app's tasks run on, as each call waits for the other app). It walks the window once (60–75 ms for
-/// Ninjabrain Bot 1.5.2's ~170 elements), keeps the static texts and buttons it found, and then reads only their values
-/// (about 20 ms, nearly all of it waiting for Ninjabrain Bot's answers) until the window's shape changes or an element
-/// goes away, when it walks again. sTools already holds Accessibility for finding Minecraft; without it, nothing is
-/// read.
-public actor AXNBBWindowReader: NBBWindowReading {
-    private struct Walked {
-        var pid: Int32
-        var elements: [(role: String, element: AXUIElement)]
-        var walkedAt: Date
-    }
+// MARK: - Accessibility
 
-    private var walked: Walked?
-    /// Walks again at least this often, in case a panel changed which labels it shows.
-    private let rewalkInterval: TimeInterval = 5
+/// One element of another app's Accessibility tree: an `AXUIElement` for the live reader, a made-up node in tests.
+struct NBBAXElement {
+    let reference: AnyObject
+}
 
-    private let queue = DispatchSerialQueue(label: "com.ducky8x.sTools.nbb-window-reader", qos: .utility)
+/// What reading a text from an element gave.
+enum NBBAXText: Equatable {
+    case text(String?)
+    /// The element is gone (the window changed shape or closed): walk again.
+    case gone
+    /// The app didn't answer in time (it's busy or hung): stop this read.
+    case noAnswer
+}
 
-    public nonisolated var unownedExecutor: UnownedSerialExecutor { queue.asUnownedSerialExecutor() }
+/// The Accessibility calls a window read makes, each a message to the other app. The live one is `AXUIElement`;
+/// tests use a fake.
+protocol NBBAccessibility: Sendable {
+    func isTrusted() -> Bool
+    func windows(ofApp pid: Int32) -> [NBBAXElement]
+    func role(of element: NBBAXElement) -> String?
+    func children(of element: NBBAXElement) -> [NBBAXElement]
+    /// A static text's value or a button's title.
+    func text(of element: NBBAXElement, isButton: Bool) -> NBBAXText
+}
 
-    public init() {}
+struct LiveAccessibility: NBBAccessibility {
+    func isTrusted() -> Bool { AXIsProcessTrusted() }
 
-    public func read(pid: Int32) -> NBBWindowSnapshot? {
-        guard AXIsProcessTrusted() else { return nil }
-        if walked?.pid != pid || Date().timeIntervalSince(walked?.walkedAt ?? .distantPast) > rewalkInterval {
-            walked = walk(pid: pid)
-        }
-        guard let walked else { return nil }
-        var items: [NBBWindowParser.Item] = []
-        items.reserveCapacity(walked.elements.count)
-        for (role, element) in walked.elements {
-            var value: AnyObject?
-            let attribute = role == "AXButton" ? kAXTitleAttribute : kAXValueAttribute
-            let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
-            if result == .invalidUIElement {
-                self.walked = nil
-                return nil
-            }
-            items.append(NBBWindowParser.Item(role: role, text: value as? String ?? ""))
-        }
-        return NBBWindowParser.parse(items)
-    }
-
-    private func walk(pid: Int32) -> Walked? {
+    func windows(ofApp pid: Int32) -> [NBBAXElement] {
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, 0.25)
-        guard let windows = copy(app, kAXWindowsAttribute) as? [AXUIElement] else { return nil }
-        var elements: [(String, AXUIElement)] = []
-        func visit(_ element: AXUIElement, depth: Int) {
-            guard depth < 30, elements.count < 600 else { return }
-            let role = copy(element, kAXRoleAttribute) as? String ?? ""
-            if role == "AXStaticText" || role == "AXButton" { elements.append((role, element)) }
-            for child in (copy(element, kAXChildrenAttribute) as? [AXUIElement]) ?? [] { visit(child, depth: depth + 1) }
+        return (copy(app, kAXWindowsAttribute) as? [AXUIElement] ?? []).map(NBBAXElement.init)
+    }
+
+    func role(of element: NBBAXElement) -> String? { copy(ax(element), kAXRoleAttribute) as? String }
+
+    func children(of element: NBBAXElement) -> [NBBAXElement] {
+        (copy(ax(element), kAXChildrenAttribute) as? [AXUIElement] ?? []).map(NBBAXElement.init)
+    }
+
+    func text(of element: NBBAXElement, isButton: Bool) -> NBBAXText {
+        var value: AnyObject?
+        let attribute = isButton ? kAXTitleAttribute : kAXValueAttribute
+        switch AXUIElementCopyAttributeValue(ax(element), attribute as CFString, &value) {
+        case .invalidUIElement: return .gone
+        case .cannotComplete: return .noAnswer
+        default: return .text(value as? String)
         }
-        // Ninjabrain Bot's main window is the one with the predictions table.
-        for window in windows {
-            elements = []
-            visit(window, depth: 0)
-            let texts = elements.compactMap { copy($0.1, kAXValueAttribute) as? String }
-            if texts.contains("Location") && texts.contains("Dist.") { return Walked(pid: pid, elements: elements, walkedAt: Date()) }
-        }
-        return nil
+    }
+
+    private func ax(_ element: NBBAXElement) -> AXUIElement {
+        // Only this type makes elements, always from an AXUIElement.
+        unsafeDowncast(element.reference, to: AXUIElement.self)
     }
 
     private func copy(_ element: AXUIElement, _ attribute: String) -> AnyObject? {
         var value: AnyObject?
         return AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success ? value : nil
+    }
+}
+
+// MARK: - Reader
+
+/// Reads a copy's window through Accessibility, on a queue of its own (never the main actor, and never the shared
+/// threads the app's tasks run on, as each call waits for the other app). sTools already holds Accessibility for
+/// finding Minecraft; without it, nothing is read.
+///
+/// It walks the window (about 170 elements for Ninjabrain Bot 1.5.2, 60–75 ms) and keeps its static texts and buttons
+/// with what they said, which is that read's result. A later read asks only the static texts for their values (about
+/// 20 ms, nearly all of it waiting for Ninjabrain Bot's answers); the buttons' titles ("Undo", "Reset" …) are kept
+/// from the walk. It walks again every 5 s, in case a panel changed which labels it shows, when the copy changes and
+/// when an element went away. A walk that finds no predictions table (the window is closed, or Accessibility lists the
+/// app itself as its window) is tried again only after 2 s, and a walk never goes into menus or the app's own element,
+/// which Accessibility can list inside its windows, endlessly.
+public actor AXNBBWindowReader: NBBWindowReading {
+    private struct Walked {
+        var pid: Int32
+        var elements: [(element: NBBAXElement, isButton: Bool, walkedText: String)]
+        var walkedAt: ContinuousClock.Instant
+    }
+
+    private let accessibility: any NBBAccessibility
+    private let now: @Sendable () -> ContinuousClock.Instant
+    private var walked: Walked?
+    private var failedWalk: (pid: Int32, at: ContinuousClock.Instant)?
+    /// Walks again at least this often, in case a panel changed which labels it shows.
+    private let rewalkInterval: Duration = .seconds(5)
+    /// How long a walk that found no predictions table waits before the next try.
+    private let retryInterval: Duration = .seconds(2)
+    /// Ninjabrain Bot's window has about 170 elements; a walk stops at this many.
+    static let walkLimit = 1_000
+    private let queue = DispatchSerialQueue(label: "com.ducky8x.sTools.nbb-window-reader", qos: .utility)
+
+    public nonisolated var unownedExecutor: UnownedSerialExecutor { queue.asUnownedSerialExecutor() }
+
+    public init() {
+        self.init(accessibility: LiveAccessibility())
+    }
+
+    init(accessibility: any NBBAccessibility, now: @escaping @Sendable () -> ContinuousClock.Instant = { .now }) {
+        self.accessibility = accessibility
+        self.now = now
+    }
+
+    public func read(pid: Int32) -> NBBWindowSnapshot? {
+        guard accessibility.isTrusted() else { return nil }
+        let now = now()
+        if let walked, walked.pid == pid, now - walked.walkedAt < rewalkInterval {
+            return readTexts(of: walked)
+        }
+        if let failedWalk, failedWalk.pid == pid, now - failedWalk.at < retryInterval { return nil }
+        guard let found = walk(pid: pid, at: now) else {
+            walked = nil
+            failedWalk = (pid, now)
+            return nil
+        }
+        walked = found
+        failedWalk = nil
+        return NBBWindowParser.parse(found.elements.map { Self.item($0.isButton, $0.walkedText) })
+    }
+
+    /// The static texts' values now, with the buttons' titles from the walk.
+    private func readTexts(of walked: Walked) -> NBBWindowSnapshot? {
+        var items: [NBBWindowParser.Item] = []
+        items.reserveCapacity(walked.elements.count)
+        for (element, isButton, walkedText) in walked.elements {
+            if isButton {
+                items.append(Self.item(true, walkedText))
+                continue
+            }
+            switch accessibility.text(of: element, isButton: false) {
+            case .text(let text): items.append(Self.item(false, text ?? ""))
+            case .gone:
+                self.walked = nil
+                return nil
+            case .noAnswer:
+                return nil
+            }
+        }
+        return NBBWindowParser.parse(items)
+    }
+
+    private static func item(_ isButton: Bool, _ text: String) -> NBBWindowParser.Item {
+        NBBWindowParser.Item(role: isButton ? "AXButton" : "AXStaticText", text: text)
+    }
+
+    private func walk(pid: Int32, at time: ContinuousClock.Instant) -> Walked? {
+        // Menus and the app's own element hold nothing of the window, and Accessibility can list the app inside it.
+        let skipped: Set<String> = ["AXApplication", "AXMenuBar", "AXMenuBarItem", "AXMenu", "AXMenuItem"]
+        var elements: [(element: NBBAXElement, isButton: Bool)] = []
+        var visited = 0
+        func visit(_ element: NBBAXElement, depth: Int) {
+            guard depth < 30, visited < Self.walkLimit else { return }
+            visited += 1
+            let role = accessibility.role(of: element) ?? ""
+            if skipped.contains(role) { return }
+            if role == "AXStaticText" || role == "AXButton" { elements.append((element, role == "AXButton")) }
+            for child in accessibility.children(of: element) { visit(child, depth: depth + 1) }
+        }
+        // Ninjabrain Bot's main window is the one with the predictions table.
+        for window in accessibility.windows(ofApp: pid) {
+            elements = []
+            visited = 0
+            visit(window, depth: 0)
+            var kept: [(element: NBBAXElement, isButton: Bool, walkedText: String)] = []
+            kept.reserveCapacity(elements.count)
+            for (element, isButton) in elements {
+                guard case .text(let text) = accessibility.text(of: element, isButton: isButton) else { return nil }
+                kept.append((element, isButton, text ?? ""))
+            }
+            let texts = kept.filter { !$0.isButton }.map(\.walkedText)
+            if texts.contains("Location") && texts.contains("Dist.") { return Walked(pid: pid, elements: kept, walkedAt: time) }
+        }
+        return nil
     }
 }
