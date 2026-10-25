@@ -32,6 +32,13 @@ struct NBBWindowParserTests {
         #expect(snapshot.stronghold.predictions.count == 3, "the table's rows only, not the divine panel's location")
     }
 
+    @Test func readsTheAngleAndItsTurnFromTheWindow() throws {
+        let predictions = try #require(NBBWindowParser.parse(recordedWindow)).stronghold.predictions
+        #expect(predictions[0].shownAngle == 118.30 && predictions[0].shownAngleChange == -113.7)
+        #expect(predictions[1].shownAngle == -80.67 && predictions[1].shownAngleChange == 47.4)
+        #expect(NBBWindowParser.turn(" (-> 47.4)") == 47.4 && NBBWindowParser.turn("(<- 2.0)") == -2 && NBBWindowParser.turn("1") == nil)
+    }
+
     @Test func readsTheEyeThrows() throws {
         let throwsRead = try #require(NBBWindowParser.parse(recordedWindow)).stronghold.eyeThrows
         #expect(throwsRead.count == 1)
