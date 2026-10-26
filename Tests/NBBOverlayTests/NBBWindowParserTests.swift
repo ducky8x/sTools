@@ -153,6 +153,16 @@ struct NBBWindowParserTests {
         #expect(read[2].error == 0.01)
     }
 
+    /// A look between full reads asks for the top prediction row and every eye-throw text, nothing else.
+    @Test func watchesTheTopRowAndTheThrows() {
+        let watched = NBBWindowParser.watchedIndices(recordedWindow).map { recordedWindow[$0].text }
+        #expect(Array(watched.prefix(6)) == ["(-1340, 84)", "100.0%", "1", "(-168, 10)", "118.30", " (<- 113.7)"])
+        #expect(Array(watched.dropFirst(6)) == ["", "-1374.70", "81.61", "-80.64", "+6", "-0.0022", "", "", ""])
+        #expect(watched.count * 3 < recordedWindow.count * 2, "a look asks well under the whole window")
+        let hidden = Self.throwsWindow(errorHeader: false, rows: [["1.00", "2.00", "3.00"]])
+        #expect(NBBWindowParser.watchedIndices(hidden).map { hidden[$0].text }.suffix(6) == ["1.00", "2.00", "3.00", "", "", ""])
+    }
+
     @Test func readsTheNotesButNotTheLabels() throws {
         #expect(try #require(NBBWindowParser.parse(recordedWindow)).messages
             == ["You might not be able to nether travel into the stronghold due to portal linking."])

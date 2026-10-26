@@ -254,6 +254,14 @@ struct NBBOverlayControllerTests {
         #expect(window.reads.count == readsBefore, "the window isn't read while the API copy is followed")
     }
 
+    /// A copy read from its window is looked at ten times a second, so a change shows within a tenth of a second (it
+    /// was half a second); most looks ask only a few texts (`AXNBBWindowReader`).
+    @MainActor @Test func aWindowIsLookedAtTenTimesASecond() {
+        let controller = inertNBBController(services: makeServices(tempDirectory: tempDirectory()))
+        #expect(controller.windowPollInterval == .milliseconds(100))
+        #expect(AXNBBWindowReader.fullReadInterval == .seconds(1))
+    }
+
     /// The copies are looked for only while the tool is on.
     @MainActor @Test func theCopiesAreScannedOnlyWhileTheToolIsOn() async throws {
         let scanner = FakeCopiesScanner([NBBCopy(pid: 873, startedAt: Date(timeIntervalSince1970: 10), arguments: [], holdsAPI: true)])

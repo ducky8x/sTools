@@ -5,8 +5,9 @@
 //
 //   swift run -c release NBBBench                      scan: ms per LiveNBBCopiesScanner().scan()
 //   swift run -c release NBBBench monitor --seconds 10 the main thread's time per second while NBBCopiesMonitor watches
-//   swift run -c release NBBBench window --seconds 10  ms per read of a copy's window, for a copy without the API
-//                                                       (reads run on the reader's own queue, as in the app)
+//   swift run -c release NBBBench window --seconds 10  ms per read of a copy's window, for a copy without the API, ten
+//                                                       a second as in the app (most only look at a few texts; reads
+//                                                       run on the reader's own queue)
 
 import ApplicationServices
 import Darwin
@@ -109,7 +110,7 @@ func windowMode(seconds: Double) async {
         print("window: no Ninjabrain Bot without the API is open; nothing read")
         return
     }
-    // As the overlay does: a read twice a second, on the reader's own queue; the main actor only awaits it.
+    // As the overlay does: a read ten times a second, on the reader's own queue; the main actor only awaits it.
     let reader = AXNBBWindowReader()
     var times: [Double] = []
     var unread = 0
@@ -118,7 +119,7 @@ func windowMode(seconds: Double) async {
         let readStart = ContinuousClock.now
         if await reader.read(pid: copy.pid) == nil { unread += 1 }
         times.append(milliseconds(since: readStart))
-        try? await Task.sleep(for: .milliseconds(500))
+        try? await Task.sleep(for: .milliseconds(100))
     }
     let wall = milliseconds(since: start) / 1e3
     print("window: \(summary(times)) off the main actor; \(unread) reads found nothing")

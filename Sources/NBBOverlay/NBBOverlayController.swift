@@ -32,9 +32,10 @@ public final class NBBOverlayController: ToolController {
     @ObservationIgnored private var windowPollPID: Int32?
     /// Counts window polls, so a read that ends after its poll stopped or moved to another copy is dropped.
     @ObservationIgnored private var windowPollGeneration = 0
-    /// How often a copy's window is read: twice a second, off the main actor (about 20 ms each, nearly all of it
-    /// waiting for Ninjabrain Bot's answers).
-    @ObservationIgnored private let windowPollInterval: Duration
+    /// How often a copy's window is looked at: ten times a second, off the main actor. Most looks ask only the texts
+    /// that change with Ninjabrain Bot's result and find nothing new (`AXNBBWindowReader`); twice a second it was,
+    /// a change waited 250 ms on average and up to half a second.
+    @ObservationIgnored let windowPollInterval: Duration
     @ObservationIgnored let panel = OverlayPanel(role: .topmost)
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
     /// For Reduce animations: while motion is reduced, the overlay shows and hides at once.
@@ -67,7 +68,7 @@ public final class NBBOverlayController: ToolController {
 
     public init(
         services: ToolServices, connection: NBBConnection = NBBConnection(), copies: NBBCopiesMonitor? = nil, theme: STTheme? = nil,
-        windowReader: (any NBBWindowReading)? = nil, windowPollInterval: Duration = .milliseconds(500)
+        windowReader: (any NBBWindowReading)? = nil, windowPollInterval: Duration = .milliseconds(100)
     ) {
         self.services = services
         self.theme = theme
@@ -231,8 +232,8 @@ public final class NBBOverlayController: ToolController {
         }
     }
 
-    /// Reads the followed copy's window twice a second while the tool is on and that copy doesn't hold the API; stops
-    /// otherwise. The reads run off the main actor, and a snapshot reaches it only when it differs from the last one.
+    /// Looks at the followed copy's window ten times a second while the tool is on and that copy doesn't hold the API;
+    /// stops otherwise. The reads run off the main actor, and a snapshot reaches it only when it differs from the last one.
     private func syncWindowReading() {
         let pid = isEnabled && copies.readsWindow ? copies.readCopy?.pid : nil
         guard pid != windowPollPID else { return }
