@@ -70,6 +70,8 @@ public enum NBBEvents {
         var shownCorrection: String? = nil
         /// Whether the throw's error is known: a Ninjabrain Bot window hides it unless its Show angle errors is on.
         var showsError = true
+        /// The error as a Ninjabrain Bot window wrote it ("-0.002"), kept as it is (`NBBWindowReader`).
+        var shownError: String? = nil
 
         private enum CodingKeys: String, CodingKey {
             case xInOverworld, zInOverworld, angle, angleWithoutCorrection, correction, correctionIncrements, error, type

@@ -29,6 +29,16 @@ enum NBBAngleCorrection {
     }
 }
 
+/// A throw's error as Ninjabrain Bot 1.5.2 writes it (`ThrowPanel.updateError`, `String.format(Locale.US, "%.3f", ...)`):
+/// a minus when it's negative and no sign otherwise. A window's own text is kept as it is.
+enum NBBThrowError {
+    /// The error's text, or nil when the error isn't known.
+    static func text(_ eyeThrow: NBBEvents.EyeThrow) -> String? {
+        guard eyeThrow.showsError else { return nil }
+        return eyeThrow.shownError ?? NBBJavaFormat.fixed(eyeThrow.error, places: 3)
+    }
+}
+
 /// How the angle adjustment is written, as Ninjabrain Bot's Settings ▸ Angle adjustment ▸ Adjustment display type.
 /// Ninjabrain Bot 1.5.2's default (`angle_adjustment_display_type`) is the angle change.
 public enum NBBCorrectionDisplay: String, Codable, CaseIterable, Sendable {
