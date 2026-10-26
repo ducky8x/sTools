@@ -15,8 +15,20 @@ import STPlatform
 /// 1.5.2's source) or straight from its window.
 public struct NBBOverlaySettings: SettingsDocument {
     public static let name = "nbbOverlay"
-    public static let version = 1
+    /// Version 2 makes Correction shown as default to the number of adjustments (spec revision 34).
+    public static let version = 2
     public static var defaultValue: NBBOverlaySettings { NBBOverlaySettings() }
+
+    /// Version 1 saved every field, so its `correctionDisplay` of Angle change, the default then, can't be told from one
+    /// picked; the setting was a day old and never changed, so it moves to the new default, the number of adjustments.
+    public static func migrate(from oldVersion: Int, _ raw: [String: Any]) throws -> [String: Any] {
+        guard oldVersion == 1 else { return raw }
+        var raw = raw
+        if raw["correctionDisplay"] as? String == NBBCorrectionDisplay.angleChange.rawValue {
+            raw["correctionDisplay"] = NBBCorrectionDisplay.increments.rawValue
+        }
+        return raw
+    }
 
     public static let widthRange = 160...900
     public static let aspectRatioRange = 0.4...4.0
@@ -71,8 +83,9 @@ public struct NBBOverlaySettings: SettingsDocument {
     public var locationDisplay: NBBLocationDisplay = .fourFour
     /// Each eye throw's angle adjustment beside its angle, as Ninjabrain Bot shows it.
     public var showsAngleCorrection = true
-    /// How the angle adjustment is written, as Ninjabrain Bot's Adjustment display type. A window's own text is kept.
-    public var correctionDisplay: NBBCorrectionDisplay = .angleChange
+    /// How the angle adjustment is written, as Ninjabrain Bot's Adjustment display type: the number of adjustments ("+2")
+    /// by default (ducky's Ninjabrain Bot shows it so), or the angle change ("+0.004"). A window's own text is kept.
+    public var correctionDisplay: NBBCorrectionDisplay = .increments
     public var maxPredictionRows = 5
 
     public var fadeOnResetEnabled = true

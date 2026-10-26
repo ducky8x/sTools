@@ -40,7 +40,8 @@ enum NBBThrowError {
 }
 
 /// How the angle adjustment is written, as Ninjabrain Bot's Settings ▸ Angle adjustment ▸ Adjustment display type.
-/// Ninjabrain Bot 1.5.2's default (`angle_adjustment_display_type`) is the angle change.
+/// Ninjabrain Bot 1.5.2's own default (`angle_adjustment_display_type`) is the angle change; the overlay's is the number
+/// of adjustments (ducky, spec revision 34).
 public enum NBBCorrectionDisplay: String, Codable, CaseIterable, Sendable {
     case angleChange, increments
 
