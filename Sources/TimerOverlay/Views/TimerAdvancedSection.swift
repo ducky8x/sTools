@@ -33,7 +33,7 @@ struct TimerAdvancedSection: View {
                 Button("Reset to Default", role: .destructive) { controller.resetToDefault() }
                 Button("Cancel", role: .cancel) {}
             },
-            message: { Text("This sets every Timer Overlay setting back to its default. Your sound files stay.") })
+            message: { Text("This sets every Timer Overlay setting back to its default.") })
     }
 
     private var settings: TimerOverlaySettings { controller.settings }
@@ -195,16 +195,16 @@ struct TimerAdvancedSection: View {
     }
 
     /// What the cancel gesture does, under its row (spec 5.6.2): either gesture switches Timer Overlay off, and the
-    /// next press switches it back on. Placeholder wording for M9.
+    /// next press switches it back on. Wording from ducky's M9 review (B138-B140).
     static func cancelGestureNote(for gesture: TimerOverlaySettings.CancelGesture) -> String {
-        let back = "The next press switches it back on and starts."
+        let back = "Press again to turn it on and start."
         return switch gesture {
         case .doublePress:
-            "A second press within \(points(PressPolicy.doublePressWindow)) s switches Timer Overlay off. \(back)"
+            "Press twice within \(points(PressPolicy.doublePressWindow)) s to switch Timer Overlay off. \(back)"
         case .hold:
-            "Holding the key for \(points(PressPolicy.holdDuration)) s switches Timer Overlay off. \(back)"
+            "Hold the key for \(points(PressPolicy.holdDuration)) s to switch Timer Overlay off. \(back)"
         case .off:
-            "The key never switches Timer Overlay off; its switch does."
+            "Only the double click gesture will turn off the Timer Overlay."
         }
     }
 
@@ -213,7 +213,7 @@ struct TimerAdvancedSection: View {
     @ViewBuilder private var alarmRows: some View {
         STSettingsRow("Before zero") {
             TimerChoiceMenu(selection: $controller.settings.beforeZero, options: [
-                .init(.nothing, "Nothing"), .init(.chime, "A chime"), .init(.ticks, "Ticks in the last 5 s"),
+                .init(.nothing, "Nothing"), .init(.chime, "A chime"), .init(.ticks, "Tick in the last 5 seconds"),
             ], label: "Before zero")
         }
         if settings.beforeZero == .chime {
@@ -270,11 +270,6 @@ struct TimerAdvancedSection: View {
                 ], label: "SpeedRunIGT\u{2019}s timer corner")
             }
             .transition(.opacity)
-        }
-        STSettingsRow("Rule note on the page") {
-            TimerChoiceMenu(selection: $controller.settings.ruleNote, options: [
-                .init(.off, "None"), .init(.line, "One line"), .init(.lineAndNotice, "The line and a notice"),
-            ], label: "Rule note on the page")
         }
         STSettingsRow("Countdown on the Dock icon") {
             STSwitch(isOn: $controller.settings.showsDockCountdown, label: "Countdown on the Dock icon")

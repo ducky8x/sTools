@@ -80,7 +80,7 @@ struct TimerRunControls: View {
             Button("Test") { controller.runTest() }
                 .buttonStyle(STButtonStyle(.secondary))
                 .disabled(!buttons.canTest)
-                .help("A \(TimerOverlayController.testRunSeconds)-second run with the full pop-up, alarm and exit. The saved duration stays as it is.")
+                .help("A \(TimerOverlayController.testRunSeconds)-second test runs. Your saved time doesn\u{2019}t change.")
         }
     }
 }
