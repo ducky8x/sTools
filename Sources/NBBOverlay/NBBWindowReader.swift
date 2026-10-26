@@ -37,8 +37,10 @@ enum NBBWindowParser {
         let texts = items.map { $0.text.trimmingCharacters(in: .whitespaces) }
         guard let header = indexOfSequence(["Location", "%", "Dist."], in: texts) else { return nil }
         let predictions = parsePredictions(texts, from: header + 3)
-        let throwsHeader = indexOfSequence(["x", "z", "Angle", "Error"], in: texts, from: header)
-        let eyeThrows = throwsHeader.map { parseThrows(items, from: $0 + 4) } ?? []
+        // The Error heading shows only while Ninjabrain Bot's Show angle errors is on.
+        let throwsHeader = indexOfSequence(["x", "z", "Angle"], in: texts, from: header)
+        let showsErrors = throwsHeader.map { $0 + 3 < texts.count && texts[$0 + 3] == "Error" } ?? false
+        let eyeThrows = throwsHeader.map { parseThrows(items, from: $0 + (showsErrors ? 4 : 3), showsErrors: showsErrors) } ?? []
         let throwsTitle = texts.firstIndex(of: "Ender eye throws") ?? texts.count
         let messages = texts[header..<throwsTitle].filter(isMessage)
         let resultType: NBBEvents.ResultType = !predictions.isEmpty ? .triangulation : (eyeThrows.isEmpty ? .none : .failed)
@@ -79,8 +81,13 @@ enum NBBWindowParser {
         return predictions
     }
 
-    /// Each row sits after a remove button: x, z, angle, perhaps a correction like "+6", then the error.
-    private static func parseThrows(_ items: [Item], from start: Int) -> [NBBEvents.EyeThrow] {
+    /// Each row sits after a remove button: x, z, the angle before the correction, the correction when the angle was
+    /// adjusted, then the error when the window shows errors. Ninjabrain Bot always signs a correction ("+6" as the number
+    /// of adjustments, "+0.01" or "-0.013" as the angle change) and never an error's plus, and writes the number of
+    /// adjustments without a decimal point, which tells a lone fourth text apart. The window's own correction text is kept
+    /// (`shownCorrection`); an angle change also gives the corrected angle, a number of adjustments doesn't (the window
+    /// doesn't say how far each one turns).
+    private static func parseThrows(_ items: [Item], from start: Int, showsErrors: Bool) -> [NBBEvents.EyeThrow] {
         var rows: [[String]] = [[]]
         for item in items[min(start, items.count)...] {
             if item.role == "AXButton" {
@@ -93,13 +100,49 @@ enum NBBWindowParser {
             rows[rows.count - 1].append(text)
         }
         return rows.compactMap { row in
-            guard row.count >= 4, let x = Double(row[0]), let z = Double(row[1]), let angle = Double(row[2]),
-                  let error = Double(row[row.count - 1]) else { return nil }
-            let correction = row.count >= 5 ? Double(row[3].replacingOccurrences(of: "+", with: "")) ?? 0 : 0
+            guard (3...5).contains(row.count), let x = Double(row[0]), let z = Double(row[1]), let angle = Double(row[2]) else { return nil }
+            var rest = Array(row.dropFirst(3))
+            var errorText: String?
+            if showsErrors, let last = rest.last, rest.count == 2 || !isCorrection(last) { errorText = rest.removeLast() }
+            guard rest.count <= 1 else { return nil }
+            let shownCorrection = rest.first
+            let increments = shownCorrection.flatMap { $0.contains(".") ? nil : Int($0.replacingOccurrences(of: "+", with: "")) }
+            let degrees = shownCorrection.flatMap { $0.contains(".") ? Double($0.replacingOccurrences(of: "+", with: "")) : nil } ?? 0
             return NBBEvents.EyeThrow(
-                xInOverworld: x, zInOverworld: z, angle: angle, angleWithoutCorrection: angle, correction: correction,
-                correctionIncrements: nil, error: error, type: "NORMAL")
+                xInOverworld: x, zInOverworld: z, angle: angle + degrees, angleWithoutCorrection: angle, correction: degrees,
+                correctionIncrements: increments, error: errorText.flatMap(Double.init) ?? 0, type: "NORMAL",
+                shownCorrection: shownCorrection, showsError: errorText != nil)
         }
+    }
+
+    /// A text only a correction can be: signed with a plus, or a whole number of adjustments.
+    private static func isCorrection(_ text: String) -> Bool {
+        text.hasPrefix("+") || !text.contains(".")
+    }
+
+    /// The texts a quick look between full reads asks for again: the predictions table's first row and the eye throws.
+    /// Whatever Ninjabrain Bot changes there shows in them: a throw adds a row and changes the top prediction, an angle
+    /// adjustment changes its throw's correction, an F3+C moves the top row's angle and turn, and a reset or undo clears
+    /// or shifts the rows. Notes and the rows below the top one alone wait for the next full read. Indices into `items`;
+    /// buttons are left out, as their titles are kept from the walk.
+    static func watchedIndices(_ items: [Item]) -> [Int] {
+        let texts = items.map { $0.text.trimmingCharacters(in: .whitespaces) }
+        guard let header = indexOfSequence(["Location", "%", "Dist."], in: texts) else { return [] }
+        let stops: Set<String> = ["s1", "Safe:", "Ender eye throws"]
+        var watched: [Int] = []
+        var index = header + 3
+        while index < texts.count, texts[index] == "Nether" || texts[index] == "Angle" { index += 1 }
+        var taken = 0
+        while index < texts.count, taken < 6, !stops.contains(texts[index]) {
+            if items[index].role != "AXButton" { watched.append(index) }
+            index += 1
+            taken += 1
+        }
+        if let throwsHeader = indexOfSequence(["x", "z", "Angle"], in: texts, from: header) {
+            let first = throwsHeader + (throwsHeader + 3 < texts.count && texts[throwsHeader + 3] == "Error" ? 4 : 3)
+            watched += (first..<min(texts.count, first + 60)).filter { items[$0].role != "AXButton" }
+        }
+        return watched
     }
 
     private static func indexOfSequence(_ sequence: [String], in texts: [String], from start: Int = 0) -> Int? {
@@ -209,17 +252,39 @@ struct LiveAccessibility: NBBAccessibility {
 /// finding Minecraft; without it, nothing is read.
 ///
 /// It walks the window (about 170 elements for Ninjabrain Bot 1.5.2, 60–75 ms) and keeps its static texts and buttons
-/// with what they said, which is that read's result. A later read asks only the static texts for their values (about
-/// 20 ms, nearly all of it waiting for Ninjabrain Bot's answers); the buttons' titles ("Undo", "Reset" …) are kept
-/// from the walk. It walks again every 5 s, in case a panel changed which labels it shows, when the copy changes and
-/// when an element went away. A walk that finds no predictions table (the window is closed, or Accessibility lists the
-/// app itself as its window) is tried again only after 2 s, and a walk never goes into menus or the app's own element,
+/// with what they said, which is that read's result. Ninjabrain Bot doesn't announce its label changes through
+/// Accessibility (Java posts a value change for text fields, sliders and tables, not for a label's new text), so the
+/// window is looked at often, and most looks are small: between full reads a read asks only the texts that change
+/// whenever Ninjabrain Bot's result does (`NBBWindowParser.watchedIndices`: the top prediction row and the eye throws,
+/// about a third of the texts) and gives the last result back when none changed. When one did, it reads every static
+/// text at once (about 20 ms, nearly all of it waiting for Ninjabrain Bot's answers; the buttons' titles, "Undo",
+/// "Reset" …, are kept from the walk) and walks again on the next read, in case a row came or went. A full read comes
+/// at least every second anyway, for the notes, and a walk every 5 s, when the copy changes and when an element went
+/// away (then at once, in the same read, so a reset doesn't blank the overlay). A copy that doesn't answer in time
+/// keeps its last result. A walk that finds no predictions table (the window is closed, or Accessibility lists the app
+/// itself as its window) is tried again only after 2 s, and a walk never goes into menus or the app's own element,
 /// which Accessibility can list inside its windows, endlessly.
 public actor AXNBBWindowReader: NBBWindowReading {
     private struct Walked {
         var pid: Int32
         var elements: [(element: NBBAXElement, isButton: Bool, walkedText: String)]
         var walkedAt: ContinuousClock.Instant
+        /// What each element said at the last full read.
+        var texts: [String]
+        /// The elements a look between full reads asks.
+        var watched: [Int]
+        var readAt: ContinuousClock.Instant
+        var snapshot: NBBWindowSnapshot?
+        /// A look saw a change: the next read walks, in case a row came or went.
+        var walksNext = false
+    }
+
+    private enum TextsRead {
+        case texts([String])
+        /// An element is gone (the window changed shape or closed): walk again.
+        case gone
+        /// The app didn't answer in time.
+        case noAnswer
     }
 
     private let accessibility: any NBBAccessibility
@@ -228,6 +293,8 @@ public actor AXNBBWindowReader: NBBWindowReading {
     private var failedWalk: (pid: Int32, at: ContinuousClock.Instant)?
     /// Walks again at least this often, in case a panel changed which labels it shows.
     private let rewalkInterval: Duration = .seconds(5)
+    /// Reads every static text at least this often; the reads in between ask only the watched ones.
+    static let fullReadInterval: Duration = .seconds(1)
     /// How long a walk that found no predictions table waits before the next try.
     private let retryInterval: Duration = .seconds(2)
     /// Ninjabrain Bot's window has about 170 elements; a walk stops at this many.
@@ -248,10 +315,40 @@ public actor AXNBBWindowReader: NBBWindowReading {
     public func read(pid: Int32) -> NBBWindowSnapshot? {
         guard accessibility.isTrusted() else { return nil }
         let now = now()
-        if let walked, walked.pid == pid, now - walked.walkedAt < rewalkInterval {
-            return readTexts(of: walked)
+        if var current = walked, current.pid == pid, !current.walksNext, now - current.walkedAt < rewalkInterval {
+            if now - current.readAt < Self.fullReadInterval, !current.watched.isEmpty {
+                switch readTexts(of: current, at: current.watched) {
+                case .texts(let texts) where zip(current.watched, texts).allSatisfy({ current.texts[$0] == $1 }):
+                    return current.snapshot
+                case .noAnswer:
+                    return current.snapshot
+                case .gone:
+                    return walkAndParse(pid: pid, at: now)
+                case .texts:
+                    current.walksNext = true
+                }
+            }
+            switch readTexts(of: current, at: Array(current.elements.indices)) {
+            case .texts(let texts):
+                current.texts = texts
+                current.readAt = now
+                current.snapshot = Self.parse(current.elements, texts)
+                walked = current
+                return current.snapshot
+            case .noAnswer:
+                return current.snapshot
+            case .gone:
+                break
+            }
         }
-        if let failedWalk, failedWalk.pid == pid, now - failedWalk.at < retryInterval { return nil }
+        return walkAndParse(pid: pid, at: now)
+    }
+
+    private func walkAndParse(pid: Int32, at now: ContinuousClock.Instant) -> NBBWindowSnapshot? {
+        if let failedWalk, failedWalk.pid == pid, now - failedWalk.at < retryInterval {
+            walked = nil
+            return nil
+        }
         guard let found = walk(pid: pid, at: now) else {
             walked = nil
             failedWalk = (pid, now)
@@ -259,28 +356,30 @@ public actor AXNBBWindowReader: NBBWindowReading {
         }
         walked = found
         failedWalk = nil
-        return NBBWindowParser.parse(found.elements.map { Self.item($0.isButton, $0.walkedText) })
+        return found.snapshot
     }
 
-    /// The static texts' values now, with the buttons' titles from the walk.
-    private func readTexts(of walked: Walked) -> NBBWindowSnapshot? {
-        var items: [NBBWindowParser.Item] = []
-        items.reserveCapacity(walked.elements.count)
-        for (element, isButton, walkedText) in walked.elements {
+    /// The static texts at `indices` now; a button's title is the walk's.
+    private func readTexts(of walked: Walked, at indices: [Int]) -> TextsRead {
+        var texts: [String] = []
+        texts.reserveCapacity(indices.count)
+        for index in indices {
+            let (element, isButton, walkedText) = walked.elements[index]
             if isButton {
-                items.append(Self.item(true, walkedText))
+                texts.append(walkedText)
                 continue
             }
             switch accessibility.text(of: element, isButton: false) {
-            case .text(let text): items.append(Self.item(false, text ?? ""))
-            case .gone:
-                self.walked = nil
-                return nil
-            case .noAnswer:
-                return nil
+            case .text(let text): texts.append(text ?? "")
+            case .gone: return .gone
+            case .noAnswer: return .noAnswer
             }
         }
-        return NBBWindowParser.parse(items)
+        return .texts(texts)
+    }
+
+    private static func parse(_ elements: [(element: NBBAXElement, isButton: Bool, walkedText: String)], _ texts: [String]) -> NBBWindowSnapshot? {
+        NBBWindowParser.parse(zip(elements, texts).map { item($0.0.isButton, $0.1) })
     }
 
     private static func item(_ isButton: Bool, _ text: String) -> NBBWindowParser.Item {
@@ -312,7 +411,13 @@ public actor AXNBBWindowReader: NBBWindowReading {
                 kept.append((element, isButton, text ?? ""))
             }
             let texts = kept.filter { !$0.isButton }.map(\.walkedText)
-            if texts.contains("Location") && texts.contains("Dist.") { return Walked(pid: pid, elements: kept, walkedAt: time) }
+            if texts.contains("Location") && texts.contains("Dist.") {
+                let allTexts = kept.map(\.walkedText)
+                let items = kept.map { Self.item($0.isButton, $0.walkedText) }
+                return Walked(
+                    pid: pid, elements: kept, walkedAt: time, texts: allTexts, watched: NBBWindowParser.watchedIndices(items),
+                    readAt: time, snapshot: NBBWindowParser.parse(items))
+            }
         }
         return nil
     }

@@ -23,8 +23,8 @@ actor NBBSubscription {
                 isConnected = true
                 onConnectionChange?(true)
                 var parser = SSEParser()
-                for try await byte in stream {
-                    for event in parser.feed([byte]) {
+                for try await chunk in stream {
+                    for event in parser.feed(chunk) {
                         onEvent(event)
                         backoffSeconds = NBBBackoff.initialSeconds
                     }

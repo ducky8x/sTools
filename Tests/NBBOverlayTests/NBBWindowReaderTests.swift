@@ -113,11 +113,47 @@ struct NBBWindowReaderTests {
 
         accessibility.resetCounts()
         certainty.text = "87.5%"
-        clock.advance(by: .milliseconds(500))
+        clock.advance(by: .seconds(1))
         let second = try #require(await reader.read(pid: 7))
         #expect(second.stronghold.predictions.first?.certainty == 0.875)
         #expect(accessibility.roleCalls == 0 && accessibility.childrenCalls == 0, "no walk between walks")
         #expect(accessibility.textCalls.count == 7 && !accessibility.textCalls.contains("Undo"), "the button's title is kept from the walk")
+    }
+
+    /// Between full reads a read asks only the top prediction row and the throws, and gives the last result back when
+    /// they're unchanged; a change there reads everything at once, and the next read walks in case a row came or went.
+    @Test func betweenFullReadsOnlyTheWatchedTextsAreAsked() async throws {
+        let (window, certainty) = nbbWindow()
+        let accessibility = FakeAccessibility(windows: [window])
+        let clock = ManualClock()
+        let reader = reader(accessibility, clock: clock)
+        let first = try #require(await reader.read(pid: 7))
+
+        accessibility.resetCounts()
+        clock.advance(by: .milliseconds(100))
+        #expect(await reader.read(pid: 7) == first)
+        #expect(accessibility.textCalls == ["(-1340, 84)", "100.0%", "1"], "the top row only")
+        #expect(accessibility.roleCalls == 0)
+
+        accessibility.resetCounts()
+        certainty.text = "87.5%"
+        clock.advance(by: .milliseconds(100))
+        #expect(try #require(await reader.read(pid: 7)).stronghold.predictions.first?.certainty == 0.875)
+        #expect(accessibility.textCalls.count == 3 + 7 && accessibility.roleCalls == 0, "the look, then every static text")
+
+        accessibility.resetCounts()
+        clock.advance(by: .milliseconds(100))
+        #expect(try #require(await reader.read(pid: 7)).stronghold.predictions.first?.certainty == 0.875)
+        #expect(accessibility.roleCalls == 11, "walked again after the change")
+
+        accessibility.resetCounts()
+        clock.advance(by: .milliseconds(100))
+        _ = await reader.read(pid: 7)
+        #expect(accessibility.textCalls.count == 3)
+        accessibility.resetCounts()
+        clock.advance(by: .seconds(1))
+        _ = await reader.read(pid: 7)
+        #expect(accessibility.textCalls.count == 7, "a full read at least every second")
     }
 
     @Test func itWalksAgainEveryFiveSecondsAndForAnotherCopy() async {
@@ -129,6 +165,7 @@ struct NBBWindowReaderTests {
         clock.advance(by: .milliseconds(4_900))
         _ = await reader.read(pid: 7)
         #expect(accessibility.roleCalls == 0)
+        #expect(accessibility.textCalls.count == 7)
         clock.advance(by: .milliseconds(200))
         _ = await reader.read(pid: 7)
         #expect(accessibility.roleCalls == 11)
@@ -167,33 +204,34 @@ struct NBBWindowReaderTests {
         #expect(accessibility.roleCalls == AXNBBWindowReader.walkLimit)
     }
 
-    @Test func aGoneElementMakesTheNextReadWalkAgain() async {
+    /// A label that went away (a reset clears rows) means the window changed shape: the same read walks it again, so
+    /// the overlay never blanks for a read.
+    @Test func aGoneElementWalksAgainInTheSameRead() async throws {
         let (window, certainty) = nbbWindow()
         let accessibility = FakeAccessibility(windows: [window])
         let clock = ManualClock()
         let reader = reader(accessibility, clock: clock)
         _ = await reader.read(pid: 7)
         certainty.answer = .gone
-        clock.advance(by: .milliseconds(500))
-        #expect(await reader.read(pid: 7) == nil)
-        certainty.answer = nil
         accessibility.resetCounts()
-        clock.advance(by: .milliseconds(500))
-        #expect(await reader.read(pid: 7) != nil)
+        clock.advance(by: .milliseconds(100))
+        accessibility.windows = [nbbWindow(certainty: "42.0%").window]
+        #expect(try #require(await reader.read(pid: 7)).stronghold.predictions.first?.certainty == 0.42)
         #expect(accessibility.roleCalls == 11)
     }
 
-    /// A copy that doesn't answer in time isn't asked for the rest of its labels; the walk is kept for the next read.
-    @Test func aBusyAppEndsTheReadButKeepsTheWalk() async {
+    /// A copy that doesn't answer in time isn't asked for the rest of its labels and keeps its last result (being busy
+    /// isn't a change); the walk is kept for the next read.
+    @Test func aBusyAppEndsTheReadButKeepsTheWalkAndTheResult() async {
         let (window, certainty) = nbbWindow()
         let accessibility = FakeAccessibility(windows: [window])
         let clock = ManualClock()
         let reader = reader(accessibility, clock: clock)
-        _ = await reader.read(pid: 7)
+        let first = await reader.read(pid: 7)
         certainty.answer = .noAnswer
         accessibility.resetCounts()
-        clock.advance(by: .milliseconds(500))
-        #expect(await reader.read(pid: 7) == nil)
+        clock.advance(by: .seconds(1))
+        #expect(await reader.read(pid: 7) == first)
         #expect(accessibility.textCalls.count == 5, "the read stopped at the label that didn't answer")
         certainty.answer = nil
         accessibility.resetCounts()

@@ -18,7 +18,7 @@ private final class RecordingSource: NBBEventSource, @unchecked Sendable {
     func count(of path: String) -> Int { state.withLock { $0.urls.filter { $0.hasSuffix(path) }.count } }
     var total: Int { state.withLock { $0.urls.count } }
 
-    func connect(to url: URL) async throws -> AsyncThrowingStream<UInt8, Error> {
+    func connect(to url: URL) async throws -> AsyncThrowingStream<[UInt8], Error> {
         let (isUp, generation) = state.withLock { state -> (Bool, Int) in
             state.urls.append(url.path)
             return (state.isUp, state.generation)
@@ -28,7 +28,7 @@ private final class RecordingSource: NBBEventSource, @unchecked Sendable {
         let bytes = Array(payload.utf8)
         let isVersion = url.path.hasSuffix("version")
         return AsyncThrowingStream { continuation in
-            for byte in bytes { continuation.yield(byte) }
+            continuation.yield(bytes)
             if isVersion {
                 continuation.finish()
                 return
@@ -91,6 +91,27 @@ struct NBBConnectionTests {
         connection.stop()
         #expect(connection.runningTaskCount == 0)
         #expect(!connection.isRunning)
+    }
+
+    /// `onChange` comes after the new value is in place, so the overlay can draw it in the same turn, and not for a value
+    /// that's the same as the last.
+    @Test func onChangeComesAfterTheNewValueIsSet() async {
+        let source = RecordingSource()
+        source.setUp(true)
+        let connection = NBBConnection(source: source)
+        var seen: [NBBEvents.ResultType?] = []
+        connection.onChange = { seen.append(connection.stronghold?.resultType) }
+        connection.start()
+        #expect(await eventually { connection.stronghold != nil && connection.boat != nil })
+        #expect(seen.first == NBBEvents.ResultType.none, "the stronghold was set before onChange ran")
+        let count = seen.count
+        source.setUp(false)
+        #expect(await eventually { !connection.isReachable })
+        source.setUp(true)
+        #expect(await eventually { connection.isReachable && connection.runningTaskCount == 6 })
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(seen.count == count, "a reconnect re-sent the same values")
+        connection.stop()
     }
 
     @Test func anIdenticalValueAfterAReconnectDoesNotNotifyObservers() async {

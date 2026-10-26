@@ -69,6 +69,10 @@ public struct NBBOverlaySettings: SettingsDocument {
     /// How the Overworld location is written, as Ninjabrain Bot's stronghold display choice. Ninjabrain Bot 1.5.2's
     /// default (`stronghold_display_type`) is the 4,4 block.
     public var locationDisplay: NBBLocationDisplay = .fourFour
+    /// Each eye throw's angle adjustment beside its angle, as Ninjabrain Bot shows it.
+    public var showsAngleCorrection = true
+    /// How the angle adjustment is written, as Ninjabrain Bot's Adjustment display type. A window's own text is kept.
+    public var correctionDisplay: NBBCorrectionDisplay = .angleChange
     public var maxPredictionRows = 5
 
     public var fadeOnResetEnabled = true
@@ -112,6 +116,8 @@ public struct NBBOverlaySettings: SettingsDocument {
         showsAngleChangeColumn = container.lossy(Bool.self, .showsAngleChangeColumn) ?? defaults.showsAngleChangeColumn
         showsNetherCoordinatesInNether = container.lossy(Bool.self, .showsNetherCoordinatesInNether) ?? defaults.showsNetherCoordinatesInNether
         locationDisplay = container.lossy(NBBLocationDisplay.self, .locationDisplay) ?? defaults.locationDisplay
+        showsAngleCorrection = container.lossy(Bool.self, .showsAngleCorrection) ?? defaults.showsAngleCorrection
+        correctionDisplay = container.lossy(NBBCorrectionDisplay.self, .correctionDisplay) ?? defaults.correctionDisplay
         maxPredictionRows = container.lossy(Int.self, .maxPredictionRows) ?? defaults.maxPredictionRows
         fadeOnResetEnabled = container.lossy(Bool.self, .fadeOnResetEnabled) ?? defaults.fadeOnResetEnabled
         fadeSeconds = container.lossy(Double.self, .fadeSeconds) ?? defaults.fadeSeconds

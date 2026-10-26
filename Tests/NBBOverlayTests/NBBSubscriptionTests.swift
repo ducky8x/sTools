@@ -29,7 +29,7 @@ final class FakeEventSource: NBBEventSource, @unchecked Sendable {
 
     var connectCount: Int { connectCountBox.withLock { $0 } }
 
-    func connect(to url: URL) async throws -> AsyncThrowingStream<UInt8, Error> {
+    func connect(to url: URL) async throws -> AsyncThrowingStream<[UInt8], Error> {
         connectCountBox.withLock { $0 += 1 }
         let next = outcomes.withLock { outcomes -> Outcome? in
             if outcomes.isEmpty { return nil }
@@ -46,7 +46,7 @@ final class FakeEventSource: NBBEventSource, @unchecked Sendable {
             let bytes = Array("data: \(payload)\n\n".utf8)
             let staysOpen = repeatsLastOutcome
             return AsyncThrowingStream { continuation in
-                for byte in bytes { continuation.yield(byte) }
+                continuation.yield(bytes)
                 // A real SSE connection stays open between events; closing immediately would make
                 // "connected" a one-instant flicker instead of an observable, stable state. Only the
                 // one-shot (non-repeating) scripts close right away, matching the drop-and-reconnect

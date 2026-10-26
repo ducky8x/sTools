@@ -78,7 +78,7 @@ struct NBBOverlayView: View {
             case .triangulation(let data):
                 NBBTriangulationBlock(data: data, settings: settings)
             case .failed(let eyeThrows):
-                NBBFailedBlock(eyeThrows: eyeThrows)
+                NBBFailedBlock(eyeThrows: eyeThrows, settings: settings)
             case .blind(let result):
                 NBBBlindBlock(result: result)
             case .divine(let result):
@@ -135,12 +135,15 @@ struct NBBTriangulationBlock: View {
             }
             if settings.showsEyeThrows, !data.eyeThrows.isEmpty {
                 NBBHeading(text: "Eye throws")
-                VStack(alignment: .leading, spacing: 2) {
+                // A grid too, so the errors line up whether or not a throw's angle was adjusted.
+                Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 2) {
                     ForEach(Array(data.eyeThrows.enumerated()), id: \.offset) { _, eyeThrow in
-                        HStack(spacing: 10) {
+                        GridRow {
                             Text("\(Int(eyeThrow.xInOverworld)), \(Int(eyeThrow.zInOverworld))").font(nbbNumber())
-                            Text("\(eyeThrow.angle, specifier: "%.1f")°").font(nbbNumber())
-                            Text("±\(eyeThrow.error, specifier: "%.3f")").font(nbbNumber()).foregroundStyle(STColor.inkSecondary)
+                            NBBThrowAngle(eyeThrow: eyeThrow, settings: settings)
+                            if eyeThrow.showsError {
+                                Text("±\(eyeThrow.error, specifier: "%.3f")").font(nbbNumber()).foregroundStyle(STColor.inkSecondary)
+                            }
                         }
                         .foregroundStyle(STColor.ink)
                     }
@@ -272,13 +275,39 @@ enum NBBAngleChange {
 
 struct NBBFailedBlock: View {
     let eyeThrows: [NBBEvents.EyeThrow]
+    let settings: NBBOverlaySettings
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Triangulation failed").font(nbbLabel(13)).foregroundStyle(STColor.danger)
             ForEach(Array(eyeThrows.enumerated()), id: \.offset) { _, eyeThrow in
-                Text("\(Int(eyeThrow.xInOverworld)), \(Int(eyeThrow.zInOverworld)) — \(eyeThrow.angle, specifier: "%.1f")°")
+                HStack(spacing: 0) {
+                    Text("\(Int(eyeThrow.xInOverworld)), \(Int(eyeThrow.zInOverworld)) — ").font(nbbNumber())
+                    NBBThrowAngle(eyeThrow: eyeThrow, settings: settings)
+                }
+                .foregroundStyle(STColor.inkSecondary)
+            }
+        }
+    }
+}
+
+/// A throw's angle as Ninjabrain Bot shows it: before the correction, to two decimals, then the correction beside it in
+/// green (up) or red (down), and nothing there when the angle wasn't adjusted (`NBBAngleCorrection`).
+struct NBBThrowAngle: View {
+    let eyeThrow: NBBEvents.EyeThrow
+    let settings: NBBOverlaySettings
+
+    private var correction: String? {
+        settings.showsAngleCorrection ? NBBAngleCorrection.text(eyeThrow, display: settings.correctionDisplay) : nil
+    }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(verbatim: NBBAngleCorrection.angleText(eyeThrow) + "\u{00B0}").font(nbbNumber())
+            if let correction {
+                Text(verbatim: correction)
                     .font(nbbNumber())
-                    .foregroundStyle(STColor.inkSecondary)
+                    .foregroundStyle(STColorWellHex.color(from: NBBAngleCorrection.colorHex(correction)))
+                    .accessibilityLabel("Adjusted \(correction)")
             }
         }
     }

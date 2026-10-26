@@ -18,6 +18,8 @@ struct NBBOverlaySettingsTests {
         #expect(settings.showsPredictions && settings.showsEyeThrows && settings.showsBoatState && settings.showsInformationMessages)
         #expect(settings.showsLocationColumn && settings.showsCertaintyColumn && settings.showsDistanceColumn)
         #expect(settings.maxPredictionRows == 5)
+        #expect(settings.showsAngleCorrection, "eye throws show their angle adjustments, as Ninjabrain Bot does")
+        #expect(settings.correctionDisplay == .angleChange, "Ninjabrain Bot 1.5.2's default Adjustment display type")
         #expect(settings.fadeOnResetEnabled)
         #expect(settings.fadeSeconds == 0.25)
         #expect(NBBOverlaySettings.name == "nbbOverlay")
@@ -36,6 +38,8 @@ struct NBBOverlaySettingsTests {
         settings.requiresMinecraftFocus = true
         settings.showsBoatState = false
         settings.maxPredictionRows = 2
+        settings.showsAngleCorrection = false
+        settings.correctionDisplay = .increments
         let data = try JSONEncoder().encode(settings)
         #expect(try JSONDecoder().decode(NBBOverlaySettings.self, from: data) == settings)
     }
@@ -55,6 +59,12 @@ struct NBBOverlaySettingsTests {
         #expect(decoded.plateOpacityPercent == NBBOverlaySettings.plateOpacityRange.lowerBound)
         #expect(decoded.maxPredictionRows == NBBOverlaySettings.maxPredictionRowsRange.upperBound)
         #expect(decoded.fadeSeconds == NBBOverlaySettings.fadeSecondsRange.lowerBound)
+    }
+
+    /// Settings saved before the angle adjustment came load with it shown, as an angle change.
+    @Test func olderSettingsShowTheAngleAdjustment() throws {
+        let decoded = try JSONDecoder().decode(NBBOverlaySettings.self, from: Data(#"{"showsAngleColumn":false,"correctionDisplay":"sideways"}"#.utf8))
+        #expect(decoded.showsAngleCorrection && decoded.correctionDisplay == .angleChange && !decoded.showsAngleColumn)
     }
 
     @Test func unusableValuesFallBackToDefaults() throws {

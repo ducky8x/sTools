@@ -97,6 +97,16 @@ public struct NBBOverlaySettingsView: View {
                     STSettingsRow("Angle change column") {
                         STSwitch(isOn: $controller.settings.showsAngleChangeColumn, label: "Angle change column")
                     }
+                    STSettingsRow("Angle correction") {
+                        STSwitch(isOn: $controller.settings.showsAngleCorrection, label: "Angle correction")
+                    }
+                    if controller.settings.showsAngleCorrection {
+                        STSettingsRow("Correction shown as", combinesForAccessibility: false) {
+                            STSegmented(
+                                selection: $controller.settings.correctionDisplay,
+                                options: NBBCorrectionDisplay.allCases.map { STSegmentedOption($0, $0.title) })
+                        }
+                    }
                     STSettingsRow("Show the gray boat") {
                         STSwitch(isOn: $controller.settings.showsGrayBoat, label: "Show the gray boat")
                     }
