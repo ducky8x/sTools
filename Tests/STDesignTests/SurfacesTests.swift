@@ -709,7 +709,7 @@ struct SurfacesRenderingTests {
 
     @Test func pageHeaderStacksTitleRuleAndTagline() {
         let rep = render(
-            STPageHeader(title: "Crosshair", tagline: "The exact center, drawn your way.") {
+            STPageHeader(title: "Crosshair", tagline: "A crosshair drawn at the center of your screen.") {
                 Circle().fill(STColor.goldStroke).frame(width: 20, height: 20)
             }.background(STColor.background),
             width: 520)

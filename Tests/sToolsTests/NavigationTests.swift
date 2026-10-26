@@ -142,9 +142,9 @@ struct ToolIDTests {
     }
 
     @Test func taglinesAreVerbatimFromRuleR13() {
-        #expect(ToolID.nbbOverlay.tagline == "Ninjabrain Bot's answer, right over the game.")
+        #expect(ToolID.nbbOverlay.tagline == "A clean Ninjabrain Bot overlay.")
         #expect(ToolID.windowBackdrop.tagline == "A clean stage behind Minecraft.")
-        #expect(ToolID.crosshair.tagline == "The exact center, drawn your way.")
+        #expect(ToolID.crosshair.tagline == "A crosshair drawn at the center of your screen.")
         #expect(ToolID.timerOverlay.tagline == "Your Fire Resistance, counted down.")
         #expect(ToolID.screenRecording.tagline == "Minecraft and everything else, on one canvas.")
         #expect(ToolID.keyRebinder.tagline == "Every rebind, right on its key.")
