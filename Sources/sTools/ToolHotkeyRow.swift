@@ -120,7 +120,7 @@ struct ToolHotkeyRow: View {
             }
             if !hotkeys.isEnabled, own != nil || ToolHotkey.sharedText(for: action, in: hotkeys.bindings) != nil {
                 HStack(spacing: 12) {
-                    caption("Hotkeys are off, so this key does nothing yet.")
+                    caption("Hotkeys are off. Turn them on to use this key.")
                     Button("Turn On") { model.hotkeys.isEnabled = true }
                         .buttonStyle(STButtonStyle(.quiet))
                         .accessibilityLabel("Turn on hotkeys")

@@ -10,7 +10,7 @@ struct GreetingView: View {
 
     private enum Copy {
         static let wordmark = "sTools"
-        static let line = "Six instruments for running Minecraft on a Mac."
+        static let line = "Six tools for speedrunning on a Mac."
         static let begin = "Begin"
     }
 

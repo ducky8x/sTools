@@ -257,7 +257,7 @@ struct PrologueTrialsTests {
         #expect(TrialStartTimerKeyRow.Copy.title == "Hotkey")
         #expect(TrialStartTimerKeyRow.Copy.recorderLabel == "Timer Overlay hotkey")
         #expect(AppModel.turnOnHotkeysText
-            == "Hotkeys are off, so Timer Overlay\u{2019}s hotkey would do nothing. Turn them on to set it.")
+            == "Hotkeys are off. Turn them on to set Timer Overlay\u{2019}s key.")
         let words = [item?.title ?? "", item?.detail ?? "", TrialStartTimerKeyRow.Copy.title, AppModel.turnOnHotkeysText]
         #expect(!words.contains { $0.localizedCaseInsensitiveContains("start-timer key") })
     }

@@ -15,8 +15,8 @@ public enum OwnSoundsError: Error, Equatable, LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .notASound: "That file isn't a sound sTools can play."
-        case .copyFailed: "sTools couldn't copy that file into its Sounds folder."
+        case .notASound: "sTools can\u{2019}t play that file. Choose an MP3, WAV or other sound."
+        case .copyFailed: "sTools couldn\u{2019}t copy that file into its Sounds folder. Check that your disk isn\u{2019}t full, then try again."
         case .notAnOwnSound: "That sound isn't one of your files."
         case .removeFailed: "sTools couldn't remove that file."
         }

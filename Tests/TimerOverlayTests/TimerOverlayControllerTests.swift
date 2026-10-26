@@ -802,17 +802,6 @@ struct TimerOverlayControllerTests {
         #expect(rig.controller.phase == .idle && !rig.controller.isPreviewing)
     }
 
-    // MARK: - The rule notice
-
-    @Test func theRuleNoticeShowsOnceTheToolIsOnUntilDismissed() {
-        let rig = TimerRig { $0.ruleNote = .lineAndNotice }
-        #expect(!rig.controller.showsRuleNotice)
-        rig.controller.setEnabled(true)
-        #expect(rig.controller.showsRuleNotice)
-        rig.controller.dismissRuleNotice()
-        #expect(!rig.controller.showsRuleNotice && rig.controller.settings.ruleNoticeDismissed)
-    }
-
     @Test func availabilityIsAccessibility() {
         #expect(TimerRig().controller.isAvailable)
         #expect(!TimerRig(accessibility: .denied).controller.isAvailable)

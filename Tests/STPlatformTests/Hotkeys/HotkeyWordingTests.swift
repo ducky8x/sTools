@@ -73,9 +73,9 @@ struct HotkeyWordingTests {
     /// macOS 15.0–15.1 reportedly refused hotkeys without ⌘ or ⌃; the refusal says so only for those.
     @Test func theRefusalHintNamesCommandAndControlOnlyWhenBothAreMissing() {
         #expect(HotkeyWording.conflictText(.systemRefused, combo: shiftC, inList: true)
-                == "Refused by macOS. Some versions need ⌘ or ⌃.")
+                == "macOS won\u{2019}t allow this key. Add ⌘ or ⌃.")
         #expect(HotkeyWording.conflictText(.systemRefused, combo: c, inList: false)
-                == "Refused by macOS. Some versions need ⌘ or ⌃.")
+                == "macOS won\u{2019}t allow this key. Add ⌘ or ⌃.")
         #expect(HotkeyWording.conflictText(.systemRefused, combo: controlOptionC, inList: true) == "Refused by macOS")
     }
 
@@ -105,12 +105,12 @@ struct HotkeyWordingTests {
             #expect(note?.contains("Minecraft") == true)
         }
         #expect(HotkeyWording.typingNote(for: c)
-                == "While hotkeys are on, other apps never get C, not even Minecraft's chat or seed field.")
+                == "While hotkeys are on, other apps never get C, even in Minecraft\u{2019}s chat or seed field.")
     }
 
     @Test func functionKeyNoteForF1ToF12() {
-        #expect(HotkeyWording.functionKeyNote(for: f5) == "On a Mac keyboard you may need to hold fn with F5.")
-        #expect(HotkeyWording.functionKeyNote(for: controlF5) == "On a Mac keyboard you may need to hold fn with F5.")
+        #expect(HotkeyWording.functionKeyNote(for: f5) == "Mac keyboards may need fn held with F5.")
+        #expect(HotkeyWording.functionKeyNote(for: controlF5) == "Mac keyboards may need fn held with F5.")
         #expect(HotkeyWording.functionKeyNote(for: HotkeyCombo(keyCode: 122, modifiers: [])) != nil) // F1
         #expect(HotkeyWording.functionKeyNote(for: HotkeyCombo(keyCode: 111, modifiers: [])) != nil) // F12
         #expect(HotkeyWording.functionKeyNote(for: f13) == nil)

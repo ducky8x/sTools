@@ -206,7 +206,7 @@ struct ToolHotkeyRowTests {
         }
         let timer = try #require(harness.model.timerOverlay)
         timer.settings.cancelGesture = .hold
-        #expect(row.purposeLine == "Starts the timer. Holding it 1 s switches Timer Overlay off.")
+        #expect(row.purposeLine == "Starts the timer. Hold it for 1 s to switch Timer Overlay off.")
         timer.settings.cancelGesture = .off
         #expect(row.purposeLine == "Starts the timer.")
 

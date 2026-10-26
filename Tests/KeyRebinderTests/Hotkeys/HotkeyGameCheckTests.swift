@@ -105,10 +105,10 @@ import STPlatform
         let note = try #require(HotkeyGameCheck.heldModifierNote(for: HotkeyFixtures.combo("f18"), minecraftKeybinds: nil))
         #expect(note.contains("Shift (Sneak)"))
         #expect(note.contains("Control (Sprint)"))
-        #expect(note.hasPrefix("F18 doesn\u{2019}t fire while you hold Shift (Sneak) or Control (Sprint)"))
+        #expect(note.hasPrefix("F18 won\u{2019}t fire while you hold Shift (Sneak) or Control (Sprint)"))
         #expect(HotkeyGameCheck.heldModifierNote(for: HotkeyFixtures.combo("f18", [.control, .shift]), minecraftKeybinds: nil) == nil)
         let known = HotkeyGameCheck.heldModifierNote(for: HotkeyFixtures.combo("f18", .control), minecraftKeybinds: options)
-        #expect(known == "\u{2303}F18 doesn\u{2019}t fire while you hold Shift (Sneak).")
+        #expect(known == "\u{2303}F18 won\u{2019}t fire while you hold Shift (Sneak).")
     }
 
     @Test func noHeldModifierNoteWhenMinecraftBindsNoModifier() {

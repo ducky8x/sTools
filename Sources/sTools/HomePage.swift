@@ -8,14 +8,14 @@ struct HomePage: View {
     nonisolated static var accessibilityWarning: String {
         let titles = ToolID.allCases.filter(\.requiresAccessibility).map(\.title)
         let list = titles.dropLast().joined(separator: ", ") + " and " + (titles.last ?? "")
-        return "Accessibility isn't allowed yet, so \(list) stay off."
+        return "Allow Accessibility to turn on \(list)."
     }
 
     let model: AppModel
 
     var body: some View {
         PageContainer(anchor: Binding(get: { model.pendingPageAnchor }, set: { model.pendingPageAnchor = $0 }), accepts: [.hotkeys]) {
-            STPageHeader(title: "Home", tagline: "Every tool and what it needs, at a glance.") { EmptyView() }
+            STPageHeader(title: "Home", tagline: "Hotkeys, tool statuses, and dependencies") { EmptyView() }
             HotkeysSection(model: model)
                 .id(PageAnchor.hotkeys)
             PageSectionTitle("Tools").padding(.top, 28).padding(.bottom, 4)

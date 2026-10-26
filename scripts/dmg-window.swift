@@ -255,7 +255,7 @@ func drawBackground(on canvas: Canvas, palette: [String: CGColor], version: Stri
     }
     context.setFillColor(color("gold"))
     context.fill(CGRect(x: margin, y: titleBaseline + 14, width: width - 2 * margin, height: 1))
-    canvas.draw(canvas.line("Drag sTools onto Applications to install it.",
+    canvas.draw(canvas.line("Drag sTools into the Applications folder.",
                             font: try Fonts.text(16, italic: true), color: color("inkSecondary")),
                 x: margin, baseline: titleBaseline + 42)
 
@@ -266,21 +266,18 @@ func drawBackground(on canvas: Canvas, palette: [String: CGColor], version: Stri
     let tip = Window.applicationsCenter.x - half - 30
     drawArrow(in: context, from: start, to: tip, y: arrowY, color: color("gold"))
 
-    // First open: a hairline, a small-caps label with a short reason, and three numbered steps.
+    // First open: a hairline, a short reason and three numbered steps.
     let sectionTop: CGFloat = 300
     context.setFillColor(color("rule"))
     context.fill(CGRect(x: margin, y: sectionTop, width: width - 2 * margin, height: 1))
 
     let labelBaseline = sectionTop + 30
-    let labelEnd = canvas.draw(canvas.line("First open", font: try Fonts.text(12, weight: 600, smallCaps: true),
-                                           color: color("gold"), kern: 12 * 0.04),
-                               x: margin, baseline: labelBaseline)
-    canvas.draw(canvas.line("sTools isn\u{2019}t notarized, so macOS blocks it the first time.",
+    canvas.draw(canvas.line("Because sTools isn\u{2019}t notarized, macOS blocks it on its first open.",
                             font: try Fonts.text(14, italic: true), color: color("inkTertiary")),
-                x: labelEnd + 12, baseline: labelBaseline)
+                x: margin, baseline: labelBaseline)
 
     let steps = [
-        "Open sTools from Applications, then click Done.",
+        "Open sTools from the Applications folder, and then click Done on the popup.",
         "Go to System Settings \u{25B8} Privacy & Security.",
         "Click Open Anyway, then confirm.",
     ]

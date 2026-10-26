@@ -92,21 +92,21 @@ enum PrologueCopy {
 
     static let ninjabrainReady = CompanionStatus(isReady: true, detail: "Ninjabrain Bot answers at localhost:52533.")
     static let ninjabrainMissing = CompanionStatus(
-        isReady: false, detail: "Nothing answers at localhost:52533 yet. Open Ninjabrain Bot and turn on its API.")
+        isReady: false, detail: "Ninjabrain Bot isn\u{2019}t answering yet. Open it and turn on its API.")
 
     static func karabiner(_ requirement: KarabinerRequirement) -> CompanionStatus {
         switch requirement {
         case .ready:
-            CompanionStatus(isReady: true, detail: "Installed, running and new enough.")
+            CompanionStatus(isReady: true, detail: "Installed and running.")
         case .notInstalled:
             CompanionStatus(isReady: false, detail: "Karabiner-Elements isn\u{2019}t installed.", actionTitle: "Get Karabiner-Elements\u{2026}")
         case .notRunning:
             CompanionStatus(isReady: false, detail: "Karabiner-Elements is installed but not running.", actionTitle: "Open Karabiner-Elements")
         case .versionTooOld(let found):
-            CompanionStatus(isReady: false, detail: "This Mac has Karabiner-Elements \(found); sTools needs 16.0 or later.",
+            CompanionStatus(isReady: false, detail: "Karabiner-Elements \(found) is too old. Update to 16.0 or later.",
                             actionTitle: "Get Karabiner-Elements\u{2026}")
         case .configUnreadable:
-            CompanionStatus(isReady: false, detail: "Karabiner-Elements hasn\u{2019}t written its settings file yet.",
+            CompanionStatus(isReady: false, detail: "Open Karabiner-Elements once.",
                             actionTitle: "Open Karabiner-Elements")
         }
     }

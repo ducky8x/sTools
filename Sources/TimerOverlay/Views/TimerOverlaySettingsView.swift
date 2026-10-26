@@ -27,14 +27,14 @@ public struct TimerPageActions {
                 panel.allowsMultipleSelection = false
                 panel.canChooseDirectories = false
                 panel.prompt = "Add"
-                panel.message = "Choose a sound file for the alarm. sTools keeps a copy with its settings."
+                panel.message = "Choose an alarm sound."
                 return panel.runModal() == .OK ? panel.url : nil
             },
             confirmHidingFromRecordings: {
                 let alert = NSAlert()
                 alert.alertStyle = .warning
                 alert.messageText = "Hide Timer Overlay from recordings?"
-                alert.informativeText = "Your run\u{2019}s video should show every aid you use. Hiding one can turn a rejected run into a ban (speedrun rule A.12.3)."
+                alert.informativeText = "Runs must show every aid you use."
                 alert.addButton(withTitle: "Keep in Recordings")
                 alert.addButton(withTitle: "Hide from Recordings")
                 return alert.runModal() == .alertSecondButtonReturn
@@ -42,8 +42,8 @@ public struct TimerPageActions {
     }
 }
 
-/// Everything below the page header for Timer Overlay (spec 5.6.3): the rule notice when it's due, the preview plate
-/// with the live time, Start, Pause / Resume, Cancel and Test, the rule line when chosen, Duration, the everyday
+/// Everything below the page header for Timer Overlay (spec 5.6.3): the preview plate with the live time, Start,
+/// Pause / Resume, Cancel and Test, Duration, the everyday
 /// settings, then an Advanced section with every other row of spec 5.6.7. The Start-timer key is set on the page's
 /// Hotkey row above, as every tool page's is (spec 6.1).
 public struct TimerOverlaySettingsView: View {
@@ -66,20 +66,9 @@ public struct TimerOverlaySettingsView: View {
     public var body: some View {
         let actions = actions ?? .live
         VStack(alignment: .leading, spacing: 20) {
-            if controller.showsRuleNotice {
-                STRequirementStrip(kind: .warning, message: Self.ruleNotice, actionTitle: "Dismiss") {
-                    controller.dismissRuleNotice()
-                }
-                .transition(.opacity)
-            }
-
             VStack(alignment: .leading, spacing: 12) {
                 TimerPreviewPlate(controller: controller)
                 TimerRunControls(controller: controller)
-                if controller.settings.ruleNote != .off {
-                    STNoteLine(Self.ruleLine)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
             }
 
             VStack(alignment: .leading, spacing: 0) {
@@ -99,7 +88,7 @@ public struct TimerOverlaySettingsView: View {
                         .disabled(!controller.isAvailable)
                 }
                 if controller.isPlacing {
-                    Text("Drag the overlay on screen to move it. The fields below update as you drag.")
+                    Text("Drag the timer to move it.")
                         .stStyle(.caption)
                         .foregroundStyle(STColor.inkSecondary)
                         .padding(.bottom, 10)
@@ -127,14 +116,7 @@ public struct TimerOverlaySettingsView: View {
                 TimerAdvancedSection(controller: controller, confirmHidingFromRecordings: actions.confirmHidingFromRecordings)
             }
         }
-        .stAnimation(STMotion.quick, value: controller.showsRuleNotice)
     }
-
-    /// The advisory line (spec 5.6.8, Timer round I1). Placeholder wording for M9.
-    static let ruleLine = "A countdown isn\u{2019}t on the speedrun rules\u{2019} list of allowed tools (A.11.7\u{2013}A.11.9): ask the moderators before submitting runs that use it, and keep the hotbar, toasts, chat and SpeedRunIGT\u{2019}s timer visible (A.2.9)."
-
-    /// The notice shown once the tool was first turned on, until it's dismissed. Placeholder wording for M9.
-    static let ruleNotice = "Before you submit runs that use Timer Overlay, ask the moderators: a countdown isn\u{2019}t on the speedrun rules\u{2019} list of allowed tools (A.11.7\u{2013}A.11.9)."
 
     private var digitSizeBinding: Binding<Double> {
         Binding(get: { Double(controller.settings.digitSize) }, set: { controller.settings.digitSize = Int($0.rounded()) })

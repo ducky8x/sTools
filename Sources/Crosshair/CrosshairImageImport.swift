@@ -14,12 +14,12 @@ enum CrosshairImageImport {
     /// (`Images/<uuid>.<ext>`), or a user-facing message on failure.
     static func importImage(from url: URL, into directory: URL) -> Result<String, ImportError> {
         guard loadImage(at: url) != nil else {
-            return .failure(ImportError(message: "That file isn't an image sTools can read."))
+            return .failure(ImportError(message: "sTools can\u{2019}t read that file. Choose a PNG, JPEG or other image."))
         }
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         } catch {
-            return .failure(ImportError(message: "sTools couldn't create its Images folder."))
+            return .failure(ImportError(message: "sTools couldn\u{2019}t create its Images folder. Check that your disk isn\u{2019}t full, then try again."))
         }
         let ext = url.pathExtension.isEmpty ? "png" : url.pathExtension
         let name = "\(UUID().uuidString).\(ext)"

@@ -253,13 +253,13 @@ struct PrologueShortcuts: View {
     }
 }
 
-/// "Skip the introduction? You can replay it from the Help menu." — Skip / Keep going (spec 4.1, D11).
+/// "Skip the introduction? Replay it anytime from Help ▸ Replay Introduction." — Skip / Keep going (spec 4.1, D11).
 struct SkipIntroductionPrompt: View {
     let model: PrologueModel
 
     private enum Copy {
         static let question = "Skip the introduction?"
-        static let detail = "You can replay it from the Help menu."
+        static let detail = "Replay it anytime from Help \u{25B8} Replay Introduction."
         static let skip = "Skip"
         static let keepGoing = "Keep going"
     }

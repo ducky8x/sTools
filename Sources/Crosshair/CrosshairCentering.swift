@@ -7,10 +7,7 @@ enum CrosshairCentering {
     /// By the same math it holds on a 2x display that looks like 1920 x 1080: Minecraft renders all of its
     /// 3840 x 2160 pixels, so the line covers columns 1917-1919 and rows 1077-1079, and the default's offset
     /// is in pixels there too.
-    static let minecraftNote = "With the default settings, this crosshair sits exactly on Minecraft\u{2019}s own when Minecraft covers the menu bar and Dock (1920 \u{00D7} 1080, GUI scale 3)."
-
-    /// Spec 5.3: on a scaled resolution macOS resamples the whole screen, so nothing can be pixel-exact.
-    static let scaledModeNote = "This display uses a scaled resolution, so macOS resamples everything on it and the crosshair may look slightly soft. Its Default resolution in System Settings \u{25B8} Displays keeps it pixel-exact."
+    static let minecraftNote = "By default, this lines up with Minecraft\u{2019}s crosshair in full screen (1920 \u{00D7} 1080, GUI scale 3)."
 
     /// Explains when the chosen width can't be split evenly across the display's middle. Nil when it sits
     /// exactly on the middle, when an offset moves it off the middle on purpose, or for an image (placed by
@@ -27,9 +24,7 @@ enum CrosshairCentering {
         let isLine = settings.shape == .plus || settings.shape == .x
         let range = isLine ? CrosshairSettings.thicknessRange : CrosshairSettings.sizeRange
         let choices = [length - 1, length + 1].filter(range.contains).map { "\($0) px" }
-        let middle = display.width % 2 == 0 ? "falls between two pixels" : "is a single pixel"
-        return "This display is \(dimensions) pixels, so its middle \(middle). "
-            + "A \(length) px \(isLine ? "thickness" : "size") can\u{2019}t be split evenly across it, so one side is a pixel longer. "
-            + "\(choices.joined(separator: " or ")) is exactly centered."
+        return "A \(length) px \(isLine ? "thickness" : "size") can\u{2019}t be centered exactly on this \(dimensions) display; "
+            + "one side is a pixel longer. \(choices.joined(separator: " or ")) centers exactly."
     }
 }

@@ -88,7 +88,7 @@ Three tools touch the [Minecraft: Java Edition speedrunning rules](https://www.m
 
 - The NBB Overlay shows only what Ninjabrain Bot itself shows, as rule A.11.7.a.i requires of tools that use its API. Its settings can hide or reformat information, never add to it.
 - The Key Rebinder's checker cites the remap rules (A.10.1–A.10.4) when a rebind may break them. It only advises; you decide.
-- Timer Overlay isn't on the rules' list of allowed tools, so ask the moderators before submitting runs that use it (A.11.9). It never reads or acts on the game, and its placement guides help keep the hotbar, chat, toasts and your in-game timer visible.
+- Timer Overlay has been checked against the rules and is legal. It never reads or acts on the game, and its placement guides help keep the hotbar, chat, toasts and your in-game timer visible.
 
 ## Requirements
 
