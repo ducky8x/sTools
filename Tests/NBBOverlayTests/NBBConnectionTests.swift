@@ -18,7 +18,7 @@ private final class RecordingSource: NBBEventSource, @unchecked Sendable {
     func count(of path: String) -> Int { state.withLock { $0.urls.filter { $0.hasSuffix(path) }.count } }
     var total: Int { state.withLock { $0.urls.count } }
 
-    func connect(to url: URL) async throws -> AsyncThrowingStream<UInt8, Error> {
+    func connect(to url: URL) async throws -> AsyncThrowingStream<[UInt8], Error> {
         let (isUp, generation) = state.withLock { state -> (Bool, Int) in
             state.urls.append(url.path)
             return (state.isUp, state.generation)
@@ -28,7 +28,7 @@ private final class RecordingSource: NBBEventSource, @unchecked Sendable {
         let bytes = Array(payload.utf8)
         let isVersion = url.path.hasSuffix("version")
         return AsyncThrowingStream { continuation in
-            for byte in bytes { continuation.yield(byte) }
+            continuation.yield(bytes)
             if isVersion {
                 continuation.finish()
                 return

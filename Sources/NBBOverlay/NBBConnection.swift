@@ -130,9 +130,9 @@ public final class NBBConnection {
         }
     }
 
-    private static func collect(_ stream: AsyncThrowingStream<UInt8, Error>) async throws -> [UInt8] {
+    private static func collect(_ stream: AsyncThrowingStream<[UInt8], Error>) async throws -> [UInt8] {
         var bytes: [UInt8] = []
-        for try await byte in stream { bytes.append(byte) }
+        for try await chunk in stream { bytes.append(contentsOf: chunk) }
         return bytes
     }
 
