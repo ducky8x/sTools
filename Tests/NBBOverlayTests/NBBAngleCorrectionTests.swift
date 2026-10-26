@@ -51,6 +51,16 @@ struct NBBAngleCorrectionTests {
         #expect(NBBAngleCorrection.text(eyeThrow(shown: "-0.01"), display: .increments) == "-0.01")
     }
 
+    /// ducky's throw (Ninjabrain Bot 1.5.2 showed "91.83+2"; the API sent correction 0.004405, correctionIncrements 2):
+    /// the overlay's default writes the number of adjustments, and Angle change, still a choice, writes "+0.004".
+    @Test func duckysThrowShowsItsAdjustmentsByDefault() {
+        let throwNinety = eyeThrow(angle: 91.834405, without: 91.83, correction: 0.004405, increments: 2)
+        #expect(NBBAngleCorrection.text(throwNinety, display: NBBOverlaySettings.defaultValue.correctionDisplay) == "+2")
+        #expect(NBBAngleCorrection.text(throwNinety, display: .increments) == "+2")
+        #expect(NBBAngleCorrection.text(throwNinety, display: .angleChange) == "+0.004")
+        #expect(NBBAngleCorrection.angleText(throwNinety) == "91.83")
+    }
+
     /// Green for up, red for down, Ninjabrain Bot's dark theme's Subpixel + and Subpixel − colors.
     @Test func theColorFollowsTheSign() {
         #expect(NBBAngleCorrection.colorHex("+6") == "#75CC6C")

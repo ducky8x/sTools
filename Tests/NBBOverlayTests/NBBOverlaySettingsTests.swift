@@ -19,11 +19,11 @@ struct NBBOverlaySettingsTests {
         #expect(settings.showsLocationColumn && settings.showsCertaintyColumn && settings.showsDistanceColumn)
         #expect(settings.maxPredictionRows == 5)
         #expect(settings.showsAngleCorrection, "eye throws show their angle adjustments, as Ninjabrain Bot does")
-        #expect(settings.correctionDisplay == .angleChange, "Ninjabrain Bot 1.5.2's default Adjustment display type")
+        #expect(settings.correctionDisplay == .increments, "ducky: the number of adjustments by default")
         #expect(settings.fadeOnResetEnabled)
         #expect(settings.fadeSeconds == 0.25)
         #expect(NBBOverlaySettings.name == "nbbOverlay")
-        #expect(NBBOverlaySettings.version == 1)
+        #expect(NBBOverlaySettings.version == 2)
     }
 
     @Test func roundTripsThroughJSON() throws {
@@ -39,7 +39,7 @@ struct NBBOverlaySettingsTests {
         settings.showsBoatState = false
         settings.maxPredictionRows = 2
         settings.showsAngleCorrection = false
-        settings.correctionDisplay = .increments
+        settings.correctionDisplay = .angleChange
         let data = try JSONEncoder().encode(settings)
         #expect(try JSONDecoder().decode(NBBOverlaySettings.self, from: data) == settings)
     }
@@ -61,10 +61,38 @@ struct NBBOverlaySettingsTests {
         #expect(decoded.fadeSeconds == NBBOverlaySettings.fadeSecondsRange.lowerBound)
     }
 
-    /// Settings saved before the angle adjustment came load with it shown, as an angle change.
+    /// Settings saved before the angle adjustment came load with it shown, as the number of adjustments.
     @Test func olderSettingsShowTheAngleAdjustment() throws {
         let decoded = try JSONDecoder().decode(NBBOverlaySettings.self, from: Data(#"{"showsAngleColumn":false,"correctionDisplay":"sideways"}"#.utf8))
-        #expect(decoded.showsAngleCorrection && decoded.correctionDisplay == .angleChange && !decoded.showsAngleColumn)
+        #expect(decoded.showsAngleCorrection && decoded.correctionDisplay == .increments && !decoded.showsAngleColumn)
+    }
+
+    /// Version 1 always saved the Angle change it defaulted to, so a saved Angle change can't be told from one picked;
+    /// ducky never picked it (the setting was a day old), so version 1's Angle change becomes the new default. Every other
+    /// setting in the file is kept.
+    @MainActor
+    @Test func aVersion1AngleChangeMovesToTheNumberOfAdjustments() throws {
+        let loaded = try loadFromDisk(#"{"version": 1, "value": {"correctionDisplay": "angleChange", "width": 400, "showsAngleColumn": false}}"#)
+        #expect(loaded.correctionDisplay == .increments)
+        #expect(loaded.width == 400 && !loaded.showsAngleColumn)
+    }
+
+    @MainActor
+    @Test func aVersion1FileWithoutTheSettingGetsTheNewDefault() throws {
+        #expect(try loadFromDisk(#"{"version": 1, "value": {"width": 400}}"#).correctionDisplay == .increments)
+    }
+
+    @MainActor
+    @Test func aVersion1NumberOfAdjustmentsStays() throws {
+        #expect(try loadFromDisk(#"{"version": 1, "value": {"correctionDisplay": "increments"}}"#).correctionDisplay == .increments)
+    }
+
+    /// Once migrated, Angle change is a choice the person made, and it stays.
+    @MainActor
+    @Test func anAngleChangePickedSinceStays() throws {
+        #expect(try loadFromDisk(#"{"version": 2, "value": {"correctionDisplay": "angleChange"}}"#).correctionDisplay == .angleChange)
+        let migrated = try NBBOverlaySettings.migrate(from: 2, ["correctionDisplay": "angleChange"])
+        #expect(migrated["correctionDisplay"] as? String == "angleChange")
     }
 
     @Test func unusableValuesFallBackToDefaults() throws {
@@ -91,6 +119,16 @@ struct NBBOverlaySettingsTests {
     @Test func aspectRatioPresetFallsBackToCustomForAnUnmatchedRatio() {
         #expect(NBBAspectRatioPreset.matching(2.37) == .custom)
         #expect(NBBAspectRatioPreset.custom.ratio == nil)
+    }
+
+    /// Loads `nbbOverlay.json` with `file` as its contents from a temporary settings folder.
+    @MainActor
+    private func loadFromDisk(_ file: String) throws -> NBBOverlaySettings {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "nbb-settings-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data(file.utf8).write(to: directory.appending(path: "nbbOverlay.json"))
+        return SettingsStore(directory: directory).load(NBBOverlaySettings.self)
     }
 
     @MainActor
