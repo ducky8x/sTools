@@ -258,6 +258,7 @@ struct HowToSteps: View {
                     Text(Self.text(of: step))
                         .stStyle(.body)
                         .foregroundStyle(STColor.ink)
+                        .tint(theme.accent)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
