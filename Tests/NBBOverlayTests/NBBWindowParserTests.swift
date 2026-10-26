@@ -85,9 +85,72 @@ struct NBBWindowParserTests {
         let throwsRead = try #require(NBBWindowParser.parse(recordedWindow)).stronghold.eyeThrows
         #expect(throwsRead.count == 1)
         #expect(throwsRead.first?.xInOverworld == -1374.70)
-        #expect(throwsRead.first?.angle == -80.64)
+        #expect(throwsRead.first?.angleWithoutCorrection == -80.64)
         #expect(throwsRead.first?.error == -0.0022)
-        #expect(throwsRead.first?.correction == 6)
+    }
+
+    /// The recorded window writes its angle adjustment as the number of adjustments ("+6"), beside the angle it shows
+    /// before the correction.
+    @Test func readsTheNumberOfAdjustmentsBesideTheAngle() throws {
+        let read = try #require(NBBWindowParser.parse(recordedWindow)?.stronghold.eyeThrows.first)
+        #expect(read.shownCorrection == "+6" && read.correctionIncrements == 6)
+        #expect(read.angleWithoutCorrection == -80.64 && read.angle == -80.64, "the window doesn't say how far 6 adjustments turn")
+        #expect(NBBAngleCorrection.text(read, display: .angleChange) == "+6")
+    }
+
+    private static func throwsWindow(errorHeader: Bool = true, rows: [[String]]) -> [Item] {
+        let t = Item.text
+        var items = [t("Location"), t("%"), t("Dist."), t("Nether"), t("Angle"),
+                     t("(-1340, 84)"), t("100.0%"), t("1"), t("(-168, 10)"), t("118.30"), t(" (<- 113.7)"), t("s1"),
+                     t("Ender eye throws"), Item(role: "AXButton", text: "Undo"), Item(role: "AXButton", text: "Redo"),
+                     Item(role: "AXButton", text: "Reset"), t("x"), t("z"), t("Angle")]
+        if errorHeader { items.append(t("Error")) }
+        for row in rows {
+            items.append(.button)
+            items += row.map(t)
+        }
+        items += [t(""), t(""), t("")]
+        return items
+    }
+
+    /// An angle change: "+0.01" (or three decimals), between the angle and the error.
+    @Test func readsAnAngleChangeBesideTheAngle() throws {
+        let window = Self.throwsWindow(rows: [
+            ["-1374.70", "81.61", "-80.64", "+0.01", "-0.0022"],
+            ["-1300.00", "90.00", "-81.20", "-0.013", "0.004"],
+        ])
+        let read = try #require(NBBWindowParser.parse(window)).stronghold.eyeThrows
+        #expect(read.count == 2)
+        #expect(read[0].shownCorrection == "+0.01" && read[0].correction == 0.01 && read[0].correctionIncrements == nil)
+        #expect(read[0].angleWithoutCorrection == -80.64 && abs(read[0].angle - -80.63) < 1e-9 && read[0].error == -0.0022)
+        #expect(read[1].shownCorrection == "-0.013" && read[1].correction == -0.013 && read[1].error == 0.004)
+    }
+
+    /// Ninjabrain Bot writes nothing beside an angle that wasn't adjusted.
+    @Test func aThrowWithoutAnAdjustmentHasNoCorrection() throws {
+        let window = Self.throwsWindow(rows: [["-1374.70", "81.61", "-80.64", "-0.0022"], ["-1300.00", "90.00", "-81.20", "", "0.004"]])
+        let read = try #require(NBBWindowParser.parse(window)).stronghold.eyeThrows
+        #expect(read.count == 2)
+        #expect(read.allSatisfy { $0.shownCorrection == nil && $0.correction == 0 && $0.showsError })
+        #expect(read.map(\.error) == [-0.0022, 0.004])
+    }
+
+    /// With Show angle errors off, Ninjabrain Bot shows no Error column; the adjustment is then the row's last text.
+    @Test func readsTheAdjustmentWhenTheWindowHidesTheErrors() throws {
+        let window = Self.throwsWindow(errorHeader: false, rows: [["-1374.70", "81.61", "-80.64", "-3"], ["-1300.00", "90.00", "-81.20"]])
+        let read = try #require(NBBWindowParser.parse(window)).stronghold.eyeThrows
+        #expect(read.count == 2)
+        #expect(read[0].shownCorrection == "-3" && read[0].correctionIncrements == -3 && !read[0].showsError)
+        #expect(read[1].shownCorrection == nil && !read[1].showsError && read[1].angleWithoutCorrection == -81.20)
+    }
+
+    /// An Error column with no error in it (no prediction to measure against) still leaves a signed adjustment as one.
+    @Test func aSignedAdjustmentWithoutAnErrorIsStillAnAdjustment() throws {
+        let window = Self.throwsWindow(rows: [["10.00", "20.00", "30.00", "+2"], ["11.00", "21.00", "31.00", "+0.02"], ["12.00", "22.00", "32.00", "0.01"]])
+        let read = try #require(NBBWindowParser.parse(window)).stronghold.eyeThrows
+        #expect(read.map(\.shownCorrection) == ["+2", "+0.02", nil])
+        #expect(read.map(\.showsError) == [false, false, true])
+        #expect(read[2].error == 0.01)
     }
 
     @Test func readsTheNotesButNotTheLabels() throws {

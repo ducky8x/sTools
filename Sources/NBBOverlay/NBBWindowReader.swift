@@ -37,8 +37,10 @@ enum NBBWindowParser {
         let texts = items.map { $0.text.trimmingCharacters(in: .whitespaces) }
         guard let header = indexOfSequence(["Location", "%", "Dist."], in: texts) else { return nil }
         let predictions = parsePredictions(texts, from: header + 3)
-        let throwsHeader = indexOfSequence(["x", "z", "Angle", "Error"], in: texts, from: header)
-        let eyeThrows = throwsHeader.map { parseThrows(items, from: $0 + 4) } ?? []
+        // The Error heading shows only while Ninjabrain Bot's Show angle errors is on.
+        let throwsHeader = indexOfSequence(["x", "z", "Angle"], in: texts, from: header)
+        let showsErrors = throwsHeader.map { $0 + 3 < texts.count && texts[$0 + 3] == "Error" } ?? false
+        let eyeThrows = throwsHeader.map { parseThrows(items, from: $0 + (showsErrors ? 4 : 3), showsErrors: showsErrors) } ?? []
         let throwsTitle = texts.firstIndex(of: "Ender eye throws") ?? texts.count
         let messages = texts[header..<throwsTitle].filter(isMessage)
         let resultType: NBBEvents.ResultType = !predictions.isEmpty ? .triangulation : (eyeThrows.isEmpty ? .none : .failed)
@@ -79,8 +81,13 @@ enum NBBWindowParser {
         return predictions
     }
 
-    /// Each row sits after a remove button: x, z, angle, perhaps a correction like "+6", then the error.
-    private static func parseThrows(_ items: [Item], from start: Int) -> [NBBEvents.EyeThrow] {
+    /// Each row sits after a remove button: x, z, the angle before the correction, the correction when the angle was
+    /// adjusted, then the error when the window shows errors. Ninjabrain Bot always signs a correction ("+6" as the number
+    /// of adjustments, "+0.01" or "-0.013" as the angle change) and never an error's plus, and writes the number of
+    /// adjustments without a decimal point, which tells a lone fourth text apart. The window's own correction text is kept
+    /// (`shownCorrection`); an angle change also gives the corrected angle, a number of adjustments doesn't (the window
+    /// doesn't say how far each one turns).
+    private static func parseThrows(_ items: [Item], from start: Int, showsErrors: Bool) -> [NBBEvents.EyeThrow] {
         var rows: [[String]] = [[]]
         for item in items[min(start, items.count)...] {
             if item.role == "AXButton" {
@@ -93,13 +100,24 @@ enum NBBWindowParser {
             rows[rows.count - 1].append(text)
         }
         return rows.compactMap { row in
-            guard row.count >= 4, let x = Double(row[0]), let z = Double(row[1]), let angle = Double(row[2]),
-                  let error = Double(row[row.count - 1]) else { return nil }
-            let correction = row.count >= 5 ? Double(row[3].replacingOccurrences(of: "+", with: "")) ?? 0 : 0
+            guard (3...5).contains(row.count), let x = Double(row[0]), let z = Double(row[1]), let angle = Double(row[2]) else { return nil }
+            var rest = Array(row.dropFirst(3))
+            var errorText: String?
+            if showsErrors, let last = rest.last, rest.count == 2 || !isCorrection(last) { errorText = rest.removeLast() }
+            guard rest.count <= 1 else { return nil }
+            let shownCorrection = rest.first
+            let increments = shownCorrection.flatMap { $0.contains(".") ? nil : Int($0.replacingOccurrences(of: "+", with: "")) }
+            let degrees = shownCorrection.flatMap { $0.contains(".") ? Double($0.replacingOccurrences(of: "+", with: "")) : nil } ?? 0
             return NBBEvents.EyeThrow(
-                xInOverworld: x, zInOverworld: z, angle: angle, angleWithoutCorrection: angle, correction: correction,
-                correctionIncrements: nil, error: error, type: "NORMAL")
+                xInOverworld: x, zInOverworld: z, angle: angle + degrees, angleWithoutCorrection: angle, correction: degrees,
+                correctionIncrements: increments, error: errorText.flatMap(Double.init) ?? 0, type: "NORMAL",
+                shownCorrection: shownCorrection, showsError: errorText != nil)
         }
+    }
+
+    /// A text only a correction can be: signed with a plus, or a whole number of adjustments.
+    private static func isCorrection(_ text: String) -> Bool {
+        text.hasPrefix("+") || !text.contains(".")
     }
 
     private static func indexOfSequence(_ sequence: [String], in texts: [String], from start: Int = 0) -> Int? {

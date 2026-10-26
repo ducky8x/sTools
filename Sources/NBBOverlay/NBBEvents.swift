@@ -65,6 +65,15 @@ public enum NBBEvents {
         public var error: Double
         /// Not an enumerated set in the wiki; kept as the server's own string rather than guessing cases.
         public var type: String
+        /// The angle adjustment as a Ninjabrain Bot window wrote it beside the angle ("+6", "-0.01"), kept as it is
+        /// (`NBBWindowReader`). The API sends the numbers instead (`correction`, `correctionIncrements`).
+        var shownCorrection: String? = nil
+        /// Whether the throw's error is known: a Ninjabrain Bot window hides it unless its Show angle errors is on.
+        var showsError = true
+
+        private enum CodingKeys: String, CodingKey {
+            case xInOverworld, zInOverworld, angle, angleWithoutCorrection, correction, correctionIncrements, error, type
+        }
     }
 
     public enum ResultType: String, Codable, Sendable {
