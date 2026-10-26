@@ -36,10 +36,18 @@ struct NBBOverlayView: View {
     /// content visibly stayed at its unscaled size in the corner instead of resizing live.
     private var contentScale: CGFloat { CGFloat(settings.width) / Self.baseWidth }
 
+    /// The room inside the plate's padding, before `contentScale`: what the content has to fit in.
+    private var available: CGSize {
+        CGSize(width: targetSize.width / contentScale - 2 * Self.padding, height: targetSize.height / contentScale - 2 * Self.padding)
+    }
+
+    private static let padding: CGFloat = 14
+
     var body: some View {
         STPlate(tint: plateTint) {
             plateContent
-                .padding(14)
+                .modifier(NBBPlateFit(available: available))
+                .padding(Self.padding)
                 .scaleEffect(contentScale, anchor: .topLeading)
                 .frame(width: targetSize.width, height: targetSize.height, alignment: .topLeading)
                 .clipped()
@@ -93,6 +101,56 @@ struct NBBOverlayView: View {
     }
 }
 
+// MARK: - Fitting the plate
+
+/// Fits the plate's content inside the plate (spec 5.1.3): laid out at its natural size for the plate's width (the
+/// numbers' rows never wrap or truncate, messages wrap), then, when that's taller or wider than the room inside the
+/// padding, scaled down uniformly from the top-leading corner until it fits, never below `minimumScale`; past that the
+/// plate clips it as before. Nothing is ever scaled up.
+///
+/// The scale comes from the content's own laid-out size in `visualEffect`, at draw time in the same pass: no state, no
+/// second layout, so a pushed result is drawn fitted in the turn it arrives, and a scale never changes the size it was
+/// worked out from (a scale effect leaves layout alone), so it can't loop.
+struct NBBPlateFit: ViewModifier {
+    /// The room the content has, in its own points.
+    let available: CGSize
+
+    /// The smallest the content is drawn: the 12 pt numbers at about 7 pt, as small as stays readable over the game.
+    nonisolated static let minimumScale: CGFloat = 0.6
+
+    /// How much content of `natural` size is scaled to fit `available`: 1 when it fits, else the tighter of the two
+    /// ratios, never under `minimumScale`.
+    nonisolated static func scale(natural: CGSize, available: CGSize) -> CGFloat {
+        guard natural.width > 0, natural.height > 0 else { return 1 }
+        let fit = min(1, max(0, available.width) / natural.width, max(0, available.height) / natural.height)
+        return max(minimumScale, fit)
+    }
+
+    func body(content: Content) -> some View {
+        let available = available
+        NBBNaturalSize(width: available.width) { content }
+            .visualEffect { view, geometry in
+                view.scaleEffect(Self.scale(natural: geometry.size, available: available), anchor: .topLeading)
+            }
+    }
+}
+
+/// Lays its one view out at the given width and its own ideal height, and takes the size it comes to, wider than the
+/// width included: a frame would report the width it was given and hide what spills over.
+struct NBBNaturalSize: Layout {
+    let width: CGFloat
+
+    private var proposal: ProposedViewSize { ProposedViewSize(width: max(0, width), height: nil) }
+
+    func sizeThatFits(proposal _: ProposedViewSize, subviews: Subviews, cache _: inout ()) -> CGSize {
+        subviews.first?.sizeThatFits(proposal) ?? .zero
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal _: ProposedViewSize, subviews: Subviews, cache _: inout ()) {
+        subviews.first?.place(at: bounds.origin, anchor: .topLeading, proposal: proposal)
+    }
+}
+
 // MARK: - Shared text styles (New York, per spec 5.1.3)
 
 private func nbbLabel(_ size: CGFloat = 12) -> Font { .system(size: size, design: .serif) }
@@ -132,6 +190,7 @@ struct NBBTriangulationBlock: View {
                         NBBPredictionRowView(row: row, isTop: index == 0, settings: settings)
                     }
                 }
+                .fixedSize(horizontal: true, vertical: false)
             }
             if settings.showsEyeThrows, !data.eyeThrows.isEmpty {
                 NBBHeading(text: "Eye throws")
@@ -148,6 +207,7 @@ struct NBBTriangulationBlock: View {
                         .foregroundStyle(STColor.ink)
                     }
                 }
+                .fixedSize(horizontal: true, vertical: false)
             }
         }
     }
@@ -285,6 +345,7 @@ struct NBBFailedBlock: View {
                     NBBThrowAngle(eyeThrow: eyeThrow, settings: settings)
                 }
                 .foregroundStyle(STColor.inkSecondary)
+                .fixedSize(horizontal: true, vertical: false)
             }
         }
     }
@@ -367,6 +428,7 @@ struct NBBAllAdvancementsBlock: View {
                         Text("\(Int(position.overworldDistance))m").font(nbbNumber()).foregroundStyle(STColor.inkSecondary)
                     }
                     .foregroundStyle(STColor.ink)
+                    .fixedSize(horizontal: true, vertical: false)
                 }
             }
         }
