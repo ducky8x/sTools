@@ -141,8 +141,8 @@ struct NBBTriangulationBlock: View {
                         GridRow {
                             Text("\(Int(eyeThrow.xInOverworld)), \(Int(eyeThrow.zInOverworld))").font(nbbNumber())
                             NBBThrowAngle(eyeThrow: eyeThrow, settings: settings)
-                            if eyeThrow.showsError {
-                                Text("±\(eyeThrow.error, specifier: "%.3f")").font(nbbNumber()).foregroundStyle(STColor.inkSecondary)
+                            if let error = NBBThrowError.text(eyeThrow) {
+                                Text(verbatim: error).font(nbbNumber()).foregroundStyle(STColor.inkSecondary)
                             }
                         }
                         .foregroundStyle(STColor.ink)

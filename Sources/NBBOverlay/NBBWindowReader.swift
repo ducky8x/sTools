@@ -111,7 +111,7 @@ enum NBBWindowParser {
             return NBBEvents.EyeThrow(
                 xInOverworld: x, zInOverworld: z, angle: angle + degrees, angleWithoutCorrection: angle, correction: degrees,
                 correctionIncrements: increments, error: errorText.flatMap(Double.init) ?? 0, type: "NORMAL",
-                shownCorrection: shownCorrection, showsError: errorText != nil)
+                shownCorrection: shownCorrection, showsError: errorText != nil, shownError: errorText)
         }
     }
 
