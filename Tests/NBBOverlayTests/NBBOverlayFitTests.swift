@@ -184,4 +184,30 @@ struct NBBOverlayFitTests {
         #expect(rep.size == CGSize(width: 320, height: 200))
         #expect(pixels(near: STPalette.gold, in: rep, tolerance: 8) > 10, "the top prediction's certainty is drawn")
     }
+
+    /// Coordinates and distances read as Ninjabrain Bot writes them, with no grouping separator, whatever the Mac's
+    /// region: "-1374, 81", never "-1,374, 81" (United States) or "-1.374, 81" (Germany). Each block draws the same in
+    /// both regions.
+    @MainActor @Test func numbersHaveNoGroupingSeparatorInAnyRegion() {
+        let settings = duckysSettings(aspectRatio: 0.8)
+        let failed = NBBEvents.Stronghold(resultType: .failed, predictions: [], eyeThrows: fiveAndThree.eyeThrows, playerPosition: nil)
+        let position = NBBEvents.Position(xInOverworld: -1374.7, zInOverworld: 2081.6, travelAngle: 12.5, overworldDistance: 1580.4)
+        let advancements = NBBEvents.AllAdvancements(isAllAdvancementsModeEnabled: true, stronghold: position, outpost: position)
+        let blind = NBBEvents.BlindResult(
+            evaluation: "bad", xInNether: -171, zInNether: 260, highrollThreshold: 1000, highrollProbability: 0.12,
+            improveDirection: 1.2, improveDistance: 1250)
+        let views: [(String, (Locale) -> AnyView)] = [
+            ("triangulation", { AnyView(overlay(fiveAndThree, settings).environment(\.locale, $0)) }),
+            ("failed", { AnyView(overlay(failed, settings).environment(\.locale, $0)) }),
+            ("all advancements", { locale in
+                AnyView(NBBOverlayView(content: .allAdvancements(advancements), messages: [], settings: settings).environment(\.locale, locale))
+            }),
+            ("blind", { AnyView(NBBOverlayView(content: .blind(blind), messages: [], settings: settings).environment(\.locale, $0)) }),
+        ]
+        for (name, view) in views {
+            let unitedStates = render(view(Locale(identifier: "en_US")))
+            let germany = render(view(Locale(identifier: "de_DE")))
+            #expect(sameInside(unitedStates, germany, rows: 0..<386), "\(name) draws the same in both regions")
+        }
+    }
 }
