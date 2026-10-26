@@ -68,7 +68,10 @@ struct NBBEventStreamTests {
         connection.start()
         defer { connection.stop() }
         let paths = ["stronghold", "blind", "divine", "boat", "information-messages", "all-advancements"]
-        await waitUntilOnMain { connection.version != nil && paths.allSatisfy { server.subscribers("/api/v1/\($0)/events") == 1 } }
+        await waitUntilOnMain {
+            connection.version != nil && connection.boat != nil && connection.stronghold != nil
+                && paths.allSatisfy { server.subscribers("/api/v1/\($0)/events") == 1 }
+        }
         #expect(connection.version == "1.5.2")
         #expect(paths.allSatisfy { server.subscribers("/api/v1/\($0)/events") == 1 })
         #expect(connection.boat?.boatState == NBBEvents.BoatState.none && connection.stronghold?.resultType == NBBEvents.ResultType.none)
