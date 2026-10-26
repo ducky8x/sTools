@@ -100,9 +100,9 @@ struct HotkeyKeySetChooserTests {
             == "⌃1 Crosshair · ⌃2 Start timer · ⌃3 NBB Overlay · ⌃4 Screen Recording · ⌃5 Window Backdrop")
         #expect(caption(.option)
             == "⌥1 Crosshair · ⌥2 Start timer · ⌥3 NBB Overlay · ⌥4 Screen Recording · ⌥5 Window Backdrop")
-        #expect(HotkeysSection.keySetCaption(.noKeys) == "No tool has a key of its own.")
+        #expect(HotkeysSection.keySetCaption(.noKeys) == "No tool has a key yet.")
         #expect(HotkeysSection.keySetCaption(nil)
-            == "Custom: keys you set yourself. Pick a set for one key per tool, in sidebar order.")
+            == "Custom keys. Pick a set to give each tool a key.")
     }
 
     @Test func theQuestionNamesTheKeysSetByHand() {
@@ -111,13 +111,13 @@ struct HotkeyKeySetChooserTests {
         #expect(HotkeysSection.keySetQuestion(.control) == "Use ⌃1–⌃5?")
         #expect(HotkeysSection.keySetQuestion(.noKeys) == "Remove every tool's key?")
         #expect(HotkeysSection.keySetWarning(.control, bindings: bindings)
-            == "This replaces the key you set for Crosshair (F6). Your other hotkeys stay as they are.")
+            == "This replaces the key you set for Crosshair (F6). Other hotkeys don\u{2019}t change.")
         bindings[1].combo = f7
         #expect(HotkeysSection.keySetWarning(.noKeys, bindings: bindings)
-            == "This removes the keys you set for Crosshair (F6) and Timer Overlay (F7). Your other hotkeys stay as they are.")
+            == "This removes the keys you set for Crosshair (F6) and Timer Overlay (F7). Other hotkeys don\u{2019}t change.")
         bindings[3].combo = f8
         #expect(HotkeysSection.keySetWarning(.option, bindings: bindings)
-            == "This replaces the keys you set for Crosshair (F6), Timer Overlay (F7) and Screen Recording (F8). Your other hotkeys stay as they are.")
+            == "This replaces the keys you set for Crosshair (F6), Timer Overlay (F7) and Screen Recording (F8). Other hotkeys don\u{2019}t change.")
     }
 
     @Test func theChooserRendersItsChoice() {

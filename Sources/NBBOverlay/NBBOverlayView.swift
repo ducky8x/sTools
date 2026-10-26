@@ -412,8 +412,8 @@ struct NBBAllAdvancementsBlock: View {
     private var rows: [(String, NBBEvents.Position?)] {
         [
             ("Spawn", data.spawn), ("Monument", data.monument), ("Stronghold", data.stronghold),
-            ("Outpost", data.outpost), ("Deep Dark", data.deepDark), ("City query", data.cityQuery),
-            ("Shulker transport", data.shulkerTransport), ("General", data.generalLocation),
+            ("Outpost", data.outpost), ("Deep Dark", data.deepDark), ("City Query", data.cityQuery),
+            ("Shulker Transport", data.shulkerTransport), ("General", data.generalLocation),
         ]
     }
 

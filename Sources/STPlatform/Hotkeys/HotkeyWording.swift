@@ -47,12 +47,12 @@ public enum HotkeyWording {
         "Use \(combo.displayString) for \(own.actions.first?.toolTitle ?? "")?"
     }
 
-    /// What Replace does, under the question: "Crosshair has one key of its own, ⌘1. This replaces it with F6. Your
-    /// other hotkeys stay as they are."
+    /// What Replace does, under the question: "This replaces Crosshair’s key ⌘1 with F6. Other hotkeys don’t
+    /// change."
     public static func replaceOwnKeyWarning(_ own: HotkeyBinding, with combo: HotkeyCombo) -> String {
         let tool = own.actions.first?.toolTitle ?? ""
-        return "\(tool) has one key of its own, \(own.combo.displayString). This replaces it with \(combo.displayString). "
-            + "Your other hotkeys stay as they are."
+        return "This replaces \(tool)\u{2019}s key \(own.combo.displayString) with \(combo.displayString). "
+            + "Other hotkeys don\u{2019}t change."
     }
 
     /// Why a combination can't be a hotkey: "Unsupported key", "Reserved: Spotlight".
@@ -65,12 +65,12 @@ public enum HotkeyWording {
 
     /// Why a hotkey can't work. A duplicate reads "Already used above" in Home's list (`inList`), where the hotkey
     /// that owns the combination is a row above, and "Already used by another hotkey" anywhere else. A refusal of
-    /// a combination without ⌘ or ⌃ adds that some macOS versions need one (15.0 and 15.1 reportedly refused
+    /// a combination without ⌘ or ⌃ asks for one, as some macOS versions need it (15.0 and 15.1 reportedly refused
     /// ⌥-only hotkeys).
     public static func conflictText(_ conflict: HotkeyConflict, combo: HotkeyCombo, inList: Bool) -> String {
         switch conflict {
         case .alreadyUsedByYou: inList ? "Already used above" : "Already used by another hotkey"
-        case .systemRefused: combo.lacksCommandAndControl ? "Refused by macOS. Some versions need ⌘ or ⌃." : "Refused by macOS"
+        case .systemRefused: combo.lacksCommandAndControl ? "macOS won\u{2019}t allow this key. Add ⌘ or ⌃." : "Refused by macOS"
         case .invalidCombo(let issue): issueText(issue)
         case .noActions: "No actions"
         }
@@ -88,14 +88,14 @@ public enum HotkeyWording {
     /// the hotkey takes that key from every other app. Nil for every other combination.
     public static func typingNote(for combo: HotkeyCombo) -> String? {
         guard combo.interferesWithTyping else { return nil }
-        return "While hotkeys are on, other apps never get \(combo.displayString), not even Minecraft's chat or seed field."
+        return "While hotkeys are on, other apps never get \(combo.displayString), even in Minecraft\u{2019}s chat or seed field."
     }
 
     /// For F1 to F12, with any modifiers: a Mac keyboard sends its media keys there unless fn is held (or
     /// standard function keys are turned on), so the hotkey may need fn. Nil for every other key.
     public static func functionKeyNote(for combo: HotkeyCombo) -> String? {
         guard let number = combo.functionKeyNumber, number <= 12 else { return nil }
-        return "On a Mac keyboard you may need to hold fn with \(combo.keyName)."
+        return "Mac keyboards may need fn held with \(combo.keyName)."
     }
 
     /// The combination as VoiceOver says it, modifiers in the order ⌃⌥⇧⌘: "Option F18", "Keypad 1",

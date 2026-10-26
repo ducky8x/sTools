@@ -66,8 +66,6 @@ public final class TimerOverlayController: ToolController {
     public private(set) var status: TimerStatus = .off
     /// Whether the page's Preview is playing.
     public private(set) var isPreviewing = false
-    /// Whether the tool has been switched on since launch, for the rule notice.
-    private(set) var hasBeenTurnedOn = false
     /// Bumped when the owner's files change, so the sound list and the missing-file note are read again.
     private var soundsGeneration = 0
 
@@ -192,7 +190,6 @@ public final class TimerOverlayController: ToolController {
         guard enabled != isEnabled else { return }
         isEnabled = enabled
         if enabled {
-            hasBeenTurnedOn = true
             if settings.placementModeEnabled { placementSettingChanged() }
             updateOverlay()
         } else {
@@ -626,19 +623,6 @@ public final class TimerOverlayController: ToolController {
             parsed.source == .file ? AlarmSound.ownFile(named: parsed.name, in: ownSounds.directory).title : parsed.name
         } ?? settings.soundID
         return "\u{201C}\(name)\u{201D} is missing, so \(resolution.sound.title) plays instead."
-    }
-
-    // MARK: - The rule note
-
-    /// Whether the page shows the rule notice: "Rule note on the page" is the line plus the notice, the tool has
-    /// been turned on, and the notice hasn't been dismissed.
-    public var showsRuleNotice: Bool {
-        settings.ruleNote == .lineAndNotice && !settings.ruleNoticeDismissed && hasBeenTurnedOn
-    }
-
-    /// Dismisses the rule notice for good.
-    public func dismissRuleNotice() {
-        settings.ruleNoticeDismissed = true
     }
 
     // MARK: - Settings

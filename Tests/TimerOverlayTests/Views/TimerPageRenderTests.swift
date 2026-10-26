@@ -171,7 +171,6 @@ struct TimerPageRenderTests {
             $0.leave = .afterZero
             $0.displayChoice = .specific
             $0.plateColorHex = "#20304A"
-            $0.ruleNote = .line
         }
         render(page(rig.controller, showsAdvanced: true), name: "page-advanced-choices")
     }
@@ -182,7 +181,6 @@ struct TimerPageRenderTests {
             ("look-compact-pill", { $0.look = .compactPill }),
             ("look-140pt", { $0.digitSize = 140 }),
             ("custom-duration", { $0.durationSeconds = 95 }),
-            ("rule-line", { $0.ruleNote = .line }),
         ]
         for (name, change) in variants {
             let rig = TimerRig(settings: change)
@@ -191,17 +189,16 @@ struct TimerPageRenderTests {
         }
     }
 
-    @Test func theRuleNoticeShowsUntilDismissed() {
-        let rig = TimerRig { $0.ruleNote = .lineAndNotice }
+    /// Timer Overlay is verified legal (ducky, M9): turning it on adds no notice, the page has no rule line, and
+    /// Advanced has no Rule note row, so the page is as tall on as off.
+    @Test func thePageHasNoRuleNoticeOrLine() {
+        let rig = TimerRig()
         let controller = rig.controller
+        let off = render(page(controller, showsAdvanced: true))
         controller.setEnabled(true)
         defer { controller.setEnabled(false) }
-        #expect(controller.showsRuleNotice)
-        let withNotice = render(page(controller), name: "page-rule-notice")
-        controller.dismissRuleNotice()
-        #expect(!controller.showsRuleNotice)
-        let without = render(page(controller))
-        #expect(withNotice.pixelsHigh > without.pixelsHigh, "the notice leaves the page; the line stays")
+        let on = render(page(controller, showsAdvanced: true))
+        #expect(on.pixelsHigh == off.pixelsHigh, "no notice appears once the tool is on")
     }
 
     @Test func aRunShowsOnThePreviewAndItsButtons() {
@@ -269,7 +266,7 @@ struct TimerPageRenderTests {
     /// cancel gesture chosen in Advanced.
     @Test func theKeyLineFollowsTheCancelGesture() {
         #expect(TimerKeyLine.text(for: .doublePress) == "Starts the timer. A double press switches Timer Overlay off.")
-        #expect(TimerKeyLine.text(for: .hold) == "Starts the timer. Holding it 1 s switches Timer Overlay off.")
+        #expect(TimerKeyLine.text(for: .hold) == "Starts the timer. Hold it for 1 s to switch Timer Overlay off.")
         #expect(TimerKeyLine.text(for: .off) == "Starts the timer.")
     }
 
@@ -277,11 +274,11 @@ struct TimerPageRenderTests {
     /// brings it back (spec 5.6.2).
     @Test func theCancelGestureSaysWhatItDoes() {
         #expect(TimerAdvancedSection.cancelGestureNote(for: .doublePress)
-            == "A second press within 0.4 s switches Timer Overlay off. The next press switches it back on and starts.")
+            == "Press twice within 0.4 s to switch Timer Overlay off. Press again to turn it on and start.")
         #expect(TimerAdvancedSection.cancelGestureNote(for: .hold)
-            == "Holding the key for 1 s switches Timer Overlay off. The next press switches it back on and starts.")
+            == "Hold the key for 1 s to switch Timer Overlay off. Press again to turn it on and start.")
         #expect(TimerAdvancedSection.cancelGestureNote(for: .off)
-            == "The key never switches Timer Overlay off; its switch does.")
+            == "Only the double click gesture will turn off the Timer Overlay.")
     }
 
     // MARK: Motion

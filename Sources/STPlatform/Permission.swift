@@ -22,11 +22,11 @@ public enum Permission: String, CaseIterable, Sendable {
     /// The one-sentence reason shown to the user.
     public var reason: String {
         switch self {
-        case .accessibility: "Lets sTools find the Minecraft window and follow it, and lets hotkeys recognize Minecraft in front."
+        case .accessibility: "Accessibility allows for sTools to find the Minecraft window and follow it."
         case .screenRecording: "Lets sTools record Minecraft and the sources you add."
         case .appAudio: "Lets sTools record the sound of Minecraft and other apps."
         case .microphone: "Lets sTools record your voice."
-        case .camera: "Lets sTools put your camera on the recording."
+        case .camera: "Lets sTools add your camera to recordings."
         }
     }
 

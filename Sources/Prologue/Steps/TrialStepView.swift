@@ -21,12 +21,12 @@ struct TrialStepView: View {
 
         static func standfirst(_ trial: PrologueTrial) -> String {
             switch trial {
-            case .crosshair: "Try it on the real screen. Each item ticks itself as you go."
-            case .timerOverlay: "Run a short test countdown over the game. Each item ticks itself as you go."
-            case .windowBackdrop: "Hide everything behind the game. Each item ticks itself as you go."
-            case .nbbOverlay: "Put Ninjabrain Bot\u{2019}s answer over the game. Each item ticks itself as you go."
-            case .screenRecording: "Arrange a canvas and record a short test. Each item ticks itself as you go."
-            case .keyRebinder: "See every rebind on its key. Each item ticks itself as you go."
+            case .crosshair: "Try it out. Items tick themselves as you go."
+            case .timerOverlay: "Run a test countdown. Items tick themselves as you go."
+            case .windowBackdrop: "Hide everything behind the game. Items tick themselves as you go."
+            case .nbbOverlay: "Show Ninjabrain Bot over the game. Items tick themselves as you go."
+            case .screenRecording: "Arrange a canvas and record a short test. Items tick themselves as you go."
+            case .keyRebinder: "See your rebinds on the keyboard. Items tick themselves as you go."
             }
         }
     }

@@ -11,12 +11,11 @@ struct PermissionStepView: View {
     /// Internal so the app's tests can check the tool list against the sidebar's order.
     enum Copy {
         static let allow = "Allow\u{2026}"
-        static let relaunchNote = "Turned it on in System Settings? macOS applies it once sTools opens again."
         static let relaunch = "Relaunch sTools"
 
         static func usedBy(_ permission: Permission) -> String {
             switch permission {
-            case .accessibility: "Crosshair, Timer Overlay, NBB Overlay, Screen Recording, Window Backdrop, hotkeys in Minecraft"
+            case .accessibility: "Crosshair, Timer Overlay, NBB Overlay, Screen Recording, Window Backdrop"
             case .screenRecording, .appAudio, .microphone, .camera: "Screen Recording"
             }
         }
@@ -24,22 +23,21 @@ struct PermissionStepView: View {
         static func howTo(_ permission: Permission) -> [String] {
             switch permission {
             case .accessibility:
-                ["Press Allow\u{2026}; System Settings opens at Privacy & Security \u{25B8} Accessibility.",
-                 "Turn on sTools in the list. If it isn\u{2019}t there, press + and choose sTools from Applications.",
-                 "Come back here. The status turns to Ready on its own."]
+                ["Press Allow. System Settings will open at Privacy & Security \u{25B8} Accessibility.",
+                 "Turn on sTools in the list. If it isn\u{2019}t there, press + and choose sTools in the Applications folder."]
             case .screenRecording:
-                ["Press Allow\u{2026}; System Settings opens at Privacy & Security \u{25B8} Screen & System Audio Recording.",
-                 "Turn on sTools under Screen & System Audio Recording.",
-                 "If macOS asks to quit and reopen sTools, choose Later and press Relaunch sTools here instead: you\u{2019}ll come back to this step."]
+                ["Press Allow, System Settings opens at Privacy & Security \u{25B8} Screen & System Audio Recording.",
+                 "Turn on sTools in the list. If it isn\u{2019}t there, press + and choose sTools in the Applications folder.",
+                 "If macOS asks to quit and reopen sTools, choose Later, then press Relaunch sTools here. You\u{2019}ll come back to this step."]
             case .appAudio:
-                ["Press Allow\u{2026} and choose Allow when macOS asks.",
-                 "Said no before? Turn on sTools in System Settings \u{25B8} Privacy & Security \u{25B8} Screen & System Audio Recording, under System Audio Recording Only."]
+                ["Press Allow, then choose Allow when macOS asks.",
+                 "If you chose Don\u{2019}t Allow before, turn on sTools in System Settings \u{25B8} Privacy & Security \u{25B8} Screen & System Audio Recording, under System Audio Recording Only."]
             case .microphone:
-                ["Press Allow\u{2026} and choose Allow when macOS asks.",
-                 "Said no before? Turn on sTools in System Settings \u{25B8} Privacy & Security \u{25B8} Microphone."]
+                ["Press Allow, then choose Allow when macOS asks.",
+                 "If you chose Don\u{2019}t Allow before, turn on sTools in System Settings \u{25B8} Privacy & Security \u{25B8} Microphone."]
             case .camera:
-                ["Press Allow\u{2026} and choose Allow when macOS asks.",
-                 "Said no before? Turn on sTools in System Settings \u{25B8} Privacy & Security \u{25B8} Camera."]
+                ["Press Allow, then choose Allow when macOS asks.",
+                 "If you chose Don\u{2019}t Allow before, turn on sTools in System Settings \u{25B8} Privacy & Security \u{25B8} Camera."]
             }
         }
     }
@@ -48,7 +46,7 @@ struct PermissionStepView: View {
 
     var body: some View {
         PreparationPage(model: model, title: permission.title, why: permission.reason, usedBy: Copy.usedBy(permission),
-                        isReady: isReady, detail: nil, howTo: Copy.howTo(permission),
+                        isReady: isReady, detail: nil, howTo: Copy.howTo(permission), note: nil,
                         showsFooter: permission.mayNeedRelaunch && model.relaunchOffered.contains(permission) && !isReady) {
             if !isReady {
                 Button(Copy.allow) { Task { await model.allow(permission) } }
@@ -56,10 +54,6 @@ struct PermissionStepView: View {
             }
         } footer: {
             HStack(spacing: 16) {
-                Text(Copy.relaunchNote)
-                    .stStyle(.caption)
-                    .foregroundStyle(STColor.inkSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
                 Button(Copy.relaunch) { model.relaunch() }
                     .buttonStyle(STButtonStyle(.secondary))
@@ -75,7 +69,8 @@ struct CompanionStepView: View {
     let model: PrologueModel
     let companion: PrologueCompanion
 
-    private enum Copy {
+    /// Internal so the app's tests can check the wording.
+    enum Copy {
         static let checking = "Checking\u{2026}"
 
         static func title(_ companion: PrologueCompanion) -> String {
@@ -87,8 +82,8 @@ struct CompanionStepView: View {
 
         static func why(_ companion: PrologueCompanion) -> String {
             switch companion {
-            case .ninjabrainBot: "Turn on Ninjabrain Bot\u{2019}s API so sTools can read its results."
-            case .karabiner: "Install and set up Karabiner-Elements so sTools can rebind keys."
+            case .ninjabrainBot: "Lets sTools read Ninjabrain Bot\u{2019}s results through its API."
+            case .karabiner: "Lets sTools rebind keys through Karabiner-Elements."
             }
         }
 
@@ -103,12 +98,20 @@ struct CompanionStepView: View {
             switch companion {
             case .ninjabrainBot:
                 ["Open Ninjabrain Bot.",
-                 "Open its settings (the gear at the top of its window) and choose Advanced.",
-                 "Check \u{201C}Enable API (starts HTTP server)\u{201D}. sTools finds it at localhost:52533 within a second."]
+                 "In Ninjabrain Bot, click the gear at the top and choose Advanced.",
+                 "Check \u{201C}Enable API (starts HTTP server).\u{201D}"]
             case .karabiner:
-                ["Download Karabiner-Elements from karabiner-elements.pqrs.org (version 16.0 or later) and open it.",
-                 "In Karabiner-Elements\u{2019} Settings, follow its Setup tab: allow its driver extension and the permissions it asks for.",
-                 "Leave it running. sTools checks that it\u{2019}s installed, running and new enough."]
+                ["Download Karabiner-Elements from [karabiner-elements.pqrs.org](https://karabiner-elements.pqrs.org) (version 16.0 or later) and open it.",
+                 "Follow the Karabiner setup.",
+                 "Leave it running."]
+            }
+        }
+
+        /// A line under the plate; Karabiner-Elements is someone else's app (M9, A060).
+        static func note(_ companion: PrologueCompanion) -> String? {
+            switch companion {
+            case .ninjabrainBot: nil
+            case .karabiner: "Karabiner-Elements is a third-party app that is not associated with sTools."
             }
         }
     }
@@ -118,7 +121,7 @@ struct CompanionStepView: View {
     var body: some View {
         PreparationPage(model: model, title: Copy.title(companion), why: Copy.why(companion), usedBy: Copy.usedBy(companion),
                         isReady: status?.isReady == true, detail: status == nil ? Copy.checking : status?.detail,
-                        howTo: Copy.howTo(companion), showsFooter: false) {
+                        howTo: Copy.howTo(companion), note: Copy.note(companion), showsFooter: false) {
             if let title = status?.actionTitle, status?.isReady == false {
                 Button(title) { model.performAction(for: companion) }
                     .buttonStyle(STButtonStyle(.secondary))
@@ -149,6 +152,8 @@ private struct PreparationPage<Actions: View, Footer: View>: View {
     let isReady: Bool
     let detail: String?
     let howTo: [String]
+    /// A caption under the plate, when the step has one.
+    let note: String?
     let showsFooter: Bool
     @ViewBuilder let actions: Actions
     @ViewBuilder let footer: Footer
@@ -212,6 +217,14 @@ private struct PreparationPage<Actions: View, Footer: View>: View {
                 }
             }
             .padding(.top, 22)
+
+            if let note {
+                Text(note)
+                    .stStyle(.caption)
+                    .foregroundStyle(theme.inkTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 12)
+            }
         }
     }
 
@@ -228,8 +241,9 @@ private struct PreparationPage<Actions: View, Footer: View>: View {
     }
 }
 
-/// Numbered steps, each a sentence.
-private struct HowToSteps: View {
+/// Numbered steps, each a sentence. A step may hold a Markdown link (`[text](https://…)`), which shows as a
+/// clickable link.
+struct HowToSteps: View {
     let steps: [String]
     @Environment(\.stTheme) private var theme
 
@@ -241,13 +255,21 @@ private struct HowToSteps: View {
                         .font(STFont.figures(13 * theme.textScale, weight: .semibold))
                         .foregroundStyle(theme.accent)
                         .frame(width: 14, alignment: .leading)
-                    Text(step)
+                    Text(Self.text(of: step))
                         .stStyle(.body)
                         .foregroundStyle(STColor.ink)
+                        .tint(theme.accent)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
+    }
+
+    /// The step with its Markdown links made clickable; any other text is shown as it is.
+    static func text(of step: String) -> AttributedString {
+        guard step.contains("](") else { return AttributedString(step) }
+        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        return (try? AttributedString(markdown: step, options: options)) ?? AttributedString(step)
     }
 }
 

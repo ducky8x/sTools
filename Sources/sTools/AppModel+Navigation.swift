@@ -23,7 +23,7 @@ extension AppModel {
 
     /// Why the Timer trial asks before setting its hotkey, named as the Timer page's Hotkey row is.
     static let turnOnHotkeysText =
-        "Hotkeys are off, so \(ToolID.timerOverlay.title)\u{2019}s hotkey would do nothing. Turn them on to set it."
+        "Hotkeys are off. Turn them on to set \(ToolID.timerOverlay.title)\u{2019}s key."
 
     /// The live question behind `confirmTurningOnHotkeys`.
     static func askToTurnOnHotkeys() -> Bool {

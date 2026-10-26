@@ -19,7 +19,7 @@ public struct NBBOverlaySettingsView: View {
                     kind: .warning,
                     message: controller.readsWindow
                         ? "sTools can\u{2019}t read this Ninjabrain Bot\u{2019}s window. It needs Accessibility, and the window must be open."
-                        : "Ninjabrain Bot isn't reachable at localhost:52533 — enable its API under Settings ▸ Advanced in Ninjabrain Bot.")
+                        : "Ninjabrain Bot isn\u{2019}t answering yet. Open it and turn on its API.")
             }
             if controller.copies.showsCopies {
                 NBBCopiesList(monitor: controller.copies)
@@ -40,7 +40,7 @@ public struct NBBOverlaySettingsView: View {
                     STSettingsRow("Snap to edges and center", showsRule: false) {
                         STSwitch(isOn: $controller.settings.snappingEnabled, label: "Snap to edges and center")
                     }
-                    Text("Turn the tool on, then drag the overlay on screen to move it, or its corner handle to resize. The fields below still work the same way, and update live as you drag.")
+                    Text("Drag the overlay to move it, and stretch by the corner to resize.")
                         .stStyle(.caption).foregroundStyle(STColor.inkSecondary).padding(.bottom, 10)
                 }
                 STSettingsRow("Position") {
@@ -237,7 +237,7 @@ private struct NBBPagePreview: View {
         let messages = controller.previewMessages
         let boat = controller.previewBoat
         if content == .hidden && messages.isEmpty && !NBBOverlayLayout.boatCountsAsData(boat, settings: settings) {
-            Text("Ninjabrain Bot\u{2019}s result appears here as it will over the game, once it has one.")
+            Text("Ninjabrain Bot\u{2019}s overlay will be located here.")
                 .stStyle(.caption)
                 .foregroundStyle(theme.inkTertiary)
                 .multilineTextAlignment(.center)
@@ -304,7 +304,7 @@ private struct NBBCopiesList: View {
     }
 
     private var caption: String {
-        let api = "Only one Ninjabrain Bot can share its data over the API; sTools reads any other from its window: predictions, eye throws and notes, without the boat."
-        return monitor.choice == .automatic ? "The overlay follows the newest copy. " + api : api
+        let api = "Only one Ninjabrain Bot can use the API at once."
+        return monitor.choice == .automatic ? "The overlay follows the copy opened last. " + api : api
     }
 }

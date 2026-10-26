@@ -64,8 +64,6 @@ struct TimerOverlaySettingsTests {
         #expect(settings.showsRuleGuides)
         #expect(settings.guiScale == .fixed(3))
         #expect(settings.speedRunIGTCorner == .topRight)
-        #expect(settings.ruleNote == .off)
-        #expect(!settings.ruleNoticeDismissed)
         #expect(!settings.showsDockCountdown)
         #expect(!settings.placementModeEnabled)
     }
@@ -135,8 +133,6 @@ struct TimerOverlaySettingsTests {
         settings.showsRuleGuides = false
         settings.guiScale = .auto
         settings.speedRunIGTCorner = .bottomLeft
-        settings.ruleNote = .lineAndNotice
-        settings.ruleNoticeDismissed = true
         settings.showsDockCountdown = true
         settings.placementModeEnabled = true
 
@@ -197,11 +193,24 @@ struct TimerOverlaySettingsTests {
          "popUpMotion": "explode", "atZero": null, "whileRinging": "siren", "leave": "never",
          "whilePaused": "dance", "pressWhileCounting": "explode", "pressWhileRinging": "",
          "cancelGesture": "triple", "beforeZero": "song", "nearZero": "red", "displayChoice": "all",
-         "ruleNote": "loud", "speedRunIGTCorner": "middle", "guiScale": -2, "volume": "loud",
+         "speedRunIGTCorner": "middle", "guiScale": -2, "volume": "loud",
          "showsLabel": "yes", "presets": "many", "specificDisplayID": "main"}
         """
         let decoded = try JSONDecoder().decode(TimerOverlaySettings.self, from: Data(json.utf8))
         #expect(decoded == TimerOverlaySettings.defaultValue)
+    }
+
+    /// Timer Overlay is verified legal (ducky, M9), so the rule note and its notice are gone. A file saved with them
+    /// still loads, every other setting kept, and saving it again leaves them out.
+    @Test func aFileWithTheRetiredRuleNoteStillLoads() throws {
+        let json = #"{"durationSeconds": 95, "ruleNote": "lineAndNotice", "ruleNoticeDismissed": true, "rings": 5}"#
+        let decoded = try JSONDecoder().decode(TimerOverlaySettings.self, from: Data(json.utf8))
+        var expected = TimerOverlaySettings.defaultValue
+        expected.durationSeconds = 95
+        expected.rings = 5
+        #expect(decoded == expected)
+        let saved = try #require(String(data: try JSONEncoder().encode(decoded), encoding: .utf8))
+        #expect(!saved.contains("ruleNote") && !saved.contains("ruleNoticeDismissed"))
     }
 
     @Test func oneBadPresetDropsOnlyThatPreset() throws {

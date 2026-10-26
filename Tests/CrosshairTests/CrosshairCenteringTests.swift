@@ -65,6 +65,17 @@ struct CrosshairCenteringTests {
         #expect(thin.contains("2 px") && !thin.contains("0 px"))
     }
 
+    /// ducky's M9 wording (B032, B047).
+    @Test func theNotesReadAsDuckyWroteThem() throws {
+        #expect(CrosshairCentering.minecraftNote
+            == "By default, this lines up with Minecraft\u{2019}s crosshair in full screen (1920 \u{00D7} 1080, GUI scale 3).")
+        let note = try #require(CrosshairCentering.note(for: settings(.plus, thickness: 3), on: fullHD))
+        #expect(note == "A 3 px thickness can\u{2019}t be centered exactly on this 1920 \u{00D7} 1080 display; "
+            + "one side is a pixel longer. 2 px or 4 px centers exactly.")
+        let dot = try #require(CrosshairCentering.note(for: settings(.dot, size: 9, thickness: 2), on: fullHD))
+        #expect(dot.contains(" px size can\u{2019}t be centered exactly"))
+    }
+
     @Test func dotsAndCirclesGoByTheirSize() {
         #expect(CrosshairCentering.note(for: settings(.dot, size: 9, thickness: 2), on: fullHD) != nil)
         #expect(CrosshairCentering.note(for: settings(.circle, size: 10, thickness: 3), on: fullHD) == nil)

@@ -147,15 +147,6 @@ public struct TimerOverlaySettings: SettingsDocument {
         case specific
     }
 
-    /// The rule note on the Timer page (Timer round I1, spec 5.6.8).
-    public enum RuleNote: String, Codable, CaseIterable, Sendable {
-        case off
-        /// One advisory line.
-        case line
-        /// The line, plus a notice the first time the tool is turned on, until it's dismissed.
-        case lineAndNotice
-    }
-
     public enum Corner: String, Codable, CaseIterable, Sendable {
         case topLeft, topRight, bottomLeft, bottomRight
     }
@@ -316,9 +307,6 @@ public struct TimerOverlaySettings: SettingsDocument {
     public var showsRuleGuides = true
     public var guiScale: GUIScale = .fixed(3)
     public var speedRunIGTCorner: Corner = .topRight
-    public var ruleNote: RuleNote = .off
-    /// Whether the owner dismissed the rule notice (`RuleNote.lineAndNotice`).
-    public var ruleNoticeDismissed = false
     /// A badge with the time left, and Start / Pause / Cancel in the Dock menu.
     public var showsDockCountdown = false
     /// When on, the overlay stays up and can be dragged into place.
@@ -422,8 +410,6 @@ public struct TimerOverlaySettings: SettingsDocument {
         showsRuleGuides = container.lossy(Bool.self, .showsRuleGuides) ?? defaults.showsRuleGuides
         guiScale = container.lossy(GUIScale.self, .guiScale) ?? defaults.guiScale
         speedRunIGTCorner = container.lossy(Corner.self, .speedRunIGTCorner) ?? defaults.speedRunIGTCorner
-        ruleNote = container.lossy(RuleNote.self, .ruleNote) ?? defaults.ruleNote
-        ruleNoticeDismissed = container.lossy(Bool.self, .ruleNoticeDismissed) ?? defaults.ruleNoticeDismissed
         showsDockCountdown = container.lossy(Bool.self, .showsDockCountdown) ?? defaults.showsDockCountdown
         placementModeEnabled = container.lossy(Bool.self, .placementModeEnabled) ?? defaults.placementModeEnabled
         self = clamped()

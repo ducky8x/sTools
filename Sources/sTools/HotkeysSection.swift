@@ -103,20 +103,16 @@ struct HotkeysSection: View {
         }
     }
 
-    /// The strip's line while hotkeys are off.
+    /// The strip's line while hotkeys are off (the same for either place hotkeys work).
     static func offMessage(hasHotkeys: Bool, scope: HotkeyScope) -> String {
-        guard !hasHotkeys else { return "Hotkeys are off, so the keys below do nothing." }
-        return switch scope {
-        case .sToolsAndMinecraft: "Hotkeys are off. Turn them on to switch tools with a key, in sTools and Minecraft."
-        case .everywhere: "Hotkeys are off. Turn them on to switch tools with a key, from any app."
-        }
+        hasHotkeys ? "Hotkeys are off, so the keys below do nothing." : "Hotkeys are off. Turn them on to switch tools with a key."
     }
 
     /// The line under Where hotkeys work: sTools recognizes Minecraft by its windows, which takes Accessibility.
     /// Nil when there is nothing to say.
     static func scopeNote(scope: HotkeyScope, accessibilityGranted: Bool) -> String? {
         guard scope == .sToolsAndMinecraft, !accessibilityGranted else { return nil }
-        return "Until Accessibility is allowed, sTools can't tell when Minecraft is in front, so hotkeys work only in sTools."
+        return "Without Accessibility, hotkeys work only in sTools."
     }
 
     /// Where hotkeys work, both choices in view.
@@ -139,13 +135,13 @@ struct HotkeysSection: View {
     /// action, as the hotkey rows and the editors' chips name it (`HotkeyAction.title`), so one key reads the same
     /// everywhere.
     static func keySetCaption(_ set: HotkeyKeySet?) -> String {
-        guard let set else { return "Custom: keys you set yourself. Pick a set for one key per tool, in sidebar order." }
+        guard let set else { return "Custom keys. Pick a set to give each tool a key." }
         let keys = HotkeyKeySet.toolActions.compactMap { action in
             set.combo(for: action).map { combo in
                 "\(combo.displayString) \(action.title)".replacingOccurrences(of: " ", with: "\u{00A0}")
             }
         }
-        return keys.isEmpty ? "No tool has a key of its own." : keys.joined(separator: " · ")
+        return keys.isEmpty ? "No tool has a key yet." : keys.joined(separator: " · ")
     }
 
     /// The confirmation's title before `set` replaces keys set by hand: "Use ⌃1–⌃5?", "Remove every tool's key?".
@@ -161,7 +157,7 @@ struct HotkeysSection: View {
         let list = edits.count > 1 ? edits.dropLast().joined(separator: ", ") + " and " + (edits.last ?? "") : (edits.first ?? "")
         let verb = set == .noKeys ? "removes" : "replaces"
         let keys = edits.count > 1 ? "keys" : "key"
-        return "This \(verb) the \(keys) you set for \(list). Your other hotkeys stay as they are."
+        return "This \(verb) the \(keys) you set for \(list). Other hotkeys don\u{2019}t change."
     }
 
     /// The tool a key set's action belongs to (`ToolID.hotkeyAction`): Start timer is Timer Overlay's, and Screen

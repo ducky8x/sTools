@@ -142,9 +142,9 @@ struct ToolIDTests {
     }
 
     @Test func taglinesAreVerbatimFromRuleR13() {
-        #expect(ToolID.nbbOverlay.tagline == "Ninjabrain Bot's answer, right over the game.")
+        #expect(ToolID.nbbOverlay.tagline == "A clean Ninjabrain Bot overlay.")
         #expect(ToolID.windowBackdrop.tagline == "A clean stage behind Minecraft.")
-        #expect(ToolID.crosshair.tagline == "The exact center, drawn your way.")
+        #expect(ToolID.crosshair.tagline == "A crosshair drawn at the center of your screen.")
         #expect(ToolID.timerOverlay.tagline == "Your Fire Resistance, counted down.")
         #expect(ToolID.screenRecording.tagline == "Minecraft and everything else, on one canvas.")
         #expect(ToolID.keyRebinder.tagline == "Every rebind, right on its key.")
@@ -169,15 +169,14 @@ struct ToolIDTests {
     }
 
     /// Lists of tools in the app's words follow the sidebar: Home's Accessibility warning and the Prologue's "Used by"
-    /// for Accessibility name every tool that needs it (rule R10), in sidebar order; the "Used by" ends with hotkeys in
-    /// Minecraft, which need it to recognize Minecraft in front, as the README's Permissions table says.
+    /// for Accessibility name every tool that needs it (rule R10), in sidebar order.
     @Test func toolListsInWordsFollowTheSidebar() {
         let needAccessibility = ToolID.allCases.filter(\.requiresAccessibility).map(\.title)
         #expect(needAccessibility == ["Crosshair", "Timer Overlay", "NBB Overlay", "Screen Recording", "Window Backdrop"])
         #expect(HomePage.accessibilityWarning
-            == "Accessibility isn't allowed yet, so Crosshair, Timer Overlay, NBB Overlay, Screen Recording and Window Backdrop stay off.")
+            == "Allow Accessibility to turn on Crosshair, Timer Overlay, NBB Overlay, Screen Recording and Window Backdrop.")
         #expect(PermissionStepView.Copy.usedBy(.accessibility)
-            == (needAccessibility + ["hotkeys in Minecraft"]).joined(separator: ", "))
+            == needAccessibility.joined(separator: ", "))
     }
 
     @Test func sidebarNamesFitTheSidebar() {
