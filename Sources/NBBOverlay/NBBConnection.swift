@@ -57,19 +57,27 @@ public final class NBBConnection {
         guard primary != nil else { return }
         if connected {
             guard secondaries.isEmpty else { return }
-            // A reconnect re-sends the whole state; only a value that differs may redraw the overlay.
-            secondaries.append(subscribe(path: "blind") { [weak self] in if self?.blind != $0 { self?.blind = $0 } })
-            secondaries.append(subscribe(path: "divine") { [weak self] in if self?.divine != $0 { self?.divine = $0 } })
-            secondaries.append(subscribe(path: "boat") { [weak self] in if self?.boat != $0 { self?.boat = $0 } })
-            secondaries.append(subscribe(path: "information-messages") { [weak self] (value: NBBEvents.InformationMessages) in
-                if self?.informationMessages != value { self?.informationMessages = value }
-            })
-            secondaries.append(subscribe(path: "all-advancements") { [weak self] in if self?.allAdvancements != $0 { self?.allAdvancements = $0 } })
+            secondaries.append(subscribe(path: "blind") { [weak self] in self?.update(\.blind, to: $0) })
+            secondaries.append(subscribe(path: "divine") { [weak self] in self?.update(\.divine, to: $0) })
+            secondaries.append(subscribe(path: "boat") { [weak self] in self?.update(\.boat, to: $0) })
+            secondaries.append(subscribe(path: "information-messages") { [weak self] in self?.update(\.informationMessages, to: $0) })
+            secondaries.append(subscribe(path: "all-advancements") { [weak self] in self?.update(\.allAdvancements, to: $0) })
             if version == nil { secondaries.append(Task { [weak self] in await self?.fetchVersion() }) }
         } else {
             for task in secondaries { task.cancel() }
             secondaries.removeAll()
         }
+    }
+
+    /// Called on the main actor right after a stream brought a value that differs from the last one, so the overlay
+    /// redraws in the same turn rather than one main-actor hop later, as an observation's change would.
+    @ObservationIgnored public var onChange: (@MainActor () -> Void)?
+
+    /// A reconnect re-sends the whole state; only a value that differs may redraw the overlay.
+    private func update<T: Equatable>(_ keyPath: ReferenceWritableKeyPath<NBBConnection, T?>, to value: T) {
+        guard self[keyPath: keyPath] != value else { return }
+        self[keyPath: keyPath] = value
+        onChange?()
     }
 
     public func stop() {
@@ -94,7 +102,7 @@ public final class NBBConnection {
             await subscription.run(
                 onEvent: { data in
                     guard let value = Self.decode(NBBEvents.Stronghold.self, from: data) else { return }
-                    Task { @MainActor in if self?.stronghold != value { self?.stronghold = value } }
+                    Task { @MainActor in self?.update(\.stronghold, to: value) }
                 },
                 onConnectionChange: { connected in
                     Task { @MainActor in self?.strongholdConnectionChanged(connected) }

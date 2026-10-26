@@ -93,6 +93,27 @@ struct NBBConnectionTests {
         #expect(!connection.isRunning)
     }
 
+    /// `onChange` comes after the new value is in place, so the overlay can draw it in the same turn, and not for a value
+    /// that's the same as the last.
+    @Test func onChangeComesAfterTheNewValueIsSet() async {
+        let source = RecordingSource()
+        source.setUp(true)
+        let connection = NBBConnection(source: source)
+        var seen: [NBBEvents.ResultType?] = []
+        connection.onChange = { seen.append(connection.stronghold?.resultType) }
+        connection.start()
+        #expect(await eventually { connection.stronghold != nil && connection.boat != nil })
+        #expect(seen.first == NBBEvents.ResultType.none, "the stronghold was set before onChange ran")
+        let count = seen.count
+        source.setUp(false)
+        #expect(await eventually { !connection.isReachable })
+        source.setUp(true)
+        #expect(await eventually { connection.isReachable && connection.runningTaskCount == 6 })
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(seen.count == count, "a reconnect re-sent the same values")
+        connection.stop()
+    }
+
     @Test func anIdenticalValueAfterAReconnectDoesNotNotifyObservers() async {
         let source = RecordingSource()
         source.setUp(true)

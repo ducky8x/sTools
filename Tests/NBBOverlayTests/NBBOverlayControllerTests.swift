@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import STDesign
+import Synchronization
 import Testing
 @testable import NBBOverlay
 @testable import STPlatform
@@ -125,6 +126,72 @@ struct NBBOverlayControllerTests {
         controller.sample = Self.result
         try await Task.sleep(for: .milliseconds(400))
         #expect(controller.isOverlayVisible, "the fade-out's end didn't hide it")
+    }
+
+    /// The first result after a reset is the one a runner waits for: it shows at once at full opacity, not over a
+    /// fade-in, and also when it comes partway through the fade-out. The reset itself still fades out.
+    @MainActor @Test func aResultAfterAResetShowsAtOnce() async {
+        let controller = inertNBBController(services: makeServices(tempDirectory: tempDirectory()), connection: NBBConnection(source: FakeEventSource([])))
+        controller.settings.fadeSeconds = 0.5
+        controller.sample = Self.result
+        controller.setEnabled(true)
+        defer { controller.setEnabled(false) }
+        #expect(controller.isOverlayVisible && controller.panel.alphaValue == 1)
+
+        controller.sample = nil
+        #expect(controller.isOverlayVisible, "the reset fades out")
+        controller.sample = Self.result
+        #expect(controller.isOverlayVisible && controller.panel.alphaValue == 1, "back at once partway through the fade-out")
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(controller.panel.alphaValue == 1, "the fade-out's animation stopped")
+
+        controller.sample = nil
+        await waitUntil({ !controller.isOverlayVisible }, seconds: 5)
+        #expect(!controller.isOverlayVisible)
+        controller.sample = Self.result
+        #expect(controller.isOverlayVisible && controller.panel.alphaValue == 1, "shown at once after the fade-out ended")
+    }
+
+    /// Each result goes into the hosting view already in the panel instead of a new one.
+    @MainActor @Test func aNewResultKeepsTheHostingView() {
+        let controller = inertNBBController(services: makeServices(tempDirectory: tempDirectory()), connection: NBBConnection(source: FakeEventSource([])))
+        controller.sample = Self.result
+        controller.setEnabled(true)
+        defer { controller.setEnabled(false) }
+        let host = controller.panel.contentView.map(ObjectIdentifier.init)
+        var next = Self.result
+        next.predictions[0].certainty = 0.5
+        controller.sample = next
+        #expect(controller.drawCount == 2)
+        #expect(controller.panel.contentView.map(ObjectIdentifier.init) == host)
+    }
+
+    /// A result Ninjabrain Bot pushes is drawn in the main-actor turn it arrives in: from the server's write to the drawn
+    /// panel, the fastest of several results (the fastest, so a busy machine can't make it flaky) takes a few
+    /// milliseconds, where it took about 16 ms before (a byte at a time, then a hop and a new hosting view).
+    @MainActor @Test func aPushedResultIsDrawnAtOnce() async throws {
+        let server = try LocalSSEServer(values: freshNinjabrainBot)
+        defer { server.stop() }
+        let connection = NBBConnection(baseURL: server.baseURL, source: URLSessionEventSource())
+        let controller = inertNBBController(services: makeServices(tempDirectory: tempDirectory()), connection: connection)
+        controller.setEnabled(true)
+        defer { controller.setEnabled(false) }
+        await waitUntil({ connection.stronghold != nil && server.subscribers("/api/v1/boat/events") == 1 }, seconds: 10)
+        var fastest = Duration.seconds(10)
+        for seed in 0..<20 where fastest >= .milliseconds(10) {
+            let sentAt = Mutex<ContinuousClock.Instant?>(nil)
+            var drawnAt: ContinuousClock.Instant?
+            controller.didDraw = { drawnAt = .now }
+            let result = strongholdResult(seed)
+            Task.detached {
+                sentAt.withLock { $0 = .now }
+                server.send("/api/v1/stronghold/events", result)
+            }
+            await waitUntil({ drawnAt != nil }, seconds: 5)
+            if let drawnAt, let sent = sentAt.withLock({ $0 }) { fastest = min(fastest, drawnAt - sent) }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(fastest < .milliseconds(10), "fastest result took \(fastest) from Ninjabrain Bot to the panel")
     }
 
     @MainActor @Test func withFadingOffOrMotionReducedAResetHidesAtOnce() {

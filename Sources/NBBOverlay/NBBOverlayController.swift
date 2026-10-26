@@ -35,15 +35,13 @@ public final class NBBOverlayController: ToolController {
     /// How often a copy's window is read: twice a second, off the main actor (about 20 ms each, nearly all of it
     /// waiting for Ninjabrain Bot's answers).
     @ObservationIgnored private let windowPollInterval: Duration
-    @ObservationIgnored private let panel = OverlayPanel(role: .topmost)
+    @ObservationIgnored let panel = OverlayPanel(role: .topmost)
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
     /// For Reduce animations: while motion is reduced, the overlay shows and hides at once.
     @ObservationIgnored private let theme: STTheme?
     /// Counts fades, so a fade-out's end hides the panel only if nothing showed it again since.
     @ObservationIgnored private var fadeGeneration = 0
     @ObservationIgnored private var isFadingOut = false
-    /// Whether the panel is down because Ninjabrain Bot had nothing to show (a reset), so new data fades it back in.
-    @ObservationIgnored private var hiddenForNoData = true
 
     /// The panel's frame and the display it's shown on, from the last `refreshIfEnabled()` — what a
     /// live placement-mode drag or resize starts from.
@@ -52,9 +50,13 @@ public final class NBBOverlayController: ToolController {
     @ObservationIgnored private var currentDisplay: DisplayInfo?
     /// How many times the overlay's content was built into the panel. For tests.
     @ObservationIgnored private(set) var drawCount = 0
+    /// Called once new content is built into the panel and the panel is shown. For tests that time an update.
+    @ObservationIgnored var didDraw: (@MainActor () -> Void)?
     /// What the panel shows now, so a refresh that changes nothing it draws (Minecraft gaining or losing focus,
     /// a stream reconnecting with the same values) leaves the content alone instead of building it again.
     @ObservationIgnored private var drawn: DrawnOverlay?
+    /// The panel's hosting view, kept from one result to the next while the tool is on.
+    @ObservationIgnored private var host: NSHostingView<NBBOverlayView>?
 
     private struct DrawnOverlay: Equatable {
         var content: NBBOverlayContent
@@ -130,12 +132,15 @@ public final class NBBOverlayController: ToolController {
         guard enabled != isEnabled else { return }
         isEnabled = enabled
         if enabled {
+            // A new result redraws in the same main-actor turn it arrives in.
+            connection.onChange = { [weak self] in self?.refreshIfEnabled() }
             connection.start()
             copies.start()
             syncWindowReading()
             observeChanges()
             refreshIfEnabled()
         } else {
+            connection.onChange = nil
             connection.stop()
             copies.stop()
             syncWindowReading()
@@ -143,11 +148,11 @@ public final class NBBOverlayController: ToolController {
             observers.removeAll()
             fadeGeneration += 1
             isFadingOut = false
-            hiddenForNoData = true
             panel.hide()
             panel.alphaValue = 1
             // Off, the overlay's view tree goes too; switching on builds it again.
             panel.contentView = nil
+            host = nil
             drawn = nil
         }
     }
@@ -208,21 +213,15 @@ public final class NBBOverlayController: ToolController {
         watchForUpdates()
     }
 
-    /// `NBBConnection` and `services.minecraft` are `@Observable`; this re-arms itself after every
-    /// change so a new SSE event or a Minecraft display change redraws the panel.
+    /// `services.minecraft` and `copies` are `@Observable`; this re-arms itself after every change so a Minecraft
+    /// display change or another copy redraws the panel. Ninjabrain Bot's results don't come this way: an observation's
+    /// change comes before the value is set, so acting on it takes one more main-actor hop. A stream's value
+    /// (`connection.onChange`) and a window read (`showWindow`) redraw the panel directly instead.
     private func watchForUpdates() {
         withObservationTracking {
-            _ = connection.stronghold
-            _ = connection.blind
-            _ = connection.divine
-            _ = connection.boat
-            _ = connection.informationMessages
-            _ = connection.allAdvancements
             _ = services.minecraft.active
             _ = copies.copies
             _ = copies.choice
-            _ = windowSnapshot
-            _ = hasReadWindow
         } onChange: { [weak self] in
             Task { @MainActor in
                 self?.syncWindowReading()
@@ -263,8 +262,10 @@ public final class NBBOverlayController: ToolController {
 
     private func showWindow(_ snapshot: NBBWindowSnapshot?, generation: Int) {
         guard generation == windowPollGeneration else { return }
+        guard snapshot != windowSnapshot || !hasReadWindow else { return }
         if snapshot != windowSnapshot { windowSnapshot = snapshot }
         if !hasReadWindow { hasReadWindow = true }
+        refreshIfEnabled()
     }
 
     private func refreshIfEnabled() {
@@ -307,15 +308,24 @@ public final class NBBOverlayController: ToolController {
         var drawnSettings = settings
         drawnSettings.offsetX = 0
         drawnSettings.offsetY = 0
+        let drawsBefore = drawCount
         let key = DrawnOverlay(
             content: content, messages: messages.map { "\($0.severity.rawValue)|\($0.text)" }, boat: currentBoat, settings: drawnSettings)
         if drawn != key {
-            panel.setContent(NBBOverlayView(
+            let view = NBBOverlayView(
                 content: content, messages: messages, settings: settings, boat: currentBoat,
                 onMoveChanged: { [weak self] in self?.placementMoveChanged($0) },
                 onMoveEnded: { [weak self] in self?.placementMoveEnded() },
                 onResizeChanged: { [weak self] in self?.placementResizeChanged($0) },
-                onResizeEnded: { [weak self] in self?.placementResizeEnded() }))
+                onResizeEnded: { [weak self] in self?.placementResizeEnded() })
+            // The hosting view stays and takes the new content, which SwiftUI redraws in place: building a hosting view
+            // for every result cost a few milliseconds more per update.
+            if let host {
+                host.rootView = view
+            } else {
+                panel.setContent(view)
+                host = panel.contentView as? NSHostingView<NBBOverlayView>
+            }
             drawn = key
             drawCount += 1
         }
@@ -325,11 +335,12 @@ public final class NBBOverlayController: ToolController {
             x: display.frame.midX + CGFloat(settings.offsetX) - size.width / 2,
             y: display.frame.midY - CGFloat(settings.offsetY) - size.height / 2)
         showPanel(frame: CGRect(origin: origin, size: size))
+        if drawCount != drawsBefore { didDraw?() }
     }
 
     // MARK: - Fade on reset (spec 5.1.1)
 
-    /// How long a reset's fade takes: none while it's off, while motion is reduced, or at 0 s.
+    /// How long a reset's fade-out takes: none while it's off, while motion is reduced, or at 0 s.
     var fadeDuration: TimeInterval {
         guard settings.fadeOnResetEnabled, theme?.reduceMotion != true else { return 0 }
         return settings.fadeSeconds
@@ -342,13 +353,9 @@ public final class NBBOverlayController: ToolController {
     /// `fadeDuration`, and new data before the fade ends brings it straight back. Anything else (Minecraft losing
     /// focus, no display) hides it at once.
     private func hidePanel(fading: Bool) {
-        guard panel.isVisible, !isFadingOut || !fading else {
-            if !panel.isVisible { hiddenForNoData = fading }
-            return
-        }
+        guard panel.isVisible, !isFadingOut || !fading else { return }
         fadeGeneration += 1
         let generation = fadeGeneration
-        hiddenForNoData = fading
         let duration = fading ? fadeDuration : 0
         guard duration > 0 else {
             isFadingOut = false
@@ -372,7 +379,9 @@ public final class NBBOverlayController: ToolController {
         }
     }
 
-    /// Shows the panel at `frame`; after a reset it fades back in.
+    /// Shows the panel at `frame`. New data after a reset shows at once, at full opacity, even partway through the
+    /// fade-out: a fade-in held the first result after a reset back for its whole duration (a quarter of a second by
+    /// default, and barely readable for the first half), the result a runner waits for.
     private func showPanel(frame: CGRect) {
         let comingBack = !panel.isVisible || isFadingOut
         guard comingBack else {
@@ -380,21 +389,17 @@ public final class NBBOverlayController: ToolController {
             return
         }
         fadeGeneration += 1
-        let duration = hiddenForNoData ? fadeDuration : 0
         let wasFadingOut = isFadingOut
         isFadingOut = false
-        hiddenForNoData = false
-        guard duration > 0 else {
-            panel.alphaValue = 1
-            panel.show(frame: frame)
-            return
+        if wasFadingOut {
+            // Replaces the fade-out's animation, which would otherwise go on lowering the opacity.
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0
+                panel.animator().alphaValue = 1
+            }
         }
-        if !wasFadingOut { panel.alphaValue = 0 }
+        panel.alphaValue = 1
         panel.show(frame: frame)
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = duration
-            panel.animator().alphaValue = 1
-        }
     }
 
     private func targetDisplay() -> DisplayInfo? {
