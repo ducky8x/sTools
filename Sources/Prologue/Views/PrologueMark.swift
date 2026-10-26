@@ -217,7 +217,7 @@ struct PrologueMark: View {
         }
         .aspectRatio(MarkGeometry.bounds.width / MarkGeometry.bounds.height, contentMode: .fit)
         .accessibilityElement()
-        .accessibilityLabel("The sTools mark: a duck hanging by its wing from a stool")
+        .accessibilityLabel("sTools logo")
     }
 
     /// The stool's parts draw first, the duck's slightly after, all overlapping.

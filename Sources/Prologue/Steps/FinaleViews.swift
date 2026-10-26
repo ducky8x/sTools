@@ -9,7 +9,7 @@ struct YoureSetView: View {
 
     private enum Copy {
         static let title = "You\u{2019}re set."
-        static let line = "The tools you tried are off again. Switch any of them on from the sidebar whenever you play."
+        static let line = "The tools you tried are off again. Turn them on from the sidebar or with a hotkey."
     }
 
     @Environment(\.stTheme) private var theme
@@ -86,7 +86,7 @@ struct OpenSToolsView: View {
     let model: PrologueModel
 
     private enum Copy {
-        static let line = "Everything you set up is waiting on Home."
+        static let line = "Your setup is on Home."
         static let open = "Open sTools"
         static let replay = "Replay this introduction any time from Help \u{25B8} Replay Introduction."
     }

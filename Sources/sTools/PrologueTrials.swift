@@ -91,12 +91,12 @@ final class ObservationLoop {
 /// The trials' checklist wording (spec 4.2), gathered here.
 enum TrialCopy {
     static let needsAccessibility = "Needs Accessibility (step 2)."
-    static let needsScreenRecording = "Needs Screen & System Audio Recording (step 3)."
+    static let needsScreenRecording = "Allow Screen & System Audio Recording first (step 3)."
     static let needsKarabiner = "Needs Karabiner-Elements (step 8)."
     static let manageProfilesItem = "Manage Profiles\u{2026}"
 
     enum Crosshair {
-        static let on = "Switch it on and find it"
+        static let on = "Turn it on"
         static let onDetail = "It sits at the center of the screen Minecraft is on, or of your main screen."
         static let shape = "Try another shape"
         static let color = "Change its color"
@@ -106,46 +106,46 @@ enum TrialCopy {
 
     enum Timer {
         static let on = "Switch it on"
-        static let test = "Press Test and watch it run"
-        static let testDetail = "A 5-second run pops up, counts down, rings and leaves. Your saved duration stays as it is."
-        static let place = "Drag it into place and see the rule guides"
-        static let placeDetail = "Turn on \u{201C}Move by dragging\u{201D}, then drag the timer."
+        static let test = "Press Test"
+        static let testDetail = "A 5-second test runs. Your saved time doesn\u{2019}t change."
+        static let place = "Drag it into place"
+        static let placeDetail = "Turn on \u{201C}Move by dragging,\u{201D} then drag the timer."
         static let key = "Set its hotkey"
-        static let keyDetail = "It starts the timer and is saved in Home \u{25B8} Hotkeys, as on the Timer page."
+        static let keyDetail = "It starts the timer. Change it later in Home \u{25B8} Hotkeys."
     }
 
     enum Backdrop {
         static let on = "Switch it on"
-        static let onWithMinecraft = "It covers the screen behind Minecraft."
-        static let onWithoutMinecraft = "Minecraft isn\u{2019}t open, so it sits right behind this window instead."
+        static let onWithMinecraft = "It covers everything behind the Minecraft window."
+        static let onWithoutMinecraft = "Minecraft isn\u{2019}t open, so it sits behind the sTools window instead."
         static let fill = "Change the fill"
     }
 
     enum NBB {
         static let on = "Switch it on"
-        static let place = "Drag it into place and feel it snap"
-        static let placeDetail = "Turn on \u{201C}Move and resize by dragging\u{201D}, then drag the overlay."
-        static let measure = "Measure an eye and watch it update"
-        static let measureDetail = "Throw an ender eye and measure it in Ninjabrain Bot."
+        static let place = "Reposition the overlay"
+        static let placeDetail = "Turn on \u{201C}Move and resize by dragging,\u{201D} then drag the overlay."
+        static let measure = "Measure an eye"
+        static let measureDetail = "Throw an eye and press F3+C."
         static let sample = "Ninjabrain Bot isn\u{2019}t connected, so the overlay shows a sample result."
     }
 
     enum Recording {
-        static let source = "Add a source and place it"
-        static let sourceDetail = "Use Add Source under the canvas, then drag it into place."
+        static let source = "Add a source"
+        static let sourceDetail = "Press Add Source under the canvas, then drag it into place."
         static let record = "Record a 5-second test"
-        static let recordDetail = "The clip is saved like any recording."
+        static let recordDetail = "The clip is saved to your assigned recordings folder."
         static let play = "Play it back here"
     }
 
     enum KeyRebinder {
         static let layout = "Pick your keyboard layout"
-        static let find = "Find your rebinds and Minecraft keybinds on the diagram"
+        static let find = "Find your rebinds on the keyboard"
         static let findDetail = "Select a key to see what it does."
         static let tester = "Press a few keys in the live key tester"
-        static let testerDetail = "Turn on Test keys on the plate, then press away."
+        static let testerDetail = "Turn on Test keys, then press some keys."
         static let profiles = "Open the profile menu"
-        static let rebind = "Make a rebind, then remove it"
+        static let rebind = "Try a rebind"
     }
 }
 
