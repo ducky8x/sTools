@@ -24,7 +24,7 @@ extension HotkeyWording {
             return typingNote(for: combo)
         case .sToolsAndMinecraft:
             guard combo.interferesWithTyping else { return nil }
-            return "While hotkeys are on, Minecraft never gets \(combo.displayString), not even in its chat or seed field."
+            return "While hotkeys are on, Minecraft never gets \(combo.displayString), even in chat or the seed field."
         }
     }
 }

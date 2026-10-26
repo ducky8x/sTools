@@ -16,10 +16,10 @@ enum MinecraftStatusText {
     ///   - others: The instances they do not follow.
     static func make(active: MinecraftInstance?, others: [MinecraftInstance], conflict: InstanceConflict,
                      displays: [DisplayInfo], accessibilityGranted: Bool) -> String {
-        guard accessibilityGranted else { return "sTools can't look for Minecraft until Accessibility is allowed." }
+        guard accessibilityGranted else { return "sTools can\u{2019}t look for Minecraft until Accessibility is allowed." }
         guard let active else { return "Minecraft isn't running." }
         if case .multiple(let count, let followingVersion) = conflict {
-            return "\(count) Minecraft windows are open. sTools is following \(followed(followingVersion, others: others))."
+            return "\(count) Minecraft windows are open. Following \(followed(followingVersion, others: others))."
         }
         let name = active.version.map { "Minecraft \($0)" } ?? "Minecraft"
         guard let displayName = active.displayID.flatMap({ id in displays.first { $0.id == id }?.name }) else {

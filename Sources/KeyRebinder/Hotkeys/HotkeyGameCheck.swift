@@ -151,7 +151,7 @@ public enum HotkeyGameCheck {
     }
 
     /// Names the modifiers Minecraft binds that `combo` lacks: while one of them is held, the hotkey doesn't fire,
-    /// because Carbon matches modifiers exactly. "F18 doesn't fire while you hold Shift (Sneak) or Control
+    /// because Carbon matches modifiers exactly. "F18 won’t fire while you hold Shift (Sneak) or Control
     /// (Sprint)." Nil when the combination has every one of them, or Minecraft binds none.
     public static func heldModifierNote(
         for combo: HotkeyCombo, minecraftKeybinds: [MinecraftKeybind]?, table: KeyTable = .shared
@@ -159,8 +159,8 @@ public enum HotkeyGameCheck {
         let missing = boundModifiers(minecraftKeybinds ?? defaultKeybinds, table: table).filter { !combo.modifiers.contains($0.flag) }
         guard !missing.isEmpty else { return nil }
         let held = missing.map { "\($0.name) (\($0.actions.joined(separator: ", ")))" }
-        var text = "\(combo.displayString) doesn\u{2019}t fire while you hold \(joined(held, last: "or"))"
-        if minecraftKeybinds == nil { text += missing.count == 1 ? ", as Minecraft binds it by default" : ", as Minecraft binds them by default" }
+        var text = "\(combo.displayString) won\u{2019}t fire while you hold \(joined(held, last: "or"))"
+        if minecraftKeybinds == nil { text += ", Minecraft\u{2019}s default" }
         return text + "."
     }
 

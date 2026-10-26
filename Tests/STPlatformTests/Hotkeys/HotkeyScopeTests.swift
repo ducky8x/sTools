@@ -297,7 +297,7 @@ struct HotkeyScopeTests {
         let everywhere = try #require(HotkeyWording.typingNote(for: bareC, scope: .everywhere))
         #expect(everywhere == HotkeyWording.typingNote(for: bareC))
         #expect(HotkeyWording.typingNote(for: bareC, scope: .sToolsAndMinecraft)
-            == "While hotkeys are on, Minecraft never gets C, not even in its chat or seed field.")
+            == "While hotkeys are on, Minecraft never gets C, even in chat or the seed field.")
         #expect(HotkeyWording.typingNote(for: cmd1, scope: .sToolsAndMinecraft) == nil)
         #expect(HotkeyWording.typingNote(for: f13, scope: .everywhere) == nil)
 

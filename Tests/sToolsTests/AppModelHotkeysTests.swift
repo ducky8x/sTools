@@ -255,7 +255,7 @@ struct HomeHotkeyRowTests {
         hotkeys.advisor = advisor
         advisor.placementText = "On Caps Lock"
         advisor.cautions = ["Minecraft uses F3 for Debug screen. While hotkeys are on, it never gets F3."]
-        advisor.notes = ["F3 doesn\u{2019}t fire while you hold Shift (Sneak)."]
+        advisor.notes = ["F3 won\u{2019}t fire while you hold Shift (Sneak)."]
         let id = hotkeys.add(combo: HotkeyCombo(keyCode: 99, modifiers: []), actions: [.toggle(.crosshair)])
         let binding = try #require(hotkeys.bindings.first { $0.id == id })
 

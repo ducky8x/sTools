@@ -46,12 +46,12 @@ struct MinecraftStatusTextTests {
 
     @Test func conflictBetweenEqualVersionsFollowsTheOneOpenedFirst() {
         let message = text([instance(pid: 10, version: "1.16.1", launched: 5), instance(pid: 11, version: "1.16.1", launched: 9)])
-        #expect(message == "2 Minecraft windows are open. sTools is following 1.16.1 (opened first).")
+        #expect(message == "2 Minecraft windows are open. Following 1.16.1 (opened first).")
     }
 
     @Test func conflictPreferringTheMajorVersionSaysSo() {
         let message = text([instance(pid: 10, version: "1.20.4", launched: 1), instance(pid: 11, version: "1.16.1", launched: 9)])
-        #expect(message == "2 Minecraft windows are open. sTools is following 1.16.1 (the preferred version).")
+        #expect(message == "2 Minecraft windows are open. Following 1.16.1 (the preferred version).")
     }
 
     @Test func conflictWithoutAPreferredVersionFollowsTheOneOpenedFirst() {
@@ -60,16 +60,16 @@ struct MinecraftStatusTextTests {
             instance(pid: 11, version: "1.19.2", launched: 4),
             instance(pid: 12, version: "1.21", launched: 9),
         ])
-        #expect(message == "3 Minecraft windows are open. sTools is following 1.20.4 (opened first).")
+        #expect(message == "3 Minecraft windows are open. Following 1.20.4 (opened first).")
     }
 
     @Test func conflictWithAnUnknownVersionStillReads() {
         let message = text([instance(pid: 10, version: nil, launched: 1), instance(pid: 11, version: nil, launched: 2)])
-        #expect(message == "2 Minecraft windows are open. sTools is following the one opened first.")
+        #expect(message == "2 Minecraft windows are open. Following the one opened first.")
     }
 
     @Test func withoutAccessibilityNothingCanBeFound() {
-        #expect(text([], accessibility: false) == "sTools can't look for Minecraft until Accessibility is allowed.")
+        #expect(text([], accessibility: false) == "sTools can\u{2019}t look for Minecraft until Accessibility is allowed.")
     }
 
     @Test func conflictFlagMatchesTheLocator() {

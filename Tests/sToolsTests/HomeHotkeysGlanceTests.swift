@@ -13,9 +13,9 @@ private let pad1 = HotkeyCombo(keyCode: 83, modifiers: [])
 struct HomeHotkeysGlanceTests {
     @Test func whileOffOneStripSaysSoAndTheListStillShows() {
         #expect(HotkeysSection.offMessage(hasHotkeys: false, scope: .sToolsAndMinecraft)
-            == "Hotkeys are off. Turn them on to switch tools with a key, in sTools and Minecraft.")
+            == "Hotkeys are off. Turn them on to switch tools with a key.")
         #expect(HotkeysSection.offMessage(hasHotkeys: false, scope: .everywhere)
-            == "Hotkeys are off. Turn them on to switch tools with a key, from any app.")
+            == "Hotkeys are off. Turn them on to switch tools with a key.")
         #expect(HotkeysSection.offMessage(hasHotkeys: true, scope: .sToolsAndMinecraft) == "Hotkeys are off, so the keys below do nothing.")
 
         let harness = Harness(accessibility: .granted)
@@ -33,7 +33,7 @@ struct HomeHotkeysGlanceTests {
         #expect(HotkeysSection.scopeNote(scope: .sToolsAndMinecraft, accessibilityGranted: true) == nil)
         #expect(HotkeysSection.scopeNote(scope: .everywhere, accessibilityGranted: false) == nil)
         #expect(HotkeysSection.scopeNote(scope: .sToolsAndMinecraft, accessibilityGranted: false)
-            == "Until Accessibility is allowed, sTools can't tell when Minecraft is in front, so hotkeys work only in sTools.")
+            == "Without Accessibility, hotkeys work only in sTools.")
 
         let harness = Harness(accessibility: .granted)
         #expect(harness.model.hotkeys.scope == .sToolsAndMinecraft)

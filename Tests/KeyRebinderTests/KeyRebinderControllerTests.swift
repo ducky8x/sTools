@@ -476,7 +476,7 @@ struct KeyRebinderHotkeyTests {
         #expect(await eventually { controller.hotkeys(on: .key("caps_lock")).count == 2 })
         #expect(controller.hotkeyMark(for: .key("caps_lock")) == .broken)
         #expect(controller.hotkeyDescription(for: .key("caps_lock"))
-            == "sTools hotkeys: F13, Crosshair; Option F13, Screen Recording, not working: Refused by macOS. Some versions need \u{2318} or \u{2303}.")
+            == "sTools hotkeys: F13, Crosshair; Option F13, Screen Recording, not working: macOS won\u{2019}t allow this key. Add \u{2318} or \u{2303}.")
     }
 
     // MARK: Editing
@@ -881,7 +881,7 @@ struct KeyRebinderHotkeyTests {
         let controller = harness.controller
         let caution = HotkeyNote(tone: .caution, text: "Minecraft uses F3 for Debug screen. While hotkeys are on, it never gets F3.")
         let held = HotkeyNote(
-            tone: .note, text: "F3 doesn\u{2019}t fire while you hold Shift (Sneak) or Control (Sprint), as Minecraft binds them by default.")
+            tone: .note, text: "F3 won\u{2019}t fire while you hold Shift (Sneak) or Control (Sprint), Minecraft\u{2019}s default.")
         #expect(controller.notes(for: HotkeyFixtures.combo("f3")) == [caution, held])
         #expect(center.notes(for: HotkeyFixtures.combo("f3")).prefix(2) == [caution, held])
         #expect(controller.notes(for: HotkeyFixtures.combo("f18", [.control, .shift])).isEmpty)

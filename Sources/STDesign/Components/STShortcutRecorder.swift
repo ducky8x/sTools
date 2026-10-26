@@ -307,7 +307,7 @@ public struct STShortcutRecorder: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(label)
             .accessibilityValue(accessibilityValue)
-            .accessibilityHint(model.isRecording ? "Press the new key or combination. Escape cancels, Delete clears." : "Activate to record a new shortcut.")
+            .accessibilityHint(model.isRecording ? "Press the new key or combination. Escape cancels, Delete clears." : "Activate to record a new key.")
             .accessibilityAddTraits(.isButton)
             .accessibilityAction(.default, startRecording)
             .accessibilityAction(named: "Clear shortcut") { shortcut = nil }
