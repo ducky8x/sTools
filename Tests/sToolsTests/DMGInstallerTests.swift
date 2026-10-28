@@ -1,15 +1,17 @@
 import Darwin
 import Foundation
+@testable import STPlatform
 import Testing
 @testable import sTools
 
 private let bundleID = "com.ducky8x.sTools"
 
 /// A minimal app bundle: an Info.plist and one file whose text says which copy it is.
-private func makeApp(at url: URL, id: String = bundleID, short: String = "0.2.0", build: String, marker: String) throws {
+private func makeApp(at url: URL, id: String = bundleID, short: String = "0.2.0", build: String, marker: String, variant: AppVariant = .standard) throws {
     let contents = url.appending(path: "Contents")
     try FileManager.default.createDirectory(at: contents.appending(path: "MacOS"), withIntermediateDirectories: true)
-    let info: [String: Any] = ["CFBundleIdentifier": id, "CFBundleShortVersionString": short, "CFBundleVersion": build]
+    var info: [String: Any] = ["CFBundleIdentifier": id, "CFBundleShortVersionString": short, "CFBundleVersion": build]
+    if variant == .dev { info[AppVariant.infoKey] = "dev" }
     try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: contents.appending(path: "Info.plist"))
     try Data(marker.utf8).write(to: contents.appending(path: "MacOS/marker"))
 }
@@ -140,6 +142,81 @@ struct DMGInstallerTests {
         let installer = installer(setup, mounter: FakeMounter(volume: setup.volume))
         await installer.install(from: setup.dmg)
         #expect(installer.phase == .failed("This DMG has no sTools in it."))
+    }
+
+    // MARK: The dev build
+
+    /// The dev build and the normal one share a bundle identifier and a signature, so only the marker in Info.plist keeps
+    /// a DMG of one from replacing the other.
+    private func devSetup(installed: AppVariant, dmg: AppVariant) throws -> Setup {
+        let root = try tempFolder()
+        let installedApp = root.appending(path: installed == .dev ? "Applications/sTools Dev.app" : "Applications/sTools.app")
+        try makeApp(at: installedApp, build: "500", marker: "old", variant: installed)
+        let volume = root.appending(path: "Volume")
+        try makeApp(at: volume.appending(path: dmg == .dev ? "sTools Dev.app" : "sTools.app"), build: "600", marker: "new", variant: dmg)
+        return Setup(installed: installedApp, volume: volume, dmg: root.appending(path: "sTools-0.2.0-dev-macOS.dmg"))
+    }
+
+    private func installer(_ setup: Setup, variant: AppVariant, relaunched: @escaping @MainActor () -> Void = {}) -> DMGInstaller {
+        DMGInstaller(
+            installedApp: setup.installed, running: AppVersion(short: "0.1.0", build: "500"), bundleIdentifier: bundleID,
+            variant: variant, mounter: FakeMounter(volume: setup.volume), signatures: FakeSignatures(), relaunch: relaunched)
+    }
+
+    @Test func theDevBuildInstallsFromADevDMGUnderItsOwnName() async throws {
+        let setup = try devSetup(installed: .dev, dmg: .dev)
+        var relaunches = 0
+        let installer = installer(setup, variant: .dev, relaunched: { relaunches += 1 })
+        await installer.install(from: setup.dmg)
+        #expect(installer.phase == .installed(AppVersion(short: "0.2.0", build: "600")))
+        #expect(installer.statusText == "Installed version 0.2.0 (build 600). sTools Dev is opening again\u{2026}")
+        #expect(marker(of: setup.installed) == "new")
+        #expect(relaunches == 1)
+        let siblings = try FileManager.default.contentsOfDirectory(atPath: setup.installed.deletingLastPathComponent().path)
+        #expect(siblings == ["sTools Dev.app"], "the copy keeps its name, and nothing else is left beside it")
+    }
+
+    @Test func theDevBuildRefusesTheNormalDMG() async throws {
+        let setup = try devSetup(installed: .dev, dmg: .standard)
+        var relaunches = 0
+        let installer = installer(setup, variant: .dev, relaunched: { relaunches += 1 })
+        await installer.install(from: setup.dmg)
+        #expect(installer.phase == .failed("This DMG has sTools, not sTools Dev, so it won\u{2019}t replace this copy."))
+        #expect(marker(of: setup.installed) == "old")
+        #expect(relaunches == 0)
+    }
+
+    @Test func theNormalBuildRefusesTheDevDMG() async throws {
+        let setup = try devSetup(installed: .standard, dmg: .dev)
+        let installer = installer(setup, variant: .standard)
+        await installer.install(from: setup.dmg)
+        #expect(installer.phase == .failed("This DMG has sTools Dev, not sTools, so it won\u{2019}t replace this copy."))
+        #expect(marker(of: setup.installed) == "old")
+    }
+
+    @Test func aDMGWithoutTheDevBuildSaysSoByItsName() async throws {
+        let setup = try devSetup(installed: .dev, dmg: .dev)
+        try FileManager.default.removeItem(at: setup.volume.appending(path: "sTools Dev.app"))
+        let installer = installer(setup, variant: .dev)
+        await installer.install(from: setup.dmg)
+        #expect(installer.phase == .failed("This DMG has no sTools Dev in it."))
+    }
+
+    @Test func findingTheAppCanAskForABuild() throws {
+        let volume = try tempFolder()
+        try makeApp(at: volume.appending(path: "sTools.app"), build: "1", marker: "normal")
+        try makeApp(at: volume.appending(path: "sTools Dev.app"), build: "1", marker: "dev", variant: .dev)
+        #expect(DMGInstaller.findApp(in: volume, bundleIdentifier: bundleID, variant: .standard)?.lastPathComponent == "sTools.app")
+        #expect(DMGInstaller.findApp(in: volume, bundleIdentifier: bundleID, variant: .dev)?.lastPathComponent == "sTools Dev.app")
+        #expect(DMGInstaller.findApp(in: volume, bundleIdentifier: bundleID)?.lastPathComponent == "sTools Dev.app", "any build: the first by name")
+    }
+
+    @Test func theMessagesNameTheDevBuild() {
+        let installed = URL(fileURLWithPath: "/x/sTools Dev.app")
+        #expect(DMGInstallError.copyFailed.message(installedApp: installed, variant: .dev)
+            == "sTools Dev couldn\u{2019}t copy the new version out of the DMG. Your copy wasn\u{2019}t changed.")
+        #expect(DMGInstallError.runningFromTemporaryCopy.message(installedApp: installed, variant: .dev)
+            == "This sTools Dev is running from the DMG or a temporary copy macOS made. Drag sTools Dev into Applications, open it from there, then install again.")
     }
 
     @Test func aFileThatIsntADiskImageSaysSo() async throws {

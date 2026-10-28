@@ -1,4 +1,5 @@
 import STDesign
+import STPlatform
 import SwiftUI
 
 /// The Go menu, plus About, Check for Updates and Settings in the app menu (Settings in place of the standard,
@@ -11,7 +12,7 @@ struct GoCommands: Commands {
             item(.settings, title: "Settings\u{2026}")
         }
         CommandGroup(replacing: .appInfo) {
-            Button("About sTools") { AboutPanel.show(version: model.updateCenter.version) }
+            Button("About \(AppVariant.current.name)") { AboutPanel.show(version: model.updateCenter.version) }
             Button("Check for Updates\u{2026}") { model.updateCenter.checkNow(from: .menu) }
                 .disabled(!model.updateCenter.canCheck)
             Button("Install from DMG\u{2026}") { model.dmgInstaller.chooseAndInstall() }

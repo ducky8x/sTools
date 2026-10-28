@@ -102,6 +102,18 @@ private func makeReport(
         #expect(off.contains("Hotkeys: off\nWhere hotkeys work: Everywhere\nKey set: Custom\n"))
     }
 
+    /// A report from the dev build says so in its first line, so a bug report says which copy it came from.
+    @Test func theHeaderNamesTheDevBuild() {
+        let dev = DiagnosticsSystemInfo(
+            appVersion: "1.2.3", appBuild: "45", macOSVersion: "15.1.0", architecture: "arm64", localeIdentifier: "en_US",
+            appName: AppVariant.dev.name)
+        let report = DiagnosticsReport(
+            system: dev, displays: [], permissions: [:], karabiner: "", ninjabrain: "", minecraft: "", enabledTools: [],
+            settingsFiles: [], logReader: FakeLogReader(), now: now, homeDirectory: home)
+        #expect(report.render().hasPrefix("sTools Dev 1.2.3 (45) diagnostics\n"))
+        #expect(makeReport().render().hasPrefix("sTools 1.2.3 (45) diagnostics\n"))
+    }
+
     /// A settings file's size agrees with its count, one byte included.
     @Test func aOneByteFileReadsInTheSingular() {
         let text = makeReport(settingsFiles: [SettingsFileInfo(name: "tiny.json", bytes: 1), SettingsFileInfo(name: "empty.json", bytes: 0)])

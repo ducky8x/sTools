@@ -1,5 +1,6 @@
 import AppKit
 import STDesign
+import STPlatform
 import SwiftUI
 
 @main
@@ -11,7 +12,7 @@ struct STApp: App {
     }
 
     var body: some Scene {
-        Window("sTools", id: "main") {
+        Window(AppVariant.current.name, id: "main") {
             RootView(model: delegate.model)
         }
         .windowStyle(.hiddenTitleBar)

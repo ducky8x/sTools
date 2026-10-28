@@ -56,13 +56,19 @@ public final class PasteboardClipboard: ClipboardWriting {
 
 /// Facts about the app and the machine.
 public struct DiagnosticsSystemInfo: Sendable, Equatable {
+    /// "sTools", or "sTools Dev" for the dev build (`AppVariant.name`).
+    public var appName: String
     public var appVersion: String
     public var appBuild: String
     public var macOSVersion: String
     public var architecture: String
     public var localeIdentifier: String
 
-    public init(appVersion: String, appBuild: String, macOSVersion: String, architecture: String, localeIdentifier: String) {
+    public init(
+        appVersion: String, appBuild: String, macOSVersion: String, architecture: String, localeIdentifier: String,
+        appName: String = AppVariant.standard.name
+    ) {
+        self.appName = appName
         self.appVersion = appVersion
         self.appBuild = appBuild
         self.macOSVersion = macOSVersion
@@ -83,7 +89,8 @@ public struct DiagnosticsSystemInfo: Sendable, Equatable {
             appBuild: bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown",
             macOSVersion: "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)",
             architecture: machine.isEmpty ? "unknown" : machine,
-            localeIdentifier: Locale.current.identifier
+            localeIdentifier: Locale.current.identifier,
+            appName: AppVariant(bundle: bundle).name
         )
     }
 }
@@ -197,7 +204,7 @@ public struct DiagnosticsReport: Sendable {
     /// The report as plain text, home directory redacted.
     public func render() -> String {
         var out: [String] = []
-        out.append("sTools \(system.appVersion) (\(system.appBuild)) diagnostics")
+        out.append("\(system.appName) \(system.appVersion) (\(system.appBuild)) diagnostics")
         out.append("Generated: \(generatedAt.formatted(.iso8601))")
         if let hotkeys {
             out.append("Hotkeys: \(hotkeys.isEnabled ? "on" : "off")")

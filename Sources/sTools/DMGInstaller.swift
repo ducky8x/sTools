@@ -3,15 +3,18 @@ import Darwin
 import Foundation
 import Observation
 import Security
+import STPlatform
 import UniformTypeIdentifiers
 
 /// Updates sTools from a DMG someone downloaded (spec 6.3): the first time they drag sTools into Applications; after
 /// that they hand the next DMG to Settings ▸ Updates ▸ Install from DMG… (or the app menu), and sTools replaces itself
 /// with the copy inside and opens again.
 ///
-/// The copy inside must be sTools (same bundle identifier), signed by the same certificate as the running copy, and a
-/// newer build; an older build installs only after the person confirms, the same build not at all. Nothing on the disk
-/// changes until every check has passed, and the installed copy is swapped for the new one in one step.
+/// The copy inside must be sTools (same bundle identifier) and the same build of it as the running copy (the normal
+/// one or the dev one, `AppVariant`: the two share a bundle identifier and a certificate, so without this a DMG of one
+/// could replace the other), signed by the same certificate as the running copy, and a newer build; an older build
+/// installs only after the person confirms, the same build not at all. Nothing on the disk changes until every check
+/// has passed, and the installed copy is swapped for the new one in one step.
 @MainActor
 @Observable
 final class DMGInstaller {
@@ -30,6 +33,7 @@ final class DMGInstaller {
     @ObservationIgnored private let installedApp: URL
     @ObservationIgnored private let running: AppVersion
     @ObservationIgnored private let bundleIdentifier: String?
+    @ObservationIgnored private let variant: AppVariant
     @ObservationIgnored private let mounter: any DiskImageMounting
     @ObservationIgnored private let signatures: any AppSignatureChecking
     @ObservationIgnored private let relaunch: @MainActor () -> Void
@@ -38,6 +42,7 @@ final class DMGInstaller {
         installedApp: URL = Bundle.main.bundleURL,
         running: AppVersion = AppVersion(),
         bundleIdentifier: String? = Bundle.main.bundleIdentifier,
+        variant: AppVariant = .current,
         mounter: any DiskImageMounting = HdiutilMounter(),
         signatures: any AppSignatureChecking = CodeSignatureChecker(),
         relaunch: @escaping @MainActor () -> Void = { AppRelauncher.relaunch() }
@@ -45,6 +50,7 @@ final class DMGInstaller {
         self.installedApp = installedApp
         self.running = running
         self.bundleIdentifier = bundleIdentifier
+        self.variant = variant
         self.mounter = mounter
         self.signatures = signatures
         self.relaunch = relaunch
@@ -56,7 +62,7 @@ final class DMGInstaller {
     func chooseAndInstall() {
         guard !isBusy else { return }
         let panel = NSOpenPanel()
-        panel.title = "Install sTools from a DMG"
+        panel.title = "Install \(variant.name) from a DMG"
         panel.prompt = "Install"
         panel.allowedContentTypes = [.diskImage]
         panel.allowsMultipleSelection = false
@@ -93,8 +99,11 @@ final class DMGInstaller {
     }
 
     private func installMounted(dmg: URL, mountPoint: URL, allowingOlder: Bool) async -> Phase {
-        guard let candidate = Self.findApp(in: mountPoint, bundleIdentifier: bundleIdentifier) else {
-            return .failed("This DMG has no sTools in it.")
+        guard let candidate = Self.findApp(in: mountPoint, bundleIdentifier: bundleIdentifier, variant: variant) else {
+            if Self.findApp(in: mountPoint, bundleIdentifier: bundleIdentifier, variant: variant.other) != nil {
+                return .failed("This DMG has \(variant.other.name), not \(variant.name), so it won\u{2019}t replace this copy.")
+            }
+            return .failed("This DMG has no \(variant.name) in it.")
         }
         let info = Self.infoPlist(of: candidate) ?? [:]
         let found = AppVersion(short: info["CFBundleShortVersionString"] as? String, build: info["CFBundleVersion"] as? String)
@@ -107,30 +116,33 @@ final class DMGInstaller {
             break
         }
         guard signatures.isSignedLikeRunningApp(candidate) else {
-            return .failed("This sTools isn\u{2019}t signed by the same developer as yours, so it won\u{2019}t be installed.")
+            return .failed("This \(variant.name) isn\u{2019}t signed by the same developer as yours, so it won\u{2019}t be installed.")
         }
         phase = .installing
         do {
             try Self.replace(installedApp, with: candidate, verifying: signatures)
         } catch let error as DMGInstallError {
-            return .failed(error.message(installedApp: installedApp))
+            return .failed(error.message(installedApp: installedApp, variant: variant))
         } catch {
-            return .failed("sTools couldn\u{2019}t be replaced: \(error.localizedDescription)")
+            return .failed("\(variant.name) couldn\u{2019}t be replaced: \(error.localizedDescription)")
         }
         return .installed(found)
     }
 
     // MARK: - Steps (static, so tests can run them on temporary folders)
 
-    /// The top-level app in `folder` with `bundleIdentifier` (any app when that is nil).
-    static func findApp(in folder: URL, bundleIdentifier: String?) -> URL? {
+    /// The top-level app in `folder` with `bundleIdentifier` (any app when that is nil) and, when `variant` is given,
+    /// that build of it: the dev build says so in its Info.plist (`STVariant`), the normal one doesn't.
+    static func findApp(in folder: URL, bundleIdentifier: String?, variant: AppVariant? = nil) -> URL? {
         let items = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
         return items
             .filter { $0.pathExtension == "app" }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
             .first { app in
-                guard let bundleIdentifier else { return true }
-                return infoPlist(of: app)?["CFBundleIdentifier"] as? String == bundleIdentifier
+                let info = infoPlist(of: app)
+                if let bundleIdentifier, info?["CFBundleIdentifier"] as? String != bundleIdentifier { return false }
+                guard let variant else { return true }
+                return AppVariant(marker: info?[AppVariant.infoKey] as? String) == variant
             }
     }
 
@@ -195,7 +207,7 @@ final class DMGInstaller {
         case .checking: "Checking the DMG\u{2026}"
         case .confirmOlder(_, let found): "This DMG has an older build (\(found.text.lowercased())) than yours (\(running.text.lowercased()))."
         case .installing: "Installing\u{2026}"
-        case .installed(let found): "Installed \(found.text.lowercased()). sTools is opening again\u{2026}"
+        case .installed(let found): "Installed \(found.text.lowercased()). \(variant.name) is opening again\u{2026}"
         case .failed(let message): message
         }
     }
@@ -204,16 +216,18 @@ final class DMGInstaller {
 enum DMGInstallError: Error, Equatable {
     case runningFromTemporaryCopy, folderNotWritable, copyFailed, copyDamaged
 
-    func message(installedApp: URL) -> String {
-        switch self {
+    /// The words for the person, naming the app as the running copy is named (`AppVariant.name`).
+    func message(installedApp: URL, variant: AppVariant = .standard) -> String {
+        let name = variant.name
+        return switch self {
         case .runningFromTemporaryCopy:
-            "This sTools is running from the DMG or a temporary copy macOS made. Drag sTools into Applications, open it from there, then install again."
+            "This \(name) is running from the DMG or a temporary copy macOS made. Drag \(name) into Applications, open it from there, then install again."
         case .folderNotWritable:
-            "sTools can\u{2019}t write to \(installedApp.deletingLastPathComponent().lastPathComponent). Drag sTools from the DMG into it instead."
+            "\(name) can\u{2019}t write to \(installedApp.deletingLastPathComponent().lastPathComponent). Drag \(name) from the DMG into it instead."
         case .copyFailed:
-            "sTools couldn\u{2019}t copy the new version out of the DMG. Your copy wasn\u{2019}t changed."
+            "\(name) couldn\u{2019}t copy the new version out of the DMG. Your copy wasn\u{2019}t changed."
         case .copyDamaged:
-            "The copied sTools didn\u{2019}t pass its signature check. Your copy wasn\u{2019}t changed."
+            "The copied \(name) didn\u{2019}t pass its signature check. Your copy wasn\u{2019}t changed."
         }
     }
 }
