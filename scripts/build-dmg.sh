@@ -17,7 +17,12 @@
 #
 # The window: a dark background drawn by scripts/dmg-window.swift (wordmark, a gold arrow from sTools to
 # Applications, and the one-time Open Anyway steps), at 1x and 2x in one TIFF so it is sharp on Retina
-# displays; the app and an Applications link at fixed positions; no toolbar, sidebar or status bar.
+# displays; the app and an Applications link at fixed positions; no toolbar or sidebar. Finder on macOS 27 follows
+# the person's own View menu for the tab bar, path bar and status bar and ignores what a disk image says about
+# them, so the window is made 64 pt taller than the artwork and its title bar, and the picture continues in plain
+# background under the artwork: with a tab bar and a path bar, the whole 640 x 448 pt artwork still shows.
+# The hidden files at the volume's root (.background, .VolumeIcon.icns) are placed far to the right of the window:
+# a Finder that shows hidden files lists them, and without a position it drops them over the artwork.
 #
 # No Finder scripting: the window layout is written straight into the volume's .DS_Store by
 # scripts/dmg-window.swift, so building needs no Automation permission and works without a logged-in Finder.
@@ -435,9 +440,16 @@ BACKGROUND_INFO="$(tiffutil -info "$CHECK/.background/background.tiff" 2>/dev/nu
 ! grep -Eq 'Software|Image Description' <<< "$BACKGROUND_INFO" ||
     fail "the background TIFF names the tool or the files it was made with"
 LAYOUT="$("$WORK/dmg-window" dump "$CHECK/.DS_Store")" || fail "the DMG's .DS_Store does not read back"
-for record in $'.\tbwsp' $'.\ticvp' $'.\tpBBk' $'.\tvstl' "$APP_NAME"$'\tIloc' $'Applications\tIloc'; do
+RECORDS=($'.\tbwsp' $'.\ticvp' $'.\tpBBk' $'.\tvstl' "$APP_NAME"$'\tIloc' $'Applications\tIloc' $'.background\tIloc')
+[[ -z "$VOLUME_ICON" ]] || RECORDS+=($'.VolumeIcon.icns\tIloc')
+for record in "${RECORDS[@]}"; do
     grep -q "^$record"$'\t' <<< "$LAYOUT" || fail "the .DS_Store lacks the record \"${record//$'\t'/ }\""
 done
+# The window's size and every icon's place, against what scripts/dmg-window.swift describes (the last line).
+if ! grep -qx 'layout ok' <<< "$LAYOUT"; then
+    grep '^layout problem' <<< "$LAYOUT" >&2 || true
+    fail "the DMG's Finder layout is not what scripts/dmg-window.swift describes (listed above)"
+fi
 # The background's alias and bookmark record /Volumes/sTools: mounted here, they must still find it by the
 # volume's identity, as Finder does when another "sTools" volume is mounted. The bookmark does, by the volume's
 # UUID. macOS resolves the alias into any volume named "sTools" mounted at /Volumes/sTools, so while one is (an

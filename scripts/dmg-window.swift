@@ -15,9 +15,13 @@
 //               the background picture, which must already be at <volumeRoot>/.background/background.tiff.
 //               Run it on the mounted, writable volume, wherever it is mounted: the background is referenced by an
 //               alias and a bookmark that record the volume as mounted at /Volumes/<volume name>, where users see
-//               it, plus the volume's identity and the file IDs, which find it wherever it is mounted.
+//               it, plus the volume's identity and the file IDs, which find it wherever it is mounted. The hidden
+//               files at the volume's root (.background, .VolumeIcon.icns) get positions far outside the window,
+//               so a Finder that shows hidden files does not drop them over the artwork.
 //   dump        Prints the records of a .DS_Store file, for checking: the background's alias and bookmark are
-//               resolved, and the alias is also checked field by field against the volume holding the file.
+//               resolved, and the alias is also checked field by field against the volume holding the file. The
+//               last line is `layout ok`, or `layout problem: ...` when the window size or an icon position is not
+//               what `Window` describes.
 //
 // Why write .DS_Store directly: the usual way is AppleScript telling Finder to arrange the window, which
 // needs the Automation permission and an on-screen Finder. The file format is documented by the open-source
@@ -37,14 +41,28 @@ import UniformTypeIdentifiers
 
 /// The DMG window, in points, with the origin at the top left of the window's content area.
 enum Window {
-    /// The content area, and the background drawn to fill it.
+    /// The designed content area: what the artwork is laid out in and what a person sees whole.
     static let size = CGSize(width: 640, height: 448)
     /// Finder stores the whole window frame, title bar included, so the frame is the content plus a title bar.
-    /// A plain title bar is 28 pt on macOS 15 and 32 pt on macOS 27 (measured); counting 28 keeps the picture
-    /// covering the whole content area, and taller title bars hide only a plain strip at the bottom.
-    static let titleBarHeight: CGFloat = 28
-    /// Where the window opens: its bottom-left corner, measured from the bottom left of the main screen.
-    static let screenOrigin = CGPoint(x: 480, y: 300)
+    /// A plain title bar is 28 pt on macOS 15 and 32 pt on macOS 27 (measured).
+    static let titleBarHeight: CGFloat = 32
+    static let smallestTitleBarHeight: CGFloat = 28
+    /// Room for the bars a Finder window may take from the content area. Finder on macOS 27 does not obey a disk
+    /// image's own ShowTabView, ShowPathbar and ShowStatusBar settings (they stay in the .DS_Store in case an older
+    /// macOS reads them): it follows the person's View menu, so a window may lose a tab bar (28 pt, and an 8 pt gap
+    /// under it), a path bar (28 pt) and a status bar (28 pt) from the content area. The frame is 64 pt taller than
+    /// the content, and the picture runs on in plain background under the artwork, so a Finder with a tab bar and a
+    /// path bar still shows the whole 640 x 448 artwork (a status bar as well cuts only the empty strip under the
+    /// steps) and one without them shows that plain strip.
+    static let barsAllowance: CGFloat = 64
+    /// The whole window, title bar and room for bars included.
+    static let frameSize = CGSize(width: size.width, height: size.height + titleBarHeight + barsAllowance)
+    /// The picture: the artwork on top, then plain background down to the largest content area the window can have
+    /// (the frame less the smallest title bar), so no bare strip shows below it.
+    static let canvasSize = CGSize(width: size.width, height: frameSize.height - smallestTitleBarHeight)
+    /// Where the window opens: its bottom-left corner, measured from the bottom left of the main screen. Low enough
+    /// that the taller window still fits under the menu bar of a 13-inch MacBook's scaled screen.
+    static let screenOrigin = CGPoint(x: 480, y: 160)
 
     static let iconSize: CGFloat = 96
     static let labelTextSize: CGFloat = 13
@@ -57,6 +75,18 @@ enum Window {
 
     static let backgroundFolder = ".background"
     static let backgroundFile = "background.tiff"
+    static let volumeIconFile = ".VolumeIcon.icns"
+
+    /// Files at the volume's root that Finder hides by their dot but lists when it shows hidden files (Shift-Command-.).
+    /// With no position they land in a free grid slot, over the artwork (in the old layout, over the steps). They get
+    /// positions far to the right of the window instead, on the icons' own row. Finder stretches the scrollable area
+    /// over every item wherever it is, so the few people who show hidden files see a horizontal scroll bar along the
+    /// bottom edge (under the last step, over the plain strip) and never a vertical one; no position hides an item
+    /// without scrolling.
+    static let hiddenItems = [backgroundFolder, volumeIconFile]
+    static func hiddenItemCenter(_ index: Int) -> CGPoint {
+        CGPoint(x: 2000 + 200 * CGFloat(index), y: appCenter.y)
+    }
 
     static let margin: CGFloat = 48
 }
@@ -233,16 +263,36 @@ func writeTIFF(_ images: [(image: CGImage, dpi: Double)], to url: URL) throws {
     guard CGImageDestinationFinalize(destination) else { throw Failure("cannot write \(url.path)") }
 }
 
+/// What drawing the background measured, for the build to print.
+struct BackgroundFit {
+    /// The right edge of the widest line of text, in points from the left of the window.
+    var rightmostText: CGFloat = 0
+    /// Where the last numbered step's baseline sits, in points from the top of the window.
+    var lastBaseline: CGFloat = 0
+}
+
 /// The background: wordmark, gilt rule and standfirst; a gold arrow from the app to Applications; and the
-/// one-time steps for opening an app that isn't notarized.
-func drawBackground(on canvas: Canvas, palette: [String: CGColor], version: String?) throws {
+/// one-time steps for opening an app that isn't notarized. The artwork fills `Window.size`; the plain background
+/// continues under it to the bottom of the canvas.
+@discardableResult
+func drawBackground(on canvas: Canvas, palette: [String: CGColor], version: String?) throws -> BackgroundFit {
     let context = canvas.context
     let width = Window.size.width
     let margin = Window.margin
     let color = { (token: String) in palette[token]! }
+    var fit = BackgroundFit()
+
+    /// A line of text that must end before the right margin (544 pt of line in a 640 pt window).
+    func text(_ string: String, font: CTFont, color: CGColor, x: CGFloat, baseline: CGFloat) {
+        let line = canvas.line(string, font: font, color: color)
+        let end = x + canvas.width(of: line)
+        precondition(end <= width - margin, "\"\(string)\" runs \(Int(end - (width - margin)) + 1) pt past the right margin")
+        fit.rightmostText = max(fit.rightmostText, end)
+        canvas.draw(line, x: x, baseline: baseline)
+    }
 
     context.setFillColor(color("background"))
-    context.fill(CGRect(origin: .zero, size: Window.size))
+    context.fill(CGRect(origin: .zero, size: canvas.size))
 
     // Header: the wordmark, the version across from it, a gilt rule and the standfirst (as on a tool page).
     let titleBaseline: CGFloat = 74
@@ -255,9 +305,8 @@ func drawBackground(on canvas: Canvas, palette: [String: CGColor], version: Stri
     }
     context.setFillColor(color("gold"))
     context.fill(CGRect(x: margin, y: titleBaseline + 14, width: width - 2 * margin, height: 1))
-    canvas.draw(canvas.line("Drag sTools into the Applications folder.",
-                            font: try Fonts.text(16, italic: true), color: color("inkSecondary")),
-                x: margin, baseline: titleBaseline + 42)
+    text("Drag sTools into the Applications folder.",
+         font: try Fonts.text(16, italic: true), color: color("inkSecondary"), x: margin, baseline: titleBaseline + 42)
 
     // The arrow, between the two icons' slots.
     let half = Window.iconSize / 2
@@ -272,9 +321,8 @@ func drawBackground(on canvas: Canvas, palette: [String: CGColor], version: Stri
     context.fill(CGRect(x: margin, y: sectionTop, width: width - 2 * margin, height: 1))
 
     let labelBaseline = sectionTop + 30
-    canvas.draw(canvas.line("Because sTools isn\u{2019}t notarized, macOS blocks it on its first open.",
-                            font: try Fonts.text(14, italic: true), color: color("inkTertiary")),
-                x: margin, baseline: labelBaseline)
+    text("Because sTools isn\u{2019}t notarized, macOS blocks it on its first open.",
+         font: try Fonts.text(14, italic: true), color: color("inkTertiary"), x: margin, baseline: labelBaseline)
 
     let steps = [
         "Open sTools from the Applications folder, and then click Done on the popup.",
@@ -285,11 +333,13 @@ func drawBackground(on canvas: Canvas, palette: [String: CGColor], version: Stri
     let stepFont = try Fonts.text(14)
     for (index, step) in steps.enumerated() {
         let baseline = labelBaseline + 28 + CGFloat(index) * 22
-        canvas.draw(canvas.line("\(index + 1)", font: numberFont, color: color("gold")), x: margin, baseline: baseline)
-        canvas.draw(canvas.line(step, font: stepFont, color: color("ink")), x: margin + 20, baseline: baseline)
+        text("\(index + 1)", font: numberFont, color: color("gold"), x: margin, baseline: baseline)
+        text(step, font: stepFont, color: color("ink"), x: margin + 20, baseline: baseline)
     }
     let lastBaseline = labelBaseline + 28 + CGFloat(steps.count - 1) * 22
     precondition(lastBaseline + 6 <= Window.size.height - 32, "the steps run too close to the bottom edge")
+    fit.lastBaseline = lastBaseline
+    return fit
 }
 
 /// A fine gold arrow: a small dot where the app sits, a hairline shaft and a swept, pointed head.
@@ -347,13 +397,31 @@ func drawPreviewItems(on canvas: Canvas) throws {
     NSGraphicsContext.restoreGraphicsState()
 }
 
+/// Marks the bottom of the artwork (448 pt, all a Finder with a tab bar and a path bar shows); a Finder without
+/// bars shows the plain strip under the line too. For reviewing the design only.
+func drawPreviewGuides(on canvas: Canvas) {
+    let context = canvas.context
+    context.saveGState()
+    context.setStrokeColor(CGColor(srgbRed: 1, green: 0.3, blue: 0.3, alpha: 0.7))
+    context.setLineWidth(1)
+    context.setLineDash(phase: 0, lengths: [4, 4])
+    context.move(to: CGPoint(x: 0, y: Window.size.height))
+    context.addLine(to: CGPoint(x: canvas.size.width, y: Window.size.height))
+    context.strokePath()
+    context.restoreGState()
+}
+
 func generateBackground(outputDirectory: URL, version: String?, preview: URL?) throws {
     let palette = try loadPalette()
     try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
     var images: [(image: CGImage, dpi: Double)] = []
     for scale in [1, 2] {
-        let canvas = try Canvas(size: Window.size, scale: CGFloat(scale))
-        try drawBackground(on: canvas, palette: palette, version: version)
+        let canvas = try Canvas(size: Window.canvasSize, scale: CGFloat(scale))
+        let fit = try drawBackground(on: canvas, palette: palette, version: version)
+        if scale == 1 {
+            print("text fits: widest line ends \(Int(fit.rightmostText.rounded(.up))) pt of \(Int(Window.size.width - Window.margin)), "
+                  + "last step's baseline \(Int(fit.lastBaseline)) pt of \(Int(Window.size.height))")
+        }
         let name = scale == 1 ? "background.png" : "background@2x.png"
         let image = try canvas.image()
         try writePNG(image, to: outputDirectory.appendingPathComponent(name), dpi: 72 * Double(scale))
@@ -364,9 +432,10 @@ func generateBackground(outputDirectory: URL, version: String?, preview: URL?) t
     try writeTIFF(images, to: tiff)
     print("wrote \(tiff.path)")
     if let preview {
-        let canvas = try Canvas(size: Window.size, scale: 2)
+        let canvas = try Canvas(size: Window.canvasSize, scale: 2)
         try drawBackground(on: canvas, palette: palette, version: version)
         try drawPreviewItems(on: canvas)
+        drawPreviewGuides(on: canvas)
         try writePNG(try canvas.image(), to: preview, dpi: 144)
         print("wrote \(preview.path)")
     }
@@ -851,7 +920,7 @@ func layoutRecords(volume: URL) throws -> [DSRecord] {
     }
 
     let origin = Window.screenOrigin
-    let frame = CGSize(width: Window.size.width, height: Window.size.height + Window.titleBarHeight)
+    let frame = Window.frameSize
     let windowSettings: [String: Any] = [
         "WindowBounds": "{{\(Int(origin.x)), \(Int(origin.y))}, {\(Int(frame.width)), \(Int(frame.height))}}",
         "ShowSidebar": false,
@@ -888,14 +957,21 @@ func layoutRecords(volume: URL) throws -> [DSRecord] {
 
     func position(_ point: CGPoint) -> Data {
         var bytes = Bytes()
-        bytes.u32(UInt32(point.x))
-        bytes.u32(UInt32(point.y))
+        bytes.u32(UInt32(bitPattern: Int32(point.x)))
+        bytes.u32(UInt32(bitPattern: Int32(point.y)))
         bytes.u32(0xFFFF_FFFF)
         bytes.u32(0xFFFF_0000)
         return bytes.data
     }
 
-    return [
+    // The hidden files that are on this volume, out of the window's way.
+    var hiddenItems: [DSRecord] = []
+    for (index, name) in Window.hiddenItems.enumerated()
+    where (try? FileManager.default.attributesOfItem(atPath: volume.appendingPathComponent(name).path)) != nil {
+        hiddenItems.append(DSRecord(name: name, code: "Iloc", value: .blob(position(Window.hiddenItemCenter(index)))))
+    }
+
+    return hiddenItems + [
         DSRecord(name: ".", code: "bwsp", value: .blob(try plist(windowSettings))),
         DSRecord(name: ".", code: "icvp", value: .blob(try plist(iconView))),
         DSRecord(name: ".", code: "pBBk", value: .blob(bookmark)),
@@ -981,7 +1057,9 @@ func describe(_ record: DSRecord, root: URL) -> String {
     case .blob(let data):
         if record.code == "Iloc", data.count >= 8 {
             var reader = Reader(data: data, offset: 0)
-            value = "position \((try? reader.u32()) ?? 0), \((try? reader.u32()) ?? 0)"
+            let x = (try? reader.u32()) ?? 0
+            let y = (try? reader.u32()) ?? 0
+            value = "position \(Int32(bitPattern: x)), \(Int32(bitPattern: y))"
         } else if data.starts(with: Data("bplist".utf8)),
                   let object = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] {
             var fields = object.keys.sorted().map { key in
@@ -1002,6 +1080,57 @@ func describe(_ record: DSRecord, root: URL) -> String {
         }
     }
     return "\(record.name)\t\(record.code)\t\(value)"
+}
+
+/// What is wrong with a layout's window size and icon positions next to what `Window` describes; empty when it is
+/// right. `root` is the folder holding the .DS_Store, which says which hidden files are on the volume.
+func layoutProblems(_ records: [DSRecord], root: URL) -> [String] {
+    var problems: [String] = []
+    func record(_ name: String, _ code: String) -> DSRecord? { records.first { $0.name == name && $0.code == code } }
+    func position(of name: String) -> CGPoint? {
+        guard let record = record(name, "Iloc"), case .blob(let data) = record.value else { return nil }
+        var reader = Reader(data: data, offset: 0)
+        guard let x = try? reader.u32(), let y = try? reader.u32() else { return nil }
+        return CGPoint(x: Int(Int32(bitPattern: x)), y: Int(Int32(bitPattern: y)))
+    }
+
+    if let settings = record(".", "bwsp"), case .blob(let data) = settings.value,
+       let object = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+       let bounds = object["WindowBounds"] as? String {
+        let numbers = bounds.split(whereSeparator: { !"0123456789-".contains($0) }).compactMap { Int($0) }
+        let expected = Window.frameSize
+        if numbers.count != 4 || CGFloat(numbers[2]) != expected.width || CGFloat(numbers[3]) != expected.height {
+            problems.append("the window is \(bounds), not \(Int(expected.width)) x \(Int(expected.height)) pt "
+                            + "(\(Int(Window.size.height)) pt of artwork, a title bar and room for Finder's bars)")
+        }
+        for key in ["ShowToolbar", "ShowSidebar"] where (object[key] as? Bool) != false {
+            problems.append("\(key) is not off")
+        }
+    } else {
+        problems.append("there are no window settings")
+    }
+
+    for (name, center) in [(Window.appName, Window.appCenter), (Window.applicationsName, Window.applicationsCenter)] {
+        if let found = position(of: name) {
+            if found != center { problems.append("\(name) sits at \(Int(found.x)), \(Int(found.y)), not \(Int(center.x)), \(Int(center.y))") }
+        } else {
+            problems.append("\(name) has no position")
+        }
+    }
+
+    // A hidden file with no position lands in a free grid slot, over the artwork, in a Finder that shows hidden
+    // files; one inside the window does the same.
+    let half = Window.iconSize / 2
+    for name in Window.hiddenItems where FileManager.default.fileExists(atPath: root.appendingPathComponent(name).path) {
+        guard let found = position(of: name) else {
+            problems.append("\(name) has no position, so a Finder that shows hidden files puts it over the artwork")
+            continue
+        }
+        if found.x - half < Window.frameSize.width && found.y - half < Window.frameSize.height {
+            problems.append("\(name) sits at \(Int(found.x)), \(Int(found.y)), inside the window")
+        }
+    }
+    return problems
 }
 
 // MARK: - Command line
@@ -1045,7 +1174,10 @@ do {
         guard arguments.count == 1 else { fail(usage) }
         let file = URL(fileURLWithPath: arguments[0])
         let records = try DSStore.decode(try Data(contentsOf: file))
-        for record in records { print(describe(record, root: file.deletingLastPathComponent())) }
+        let root = file.deletingLastPathComponent()
+        for record in records { print(describe(record, root: root)) }
+        let problems = layoutProblems(records, root: root)
+        print(problems.isEmpty ? "layout ok" : problems.map { "layout problem: \($0)" }.joined(separator: "\n"))
     case "-h", "--help":
         print(usage)
     default:
