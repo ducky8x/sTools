@@ -244,6 +244,198 @@ struct TimerOverlayControllerTests {
         #expect(rig.controller.phase == .counting, "the overtaken exit finishes nothing")
     }
 
+    // MARK: - The switch starts a countdown (revision 36)
+
+    /// What a start leaves behind, for comparing the key and the switch.
+    private struct Started: Equatable {
+        var isEnabled: Bool
+        var phase: TimerPhase
+        var isTestRun: Bool
+        var text: String
+        var status: TimerStatus
+        var popInTexts: [String]
+        var plateFrames: [CGRect]
+        var isActivityHeld: Bool
+        var isWatchingWake: Bool
+        var isWatchingEnvironment: Bool
+        var wakeDelays: [TimeInterval]
+        var announcements: [TimerAnnouncement]
+        var rings: Int
+
+        @MainActor
+        init(_ rig: TimerRig) {
+            isEnabled = rig.controller.isEnabled
+            phase = rig.controller.phase
+            isTestRun = rig.controller.isTestRun
+            text = rig.controller.content.text
+            status = rig.controller.status
+            popInTexts = rig.presenter.popIns.map(\.content.text)
+            plateFrames = rig.presenter.popIns.map(\.plateFrame)
+            isActivityHeld = rig.activity.isHeld
+            isWatchingWake = rig.wakeWatcher.isWatching
+            isWatchingEnvironment = rig.controller.isWatchingEnvironment
+            wakeDelays = rig.scheduler.pending.map { $0.due - rig.clock.time }.sorted()
+            announcements = rig.announcer.announcements
+            rings = rig.alarm.rings.count
+        }
+    }
+
+    /// A rig whose tool is off and switches itself on when asked, as the app's switch does.
+    private func offRig(settings edit: (inout TimerOverlaySettings) -> Void = { _ in }) -> TimerRig {
+        let rig = TimerRig(settings: edit)
+        rig.controller.requestEnable = { [weak controller = rig.controller] in
+            controller?.setEnabled(true)
+            return true
+        }
+        return rig
+    }
+
+    /// The owner's switch-on starts what a Start-timer press starts while the tool is off: the same state, whichever
+    /// settings the press table and the countdown are under.
+    @Test(arguments: [150, 10, 1], TimerOverlaySettings.PressWhileCounting.allCases)
+    func switchingOnStartsWhatAPressStartsWhileOff(seconds: Int, pressWhileCounting: TimerOverlaySettings.PressWhileCounting) {
+        let edit: (inout TimerOverlaySettings) -> Void = {
+            $0.durationSeconds = seconds
+            $0.pressWhileCounting = pressWhileCounting
+        }
+        let key = offRig(settings: edit)
+        let switched = offRig(settings: edit)
+        #expect(key.controller.press() == .acted)
+        #expect(switched.controller.startFromSwitch())
+        #expect(Started(switched) == Started(key))
+        #expect(Started(switched).phase == .counting && Started(switched).popInTexts.count == 1)
+
+        // They stay together as the countdown goes.
+        key.scheduler.advance(by: 1)
+        switched.scheduler.advance(by: 1)
+        #expect(Started(switched) == Started(key))
+    }
+
+    @Test func switchingOnStartsTheSavedDurationNeverTheTestRun() {
+        let rig = offRig { $0.durationSeconds = 90 }
+        #expect(rig.controller.startFromSwitch())
+        #expect(!rig.controller.isTestRun && rig.controller.content.text == "01:30")
+        #expect(rig.controller.settings.durationSeconds == 90)
+        rig.runToZero()
+        rig.scheduler.fireAll()
+        #expect(rig.alarm.rings.count == 1 && rig.controller.phase == .idle)
+        #expect(rig.controller.isEnabled && rig.controller.status == .ready, "the tool stays on after the run")
+    }
+
+    @Test func switchingOnThatCantSwitchTheToolOnStartsNothing() {
+        let rig = TimerRig()
+        var asked = 0
+        rig.controller.requestEnable = {
+            asked += 1
+            return false
+        }
+        #expect(!rig.controller.startFromSwitch())
+        #expect(asked == 1)
+        #expect(!rig.controller.isEnabled && rig.controller.phase == .idle && rig.controller.status == .off)
+        #expect(rig.isQuiet && rig.presenter.popIns.isEmpty && rig.announcer.announcements.isEmpty)
+    }
+
+    @Test func withoutTheAppTheControllerSwitchesItselfOnAndStarts() {
+        let rig = TimerRig()
+        #expect(rig.controller.startFromSwitch())
+        #expect(rig.controller.isEnabled && rig.controller.phase == .counting)
+    }
+
+    /// Only a switch-on that finds the tool off starts a countdown: with the tool already on, nothing restarts.
+    @Test func aToolThatIsAlreadyOnIsLeftAlone() {
+        let rig = TimerRig()
+        rig.controller.setEnabled(true)
+        #expect(!rig.controller.startFromSwitch())
+        #expect(rig.controller.phase == .idle && rig.isQuiet)
+        rig.controller.start()
+        rig.scheduler.advance(by: 20)
+        let shown = rig.controller.content.text
+        #expect(shown != "02:30")
+        #expect(!rig.controller.startFromSwitch())
+        #expect(rig.controller.content.text == shown, "the countdown under way isn't restarted")
+        #expect(rig.presenter.popIns.count == 1 && rig.announcer.announcements.count == 1)
+    }
+
+    /// The app switching the tool on by itself, such as restoring it at launch, is `setEnabled(true)`, which starts
+    /// nothing; only `startFromSwitch` does.
+    @Test func switchingTheToolOnByItselfStartsNothing() {
+        let rig = offRig()
+        rig.controller.setEnabled(true)
+        #expect(rig.controller.phase == .idle && rig.controller.status == .ready)
+        #expect(rig.isQuiet && rig.presenter.popIns.isEmpty && rig.announcer.announcements.isEmpty)
+    }
+
+    /// The switch isn't a key press, so it neither makes nor completes a double press: a key tapped just after it
+    /// restarts the countdown, and two taps are a double press as ever.
+    @Test func aKeyPressRightAfterTheSwitchIsAFirstPress() {
+        let rig = offRig()
+        #expect(rig.controller.startFromSwitch())
+        rig.clock.time += 0.2
+        #expect(rig.controller.press() == .acted)
+        #expect(rig.controller.isEnabled && rig.controller.phase == .counting)
+        #expect(rig.presenter.popIns.count == 1, "restarted, not popped in again")
+        rig.clock.time += 0.2
+        #expect(rig.controller.press() == .acted)
+        #expect(!rig.controller.isEnabled && rig.controller.phase == .idle)
+    }
+
+    @Test func aDoublePressBeforeTheSwitchDoesNotCarryOver() {
+        let rig = offRig()
+        rig.controller.setEnabled(true)
+        rig.controller.press()
+        rig.clock.time += 0.2
+        rig.controller.press()
+        #expect(!rig.controller.isEnabled)
+        rig.clock.time += 0.1
+        #expect(rig.controller.startFromSwitch())
+        rig.clock.time += 0.1
+        #expect(rig.controller.press() == .acted)
+        #expect(rig.controller.isEnabled, "a press after the switch is a first press, not the end of a double press")
+    }
+
+    /// Switching off, then on while the overlay is still leaving, starts a new countdown over the old exit.
+    @Test func switchingOnWhileTheOldOverlayIsLeavingStartsANewCountdown() {
+        let rig = offRig()
+        rig.presenter.exitsAtOnce = false
+        #expect(rig.controller.startFromSwitch())
+        rig.scheduler.advance(by: 2)
+        rig.controller.setEnabled(false)
+        #expect(rig.controller.phase == .leaving && rig.presenter.isLeaving)
+        #expect(rig.controller.startFromSwitch())
+        #expect(rig.controller.phase == .counting && rig.presenter.popIns.count == 2)
+        #expect(rig.controller.content.text == "02:30")
+        rig.presenter.finishExit()
+        #expect(rig.controller.phase == .counting, "the overtaken exit finishes nothing")
+    }
+
+    @Test func switchingOffAfterTheSwitchStartedItCancelsAsBefore() {
+        let rig = offRig()
+        #expect(rig.controller.startFromSwitch())
+        rig.scheduler.advance(by: 3)
+        rig.controller.setEnabled(false)
+        #expect(rig.controller.phase == .idle && rig.controller.status == .off)
+        #expect(rig.presenter.popOuts.count == 1 && rig.isQuiet)
+    }
+
+    /// Reset to default puts the settings back and starts nothing, switches nothing.
+    @Test func resettingStartsNothingAndKeepsTheSwitch() {
+        let off = offRig { $0.durationSeconds = 60 }
+        off.controller.resetToDefault()
+        #expect(!off.controller.isEnabled && off.controller.phase == .idle && off.isQuiet)
+
+        let ready = offRig()
+        ready.controller.setEnabled(true)
+        ready.controller.resetToDefault()
+        #expect(ready.controller.isEnabled && ready.controller.phase == .idle && ready.isQuiet)
+
+        let counting = offRig { $0.durationSeconds = 60 }
+        #expect(counting.controller.startFromSwitch())
+        counting.scheduler.advance(by: 5)
+        counting.controller.resetToDefault()
+        #expect(counting.controller.isEnabled && counting.controller.phase == .counting)
+        #expect(counting.announcer.announcements.count == 1 && counting.presenter.popIns.count == 1)
+    }
+
     // MARK: - The cancel gestures
 
     @Test func aDoublePressCancelsAndSwitchesOff() {

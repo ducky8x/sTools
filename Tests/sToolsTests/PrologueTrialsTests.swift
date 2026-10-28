@@ -137,6 +137,32 @@ struct PrologueTrialsTests {
         content.onDisappear()
     }
 
+    /// The trial's switch is the Timer page's switch, so it starts a countdown of the saved duration too (revision 36).
+    /// That is a real countdown, not the Test: it ticks "Switch it on" only, and Test waits for it as it does on the
+    /// page (spec 5.6.3), so Cancel clears the way and a Test run then ticks its item.
+    @Test func theTimerTrialsSwitchStartsACountdownThatTheTestWaitsFor() async throws {
+        let harness = Harness()
+        harness.model.beginPrologue(at: .timerTrial)
+        let timer = harness.timer
+        let content = harness.model.trialContent(.timerOverlay)
+        content.onAppear()
+        harness.model.switchBinding(.timerOverlay).wrappedValue = true
+        #expect(content.completed() == ["on"])
+        #expect(timer.phase == .counting && !timer.isTestRun && timer.content.text == "02:30")
+        #expect(!timer.canRunTest && !timer.runTest())
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(!harness.model.trials.timerTestRunning && !content.completed().contains("test"))
+
+        timer.cancel()
+        #expect(timer.phase == .idle && timer.isEnabled && timer.canRunTest)
+        #expect(timer.runTest())
+        #expect(await waitUntil { harness.model.trials.timerTestRunning })
+        runTimer(harness.timerFakes, for: 120)
+        #expect(timer.phase == .idle)
+        #expect(await waitUntil { content.completed().contains("test") })
+        content.onDisappear()
+    }
+
     @Test func aRealCountdownStartedDuringTheTestDoesNotTickIt() async throws {
         let harness = Harness()
         harness.model.beginPrologue(at: .timerTrial)
