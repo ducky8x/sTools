@@ -136,7 +136,8 @@ struct RecordingDecisionViewTests {
         #expect(!window.isVisible)
     }
 
-    /// The question, then its Delete confirmation, each draw (with a reason it stopped and dropped frames shown).
+    /// The question and the second panel Delete opens each draw (with a reason it stopped and dropped frames shown), and
+    /// differ.
     @Test func theQuestionAndItsDeleteConfirmationRender() throws {
         _ = STFont.register()
         let fixture = Fixture()
@@ -146,13 +147,13 @@ struct RecordingDecisionViewTests {
         finished.droppedFrames = 12
         let draft = RecordingDecisionDraft(name: finished.name)
         let question = Self.render(RecordingDecisionView(controller: fixture.controller, finished: finished, draft: draft))
-        draft.confirmsDelete = true
-        let confirmation = Self.render(RecordingDecisionView(controller: fixture.controller, finished: finished, draft: draft))
+        let confirmation = Self.render(RecordingDeleteConfirmationView(controller: fixture.controller, draft: draft))
         #expect(Self.distinctColors(question) > 20)
+        #expect(Self.distinctColors(confirmation) > 10)
         #expect(question.representation(using: .png, properties: [:]) != confirmation.representation(using: .png, properties: [:]))
     }
 
-    private static func render(_ view: RecordingDecisionView) -> NSBitmapImageRep {
+    static func render(_ view: some View) -> NSBitmapImageRep {
         let theme = STTheme()
         let host = NSHostingView(rootView: view.environment(\.stTheme, theme).stMotionRoot(theme))
         host.appearance = NSAppearance(named: .darkAqua)
@@ -167,7 +168,7 @@ struct RecordingDecisionViewTests {
         return rep
     }
 
-    private static func distinctColors(_ rep: NSBitmapImageRep) -> Int {
+    static func distinctColors(_ rep: NSBitmapImageRep) -> Int {
         var seen = Set<UInt32>()
         for y in stride(from: 0, to: rep.pixelsHigh, by: 2) {
             for x in stride(from: 0, to: rep.pixelsWide, by: 2) {
@@ -234,8 +235,229 @@ struct RecordingDecisionViewTests {
     }
 }
 
+/// What Delete… leads to (spec 5.4.4): a second panel, in the question's style and place, that asks once more and
+/// answers Yes or No. No is the default and the cancel, so neither Return nor Esc deletes by accident.
+@Suite("Recording delete confirmation", .serialized) @MainActor
+struct RecordingDeleteConfirmationTests {
+    private struct Fixture {
+        let directory: URL
+        let controller: ScreenRecordingController
+        let finished: ScreenRecordingController.Finished
+
+        @MainActor
+        init() {
+            directory = FileManager.default.temporaryDirectory.appending(path: "stools-delete-question-\(UUID().uuidString)", directoryHint: .isDirectory)
+            let services = ToolServices(
+                settings: SettingsStore(directory: directory), displays: DisplayDirectory(screenProvider: { [] }),
+                minecraft: MinecraftLocator(source: StaticMinecraftWindowSource(instances: [])),
+                permissions: PermissionCenter(prober: AlwaysGranted()))
+            controller = ScreenRecordingController(services: services, loadAvailable: { _ in AvailableSources() }, inProcessAudio: InProcessAudio())
+            controller.options.folderPath = directory.appending(path: "Movies").path
+            finished = ScreenRecordingController.Finished(
+                files: [directory.appending(path: "2026-10-27 09.00.00.mov")], seconds: 61, droppedFrames: 0,
+                explanation: nil, name: "2026-10-27 09.00.00")
+        }
+
+        func remove() { try? FileManager.default.removeItem(at: directory) }
+    }
+
+    private struct AlwaysGranted: PermissionProbing {
+        func status(for permission: Permission) -> PermissionStatus { .granted }
+        func request(_ permission: Permission) async -> PermissionStatus { .granted }
+    }
+
+    private func keyDown(_ characters: String, keyCode: UInt16, in window: NSWindow) throws -> NSEvent {
+        try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+            context: nil, characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode))
+    }
+
+    /// The words are ducky's, exactly (2026-10-27). VoiceOver and Voice Control read a button's visible title first, so
+    /// the spoken labels start with it and then say what the button does. (SwiftUI builds its accessibility tree only
+    /// for a running assistive client, so there is no tree to walk here; the labels are the views' own constants.)
+    @Test func theSecondPanelAsksExactlyWhatDuckyWrote() {
+        #expect(RecordingDeleteConfirmationView.prompt
+            == "Do you really want to delete this recording? It will be gone forever (a long time!)")
+        #expect(RecordingDeleteConfirmationView.yesTitle == "Yes")
+        #expect(RecordingDeleteConfirmationView.noTitle == "No")
+        #expect(RecordingDeleteConfirmationView.yesSpokenLabel.hasPrefix("Yes"))
+        #expect(RecordingDeleteConfirmationView.noSpokenLabel.hasPrefix("No"))
+        #expect(RecordingDeleteConfirmationView.yesSpokenLabel != RecordingDeleteConfirmationView.noSpokenLabel)
+    }
+
+    /// The second panel is as wide as the first, so it reads as the same panel with another question.
+    @Test func theSecondPanelHasTheQuestionsWidth() throws {
+        _ = STFont.register()
+        let fixture = Fixture()
+        defer { fixture.remove() }
+        let draft = RecordingDecisionDraft(name: fixture.finished.name)
+        let theme = STTheme()
+        let host = NSHostingView(rootView: RecordingDeleteConfirmationView(controller: fixture.controller, draft: draft)
+            .environment(\.stTheme, theme).stMotionRoot(theme))
+        host.layoutSubtreeIfNeeded()
+        #expect(host.fittingSize.width == RecordingDecisionView.width)
+        #expect(host.fittingSize.height > 80)
+        #expect(host.fittingSize.height < RecordingDecisionView.width)
+    }
+
+    private func presented(_ fixture: Fixture, theme: STTheme = STTheme()) -> (RecordingDecisionPanel, InertDecisionWindow) {
+        _ = STFont.register()
+        let window = InertDecisionWindow()
+        let panel = RecordingDecisionPanel(theme: theme, makeWindow: { window })
+        panel.present(fixture.finished, for: fixture.controller)
+        return (panel, window)
+    }
+
+    /// Delete… swaps the question for the second panel in the same window: same place (centered where the first was),
+    /// its own height, and the window stays the non-activating panel it was. Nothing is ordered in or out again.
+    @Test func deleteOpensTheSecondPanelInTheSamePlace() throws {
+        let fixture = Fixture()
+        defer { fixture.remove() }
+        let (panel, window) = presented(fixture)
+        let draft = try #require(panel.currentDraft)
+        let question = try #require(window.contentView)
+        let before = window.frame
+        draft.askToDelete()
+        let confirmation = try #require(window.contentView)
+        #expect(confirmation !== question)
+        #expect(draft.confirmsDelete)
+        #expect(window.frame.size.width == RecordingDecisionView.width)
+        #expect(window.frame.size.height == confirmation.fittingSize.height.rounded(.up))
+        #expect(abs(window.frame.midX - before.midX) <= 1)
+        #expect(abs(window.frame.midY - before.midY) <= 1)
+        #expect(window.orderedInRegardless == 1)
+        #expect(window.orderedOut == 0)
+        #expect(window.styleMask.contains(.nonactivatingPanel))
+        #expect(window.canBecomeKey)
+        #expect(!window.canBecomeMain)
+        #expect(window.level.rawValue > NSWindow.Level.screenSaver.rawValue)
+        #expect(window.accessibilityLabel() != nil)
+        panel.dismiss()
+    }
+
+    /// No goes back to the question as it was: the same view with the same name field, the typed name still in it.
+    @Test func noGoesBackToTheQuestionWithItsStateIntact() throws {
+        let fixture = Fixture()
+        defer { fixture.remove() }
+        let (panel, window) = presented(fixture)
+        let draft = try #require(panel.currentDraft)
+        let question = try #require(window.contentView)
+        let field = try #require(RecordingDecisionWindow.firstEditableField(in: question))
+        draft.name = "Seed 7 the good one"
+        question.layoutSubtreeIfNeeded()
+        let before = window.frame
+        draft.askToDelete()
+        draft.keep()
+        #expect(window.contentView === question)
+        #expect(RecordingDecisionWindow.firstEditableField(in: window.contentView) === field)
+        window.contentView?.layoutSubtreeIfNeeded()
+        #expect(draft.name == "Seed 7 the good one")
+        #expect(field.stringValue == "Seed 7 the good one")
+        #expect(!draft.confirmsDelete)
+        #expect(window.frame == before, "the question comes back where it was")
+        #expect(window.orderedInRegardless == 1)
+        panel.dismiss()
+    }
+
+    /// Esc is No in the second panel: it steps back to the question and deletes nothing (and doesn't save); in the
+    /// question it still cancels the question, saving under the date and time.
+    @Test func escInTheSecondPanelIsNo() throws {
+        let fixture = Fixture()
+        defer { fixture.remove() }
+        let (panel, window) = presented(fixture)
+        let draft = try #require(panel.currentDraft)
+        let question = try #require(window.contentView)
+        draft.askToDelete()
+        window.sendEvent(try keyDown("\u{1B}", keyCode: RecordingDecisionWindow.escapeKeyCode, in: window))
+        #expect(!draft.confirmsDelete)
+        #expect(window.contentView === question)
+        panel.dismiss()
+    }
+
+    /// Return is No in the second panel too: the default button is the safe one.
+    @Test func returnInTheSecondPanelIsNo() throws {
+        let fixture = Fixture()
+        defer { fixture.remove() }
+        let (panel, window) = presented(fixture)
+        let draft = try #require(panel.currentDraft)
+        draft.askToDelete()
+        window.contentView?.layoutSubtreeIfNeeded()
+        window.sendEvent(try keyDown("\r", keyCode: 36, in: window))
+        #expect(!draft.confirmsDelete, "Return pressed No")
+        panel.dismiss()
+    }
+
+    /// Return belongs to the name field on the question (it saves) and to No on the second panel; it never reaches Yes.
+    @Test func returnIsNoOnlyOnTheSecondPanel() throws {
+        let fixture = Fixture()
+        defer { fixture.remove() }
+        let (panel, window) = presented(fixture)
+        let draft = try #require(panel.currentDraft)
+        #expect(window.onDefaultAction == nil)
+        draft.askToDelete()
+        #expect(window.onDefaultAction != nil)
+        draft.keep()
+        #expect(window.onDefaultAction == nil)
+        draft.askToDelete()
+        panel.dismiss()
+        #expect(window.onDefaultAction == nil)
+    }
+
+    /// The key (or the page's Save or Delete…) while the second panel waits brings that panel forward, as it was left.
+    @Test func presentingAgainKeepsTheSecondPanelUp() throws {
+        let fixture = Fixture()
+        defer { fixture.remove() }
+        let (panel, window) = presented(fixture)
+        let draft = try #require(panel.currentDraft)
+        draft.askToDelete()
+        let confirmation = try #require(window.contentView)
+        panel.present(fixture.finished, for: fixture.controller)
+        #expect(window.contentView === confirmation)
+        #expect(draft.confirmsDelete)
+        #expect(window.orderedInRegardless == 2)
+        panel.dismiss()
+    }
+
+    /// Answering takes the panel away whichever step it was on; the next question starts on the question.
+    @Test func dismissingFromTheSecondPanelLeavesNothingBehind() throws {
+        let fixture = Fixture()
+        defer { fixture.remove() }
+        let (panel, window) = presented(fixture)
+        let draft = try #require(panel.currentDraft)
+        draft.askToDelete()
+        panel.dismiss()
+        #expect(window.orderedOut == 1)
+        #expect(window.contentView == nil)
+        #expect(panel.currentDraft == nil)
+        panel.present(fixture.finished, for: fixture.controller)
+        let next = try #require(panel.currentDraft)
+        #expect(!next.confirmsDelete)
+        #expect(RecordingDecisionWindow.firstEditableField(in: window.contentView) != nil)
+        panel.dismiss()
+    }
+
+    /// Reduce animations: the panel shows and goes without AppKit's pop, and swapping to the second panel moves
+    /// nothing (it is instant either way).
+    @Test func reduceAnimationsTurnsThePanelsMotionOff() throws {
+        let fixture = Fixture()
+        defer { fixture.remove() }
+        let reduced = STTheme(motionMode: .reduced)
+        let (panel, window) = presented(fixture, theme: reduced)
+        #expect(window.animationBehavior == .none)
+        let draft = try #require(panel.currentDraft)
+        draft.askToDelete()
+        #expect(window.animationBehavior == .none)
+        panel.dismiss()
+
+        let full = STTheme()
+        let (otherPanel, otherWindow) = presented(Fixture(), theme: full)
+        #expect(otherWindow.animationBehavior == .alertPanel)
+        otherPanel.dismiss()
+    }
+}
+
 /// A question window that never reaches the screen or takes the keyboard: it counts what the panel asks of it.
-private final class InertDecisionWindow: RecordingDecisionWindow {
+final class InertDecisionWindow: RecordingDecisionWindow {
     private(set) var orderedInRegardless = 0
     private(set) var keyRequests = 0
     private(set) var orderedOut = 0

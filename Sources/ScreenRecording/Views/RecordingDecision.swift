@@ -14,23 +14,44 @@ public protocol RecordingDecisionPresenting: AnyObject {
     func dismiss()
 }
 
-/// What the person has typed or chosen in the question so far. The panel reads it too, so Esc can step back out of
-/// the Delete confirmation before it cancels the question.
+/// What the person has typed or chosen in the question so far, and which of its two panels is up: the question itself
+/// or, after Delete…, the second panel that asks once more (`RecordingDeleteConfirmationView`). The panel reads it too,
+/// so Esc can step back out of the second panel before it cancels the question.
 @MainActor
 @Observable
 final class RecordingDecisionDraft {
     var name: String
-    var confirmsDelete = false
+    /// The second panel is up instead of the question (spec 5.4.4). Nothing is deleted until it is answered Yes.
+    private(set) var confirmsDelete = false {
+        didSet { if confirmsDelete != oldValue { onStepChange?() } }
+    }
+    /// Told when the panel to show changes, so the window shows the other one in its place.
+    @ObservationIgnored var onStepChange: (() -> Void)?
 
     init(name: String) {
         self.name = name
     }
 
-    /// Esc: steps back out of the Delete confirmation; otherwise cancels the question, which saves the recording under
-    /// its date-and-time name, so nothing is lost.
+    /// Delete…: opens the second panel. The file stays where it is.
+    func askToDelete() {
+        confirmsDelete = true
+    }
+
+    /// No (and Return and Esc there): back to the question as it was, the typed name kept.
+    func keep() {
+        confirmsDelete = false
+    }
+
+    /// Yes: removes the recording for good.
+    func deleteForGood(_ controller: ScreenRecordingController) {
+        controller.delete()
+    }
+
+    /// Esc: from the second panel it is No; from the question it cancels, which saves the recording under its
+    /// date-and-time name, so nothing is lost.
     func cancel(_ controller: ScreenRecordingController?) {
         if confirmsDelete {
-            confirmsDelete = false
+            keep()
         } else {
             Task { await controller?.cancelDecision() }
         }
@@ -55,8 +76,9 @@ enum RecordingDecisionLayout {
     }
 }
 
-/// The question (spec 5.4.4): the recording's name, offered as its date and time, then Save or Delete. Esc saves it
-/// under that name, so nothing is ever lost; inside the Delete confirmation, Esc steps back to the question.
+/// The question (spec 5.4.4): the recording's name, offered as its date and time, then Save or Delete…. Esc saves it
+/// under that name, so nothing is ever lost. Delete… doesn't delete: it opens the second panel
+/// (`RecordingDeleteConfirmationView`).
 struct RecordingDecisionView: View {
     @Bindable var controller: ScreenRecordingController
     let finished: ScreenRecordingController.Finished
@@ -85,15 +107,11 @@ struct RecordingDecisionView: View {
                     Text("Name").stStyle(.label).foregroundStyle(theme.inkTertiary).accessibilityHidden(true)
                     STTextField("Name", text: $draft.name)
                         .onSubmit(save)
-                        .disabled(isBusy || draft.confirmsDelete)
+                        .disabled(isBusy)
                     caption(Self.savedAsLine(name: draft.name, finished: finished, options: controller.options))
                     caption(Self.escapeLine(finished: finished, options: controller.options))
                 }
-                if draft.confirmsDelete {
-                    deleteConfirmation
-                } else {
-                    answers
-                }
+                answers
             }
             .padding(24)
         }
@@ -105,7 +123,7 @@ struct RecordingDecisionView: View {
 
     private var answers: some View {
         HStack(spacing: 14) {
-            Button("Delete\u{2026}") { draft.confirmsDelete = true }
+            Button("Delete\u{2026}") { draft.askToDelete() }
                 .buttonStyle(STButtonStyle(.quiet))
             Spacer(minLength: 8)
             Button("Save", action: save)
@@ -115,24 +133,8 @@ struct RecordingDecisionView: View {
         .disabled(isBusy)
     }
 
-    private var deleteConfirmation: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Delete this recording? The file is removed for good.")
-                .stStyle(.body).foregroundStyle(STColor.danger)
-                .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 14) {
-                Button("Don\u{2019}t Delete") { draft.confirmsDelete = false }
-                    .buttonStyle(STButtonStyle(.quiet))
-                Spacer(minLength: 8)
-                Button("Delete") { controller.delete() }
-                    .buttonStyle(STButtonStyle(.secondary))
-            }
-            .disabled(isBusy)
-        }
-    }
-
     private func save() {
-        guard !isBusy, !draft.confirmsDelete else { return }
+        guard !isBusy else { return }
         let name = draft.name
         Task { await controller.save(name: name) }
     }
@@ -177,6 +179,51 @@ struct RecordingDecisionView: View {
     }
 }
 
+/// The second panel (spec 5.4.4), shown in the question's place when Delete… is pressed: it asks once more and answers
+/// Yes or No. No is the default button and the cancel, so Return and Esc go back to the question rather than delete;
+/// Yes is a click away. Same plate, width and place as the question.
+struct RecordingDeleteConfirmationView: View {
+    @Bindable var controller: ScreenRecordingController
+    @Bindable var draft: RecordingDecisionDraft
+    @Environment(\.stTheme) private var theme
+
+    /// ducky's words, exactly (2026-10-27).
+    static let prompt = "Do you really want to delete this recording? It will be gone forever (a long time!)"
+    static let yesTitle = "Yes"
+    static let noTitle = "No"
+    /// What VoiceOver says: the visible word first, then what it does.
+    static let yesSpokenLabel = "Yes, delete this recording"
+    static let noSpokenLabel = "No, keep this recording"
+
+    var body: some View {
+        STPlate {
+            VStack(alignment: .leading, spacing: 20) {
+                Text(Self.prompt)
+                    .stStyle(.sectionTitle).foregroundStyle(STColor.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
+                HStack(spacing: 14) {
+                    Button(Self.yesTitle) { draft.deleteForGood(controller) }
+                        .buttonStyle(STButtonStyle(.secondary))
+                        .accessibilityLabel(Self.yesSpokenLabel)
+                    Spacer(minLength: 8)
+                    // The default (Return) and, with the panel's Esc, the cancel: neither can delete.
+                    Button(Self.noTitle) { draft.keep() }
+                        .buttonStyle(STButtonStyle(.primary))
+                        .keyboardShortcut(.defaultAction)
+                        .accessibilityLabel(Self.noSpokenLabel)
+                }
+                .disabled(isBusy)
+            }
+            .padding(24)
+        }
+        .frame(width: RecordingDecisionView.width)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var isBusy: Bool { controller.phase != .deciding }
+}
+
 /// The question in a small floating panel of its own (spec 5.4.4), so it shows wherever the recording stopped from:
 /// the key with Minecraft in front, the page's Stop, a recording that had to stop, with sTools' window closed or on
 /// another page, or the introduction running. It sits over sTools' window when that's in front, else just above the
@@ -188,6 +235,10 @@ struct RecordingDecisionView: View {
 /// sTools field). It stays up until it's answered, whichever app is in front; clicking it, the key or the page's
 /// Save or Delete… gives it the keyboard again. Once it's answered it goes, and the keyboard goes back to the app in
 /// front.
+///
+/// Delete… shows a second panel (`RecordingDeleteConfirmationView`) in the same window: the same style and place, its
+/// own height, the same non-activating panel, so it behaves over Minecraft exactly as the question does. No goes back
+/// to the question, which is kept as it was (its name field and what was typed in it).
 @MainActor
 public final class RecordingDecisionPanel: RecordingDecisionPresenting {
     private let theme: STTheme
@@ -195,8 +246,23 @@ public final class RecordingDecisionPanel: RecordingDecisionPresenting {
     /// Makes the panel's window, once; tests give one that never reaches the screen.
     private let makeWindow: @MainActor () -> RecordingDecisionWindow
     private var window: RecordingDecisionWindow?
-    /// The recording the panel shows, and what has been typed for it: shown again as it was when it's brought back.
-    private var shown: (files: [URL], draft: RecordingDecisionDraft)?
+
+    /// The recording the panel shows, what has been typed for it, and the two panels: shown again as they were left
+    /// when the question is brought back.
+    private struct Shown {
+        let files: [URL]
+        let draft: RecordingDecisionDraft
+        let question: NSView
+        let confirmation: NSView
+    }
+
+    private var shown: Shown?
+    /// Where the question was when the second panel took its place, and where that panel was put: No puts the question
+    /// back exactly there, unless the second panel was moved meanwhile.
+    private var returnFrames: (question: CGRect, confirmation: CGRect)?
+
+    /// What has been typed and which panel is up, for tests.
+    var currentDraft: RecordingDecisionDraft? { shown?.draft }
 
     public convenience init(theme: STTheme, sound: STSoundPlayer = .silent) {
         self.init(theme: theme, sound: sound, makeWindow: { RecordingDecisionWindow() })
@@ -213,32 +279,43 @@ public final class RecordingDecisionPanel: RecordingDecisionPresenting {
         present(finished, for: controller)
     }
 
-    /// Shows `finished`'s question, or brings it back as it was left when it's the one already up.
+    /// Shows `finished`'s question, or brings it back as it was left (either panel) when it's the one already up.
     func present(_ finished: ScreenRecordingController.Finished, for controller: ScreenRecordingController) {
         let window = self.window ?? {
             let window = makeWindow()
             self.window = window
             return window
         }()
-        let draft: RecordingDecisionDraft
-        if let shown, shown.files == finished.files {
-            draft = shown.draft
+        let shown: Shown
+        if let existing = self.shown, existing.files == finished.files {
+            shown = existing
         } else {
-            draft = RecordingDecisionDraft(name: finished.name)
-            shown = (finished.files, draft)
-            window.contentView = NSHostingView(rootView: RecordingDecisionView(controller: controller, finished: finished, draft: draft)
-                .environment(\.stTheme, theme)
-                .environment(\.stSoundPlayer, sound)
-                .stMotionRoot(theme))
+            let draft = RecordingDecisionDraft(name: finished.name)
+            shown = Shown(
+                files: finished.files, draft: draft,
+                question: host(RecordingDecisionView(controller: controller, finished: finished, draft: draft)),
+                confirmation: host(RecordingDeleteConfirmationView(controller: controller, draft: draft)))
+            self.shown = shown
+            returnFrames = nil
+            draft.onStepChange = { [weak self] in self?.stepChanged() }
         }
-        window.onCancel = { [weak controller, draft] in draft.cancel(controller) }
+        let confirming = shown.draft.confirmsDelete
+        let step = confirming ? shown.confirmation : shown.question
+        if window.contentView !== step {
+            window.releaseFieldFocus()
+            window.contentView = step
+        }
+        window.setAccessibilityLabel(Self.accessibilityLabel(confirming: confirming))
+        window.onCancel = { [weak controller, draft = shown.draft] in draft.cancel(controller) }
+        window.onDefaultAction = confirming ? { [draft = shown.draft] in draft.keep() } : nil
         place(window, display: controller.decisionDisplay)
+        returnFrames = nil
         window.animationBehavior = theme.reduceMotion ? .none : .alertPanel
         // In front of every app at its level, and key, without activating sTools (a non-activating panel).
         window.orderFrontRegardless()
         window.makeKey()
         window.invalidateShadow()
-        window.focusFirstField()
+        if confirming { window.releaseFieldFocus() } else { window.focusFirstField() }
     }
 
     public func dismiss() {
@@ -246,11 +323,66 @@ public final class RecordingDecisionPanel: RecordingDecisionPresenting {
         window.animationBehavior = theme.reduceMotion ? .none : .alertPanel
         window.orderOut(nil)
         // Let go of the controller and the recording until the next question.
+        window.releaseFieldFocus()
         window.contentView = nil
         window.onCancel = nil
+        window.onDefaultAction = nil
+        shown?.draft.onStepChange = nil
         shown = nil
+        returnFrames = nil
         // The name field no longer has the keyboard: hotkeys on typed keys come back now, not at sTools' next event.
         NSApp.updateWindows()
+    }
+
+    private func host(_ view: some View) -> NSView {
+        NSHostingView(rootView: view
+            .environment(\.stTheme, theme)
+            .environment(\.stSoundPlayer, sound)
+            .stMotionRoot(theme))
+    }
+
+    /// What VoiceOver calls the panel: the question it asks.
+    static func accessibilityLabel(confirming: Bool) -> String {
+        confirming ? "Delete this recording?" : "Save this recording?"
+    }
+
+    /// Delete… or No: the window shows the other panel in the same place, instantly (nothing moves, so Reduce
+    /// animations has nothing to turn off), and the keyboard goes where it belongs: nowhere typed into on the second
+    /// panel, the name field again, with what was typed in it, on the question.
+    private func stepChanged() {
+        guard let window, let shown else { return }
+        let confirming = shown.draft.confirmsDelete
+        let next = confirming ? shown.confirmation : shown.question
+        guard window.contentView !== next else { return }
+        let before = window.frame
+        window.releaseFieldFocus()
+        window.contentView = next
+        next.layoutSubtreeIfNeeded()
+        let size = next.fittingSize
+        if !confirming, let frames = returnFrames, frames.confirmation == before {
+            window.setFrame(frames.question, display: true)
+        } else {
+            window.setFrame(RecordingDecisionLayout.frame(size: size, over: before, on: visibleArea(of: window)), display: true)
+        }
+        returnFrames = confirming ? (before, window.frame) : nil
+        window.setAccessibilityLabel(Self.accessibilityLabel(confirming: confirming))
+        window.onDefaultAction = confirming ? { [draft = shown.draft] in draft.keep() } : nil
+        window.invalidateShadow()
+        if confirming {
+            // The window's contents are new to VoiceOver: say what is being asked.
+            NSAccessibility.post(element: NSApplication.shared, notification: .announcementRequested,
+                                 userInfo: [.announcement: RecordingDeleteConfirmationView.prompt,
+                                            .priority: NSAccessibilityPriorityLevel.high.rawValue])
+        } else {
+            window.focusFirstField(selectingAll: false)
+        }
+        // The name field has the keyboard or doesn't now: hotkeys on typed keys follow at once.
+        NSApp.updateWindows()
+    }
+
+    /// The visible area of the screen `window` is on.
+    private func visibleArea(of window: NSWindow) -> CGRect {
+        window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
     }
 
     /// Over the main window when sTools is in front with it showing, else on `display`.
@@ -273,6 +405,9 @@ public final class RecordingDecisionPanel: RecordingDecisionPresenting {
 class RecordingDecisionWindow: NSPanel {
     /// Esc, or anything else that cancels.
     var onCancel: (() -> Void)?
+    /// Return, while the second panel is up: its default button, No. Nil on the question, where Return belongs to the
+    /// name field (it saves). Handled here, ahead of any view, so Return can only ever do the safe thing.
+    var onDefaultAction: (() -> Void)?
 
     init() {
         super.init(contentRect: CGRect(x: 0, y: 0, width: RecordingDecisionView.width, height: 240),
@@ -302,6 +437,12 @@ class RecordingDecisionWindow: NSPanel {
             onCancel?()
             return
         }
+        if event.type == .keyDown, Self.returnKeyCodes.contains(event.keyCode), let onDefaultAction,
+           event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty {
+            // A held key repeats: only the first press answers, so No can't be pressed past the question it opens.
+            if !event.isARepeat { onDefaultAction() }
+            return
+        }
         super.sendEvent(event)
     }
 
@@ -310,16 +451,29 @@ class RecordingDecisionWindow: NSPanel {
     }
 
     static let escapeKeyCode: UInt16 = 53
+    /// Return and the keypad's Enter.
+    static let returnKeyCodes: Set<UInt16> = [36, 76]
 
     /// Whether the name field still has to get the keyboard, once the panel is key.
     private var wantsFieldFocus = false
+    /// Whether the field gets its text selected when it takes the keyboard.
+    private var selectsFieldText = true
 
     /// Puts the keyboard in the name field with its text selected, so typing replaces the offered name: now when the
     /// panel is key, else as soon as it becomes key. The field may only exist after SwiftUI's next pass, so it's tried
-    /// once more then.
-    func focusFirstField() {
+    /// once more then. With `selectingAll` false (coming back from the second panel) the text is left as it was, with
+    /// the insertion point at its end.
+    func focusFirstField(selectingAll: Bool = true) {
         wantsFieldFocus = true
+        selectsFieldText = selectingAll
         if isKeyWindow { focusPendingField() }
+    }
+
+    /// Nothing is typed into: the name field won't take the keyboard when the panel becomes key, and the keyboard
+    /// leaves it now (the second panel has no field).
+    func releaseFieldFocus() {
+        wantsFieldFocus = false
+        if firstResponder !== self { makeFirstResponder(nil) }
     }
 
     override func becomeKey() {
@@ -344,7 +498,11 @@ class RecordingDecisionWindow: NSPanel {
     private func focusFieldNow() -> Bool {
         contentView?.layoutSubtreeIfNeeded()
         guard let field = Self.firstEditableField(in: contentView), makeFirstResponder(field) else { return false }
-        field.currentEditor()?.selectAll(nil)
+        if selectsFieldText {
+            field.currentEditor()?.selectAll(nil)
+        } else if let editor = field.currentEditor() {
+            editor.selectedRange = NSRange(location: (editor.string as NSString).length, length: 0)
+        }
         wantsFieldFocus = false
         NSApp.updateWindows()
         return true

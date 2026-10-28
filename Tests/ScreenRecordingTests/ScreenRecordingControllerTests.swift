@@ -577,19 +577,52 @@ struct ScreenRecordingKeyTests {
         #expect(await harness.waitUntil { !harness.controller.isEnabled })
     }
 
-    /// Inside the Delete confirmation, Esc steps back to the question; it neither deletes nor saves.
+    /// Inside the second panel Delete… opens, Esc is No: it steps back to the question and neither deletes nor saves.
     @Test func escInTheDeleteConfirmationStepsBack() async throws {
         let harness = Harness()
         defer { harness.remove() }
         await harness.recordByKey()
-        let draft = RecordingDecisionDraft(name: try #require(harness.controller.finished).name)
-        draft.confirmsDelete = true
+        let finished = try #require(harness.controller.finished)
+        let draft = RecordingDecisionDraft(name: finished.name)
+        draft.askToDelete()
         draft.cancel(harness.controller)
         #expect(!draft.confirmsDelete)
         try await Task.sleep(for: .milliseconds(50))
         #expect(harness.controller.phase == .deciding)
         #expect(harness.controller.lastSaved == nil)
+        #expect(finished.files.allSatisfy { FileManager.default.fileExists(atPath: $0.path) })
         harness.controller.delete()
+    }
+
+    /// Delete… deletes nothing: it only opens the second panel. No goes back with the typed name; only Yes removes the
+    /// file, and then the tool stays off and the question is gone.
+    @Test func deleteAsksAgainAndOnlyYesDeletes() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        await harness.recordByKey()
+        let finished = try #require(harness.controller.finished)
+        let draft = RecordingDecisionDraft(name: "Seed 9")
+        draft.askToDelete()
+        #expect(draft.confirmsDelete)
+        #expect(harness.controller.phase == .deciding)
+        #expect(harness.controller.finished != nil)
+        #expect(finished.files.allSatisfy { FileManager.default.fileExists(atPath: $0.path) })
+        #expect(harness.presenter.dismissals == 0)
+
+        draft.keep()
+        #expect(!draft.confirmsDelete)
+        #expect(draft.name == "Seed 9", "the typed name is kept")
+        #expect(harness.controller.phase == .deciding)
+        #expect(finished.files.allSatisfy { FileManager.default.fileExists(atPath: $0.path) })
+
+        draft.askToDelete()
+        draft.deleteForGood(harness.controller)
+        #expect(harness.controller.phase == .idle)
+        #expect(harness.controller.finished == nil)
+        #expect(finished.files.allSatisfy { !FileManager.default.fileExists(atPath: $0.path) })
+        #expect(harness.savedFileNames().isEmpty)
+        #expect(harness.presenter.dismissals == 1)
+        #expect(!harness.controller.isEnabled)
     }
 
     /// The page's Stop asks the same question, and the tool goes off after it all the same.
