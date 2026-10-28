@@ -67,9 +67,14 @@ final class AppUpdater: NSObject, AppUpdating, SPUUpdaterDelegate {
         }
     }
 
-    /// Why a build can't check for updates: it isn't a packaged app, or its Info.plist lacks the feed or the key.
+    /// What Settings ▸ Updates says in the dev build, which has no feed and no key on purpose.
+    nonisolated static let devBuildReason = "\(AppVariant.dev.name) never updates itself. To get a newer one, use Install from DMG\u{2026}"
+
+    /// Why a build can't check for updates: it isn't a packaged app, it's the dev build (which never updates itself,
+    /// whatever its Info.plist holds), or its Info.plist lacks the feed or the key.
     nonisolated static func unavailableReason(for bundle: Bundle) -> String? {
         guard bundle.bundleURL.pathExtension == "app" else { return "Updates work in the packaged app only." }
+        guard AppVariant(bundle: bundle) == .standard else { return devBuildReason }
         let feed = (bundle.object(forInfoDictionaryKey: "SUFeedURL") as? String) ?? ""
         let key = (bundle.object(forInfoDictionaryKey: "SUPublicEDKey") as? String) ?? ""
         guard !feed.trimmingCharacters(in: .whitespaces).isEmpty, !key.trimmingCharacters(in: .whitespaces).isEmpty

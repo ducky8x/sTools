@@ -246,6 +246,26 @@ struct UpdatesTests {
         #expect(AppUpdater.unavailableReason(for: Bundle(for: FakeUpdater.self)) != nil, "a test bundle never updates")
     }
 
+    /// The dev build never updates itself, even if something put a feed and a key in its Info.plist: it says why.
+    @Test func theDevBuildNeverUpdatesAndSaysSo() throws {
+        let feed = ["SUFeedURL": "https://example.com/a.xml", "SUPublicEDKey": "AAAA"]
+        let dev = try makeBundle(name: "Dev.app", info: feed.merging([AppVariant.infoKey: "dev"]) { $1 })
+        let bare = try makeBundle(name: "BareDev.app", info: [AppVariant.infoKey: "dev"])
+        defer {
+            for url in [dev, bare] { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        }
+        let reason = "sTools Dev never updates itself. To get a newer one, use Install from DMG\u{2026}"
+        #expect(AppUpdater.devBuildReason == reason)
+        #expect(AppUpdater.unavailableReason(for: try #require(Bundle(url: dev))) == reason)
+        #expect(AppUpdater.unavailableReason(for: try #require(Bundle(url: bare))) == reason)
+
+        let updater = AppUpdater(bundle: try #require(Bundle(url: dev)))
+        #expect(updater.unavailableReason == reason)
+        let center = UpdateCenter(updater: updater, notices: FakeNotices())
+        #expect(!center.canCheck)
+        #expect(center.unavailableReason == reason)
+    }
+
     @Test func theUpdatesSectionRendersEachOutcome() {
         for result in [UpdateCheckResult.upToDate, .unreachable, .available(version: "0.2.0")] {
             let updater = FakeUpdater()

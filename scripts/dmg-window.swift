@@ -2,9 +2,15 @@
 // description of that window (`Window` below), so the picture and the icon positions can never disagree.
 //
 // Usage:
-//   swift scripts/dmg-window.swift background <outputDirectory> [--version <x.y.z>] [--preview <file.png>]
-//   swift scripts/dmg-window.swift ds-store <volumeRoot>
-//   swift scripts/dmg-window.swift dump <path/to/.DS_Store>
+//   swift scripts/dmg-window.swift background <outputDirectory> [--version <x.y.z>] [--preview <file.png>] [--dev]
+//   swift scripts/dmg-window.swift ds-store <volumeRoot> [--dev]
+//   swift scripts/dmg-window.swift dump <path/to/.DS_Store> [--dev]
+//
+//   --dev       The dev build's DMG (scripts/build-dmg.sh --dev) instead of the normal one: the window holds
+//               sTools Dev.app and says "sTools Dev" where the normal one says "sTools", and its accents (the rule, the
+//               arrow, the step numbers) are the dev icon's blue instead of gold. The window's size and the icon
+//               positions are the same. Give it to every command, `dump` included, which checks the layout of the
+//               app's name.
 //
 //   background  Writes background.png (1x, 72 dpi), background@2x.png (2x, 144 dpi) and background.tiff, which
 //               holds both so it is sharp on Retina displays and is what scripts/build-dmg.sh puts on the disk
@@ -37,6 +43,21 @@ import Darwin
 import ImageIO
 import UniformTypeIdentifiers
 
+// MARK: - The variant
+
+/// Which DMG this is: the normal build's, or the dev build's (`--dev`, found once from the command line).
+struct Variant {
+    let isDev: Bool
+
+    /// The name the window uses for the app.
+    var name: String { isDev ? "sTools Dev" : "sTools" }
+    var appName: String { name + ".app" }
+    /// The app's .icns, which the preview draws where Finder will draw the app's icon.
+    var iconsPath: String { isDev ? "packaging/dev/sTools.icns" : "packaging/sTools.icns" }
+}
+
+let variant = Variant(isDev: CommandLine.arguments.contains("--dev"))
+
 // MARK: - The window
 
 /// The DMG window, in points, with the origin at the top left of the window's content area.
@@ -67,7 +88,7 @@ enum Window {
     static let iconSize: CGFloat = 96
     static let labelTextSize: CGFloat = 13
 
-    static let appName = "sTools.app"
+    static let appName = variant.appName
     static let applicationsName = "Applications"
     /// Icon centers.
     static let appCenter = CGPoint(x: 176, y: 204)
@@ -127,6 +148,21 @@ func loadPalette() throws -> [String: CGColor] {
         throw Failure("STPalette.swift has no \(token) color")
     }
     return palette
+}
+
+/// The color of the rule, the arrow and the step numbers: the app's gold, or for the dev DMG the blue of the dev
+/// icon's mark, read from the committed icon (scripts/generate-icon.swift writes it) so the two can never differ.
+func loadAccent(palette: [String: CGColor]) throws -> CGColor {
+    guard variant.isDev else { return palette["gold"]! }
+    let url = repositoryRoot.appendingPathComponent("packaging/dev/AppIcon.icon/Assets/Mark.svg")
+    let source = try String(contentsOf: url, encoding: .utf8)
+    let pattern = try NSRegularExpression(pattern: ##"fill="#([0-9A-Fa-f]{6})""##)
+    guard let match = pattern.firstMatch(in: source, range: NSRange(source.startIndex..., in: source)),
+          let hex = Range(match.range(at: 1), in: source), let value = UInt32(source[hex], radix: 16) else {
+        throw Failure("\(url.path) has no fill color; make the dev icon with scripts/generate-icon.swift --tint blue packaging/dev")
+    }
+    return CGColor(srgbRed: CGFloat(value >> 16 & 0xFF) / 255, green: CGFloat(value >> 8 & 0xFF) / 255,
+                   blue: CGFloat(value & 0xFF) / 255, alpha: 1)
 }
 
 // MARK: - Fonts
@@ -273,9 +309,10 @@ struct BackgroundFit {
 
 /// The background: wordmark, gilt rule and standfirst; a gold arrow from the app to Applications; and the
 /// one-time steps for opening an app that isn't notarized. The artwork fills `Window.size`; the plain background
-/// continues under it to the bottom of the canvas.
+/// continues under it to the bottom of the canvas. The dev DMG says "sTools Dev" for the app and draws the accents
+/// (gold above) in blue.
 @discardableResult
-func drawBackground(on canvas: Canvas, palette: [String: CGColor], version: String?) throws -> BackgroundFit {
+func drawBackground(on canvas: Canvas, palette: [String: CGColor], accent: CGColor, version: String?) throws -> BackgroundFit {
     let context = canvas.context
     let width = Window.size.width
     let margin = Window.margin
@@ -296,16 +333,16 @@ func drawBackground(on canvas: Canvas, palette: [String: CGColor], version: Stri
 
     // Header: the wordmark, the version across from it, a gilt rule and the standfirst (as on a tool page).
     let titleBaseline: CGFloat = 74
-    canvas.draw(canvas.line("sTools", font: try Fonts.display(40), color: color("ink"), kern: -0.2),
+    canvas.draw(canvas.line(variant.name, font: try Fonts.display(40), color: color("ink"), kern: -0.2),
                 x: margin - 2, baseline: titleBaseline)
     if let version {
         let label = canvas.line("Version \(version)", font: try Fonts.text(12, weight: 600, smallCaps: true),
                                 color: color("inkTertiary"), kern: 12 * 0.04)
         canvas.draw(label, x: width - margin, baseline: titleBaseline, alignment: .right)
     }
-    context.setFillColor(color("gold"))
+    context.setFillColor(accent)
     context.fill(CGRect(x: margin, y: titleBaseline + 14, width: width - 2 * margin, height: 1))
-    text("Drag sTools into the Applications folder.",
+    text("Drag \(variant.name) into the Applications folder.",
          font: try Fonts.text(16, italic: true), color: color("inkSecondary"), x: margin, baseline: titleBaseline + 42)
 
     // The arrow, between the two icons' slots.
@@ -313,7 +350,7 @@ func drawBackground(on canvas: Canvas, palette: [String: CGColor], version: Stri
     let arrowY = Window.appCenter.y
     let start = Window.appCenter.x + half + 30
     let tip = Window.applicationsCenter.x - half - 30
-    drawArrow(in: context, from: start, to: tip, y: arrowY, color: color("gold"))
+    drawArrow(in: context, from: start, to: tip, y: arrowY, color: accent)
 
     // First open: a hairline, a short reason and three numbered steps.
     let sectionTop: CGFloat = 300
@@ -321,11 +358,14 @@ func drawBackground(on canvas: Canvas, palette: [String: CGColor], version: Stri
     context.fill(CGRect(x: margin, y: sectionTop, width: width - 2 * margin, height: 1))
 
     let labelBaseline = sectionTop + 30
-    text("Because sTools isn\u{2019}t notarized, macOS blocks it on its first open.",
+    text("Because \(variant.name) isn\u{2019}t notarized, macOS blocks it on its first open.",
          font: try Fonts.text(14, italic: true), color: color("inkTertiary"), x: margin, baseline: labelBaseline)
 
+    // The dev name is four letters longer, which would run this line past the right margin, so it drops its "and".
     let steps = [
-        "Open sTools from the Applications folder, and then click Done on the popup.",
+        variant.isDev
+            ? "Open \(variant.name) from the Applications folder, then click Done on the popup."
+            : "Open \(variant.name) from the Applications folder, and then click Done on the popup.",
         "Go to System Settings \u{25B8} Privacy & Security.",
         "Click Open Anyway, then confirm.",
     ]
@@ -333,7 +373,7 @@ func drawBackground(on canvas: Canvas, palette: [String: CGColor], version: Stri
     let stepFont = try Fonts.text(14)
     for (index, step) in steps.enumerated() {
         let baseline = labelBaseline + 28 + CGFloat(index) * 22
-        text("\(index + 1)", font: numberFont, color: color("gold"), x: margin, baseline: baseline)
+        text("\(index + 1)", font: numberFont, color: accent, x: margin, baseline: baseline)
         text(step, font: stepFont, color: color("ink"), x: margin + 20, baseline: baseline)
     }
     let lastBaseline = labelBaseline + 28 + CGFloat(steps.count - 1) * 22
@@ -376,12 +416,12 @@ func drawArrow(in context: CGContext, from start: CGFloat, to tip: CGFloat, y: C
 /// A mock-up of the open window: the background with the two icons and their labels where Finder draws them
 /// (white labels, as Finder uses on a dark background). For reviewing the design only.
 func drawPreviewItems(on canvas: Canvas) throws {
-    let iconsFile = repositoryRoot.appendingPathComponent("packaging/sTools.icns").path
+    let iconsFile = repositoryRoot.appendingPathComponent(variant.iconsPath).path
     let appIcon = FileManager.default.fileExists(atPath: iconsFile)
         ? NSImage(contentsOfFile: iconsFile)
-        : NSWorkspace.shared.icon(forFile: repositoryRoot.appendingPathComponent("build/sTools.app").path)
+        : NSWorkspace.shared.icon(forFile: repositoryRoot.appendingPathComponent("build/\(variant.appName)").path)
     let items: [(NSImage?, CGPoint, String)] = [
-        (appIcon, Window.appCenter, "sTools"),
+        (appIcon, Window.appCenter, variant.name),
         (NSWorkspace.shared.icon(forFile: "/Applications"), Window.applicationsCenter, Window.applicationsName),
     ]
     NSGraphicsContext.saveGraphicsState()
@@ -413,11 +453,12 @@ func drawPreviewGuides(on canvas: Canvas) {
 
 func generateBackground(outputDirectory: URL, version: String?, preview: URL?) throws {
     let palette = try loadPalette()
+    let accent = try loadAccent(palette: palette)
     try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
     var images: [(image: CGImage, dpi: Double)] = []
     for scale in [1, 2] {
         let canvas = try Canvas(size: Window.canvasSize, scale: CGFloat(scale))
-        let fit = try drawBackground(on: canvas, palette: palette, version: version)
+        let fit = try drawBackground(on: canvas, palette: palette, accent: accent, version: version)
         if scale == 1 {
             print("text fits: widest line ends \(Int(fit.rightmostText.rounded(.up))) pt of \(Int(Window.size.width - Window.margin)), "
                   + "last step's baseline \(Int(fit.lastBaseline)) pt of \(Int(Window.size.height))")
@@ -433,7 +474,7 @@ func generateBackground(outputDirectory: URL, version: String?, preview: URL?) t
     print("wrote \(tiff.path)")
     if let preview {
         let canvas = try Canvas(size: Window.canvasSize, scale: 2)
-        try drawBackground(on: canvas, palette: palette, version: version)
+        try drawBackground(on: canvas, palette: palette, accent: accent, version: version)
         try drawPreviewItems(on: canvas)
         drawPreviewGuides(on: canvas)
         try writePNG(try canvas.image(), to: preview, dpi: 144)
@@ -1135,11 +1176,11 @@ func layoutProblems(_ records: [DSRecord], root: URL) -> [String] {
 
 // MARK: - Command line
 
-var arguments = Array(CommandLine.arguments.dropFirst())
+var arguments = Array(CommandLine.arguments.dropFirst().filter { $0 != "--dev" })
 let usage = """
-    usage: dmg-window.swift background <outputDirectory> [--version <x.y.z>] [--preview <file.png>]
-           dmg-window.swift ds-store <volumeRoot>
-           dmg-window.swift dump <path/to/.DS_Store>
+    usage: dmg-window.swift background <outputDirectory> [--version <x.y.z>] [--preview <file.png>] [--dev]
+           dmg-window.swift ds-store <volumeRoot> [--dev]
+           dmg-window.swift dump <path/to/.DS_Store> [--dev]
     """
 
 do {

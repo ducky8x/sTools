@@ -1,6 +1,11 @@
 // Draws sTools' app icon and writes the Icon Composer document and the fallback .icns.
 //
-// Usage: swift scripts/generate-icon.swift <packagingDirectory> [<previewDirectory>]
+// Usage: swift scripts/generate-icon.swift [--tint gold|blue] <packagingDirectory> [<previewDirectory>]
+//
+//   --tint  The mark's color: gold (the default, the app's accent: the normal build's icon) or blue (the dev
+//           build's icon, `scripts/build-app.sh --dev`). Only the mark's color differs; the plate, the shapes and the
+//           file names are the same, so the dev icon is written to its own folder, packaging/dev, and
+//           scripts/build-app.sh picks the folder.
 //
 // Writes, under <packagingDirectory>:
 //   AppIcon.icon/icon.json         the Icon Composer document: one flat layer, no glass, no shadow
@@ -8,8 +13,8 @@
 //   sTools.icns                    the pre-macOS 26 icon, built with iconutil from a temporary .iconset
 // With a preview directory it also writes the .icns artwork as preview-<size>.png at 1024, 256, 64, 32, 16.
 //
-// The mark: a duck hanging by one wing from a stool, in the app's gold on the app's background. The
-// stool keeps its serif character: a slab seat over a bar, and splayed legs whose feet flare out in
+// The mark: a duck hanging by one wing from a stool, in the app's gold (or the dev build's blue) on the app's
+// background. The stool keeps its serif character: a slab seat over a bar, and splayed legs whose feet flare out in
 // bracketed serifs. Every shape is defined once, in 1024-point icon coordinates (origin top left, y down),
 // then merged with path operations into one compound path (the eye and the wing's outline are cut out of
 // it). That one path is written to the SVG layer and filled for the .icns bitmaps, so the two renderings
@@ -36,7 +41,18 @@ struct GeneratorError: Error, CustomStringConvertible {
 
 enum Tone {
     static let background = "#0B0A09"   // STPalette.background
-    static let mark = "#D9AE52"         // STPalette.gold, the app's accent
+    static let gold = "#D9AE52"         // STPalette.gold, the app's accent
+    /// The dev build's mark: as light and as soft as the gold on the same dark plate, turned to blue. Its hue is
+    /// 211 degrees, saturation 58% and brightness 92% (the gold's are 41, 61 and 85). scripts/dmg-window.swift reads
+    /// it back from the dev icon's Mark.svg, so the dev DMG's accents follow it.
+    static let blue = "#62A5EB"
+}
+
+/// The color of the mark: the gold of the normal build's icon, or the blue of the dev build's.
+enum Tint: String {
+    case gold, blue
+
+    var mark: String { self == .gold ? Tone.gold : Tone.blue }
 }
 
 // MARK: - Path helpers
@@ -317,7 +333,7 @@ let plateRect = CGRect(x: 100, y: 100, width: 824, height: 824)
 let plateRadius = 185.4
 
 /// Renders the legacy (.icns) icon: the plate with the system's usual drop shadow, and the mark on it.
-func renderLegacyIcon(pixels: Int) throws -> CGImage {
+func renderLegacyIcon(pixels: Int, tint: Tint) throws -> CGImage {
     guard let space = CGColorSpace(name: CGColorSpace.sRGB),
           let context = CGContext(data: nil, width: pixels, height: pixels, bitsPerComponent: 8, bytesPerRow: 0,
                                   space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
@@ -341,7 +357,7 @@ func renderLegacyIcon(pixels: Int) throws -> CGImage {
     context.translateBy(x: plateRect.minX, y: plateRect.minY)
     context.scaleBy(x: plateRect.width / 1024, y: plateRect.height / 1024)
     context.addPath(mark)
-    context.setFillColor(cgColor(Tone.mark))
+    context.setFillColor(cgColor(tint.mark))
     context.fillPath()
 
     guard let image = context.makeImage() else { throw GeneratorError("cannot finish the \(pixels) px bitmap") }
@@ -368,7 +384,7 @@ func run(_ executable: String, _ arguments: [String]) throws {
     }
 }
 
-func generate(packaging: URL, previews: URL?) throws {
+func generate(packaging: URL, previews: URL?, tint: Tint) throws {
     let fileManager = FileManager.default
 
     let document = packaging.appendingPathComponent("AppIcon.icon", isDirectory: true)
@@ -376,34 +392,45 @@ func generate(packaging: URL, previews: URL?) throws {
     try? fileManager.removeItem(at: document)
     try fileManager.createDirectory(at: assets, withIntermediateDirectories: true)
     try iconDocument().write(to: document.appendingPathComponent("icon.json"), options: .atomic)
-    try Data(svg(mark, fill: Tone.mark).utf8).write(to: assets.appendingPathComponent("Mark.svg"), options: .atomic)
+    try Data(svg(mark, fill: tint.mark).utf8).write(to: assets.appendingPathComponent("Mark.svg"), options: .atomic)
 
     let scratch = fileManager.temporaryDirectory.appendingPathComponent("sTools-icon-\(ProcessInfo.processInfo.processIdentifier)")
     let iconset = scratch.appendingPathComponent("sTools.iconset", isDirectory: true)
     try fileManager.createDirectory(at: iconset, withIntermediateDirectories: true)
     defer { try? fileManager.removeItem(at: scratch) }
     for points in [16, 32, 128, 256, 512] {
-        try writePNG(renderLegacyIcon(pixels: points), to: iconset.appendingPathComponent("icon_\(points)x\(points).png"))
-        try writePNG(renderLegacyIcon(pixels: points * 2), to: iconset.appendingPathComponent("icon_\(points)x\(points)@2x.png"))
+        try writePNG(renderLegacyIcon(pixels: points, tint: tint), to: iconset.appendingPathComponent("icon_\(points)x\(points).png"))
+        try writePNG(renderLegacyIcon(pixels: points * 2, tint: tint), to: iconset.appendingPathComponent("icon_\(points)x\(points)@2x.png"))
     }
     try run("/usr/bin/iconutil", ["--convert", "icns", "--output", packaging.appendingPathComponent("sTools.icns").path, iconset.path])
 
     if let previews {
         try fileManager.createDirectory(at: previews, withIntermediateDirectories: true)
         for pixels in [1024, 256, 64, 32, 16] {
-            try writePNG(renderLegacyIcon(pixels: pixels), to: previews.appendingPathComponent("preview-\(pixels).png"))
+            try writePNG(renderLegacyIcon(pixels: pixels, tint: tint), to: previews.appendingPathComponent("preview-\(pixels).png"))
         }
     }
 }
 
-let arguments = CommandLine.arguments.dropFirst()
+let usage = "usage: swift scripts/generate-icon.swift [--tint gold|blue] <packagingDirectory> [<previewDirectory>]\n"
+var arguments = Array(CommandLine.arguments.dropFirst())
+var tint = Tint.gold
+if let index = arguments.firstIndex(of: "--tint") {
+    guard index + 1 < arguments.count, let chosen = Tint(rawValue: arguments[index + 1]) else {
+        FileHandle.standardError.write(Data(usage.utf8))
+        exit(2)
+    }
+    tint = chosen
+    arguments.removeSubrange(index...(index + 1))
+}
 guard (1...2).contains(arguments.count) else {
-    FileHandle.standardError.write(Data("usage: swift scripts/generate-icon.swift <packagingDirectory> [<previewDirectory>]\n".utf8))
+    FileHandle.standardError.write(Data(usage.utf8))
     exit(2)
 }
 do {
     try generate(packaging: URL(fileURLWithPath: arguments.first!, isDirectory: true),
-                 previews: arguments.count == 2 ? URL(fileURLWithPath: arguments.last!, isDirectory: true) : nil)
+                 previews: arguments.count == 2 ? URL(fileURLWithPath: arguments.last!, isDirectory: true) : nil,
+                 tint: tint)
 } catch {
     FileHandle.standardError.write(Data("generate-icon failed: \(error)\n".utf8))
     exit(1)
