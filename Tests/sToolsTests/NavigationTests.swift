@@ -143,11 +143,11 @@ struct ToolIDTests {
 
     @Test func taglinesAreVerbatimFromRuleR13() {
         #expect(ToolID.nbbOverlay.tagline == "A clean Ninjabrain Bot overlay.")
-        #expect(ToolID.windowBackdrop.tagline == "A clean stage behind Minecraft.")
+        #expect(ToolID.windowBackdrop.tagline == "A backdrop to cover your clutter behind your Minecraft instance.")
         #expect(ToolID.crosshair.tagline == "A crosshair drawn at the center of your screen.")
-        #expect(ToolID.timerOverlay.tagline == "Your Fire Resistance, counted down.")
-        #expect(ToolID.screenRecording.tagline == "Minecraft and everything else, on one canvas.")
-        #expect(ToolID.keyRebinder.tagline == "Every rebind, right on its key.")
+        #expect(ToolID.timerOverlay.tagline == "A timer for your fire res which you never keep track of.")
+        #expect(ToolID.screenRecording.tagline == "A lightweight screen recorder.")
+        #expect(ToolID.keyRebinder.tagline == "A simple rebinder connected to Karabiner.")
     }
 
     @Test func onlyKeyRebinderIsFreeOfAccessibilityAndSwitch() {
