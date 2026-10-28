@@ -1,4 +1,5 @@
 import Observation
+import ScreenRecording
 import STPlatform
 import SwiftUI
 import TimerOverlay
@@ -41,17 +42,32 @@ extension AppModel {
         Binding(get: { self.isOn(tool) }, set: { self.userSwitched(tool, on: $0) })
     }
 
-    /// The owner flipped a tool's switch. It drives the tool as `setTool` does, except that Timer Overlay's switch-on
-    /// also starts a countdown, as its Start-timer key does while it's off (`startFromSwitch`, spec 5.6.1). Everything
+    /// The owner flipped a tool's switch. It drives the tool as `setTool` does, except that a switch-on of a tool that
+    /// has a key which starts it does what that key does while the tool is off: Timer Overlay starts a countdown
+    /// (`startFromSwitch`, spec 5.6.1), Screen Recording starts a recording (spec 5.4.4), confirmed over the game like
+    /// the key's press (the line, the sound, "Recording started" once it writes); while the last recording is still
+    /// being finished or its question waits there is nothing to start, so that switch-on only switches on. Everything
     /// else that switches a tool (a hotkey, the controller asking for itself, restoring the tools at launch,
     /// Accessibility being revoked, the Prologue) calls `setTool`, which only switches, so nothing but a person's
-    /// switch-on starts a countdown by itself.
+    /// switch-on starts a countdown or a recording by itself.
     func userSwitched(_ tool: ToolID, on: Bool) {
-        if tool == .timerOverlay, on, !isOn(tool), let timer = timerOverlay {
-            timer.startFromSwitch()
-        } else {
-            setTool(tool, on: on)
+        guard on, !isOn(tool) else { return setTool(tool, on: on) }
+        switch tool {
+        case .timerOverlay:
+            if let timer = timerOverlay {
+                timer.startFromSwitch()
+                return
+            }
+        case .screenRecording:
+            if let recording = controller(for: .screenRecording, as: ScreenRecordingController.self),
+               let press = recording.startFromSwitch() {
+                confirm([press].compactMap(HotkeyConfirmation.recordingEffect))
+                return
+            }
+        default:
+            break
         }
+        setTool(tool, on: on)
     }
 
     /// Asks macOS for Accessibility; when that leaves it missing, opens its System Settings pane.

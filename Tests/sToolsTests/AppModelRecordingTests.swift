@@ -400,6 +400,157 @@ struct AppModelRecordingTests {
     }
 }
 
+/// Screen Recording's own switch (the tool page's, the sidebar's, the Prologue trial's) does what its key does with the
+/// tool off: it switches the tool on and starts a recording (spec 5.4.4). Switching on any other way (restoring the
+/// tools that were on at quit, the Prologue's test, a start the controller asks for) never records by itself.
+@MainActor
+@Suite("AppModel Screen Recording switch", .serialized)
+struct AppModelRecordingSwitchTests {
+    /// Off, flipping the switch on switches the tool on and records, line for line as the key does: "Starting the
+    /// recording…" without the seal, then "Recording started" with it once the first frame is in the file.
+    @Test func switchingOnStartsARecordingAsTheKeyDoes() async throws {
+        let harness = RecordingHarness()
+        let binding = harness.model.switchBinding(.screenRecording)
+        #expect(!binding.wrappedValue)
+        binding.wrappedValue = true
+        // At the flip, not a turn later: the switch stays on and a start is under way.
+        #expect(harness.model.isOn(.screenRecording))
+        #expect(harness.recording.phase == .starting)
+        #expect(harness.hud.lines == [startingLine])
+        #expect(await waitUntil(timeout: RecordingHarness.patience) { harness.recording.phase == .recording })
+        #expect(harness.hud.lines == [startingLine, "Recording started"])
+        #expect(harness.hud.presented.map(\.sealed) == [false, true])
+        #expect(harness.model.status(of: .screenRecording) == .on)
+        await harness.recording.stopRecording(explanation: nil)
+        harness.recording.delete()
+    }
+
+    /// The switch on the way back: turning it off while it records stops, asks Save or Delete and leaves the tool off.
+    @Test func switchingOffStillStopsAndAsks() async throws {
+        let harness = RecordingHarness()
+        let binding = harness.model.switchBinding(.screenRecording)
+        binding.wrappedValue = true
+        #expect(await waitUntil(timeout: RecordingHarness.patience) { harness.recording.phase == .recording })
+        try await Task.sleep(for: .milliseconds(300))
+        binding.wrappedValue = false
+        #expect(!harness.model.isOn(.screenRecording))
+        #expect(await waitUntil(timeout: RecordingHarness.patience) { harness.recording.phase == .deciding })
+        #expect(harness.question.presented == 1)
+        harness.recording.delete()
+        #expect(!harness.model.isOn(.screenRecording))
+    }
+
+    /// With the question off, the stop saves under the date and time, as it does for the key.
+    @Test func switchingOffWithTheQuestionOffSavesAtOnce() async throws {
+        let harness = RecordingHarness()
+        harness.recording.options.askSaveDelete = false
+        let binding = harness.model.switchBinding(.screenRecording)
+        binding.wrappedValue = true
+        #expect(await waitUntil(timeout: RecordingHarness.patience) { harness.recording.phase == .recording })
+        try await Task.sleep(for: .milliseconds(300))
+        binding.wrappedValue = false
+        #expect(await waitUntil(timeout: RecordingHarness.patience) { harness.savedFileNames().count == 1 })
+        #expect(harness.question.presented == 0)
+        #expect(!harness.model.isOn(.screenRecording))
+    }
+
+    /// The key and the switch are one thing: after one, the other undoes it.
+    @Test func theKeyStopsWhatTheSwitchStarted() async throws {
+        let harness = RecordingHarness()
+        let id = harness.addKey()
+        harness.model.switchBinding(.screenRecording).wrappedValue = true
+        #expect(await waitUntil(timeout: RecordingHarness.patience) { harness.recording.phase == .recording })
+        try await Task.sleep(for: .milliseconds(300))
+        harness.press(id)
+        #expect(!harness.model.isOn(.screenRecording))
+        #expect(await waitUntil(timeout: RecordingHarness.patience) { harness.recording.phase == .deciding })
+        harness.recording.delete()
+    }
+
+    /// Without Screen & System Audio Recording the switch, like the key, starts nothing: the tool stays off, nothing
+    /// asks macOS for the permission, and the line says what's missing, without the seal.
+    @Test func withoutScreenRecordingPermissionTheSwitchStartsNothing() async throws {
+        let harness = RecordingHarness(screenRecording: .denied)
+        harness.model.switchBinding(.screenRecording).wrappedValue = true
+        #expect(!harness.model.isOn(.screenRecording))
+        #expect(harness.recording.phase == .idle)
+        #expect(harness.hud.lines == ["Screen Recording needs Screen & System Audio Recording"])
+        #expect(harness.hud.presented.map(\.sealed) == [false])
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(harness.savedFileNames().isEmpty)
+        #expect(!harness.prober.requested.contains(.screenRecording))
+    }
+
+    /// Switching on while the file of the last recording is still being finished, or its question waits, only switches
+    /// the tool on (spec 5.4.4: it stays on with the sources the switch started): nothing records, nothing is asked
+    /// again, and the question still waits.
+    @Test func switchingOnWhileTheQuestionWaitsOnlySwitchesOn() async throws {
+        let harness = RecordingHarness()
+        let id = harness.addKey()
+        #expect(await harness.recordByKey(id))
+        #expect(!harness.model.isOn(.screenRecording))
+        let lines = harness.hud.lines
+        harness.model.switchBinding(.screenRecording).wrappedValue = true
+        #expect(harness.model.isOn(.screenRecording))
+        #expect(harness.recording.phase == .deciding)
+        #expect(harness.question.presented == 1)
+        #expect(harness.hud.lines == lines)
+        harness.recording.delete()
+        #expect(harness.recording.phase == .idle)
+        #expect(harness.model.isOn(.screenRecording))
+        harness.model.setTool(.screenRecording, on: false)
+    }
+
+    /// The same flip on a tool that's already on does nothing: no second recording.
+    @Test func switchingOnAnArmedToolWithTheValueAlreadyOnStartsNothingMore() async throws {
+        let harness = RecordingHarness()
+        harness.model.setTool(.screenRecording, on: true)
+        #expect(await waitUntil(timeout: RecordingHarness.patience) { harness.recording.sourcesAreReady })
+        harness.model.switchBinding(.screenRecording).wrappedValue = true
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(harness.recording.phase == .idle)
+        #expect(harness.hud.lines.isEmpty)
+        harness.model.setTool(.screenRecording, on: false)
+    }
+
+    /// Restoring the tools that were on at quit (Settings ▸ General ▸ Advanced) switches Screen Recording back on as
+    /// before and never records: only a person's flip of the switch does.
+    @Test func restoringTheToolAtLaunchDoesNotStartARecording() async throws {
+        let harness = RecordingHarness()
+        harness.model.general = GeneralSettings(restoreToolsAtQuit: true, toolsOnAtQuit: ["screenRecording"])
+        harness.model.restoreToolsIfNeeded()
+        #expect(harness.model.isOn(.screenRecording))
+        #expect(await waitUntil(timeout: RecordingHarness.patience) { harness.recording.sourcesAreReady })
+        try await Task.sleep(for: .milliseconds(400))
+        #expect(harness.recording.phase == .idle)
+        #expect(harness.savedFileNames().isEmpty)
+        #expect(harness.hud.lines.isEmpty)
+        #expect(harness.model.isOn(.screenRecording))
+        harness.model.setTool(.screenRecording, on: false)
+    }
+
+    /// Nothing but the person's flip records: the app's own switching on (what the Prologue's test and the page's
+    /// Record ask for) leaves the start to the caller.
+    @Test func theAppsOwnSwitchingOnDoesNotRecord() async throws {
+        let harness = RecordingHarness()
+        harness.model.setTool(.screenRecording, on: true)
+        #expect(await waitUntil(timeout: RecordingHarness.patience) { harness.recording.sourcesAreReady })
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(harness.recording.phase == .idle)
+        #expect(harness.model.isOn(.screenRecording))
+        harness.model.setTool(.screenRecording, on: false)
+    }
+
+    /// Other tools' switches are unchanged.
+    @Test func otherSwitchesStillOnlySwitch() {
+        let harness = RecordingHarness()
+        harness.model.switchBinding(.crosshair).wrappedValue = true
+        #expect(harness.model.isOn(.crosshair))
+        #expect(harness.recording.phase == .idle)
+        #expect(!harness.model.isOn(.screenRecording))
+    }
+}
+
 /// The recording question takes the keyboard over Minecraft without making sTools the active app (spec 5.4.4), yet
 /// typing a name in it still sets aside the hotkeys on typed keys, as typing in sTools' window does (spec 6.1).
 @MainActor
