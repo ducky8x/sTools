@@ -93,6 +93,19 @@ struct AppModelPrologueTests {
         #expect(!harness.model.isOn(.timerOverlay))
     }
 
+    /// The trial's switch is the Timer page's, so it starts a countdown; the Finale's switch-off cancels it.
+    @Test func theFinaleCancelsACountdownTheTrialsSwitchStarted() throws {
+        let harness = Harness()
+        harness.model.beginPrologue(at: .timerTrial)
+        harness.model.switchBinding(.timerOverlay).wrappedValue = true
+        #expect(harness.timer.phase == .counting && harness.timerFakes.presenter.isShowing)
+        let prologue = try #require(harness.model.prologue)
+        prologue.runFinale()
+        prologue.completeFinale()
+        #expect(!harness.model.isOn(.timerOverlay) && harness.timer.phase == .idle)
+        #expect(!harness.timerFakes.presenter.isShowing && harness.timerFakes.scheduler.pending.isEmpty)
+    }
+
     @Test func aLaunchMidwaySavedByABuildWithoutTheTimerTrialResumesAtTheSameStep() async throws {
         let harness = Harness()
         await harness.store.flush()

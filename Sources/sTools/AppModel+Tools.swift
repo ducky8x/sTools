@@ -24,7 +24,8 @@ extension AppModel {
         return canSwitch(tool) ? .off : .needsAccessibility
     }
 
-    /// Flips a tool's switch and drives its controller. Switching on is ignored when `canSwitch` is false.
+    /// Flips a tool's switch and drives its controller. Switching on is ignored when `canSwitch` is false. This only
+    /// switches: a person's switch-on goes through `userSwitched`, which also starts Timer Overlay's countdown.
     func setTool(_ tool: ToolID, on: Bool) {
         guard on != isOn(tool) else { return }
         if on && !canSwitch(tool) { return }
@@ -36,22 +37,35 @@ extension AppModel {
     /// Timer Overlay's controller, when the app has one.
     var timerOverlay: TimerOverlayController? { controller(for: .timerOverlay, as: TimerOverlayController.self) }
 
+    /// A tool's switch as the owner sees it, in the sidebar, on the tool's page and in the Prologue's trial.
     func switchBinding(_ tool: ToolID) -> Binding<Bool> {
-        Binding(get: { self.isOn(tool) }, set: { self.switchTool(tool, on: $0) })
+        Binding(get: { self.isOn(tool) }, set: { self.userSwitched(tool, on: $0) })
     }
 
-    /// The person flipped a tool's switch (the tool page's, the sidebar's, the Prologue trial's), as opposed to the app
-    /// switching a tool itself (`setTool`: restoring the tools that were on at quit, the Prologue, a hotkey, a
-    /// controller asking). Screen Recording's switch-on does what its key does with the tool off: switches on and starts
-    /// a recording (spec 5.4.4), confirmed over the game like the key's press (the line, the sound, "Recording started"
-    /// once it writes). While the last recording is still being finished or its question waits there is nothing to
-    /// start, so the switch only switches on. Every other flip is `setTool`.
-    func switchTool(_ tool: ToolID, on: Bool) {
-        if tool == .screenRecording, on, !isOn(tool),
-           let recording = controller(for: .screenRecording, as: ScreenRecordingController.self),
-           let press = recording.startFromSwitch() {
-            confirm([press].compactMap(HotkeyConfirmation.recordingEffect))
-            return
+    /// The owner flipped a tool's switch. It drives the tool as `setTool` does, except that a switch-on of a tool that
+    /// has a key which starts it does what that key does while the tool is off: Timer Overlay starts a countdown
+    /// (`startFromSwitch`, spec 5.6.1), Screen Recording starts a recording (spec 5.4.4), confirmed over the game like
+    /// the key's press (the line, the sound, "Recording started" once it writes); while the last recording is still
+    /// being finished or its question waits there is nothing to start, so that switch-on only switches on. Everything
+    /// else that switches a tool (a hotkey, the controller asking for itself, restoring the tools at launch,
+    /// Accessibility being revoked, the Prologue) calls `setTool`, which only switches, so nothing but a person's
+    /// switch-on starts a countdown or a recording by itself.
+    func userSwitched(_ tool: ToolID, on: Bool) {
+        guard on, !isOn(tool) else { return setTool(tool, on: on) }
+        switch tool {
+        case .timerOverlay:
+            if let timer = timerOverlay {
+                timer.startFromSwitch()
+                return
+            }
+        case .screenRecording:
+            if let recording = controller(for: .screenRecording, as: ScreenRecordingController.self),
+               let press = recording.startFromSwitch() {
+                confirm([press].compactMap(HotkeyConfirmation.recordingEffect))
+                return
+            }
+        default:
+            break
         }
         setTool(tool, on: on)
     }
