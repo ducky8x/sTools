@@ -219,6 +219,30 @@ public final class TimerOverlayController: ToolController {
         return beginRun(isTest: false)
     }
 
+    /// The owner turned the tool's switch on (the sidebar's, the page's or the Prologue trial's): it starts a
+    /// countdown, doing what a Start-timer press does while the tool is off (spec 5.6.1, 5.6.2). It switches the tool on
+    /// through `requestEnable`, so the Accessibility rule (R10) holds, then carries out what the press table says for a
+    /// first press of a tool that is off, a start of the saved duration, the way a key press does. The switch isn't a
+    /// key, so it leaves the double press alone: a key pressed right after it is a first press. False, and nothing
+    /// started, when the tool couldn't be switched on or was already on. Only this switch-on starts a countdown: the
+    /// app switching the tool on at launch ("Restore tools that were on at quit") calls `setEnabled(true)`, which runs
+    /// nothing.
+    @discardableResult
+    public func startFromSwitch() -> Bool {
+        guard !isEnabled else { return false }
+        guard switchOn() else {
+            log.notice("Timer Overlay switched on by hand: it couldn't switch on")
+            return false
+        }
+        policy.reset()
+        let phaseBefore = phase
+        let action = PressPolicy.action(forPressIn: phaseBefore, settings: settings)
+        let acted = perform(action)
+        let line = "Timer Overlay switched on by hand: \(phaseBefore) \u{2192} \(action.rawValue)\(acted ? "" : " (nothing to do)")"
+        log.notice("\(line, privacy: .public)")
+        return acted
+    }
+
     /// Pauses a counting countdown.
     public func pause() {
         policy.reset()
