@@ -1,15 +1,23 @@
 #!/bin/bash
 # Builds build/sTools.app from the SwiftPM package and signs it.
 #
-# Usage: scripts/build-app.sh [debug|release] [--adhoc] [--keychain <path>]
+# Usage: scripts/build-app.sh [debug|release] [--dev] [--adhoc] [--keychain <path>]
 #
 #   debug       Host architecture only (fast). The default. Keeps its debug info; never ship it.
 #   release     Universal binary (arm64 + x86_64), for shipping. Its debug symbols go to dSYMs in
 #               build/dSYMs/sTools-<version>-<build>-<UUIDs>/ (kept for crash reports, never shipped; the folder is
 #               named after the executable's UUIDs, so a rebuild never replaces the symbols of another binary) and
-#               are stripped from every binary in the app. The build fails, and build/sTools.app is removed, when a
-#               step fails or anything in the app holds a home-folder path, a name or a trace of this Mac
-#               (scripts/check-no-home-paths.sh).
+#               are stripped from every binary in the app. The build fails, and build/sTools.app (build/sTools Dev.app
+#               with --dev) is removed, when a step fails or anything in the app holds a home-folder path, a name or a
+#               trace of this Mac (scripts/check-no-home-paths.sh).
+#   --dev       The dev build, the copy to use day to day: build/sTools Dev.app, beside build/sTools.app and never
+#               replacing it. The same bundle identifier (com.ducky8x.sTools) and the same "ducky8x" signature, so
+#               settings, saved data and macOS permissions are shared with the normal build and carry over; only one of
+#               the two should be installed at a time. Named "sTools Dev" (CFBundleName and CFBundleDisplayName), with
+#               the blue icon from packaging/dev (scripts/generate-icon.swift --tint blue packaging/dev) and no update
+#               feed or key, so it never updates itself into the normal build: Settings > Updates says so, and
+#               Install from DMG... still works. Info.plist says STVariant "dev". Package it with
+#               scripts/build-dmg.sh --dev. Every guard of the normal build stays.
 #   --adhoc     Debug only. When the "ducky8x" identity does not exist, sign ad hoc instead of failing.
 #   --keychain  Look for the identity in, and sign with, this keychain instead of the search list.
 #               For testing the signing flow with a throwaway keychain.
@@ -24,7 +32,8 @@
 # Contents/Frameworks without its headers, and the executable finds it through @executable_path/../Frameworks; rpaths
 # into the build folder are removed. SUPublicEDKey in Info.plist is filled from packaging/sparkle-public-key.txt
 # (written by scripts/make-update-key.sh). Without that file a release build fails and a debug build leaves the key
-# out, so it explains in Settings that it can't check for updates.
+# out, so it explains in Settings that it can't check for updates. The dev build leaves the feed and the key out
+# whatever the file holds, and needs neither the file nor the key.
 #
 # Signing safety: the only identity this script will ever sign with is the code-signing identity whose
 # common name is exactly "ducky8x". It is matched by exact name, never by substring, and signing uses its
@@ -42,7 +51,6 @@ readonly XCODE_BETA="/Applications/Xcode-beta.app/Contents/Developer"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly ROOT
-readonly APP="$ROOT/build/sTools.app"
 
 usage() {
     sed -n '2,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
@@ -139,6 +147,7 @@ list_nested_code() {
 
 MODE=""
 ADHOC=0
+DEV=0
 KEYCHAIN=""
 
 while [[ $# -gt 0 ]]; do
@@ -149,6 +158,9 @@ while [[ $# -gt 0 ]]; do
             ;;
         --adhoc)
             ADHOC=1
+            ;;
+        --dev)
+            DEV=1
             ;;
         --keychain)
             [[ $# -ge 2 ]] || fail "--keychain needs a path"
@@ -174,6 +186,14 @@ while [[ $# -gt 0 ]]; do
 done
 MODE="${MODE:-debug}"
 
+# The dev build sits beside the normal one under its own name, so building either never touches the other.
+if [[ "$DEV" -eq 1 ]]; then
+    readonly APP_NAME="sTools Dev.app"
+else
+    readonly APP_NAME="sTools.app"
+fi
+readonly APP="$ROOT/build/$APP_NAME"
+
 if [[ "$MODE" == "release" && "$ADHOC" -eq 1 ]]; then
     fail "release builds must be signed with the \"$IDENTITY_NAME\" identity; --adhoc is not allowed"
 fi
@@ -198,7 +218,9 @@ fi
 # Sparkle's public EdDSA key: base64 of 32 bytes, on the file's first line.
 readonly UPDATE_KEY_FILE="$ROOT/packaging/sparkle-public-key.txt"
 UPDATE_KEY=""
-if [[ -f "$UPDATE_KEY_FILE" ]]; then
+if [[ "$DEV" -eq 1 ]]; then
+    : # A dev build never updates itself, so it has no key.
+elif [[ -f "$UPDATE_KEY_FILE" ]]; then
     UPDATE_KEY="$(head -n 1 "$UPDATE_KEY_FILE" | tr -d '[:space:]')"
     [[ "$UPDATE_KEY" =~ ^[A-Za-z0-9+/]{43}=$ && "$(printf '%s' "$UPDATE_KEY" | base64 -D 2>/dev/null | wc -c | tr -d ' ')" == 32 ]] ||
         fail "packaging/sparkle-public-key.txt does not hold a Sparkle public key (base64 of 32 bytes)"
@@ -279,7 +301,7 @@ on_exit() {
     [[ -z "$SIGN_WORK" ]] || rm -rf "$SIGN_WORK"
     if [[ "$status" -ne 0 && "$MODE" == "release" && "$APP_STARTED" -eq 1 && -e "$APP" ]]; then
         rm -rf "$APP"
-        echo "error: removed build/sTools.app: a release build that failed must not be shipped" >&2
+        echo "error: removed build/$APP_NAME: a release build that failed must not be shipped" >&2
     fi
 }
 trap on_exit EXIT
@@ -337,6 +359,18 @@ sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD_NUMBER/" -e "s#__EDKEY__
 if [[ -z "$UPDATE_KEY" ]]; then
     plutil -remove SUPublicEDKey "$APP/Contents/Info.plist"
 fi
+if [[ "$DEV" -eq 1 ]]; then
+    # The dev build: its own name in the menu bar and in Finder, a marker the app reads (STVariant), and nothing that
+    # would let it update itself (the app and Sparkle both need the feed and the key). The bundle identifier stays.
+    for key in CFBundleName CFBundleDisplayName; do
+        plutil -replace "$key" -string "sTools Dev" "$APP/Contents/Info.plist"
+    done
+    for key in SUFeedURL SUEnableAutomaticChecks SUScheduledCheckInterval; do
+        plutil -remove "$key" "$APP/Contents/Info.plist"
+    done
+    plutil -insert STVariant -string dev "$APP/Contents/Info.plist"
+    echo "    dev build: named sTools Dev, no update feed or key"
+fi
 if grep -q '__[A-Z]*__' "$APP/Contents/Info.plist"; then
     fail "Info.plist still contains an unfilled placeholder"
 fi
@@ -376,22 +410,30 @@ echo "==> Adding the app icon"
 # packaging/AppIcon.icon (an Icon Composer document) compiles to Assets.car, which macOS reads through
 # CFBundleIconName; packaging/sTools.icns is the flat fallback named by CFBundleIconFile. Both are made by
 # scripts/generate-icon.swift. actool's own fallback .icns is not used: it lacks the 32, 256 and 512 sizes.
+# The dev build's, in blue, are the same two files under packaging/dev.
 ICON_BUILD="$ROOT/build/AppIcon"
+ICON_SOURCE="$ROOT/packaging"
+ICON_SOURCE_SHOWN="packaging"
+if [[ "$DEV" -eq 1 ]]; then
+    ICON_BUILD="$ROOT/build/AppIcon-Dev"
+    ICON_SOURCE="$ROOT/packaging/dev"
+    ICON_SOURCE_SHOWN="packaging/dev"
+fi
 rm -rf "$ICON_BUILD"
 mkdir -p "$ICON_BUILD"
 MIN_MACOS="$(plutil -extract LSMinimumSystemVersion raw "$ROOT/packaging/Info.plist")"
-if ! ACTOOL_LOG="$(xcrun actool "$ROOT/packaging/AppIcon.icon" --compile "$ICON_BUILD" \
+if ! ACTOOL_LOG="$(xcrun actool "$ICON_SOURCE/AppIcon.icon" --compile "$ICON_BUILD" \
         --app-icon AppIcon --platform macosx --target-device mac --minimum-deployment-target "$MIN_MACOS" \
         --output-partial-info-plist "$ICON_BUILD/partial.plist" \
         --errors --warnings --output-format human-readable-text 2>&1)" || [[ ! -f "$ICON_BUILD/Assets.car" ]]; then
     echo "$ACTOOL_LOG" >&2
-    fail "actool could not compile packaging/AppIcon.icon (it needs the Xcode 26 or newer actool)"
+    fail "actool could not compile $ICON_SOURCE_SHOWN/AppIcon.icon (it needs the Xcode 26 or newer actool)"
 fi
 [[ "$(plutil -extract CFBundleIconName raw "$ICON_BUILD/partial.plist")" == \
    "$(plutil -extract CFBundleIconName raw "$APP/Contents/Info.plist")" ]] ||
-    fail "CFBundleIconName in packaging/Info.plist does not match the icon in packaging/AppIcon.icon"
+    fail "CFBundleIconName in packaging/Info.plist does not match the icon in $ICON_SOURCE_SHOWN/AppIcon.icon"
 cp "$ICON_BUILD/Assets.car" "$APP/Contents/Resources/Assets.car"
-cp "$ROOT/packaging/sTools.icns" "$APP/Contents/Resources/sTools.icns"
+cp "$ICON_SOURCE/sTools.icns" "$APP/Contents/Resources/sTools.icns"
 
 # What is signed on its own, deepest first, and what its current signature says that re-signing must keep: its
 # entitlements and, for a loose tool its vendor signed, its identifier. Read now, because stripping can drop a
@@ -447,6 +489,7 @@ if [[ "$MODE" == "release" ]]; then
         awk '{ printf "%s%s", (NR > 1 ? "-" : ""), substr($2, 1, 8) }')"
     [[ "$UUID_TAG" =~ ^[0-9A-F]{8}(-[0-9A-F]{8})+$ ]] || fail "cannot read the executable's UUIDs"
     DSYM_DIR="$ROOT/build/dSYMs/sTools-$VERSION-$BUILD_NUMBER-$UUID_TAG"
+    [[ "$DEV" -eq 0 ]] || DSYM_DIR="$ROOT/build/dSYMs/sTools-Dev-$VERSION-$BUILD_NUMBER-$UUID_TAG"
     echo "==> Saving the debug symbols to ${DSYM_DIR#"$ROOT/"} and stripping them from the app"
     rm -rf "$DSYM_DIR"
     mkdir -p "$DSYM_DIR"
@@ -529,6 +572,22 @@ fi
 SIGNATURE_INFO="$(codesign -dvv "$APP" 2>&1)"
 grep -E '^(Identifier|Format|CodeDirectory|Signature|Authority|TeamIdentifier)' <<< "$SIGNATURE_INFO" || true
 check_signer "$SIGNATURE_INFO" "the app"
+# Both builds share one bundle identifier, which is what keeps macOS's permissions and the app's own settings.
+grep -qx 'Identifier=com.ducky8x.sTools' <<< "$SIGNATURE_INFO" ||
+    fail "the app's signing identifier is not com.ducky8x.sTools"
+if [[ "$DEV" -eq 1 ]]; then
+    # What makes it the dev build, read back from the finished app: its marker, its name and no way to update.
+    [[ "$(plutil -extract STVariant raw -o - "$APP/Contents/Info.plist")" == "dev" ]] || fail "the dev build lacks STVariant dev"
+    for key in CFBundleName CFBundleDisplayName; do
+        [[ "$(plutil -extract "$key" raw -o - "$APP/Contents/Info.plist")" == "sTools Dev" ]] ||
+            fail "the dev build's $key is not \"sTools Dev\""
+    done
+    for key in SUFeedURL SUPublicEDKey; do
+        ! plutil -extract "$key" raw -o - "$APP/Contents/Info.plist" >/dev/null 2>&1 ||
+            fail "the dev build has $key in its Info.plist: it must never update itself"
+    done
+    echo "    dev build: STVariant dev, named sTools Dev, no update feed or key"
+fi
 grep -Eq '^CodeDirectory .*flags=0x[0-9a-f]+\([^)]*runtime' <<< "$SIGNATURE_INFO" ||
     fail "Hardened Runtime is not enabled"
 codesign -dr - "$APP" 2>&1 | grep -E '^(# )?designated'
@@ -536,7 +595,7 @@ codesign -dr - "$APP" 2>&1 | grep -E '^(# )?designated'
 if [[ "$MODE" == "release" ]]; then
     echo "==> Checking the app for home-folder paths, names and traces of this Mac"
     "$ROOT/scripts/check-no-home-paths.sh" "$APP" ||
-        fail "build/sTools.app must not ship: it holds a home-folder path, a name or a trace of this Mac (listed above)"
+        fail "build/$APP_NAME must not ship: it holds a home-folder path, a name or a trace of this Mac (listed above)"
 fi
 
 echo
@@ -544,4 +603,4 @@ echo "Built $(shown "$APP") ($MODE, version $VERSION, build $BUILD_NUMBER)"
 if [[ "$MODE" == "release" ]]; then
     echo "Debug symbols for its crash reports: ${DSYM_DIR#"$ROOT/"} (not shipped; keep them)"
 fi
-echo "Run it from the repository's folder with: open $(shown "$APP")"
+echo "Run it from the repository's folder with: open \"$(shown "$APP")\""

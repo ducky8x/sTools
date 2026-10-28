@@ -1,13 +1,19 @@
 #!/bin/bash
 # Builds the styled DMG from build/sTools.app, into ~/Projects/App Outputs.
 #
-# Usage: scripts/build-dmg.sh [--app <path>] [--volume-icon <file.icns>] [--beta] [--output <file.dmg>]
+# Usage: scripts/build-dmg.sh [--dev] [--app <path>] [--volume-icon <file.icns>] [--beta] [--output <file.dmg>]
 #
-#   --app          The app to package (default build/sTools.app; build it with scripts/build-app.sh release).
-#                  Its CFBundleShortVersionString names the DMG.
-#   --volume-icon  The DMG's volume icon (default packaging/sTools.icns; skipped when that file does not exist).
+#   --dev          The dev build's DMG: it holds build/sTools Dev.app (build it with scripts/build-app.sh release --dev),
+#                  the volume is named "sTools Dev", the window says "sTools Dev" and draws its accents in the dev
+#                  icon's blue, the volume icon is packaging/dev/sTools.icns, and the file is named
+#                  sTools-<version>-dev-macOS.dmg. The normal DMG, without --dev, only takes a normal app, and this one
+#                  only a dev app. Not with --beta: a dev DMG is for the person who builds it.
+#   --app          The app to package (default build/sTools.app, or build/sTools Dev.app with --dev; build it with
+#                  scripts/build-app.sh release). Its CFBundleShortVersionString names the DMG.
+#   --volume-icon  The DMG's volume icon (default packaging/sTools.icns, packaging/dev/sTools.icns with --dev; skipped
+#                  when that file does not exist).
 #   --beta         Name the DMG as a beta: sTools-<version>-beta-macOS.dmg.
-#   --output       Where to write the DMG instead of ~/Projects/App Outputs/sTools-<version>[-beta]-macOS.dmg.
+#   --output       Where to write the DMG instead of ~/Projects/App Outputs/sTools-<version>[-beta|-dev]-macOS.dmg.
 #                  Never inside the repository or any of its worktrees: shared builds live in ~/Projects/App Outputs.
 #
 # Environment:
@@ -16,11 +22,12 @@
 #                  folder.
 #
 # The window: a dark background drawn by scripts/dmg-window.swift (wordmark, a gold arrow from sTools to
-# Applications, and the one-time Open Anyway steps), at 1x and 2x in one TIFF so it is sharp on Retina
-# displays; the app and an Applications link at fixed positions; no toolbar or sidebar. Finder on macOS 27 follows
-# the person's own View menu for the tab bar, path bar and status bar and ignores what a disk image says about
-# them, so the window is made 64 pt taller than the artwork and its title bar, and the picture continues in plain
-# background under the artwork: with a tab bar and a path bar, the whole 640 x 448 pt artwork still shows.
+# Applications, and the one-time Open Anyway steps; the dev DMG says "sTools Dev" and draws in blue), at 1x and 2x
+# in one TIFF so it is sharp on Retina displays; the app and an Applications link at fixed positions; no toolbar or
+# sidebar. Finder on macOS 27 follows the person's own View menu for the tab bar, path bar and status bar and
+# ignores what a disk image says about them, so the window is made 64 pt taller than the artwork and its title bar,
+# and the picture continues in plain background under the artwork: with a tab bar and a path bar, the whole
+# 640 x 448 pt artwork still shows.
 # The hidden files at the volume's root (.background, .VolumeIcon.icns) are placed far to the right of the window:
 # a Finder that shows hidden files lists them, and without a position it drops them over the artwork.
 #
@@ -52,8 +59,9 @@
 
 set -euo pipefail
 
-readonly VOLUME_NAME="sTools"
-readonly APP_NAME="sTools.app"
+# The normal DMG's names; --dev (below) changes them to the dev build's.
+VOLUME_NAME="sTools"
+APP_NAME="sTools.app"
 readonly XCODE_BETA="/Applications/Xcode-beta.app/Contents/Developer"
 readonly IDENTITY_NAME="ducky8x"
 readonly OUTPUTS="$HOME/Projects/App Outputs"
@@ -121,14 +129,18 @@ if [[ "${STOOLS_OUTPUT_MASKED:-}" != 1 ]]; then
     exit "$STATUS"
 fi
 
-APP="$ROOT/build/$APP_NAME"
-VOLUME_ICON="$ROOT/packaging/sTools.icns"
+APP=""
+VOLUME_ICON=""
 VOLUME_ICON_GIVEN=0
 BETA=0
+DEV=0
 OUTPUT=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --dev)
+            DEV=1
+            ;;
         --app)
             [[ $# -ge 2 ]] || fail "--app needs a path"
             APP="$2"
@@ -164,13 +176,41 @@ if [[ -z "${DEVELOPER_DIR:-}" && -d "$XCODE_BETA" ]]; then
     export DEVELOPER_DIR="$XCODE_BETA"
 fi
 
+# The dev DMG: its own names, its own icon, and the flag the window script takes (empty, so left out, without --dev).
+WINDOW_FLAGS=""
+BUILD_COMMAND="scripts/build-app.sh release"
+ICONS="$ROOT/packaging"
+if [[ "$DEV" -eq 1 ]]; then
+    [[ "$BETA" -eq 0 ]] || fail "--dev and --beta can't go together: a dev DMG is for the person who builds it"
+    VOLUME_NAME="sTools Dev"
+    APP_NAME="sTools Dev.app"
+    WINDOW_FLAGS="--dev"
+    BUILD_COMMAND="scripts/build-app.sh release --dev"
+    ICONS="$ROOT/packaging/dev"
+fi
+readonly VOLUME_NAME APP_NAME WINDOW_FLAGS
+APP="${APP:-$ROOT/build/$APP_NAME}"
+[[ -n "$VOLUME_ICON" ]] || VOLUME_ICON="$ICONS/sTools.icns"
+
 # The app.
-[[ -d "$APP" ]] || fail "no app at $(shown "$APP"). Build it first with scripts/build-app.sh release"
+[[ -d "$APP" ]] || fail "no app at $(shown "$APP"). Build it first with $BUILD_COMMAND"
 APP="$(cd "$APP" && pwd -P)"
 VERSION="$(plutil -extract CFBundleShortVersionString raw -o - "$APP/Contents/Info.plist" 2>/dev/null)" ||
     fail "cannot read CFBundleShortVersionString from $(shown "$APP")/Contents/Info.plist"
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] ||
     fail "the app's version must look like 1.2.3 or 1.2.3-beta.1, got \"$VERSION\""
+# The two kinds of app never go into each other's DMG: the dev build says what it is in Info.plist (STVariant), has
+# no update feed, and is named for it.
+APP_VARIANT="$(plutil -extract STVariant raw -o - "$APP/Contents/Info.plist" 2>/dev/null || true)"
+if [[ "$DEV" -eq 1 ]]; then
+    [[ "$APP_VARIANT" == "dev" ]] ||
+        fail "$(shown "$APP") is not a dev build (it has no STVariant \"dev\" in its Info.plist); build one with $BUILD_COMMAND"
+    ! plutil -extract SUFeedURL raw -o - "$APP/Contents/Info.plist" >/dev/null 2>&1 ||
+        fail "$(shown "$APP") names an update feed; a dev build must never update itself"
+else
+    [[ -z "$APP_VARIANT" ]] ||
+        fail "$(shown "$APP") is a dev build; package it with --dev, or build the normal app with scripts/build-app.sh release"
+fi
 codesign --verify --deep --strict "$APP" 2>/dev/null || fail "$(shown "$APP") has no valid code signature"
 SIGNATURE_INFO="$(codesign -dvv "$APP" 2>&1)"
 if ! grep -qx "Authority=$IDENTITY_NAME" <<< "$SIGNATURE_INFO"; then
@@ -194,6 +234,7 @@ if [[ "$BETA" -eq 1 && "$VERSION" == *-* ]]; then
 fi
 SUFFIX=""
 [[ "$BETA" -eq 0 ]] || SUFFIX="-beta"
+[[ "$DEV" -eq 0 ]] || SUFFIX="-dev"
 NAME="sTools-$VERSION$SUFFIX-macOS.dmg"
 OUTPUT="${OUTPUT:-$OUTPUTS/$NAME}"
 [[ "$OUTPUT" == *.dmg ]] || fail "--output must name a .dmg file"
@@ -373,7 +414,7 @@ echo "==> Compiling scripts/dmg-window.swift"
 swiftc -o "$WORK/dmg-window" "$ROOT/scripts/dmg-window.swift"
 
 echo "==> Drawing the background"
-"$WORK/dmg-window" background "$WORK/background" --version "$VERSION" | indented
+"$WORK/dmg-window" background "$WORK/background" --version "$VERSION" $WINDOW_FLAGS | indented
 mkdir -p "$WORK/stage/.background"
 cp "$WORK/background/background.tiff" "$WORK/stage/.background/background.tiff"
 
@@ -394,7 +435,7 @@ hdiutil create -quiet -srcfolder "$WORK/stage" -volname "$VOLUME_NAME" -fs HFS+ 
 echo "==> Writing the Finder layout"
 VOLUME="$WORK/volume/$VOLUME_NAME"
 attach "$WORK/rw.dmg" "$VOLUME" -readwrite -noverify
-"$WORK/dmg-window" ds-store "$VOLUME" | indented
+"$WORK/dmg-window" ds-store "$VOLUME" $WINDOW_FLAGS | indented
 chflags hidden "$VOLUME/.background"
 if [[ -n "$VOLUME_ICON" ]]; then
     # The volume root's Finder info, with only the "has custom icon" flag (0x0400) set.
@@ -410,7 +451,7 @@ echo "==> Checking the volume and then the whole image before compressing"
 # byte for byte: the file system's own records, extended attributes and free space too.
 "$ROOT/scripts/check-no-home-paths.sh" --provenance "$VOLUME" ||
     fail "the DMG would carry a home-folder path, a name or a trace of this Mac (listed above)." \
-        "If it is in sTools.app, package a release build (scripts/build-app.sh release): a debug build keeps" \
+        "If it is in $APP_NAME, package a release build ($BUILD_COMMAND): a debug build keeps" \
         "its debug info"
 sync
 detach "$ATTACHED"
@@ -439,7 +480,7 @@ BACKGROUND_INFO="$(tiffutil -info "$CHECK/.background/background.tiff" 2>/dev/nu
     fail "the background TIFF should hold a 1x and a 2x image"
 ! grep -Eq 'Software|Image Description' <<< "$BACKGROUND_INFO" ||
     fail "the background TIFF names the tool or the files it was made with"
-LAYOUT="$("$WORK/dmg-window" dump "$CHECK/.DS_Store")" || fail "the DMG's .DS_Store does not read back"
+LAYOUT="$("$WORK/dmg-window" dump "$CHECK/.DS_Store" $WINDOW_FLAGS)" || fail "the DMG's .DS_Store does not read back"
 RECORDS=($'.\tbwsp' $'.\ticvp' $'.\tpBBk' $'.\tvstl' "$APP_NAME"$'\tIloc' $'Applications\tIloc' $'.background\tIloc')
 [[ -z "$VOLUME_ICON" ]] || RECORDS+=($'.VolumeIcon.icns\tIloc')
 for record in "${RECORDS[@]}"; do
