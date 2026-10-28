@@ -652,6 +652,19 @@ public final class ScreenRecordingController: ToolController {
         }
     }
 
+    /// The person switched the tool on with its switch (the page's, the sidebar's, the Prologue trial's; spec 5.4.4):
+    /// with the tool off and nothing else going on, that does what the key does with the tool off, switch it on and
+    /// start a recording, and returns what the press did, as `toggleRecording` does. Nil when the tool is on already,
+    /// or while a start, a recording, its finishing or the Save/Delete question has the phase: the caller then only
+    /// switches the tool on, as it always did (the key's other presses, a stop or the question coming forward, are not
+    /// a switch's to make). Restoring the tools that were on at quit, the Prologue's test and the page's Record switch
+    /// the tool on without this, so none of them records by itself.
+    @discardableResult
+    public func startFromSwitch(secondsAgo: TimeInterval = 0) -> KeyPress? {
+        guard !isEnabled, phase == .idle else { return nil }
+        return toggleRecording(secondsAgo: secondsAgo)
+    }
+
     /// Record on the page: starts a recording as the key does, switching the tool on first when it's off. Returns
     /// once its first frame is in the file, or once the start ended without a recording (canceled, refused or failed).
     public func startRecording() async {

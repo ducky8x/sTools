@@ -769,6 +769,55 @@ struct ScreenRecordingKeyTests {
         harness.controller.delete()
     }
 
+    /// Switched on by the person's switch with the tool idle and off, the controller does what the key does: it
+    /// switches itself on and starts, and says so as the key's press does. Switching on any other way (`setEnabled`, as
+    /// restoring the tools at launch and the Prologue's test do) never starts anything.
+    @Test func switchingOnFromTheSwitchStartsARecordingButSetEnabledDoesNot() async throws {
+        let quiet = Harness()
+        defer { quiet.remove() }
+        quiet.controller.setEnabled(true)
+        #expect(await quiet.waitUntilSourcesAreReady())
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(quiet.controller.phase == .idle)
+        quiet.controller.setEnabled(false)
+
+        let harness = Harness()
+        defer { harness.remove() }
+        harness.pushFrame()
+        #expect(harness.controller.startFromSwitch() == .starting(waitsForSources: true))
+        #expect(harness.controller.isEnabled)
+        #expect(harness.controller.phase == .starting)
+        #expect(await harness.waitUntil { harness.controller.phase == .recording })
+        #expect(harness.controller.startFromSwitch() == nil, "already on")
+        #expect(harness.controller.phase == .recording)
+        await harness.controller.stopRecording(explanation: nil)
+        harness.controller.delete()
+    }
+
+    /// The switch only starts a recording from idle: while the last recording is finished or its question waits it
+    /// leaves the controller as it was (the caller just switches the tool on).
+    @Test func theSwitchStartsNothingWhileTheLastRecordingIsStillBeingAnswered() async throws {
+        let harness = Harness()
+        defer { harness.remove() }
+        await harness.recordByKey()
+        #expect(harness.controller.phase == .deciding)
+        #expect(!harness.controller.isEnabled)
+        #expect(harness.controller.startFromSwitch() == nil)
+        #expect(harness.controller.phase == .deciding)
+        #expect(!harness.controller.isEnabled, "a nil answer leaves switching the tool on to the caller")
+        #expect(harness.presenter.presented.count == 1, "the question isn't brought forward by a switch")
+        harness.controller.delete()
+    }
+
+    /// Without the permission the switch starts nothing and the tool stays off, as for the key.
+    @Test func theSwitchStartsNothingWithoutScreenRecordingPermission() async throws {
+        let harness = Harness(permissions: ScreenRecordingPermission(.denied))
+        defer { harness.remove() }
+        #expect(harness.controller.startFromSwitch() == .needsPermission)
+        #expect(!harness.controller.isEnabled)
+        #expect(harness.controller.phase == .idle)
+    }
+
     /// Left off, a stop by the key or by the switch still ends with the tool off, no source running and nothing
     /// readied, once the file is finished and the question is up.
     @Test(arguments: StopBy.allCases)

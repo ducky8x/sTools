@@ -1,4 +1,5 @@
 import Observation
+import ScreenRecording
 import STPlatform
 import SwiftUI
 import TimerOverlay
@@ -36,7 +37,23 @@ extension AppModel {
     var timerOverlay: TimerOverlayController? { controller(for: .timerOverlay, as: TimerOverlayController.self) }
 
     func switchBinding(_ tool: ToolID) -> Binding<Bool> {
-        Binding(get: { self.isOn(tool) }, set: { self.setTool(tool, on: $0) })
+        Binding(get: { self.isOn(tool) }, set: { self.switchTool(tool, on: $0) })
+    }
+
+    /// The person flipped a tool's switch (the tool page's, the sidebar's, the Prologue trial's), as opposed to the app
+    /// switching a tool itself (`setTool`: restoring the tools that were on at quit, the Prologue, a hotkey, a
+    /// controller asking). Screen Recording's switch-on does what its key does with the tool off: switches on and starts
+    /// a recording (spec 5.4.4), confirmed over the game like the key's press (the line, the sound, "Recording started"
+    /// once it writes). While the last recording is still being finished or its question waits there is nothing to
+    /// start, so the switch only switches on. Every other flip is `setTool`.
+    func switchTool(_ tool: ToolID, on: Bool) {
+        if tool == .screenRecording, on, !isOn(tool),
+           let recording = controller(for: .screenRecording, as: ScreenRecordingController.self),
+           let press = recording.startFromSwitch() {
+            confirm([press].compactMap(HotkeyConfirmation.recordingEffect))
+            return
+        }
+        setTool(tool, on: on)
     }
 
     /// Asks macOS for Accessibility; when that leaves it missing, opens its System Settings pane.
