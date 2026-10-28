@@ -149,12 +149,15 @@ swift test                      # run the tests
 scripts/build-app.sh debug      # build/sTools.app for this Mac: the app you actually run
 scripts/build-app.sh release    # build/sTools.app as a universal (Apple silicon and Intel) release
 scripts/build-dmg.sh            # wrap build/sTools.app in the styled DMG
+scripts/build-app.sh release --dev   # build/sTools Dev.app: the dev build, next to build/sTools.app (debug works too)
+scripts/build-dmg.sh --dev           # wrap build/sTools Dev.app in its own DMG: sTools-<version>-dev-macOS.dmg
 swift run -c release RecordingBench   # what a Screen Recording costs in CPU, with fake sources (never shipped)
 swift run -c release NBBBench scan     # what the NBB Overlay's Ninjabrain Bot scan and window reads cost (never shipped)
 ```
 
 - `swift build` alone doesn't make the app. `scripts/build-app.sh` assembles `build/sTools.app` with its icon and resources, then signs it.
 - **Signing:** `build-app.sh` signs only with a code-signing identity named `ducky8x` and refuses any other, so macOS keeps permission grants from one build to the next. On a Mac without it, run `scripts/make-signing-identity.sh` once to create a self-signed one, or pass `--adhoc` for a throwaway debug build (macOS then forgets its permissions every time you rebuild). Release builds always need the identity.
+- **The dev build** is a second variant of the same app, the copy to use day to day. `--dev` builds `build/sTools Dev.app` beside `build/sTools.app` without touching it, and `build-dmg.sh --dev` makes its own DMG, `sTools-<version>-dev-macOS.dmg` (volume "sTools Dev"), in `~/Projects/App Outputs`. It is named "sTools Dev" in the menu bar and in Finder, and its icon is the same mark in blue instead of gold (`scripts/generate-icon.swift --tint blue packaging/dev` draws it). It has no update feed, so it never updates itself into the normal build: Settings ▸ Updates says so, and **Install from DMG…** takes only a dev DMG. Everything else is the same build: the same bundle identifier (`com.ducky8x.sTools`), the same "ducky8x" signature and the same settings folder, so your settings, saved data and macOS permissions carry over. For the same reason, install only one of the two at a time.
 - The tests use Swift Testing and fakes, so they don't put windows on screen, trigger permission prompts or touch your real Karabiner configuration.
 
 | Module | What's in it |
