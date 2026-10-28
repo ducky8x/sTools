@@ -145,7 +145,7 @@ struct ToolIDTests {
         #expect(ToolID.nbbOverlay.tagline == "A clean Ninjabrain Bot overlay.")
         #expect(ToolID.windowBackdrop.tagline == "A clean stage behind Minecraft.")
         #expect(ToolID.crosshair.tagline == "A crosshair drawn at the center of your screen.")
-        #expect(ToolID.timerOverlay.tagline == "Your Fire Resistance, counted down.")
+        #expect(ToolID.timerOverlay.tagline == "A timer for your fire res which you never keep track of.")
         #expect(ToolID.screenRecording.tagline == "A lightweight screen recorder.")
         #expect(ToolID.keyRebinder.tagline == "Every rebind, right on its key.")
     }

@@ -33,13 +33,13 @@ enum ToolID: String, CaseIterable, Identifiable, Hashable, Sendable {
         }
     }
 
-    /// Rule R13, verbatim, with ducky's M9 rewrites (Crosshair, NBB Overlay, Screen Recording).
+    /// Rule R13, verbatim, with ducky's M9 rewrites (Crosshair, Timer Overlay, NBB Overlay, Screen Recording).
     var tagline: String {
         switch self {
         case .nbbOverlay: "A clean Ninjabrain Bot overlay."
         case .windowBackdrop: "A clean stage behind Minecraft."
         case .crosshair: "A crosshair drawn at the center of your screen."
-        case .timerOverlay: "Your Fire Resistance, counted down."
+        case .timerOverlay: "A timer for your fire res which you never keep track of."
         case .screenRecording: "A lightweight screen recorder."
         case .keyRebinder: "Every rebind, right on its key."
         }
