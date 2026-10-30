@@ -30,8 +30,10 @@ struct RunWithLimitTests {
 
     @Test func aCommandThatRunsTooLongIsStoppedAndTheMessageSaysSo() async throws {
         let started = ContinuousClock.now
-        // 37 seconds is far past the limit of 1 and unlike any other sleep that might be running.
-        let result = try await run(#"run_with_limit 1 "hdiutil create" sleep 37; echo "status $?"; pgrep -f '^sleep 37$' || echo gone"#)
+        // A sleep far past the limit of 1, named by a number no other run shares (another run of these tests may be
+        // sleeping too), so that pgrep can only find this one.
+        let token = "37.\(Int.random(in: 100_000...999_999))"
+        let result = try await run(#"run_with_limit 1 "hdiutil create" sleep \#(token); echo "status $?"; pgrep -f '^sleep \#(token)$' || echo gone"#)
         let took = ContinuousClock.now - started
         #expect(result.output.contains("error: hdiutil create did not finish within 1 seconds, so it was stopped."), "\(result.output)")
         #expect(result.output.contains("status 124"), "\(result.output)")
@@ -41,7 +43,8 @@ struct RunWithLimitTests {
     }
 
     @Test func aCommandThatIgnoresTheFirstSignalIsKilledAfterFiveMoreSeconds() async throws {
-        let result = try await run(#"run_with_limit 1 "the test" perl -e '$SIG{TERM} = "IGNORE"; sleep 53'; echo "status $?"; pgrep -f '^perl -e .*sleep 53' || echo gone"#)
+        let token = Int.random(in: 100_000...999_999)
+        let result = try await run(#"run_with_limit 1 "the test" perl -e '$SIG{TERM} = "IGNORE"; sleep 53' \#(token); echo "status $?"; pgrep -f '^perl -e .* \#(token)$' || echo gone"#)
         #expect(result.output.contains("did not finish within 1 seconds"), "\(result.output)")
         #expect(result.output.contains("status 124"), "\(result.output)")
         #expect(result.output.contains("gone"), "\(result.output)")
