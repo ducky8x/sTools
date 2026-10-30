@@ -3,15 +3,22 @@ import SwiftUI
 import Testing
 @testable import STDesign
 
-// A choice kept in view (`STSegmented`) sits beside its label while the options fit there, and under the label when they
-// don't, so no option wraps or breaks. The control is NBB Overlay's Aspect ratio: Square · 4:3 · 16:9 · Ninjabrain Bot ·
-// Custom, which wrapped at the introduction's default width and broke words at its narrowest.
+// A choice kept in view (`STSegmented`) sits beside its label while the options fit there, under the label when they
+// don't, and on a second line, a whole option at a time, when even that is too narrow, so no option wraps or breaks inside
+// a word. The controls: NBB Overlay's Aspect ratio (Square · 4:3 · 16:9 · Ninjabrain Bot · Custom), which wrapped at the
+// introduction's default width and broke words at its narrowest, Timer Overlay's Look, which wrapped at the narrowest,
+// and Crosshair's Image anchor, which broke words there.
 
 @MainActor
 @Suite("Choice row")
 struct ChoiceRowTests {
     private static let label = "Aspect ratio"
     private static let titles = ["Square", "4:3", "16:9", "Ninjabrain Bot", "Custom"]
+    /// Timer Overlay's Look: "sTools plate" wrapped onto two lines beside the label at the 680 pt window's width.
+    private static let looks = ["sTools plate", "Digits only", "Compact pill"]
+    /// Crosshair's Image anchor: five long options, which don't fit on one line in the 680 pt window's column (371 pt),
+    /// even under the label.
+    private static let anchors = ["Center", "Top left", "Top right", "Bottom left", "Bottom right"]
 
     /// The five options, each in one line.
     private struct Options: View {
@@ -76,6 +83,49 @@ struct ChoiceRowTests {
         let oneLine = fitting(besideRow(), width: besideWidth + 1).height
         let squeezed = fitting(STSettingsRow(Self.label, combinesForAccessibility: false) { options() }, width: width).height
         #expect(squeezed > oneLine + 10, "an option wraps to a second line")
+    }
+
+    /// The introduction's Timer trial and the Timer page at the 680 pt window: the column is 373 and 371 pt, and "sTools
+    /// plate" wrapped beside the label. Under it, each option keeps one line.
+    @Test(arguments: [373.0, 371])
+    func timerOverlaysLookKeepsEachOptionOnOneLine(width: CGFloat) {
+        let look = "Look"
+        let labelHeight = fitting(Text(look).stStyle(.label), width: width).height
+        let oneLine = fitting(options(Self.looks).fixedSize()).height
+        let expected = 12 + labelHeight + 4 + oneLine + 12
+        let row = fitting(STChoiceRow(look) { options(Self.looks) }, width: width).height
+        #expect(abs(row - expected) < 1, "\(row) pt, not the label over one line of options (\(expected) pt)")
+        let beside = fitting(STSettingsRow(look, combinesForAccessibility: false) { options(Self.looks) }, width: width).height
+        #expect(beside > oneLine + 10, "control: in a plain settings row an option wraps at this width")
+    }
+
+    // MARK: Wrapping between options
+
+    /// What one line of the options takes, and what a second line adds: a whole option's height and the gap between lines.
+    private var oneLineOfOptions: CGFloat { fitting(options(Self.anchors).fixedSize()).height }
+    private var secondLine: CGFloat {
+        let option = fitting(STSegmented(selection: .constant(0), options: [STSegmentedOption(0, "Center")])).height
+        return option - 8 + STSegmentedLayout.lineSpacing
+    }
+
+    /// Options too long for the column even under the label (Crosshair's Image anchor at the 680 pt window's 371 pt)
+    /// wrap onto a second line a whole option at a time, so none squeezes or breaks inside a word.
+    @Test(arguments: [373.0, 371])
+    func optionsTooLongForTheColumnWrapBetweenOptions(width: CGFloat) {
+        let labelHeight = fitting(Text(Self.label).stStyle(.label), width: width).height
+        let twoLines = 12 + labelHeight + 4 + oneLineOfOptions + secondLine + 12
+        let height = fitting(choiceRow(Self.anchors), width: width).height
+        #expect(abs(height - twoLines) < 1, "\(height) pt, not the label over two lines of whole options (\(twoLines) pt)")
+        #expect(fitting(options(Self.anchors).fixedSize()).width > width, "on one line they are wider than the column")
+    }
+
+    /// Each step is taken only when the one before doesn't fit: beside the label, under it on one line, under it on two.
+    @Test func theOptionsWrapOnlyWhereOneLineWouldNotFit() {
+        let oneLine = fitting(options(Self.anchors).fixedSize()).width
+        let labelHeight = fitting(Text(Self.label).stStyle(.label), width: oneLine).height
+        let single = 12 + labelHeight + 4 + oneLineOfOptions + 12
+        #expect(abs(fitting(choiceRow(Self.anchors), width: oneLine + 1).height - single) < 1, "room for one line: one line")
+        #expect(abs(fitting(choiceRow(Self.anchors), width: oneLine - 1).height - (single + secondLine)) < 1, "a hair short: two")
     }
 
     // MARK: The switch between them

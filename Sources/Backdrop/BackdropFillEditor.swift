@@ -30,7 +30,7 @@ struct BackdropFillEditor: View {
 
     var body: some View {
         Group {
-            STSettingsRow("Fill type", combinesForAccessibility: false) {
+            STChoiceRow("Fill type") {
                 STSegmented(selection: $fill.kind, options: Self.kindOptions)
             }
             switch fill.kind {
@@ -76,7 +76,7 @@ struct BackdropFillEditor: View {
     /// Fit, and the color behind it where the picture doesn't cover the display: an image and an animation fit alike.
     @ViewBuilder
     private var fitRows: some View {
-        STSettingsRow("Fit", combinesForAccessibility: false) {
+        STChoiceRow("Fit") {
             STSegmented(selection: $fill.imageContentMode, options: Self.contentModeOptions)
         }
         if fill.imageContentMode == .fit || fill.imageContentMode == .center {

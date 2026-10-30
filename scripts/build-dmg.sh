@@ -20,6 +20,9 @@
 #   DEVELOPER_DIR  Defaults to the Xcode beta when it is installed.
 #   TMPDIR         Where the work folder goes (default: the per-user temporary folder). Must be outside the home
 #                  folder.
+#   STOOLS_HDIUTIL_LIMIT
+#                  How many seconds hdiutil create and hdiutil convert may each run before they are stopped and the
+#                  build fails (default 600). A stuck disk image helper makes hdiutil wait for good.
 #
 # The window: a dark background drawn by scripts/dmg-window.swift (wordmark, a gold arrow from sTools to
 # Applications, and the one-time Open Anyway steps; the dev DMG says "sTools Dev" and draws in blue), at 1x and 2x
@@ -55,7 +58,8 @@
 # The DMG itself is not signed: macOS checks the app's signature, not the disk image's.
 #
 # Output: everything printed, by the script and by the tools it runs, shows the home folder as ~ and never the
-# account name or the full name, so terminals and logs don't carry them either.
+# account name, the full name or a part of it, so terminals and logs don't carry them either
+# (scripts/lib/mask-home.sh).
 
 set -euo pipefail
 
@@ -87,47 +91,14 @@ shown() {
     esac
 }
 
-# Copies standard input to standard output, line by line, with the home folder shortened to ~ and the full name and
-# the account name hidden in any letter case. A name shorter than six letters is hidden only as a word of its own:
-# hidden inside longer words too, it would show which of their letters it is.
-mask_home() {
-    LC_ALL=C awk -v home="$HOME" -v account="$(id -un)" -v full="$(id -F 2>/dev/null || true)" '
-        function hide(line, value, placeholder,    out, at, size, before, after) {
-            size = length(value)
-            out = ""
-            while (size > 0 && (at = index(tolower(line), tolower(value))) > 0) {
-                before = at > 1 ? substr(line, at - 1, 1) : ""
-                after = substr(line, at + size, 1)
-                if (size >= 6 || (before !~ /[A-Za-z]/ && after !~ /[A-Za-z]/)) {
-                    out = out substr(line, 1, at - 1) placeholder
-                } else {
-                    out = out substr(line, 1, at + size - 1)
-                }
-                line = substr(line, at + size)
-            }
-            return out line
-        }
-        {
-            line = $0
-            while (length(home) > 1 && (at = index(line, home)) > 0) {
-                line = substr(line, 1, at - 1) "~" substr(line, at + length(home))
-            }
-            print hide(hide(line, full, "<full name>"), account, "<account name>")
-            fflush()
-        }'
-}
-
-# Everything printed goes through mask_home: this script's own lines and what the tools it runs print (swiftc's
-# diagnostics, hdiutil's and ditto's errors, ...), which can name files in the home folder. So the script runs itself
-# once more with its output and its errors each passed through it; the filters ignore Ctrl-C, so what the script
-# prints while it cleans up still gets through.
-if [[ "${STOOLS_OUTPUT_MASKED:-}" != 1 ]]; then
-    export STOOLS_OUTPUT_MASKED=1
-    STATUS=0
-    { "$BASH" "${BASH_SOURCE[0]}" "$@" 2>&1 1>&3 3>&- | (trap '' INT; mask_home) >&2 3>&-; } 3>&1 |
-        (trap '' INT; mask_home) || STATUS=$?
-    exit "$STATUS"
-fi
+# Everything printed goes through mask_home (scripts/lib/mask-home.sh): this script's own lines and what the tools it
+# runs print (swiftc's diagnostics, hdiutil's and ditto's errors, ...), which can name files in the home folder. So the
+# script runs itself once more with its output and its errors each passed through it.
+# shellcheck source=lib/mask-home.sh
+source "$ROOT/scripts/lib/mask-home.sh"
+mask_output_of "${BASH_SOURCE[0]}" "$@"
+# shellcheck source=lib/run-with-limit.sh
+source "$ROOT/scripts/lib/run-with-limit.sh"
 
 APP=""
 VOLUME_ICON=""
@@ -410,6 +381,20 @@ indented() {
     sed -e "s#$WORK/#(work folder)/#g" -e "s#${WORK#/private}/#(work folder)/#g" -e 's/^/    /'
 }
 
+# hdiutil create and hdiutil convert write the whole image, and they wait for good when the disk image helper behind
+# them is stuck. Each gets a limit (STOOLS_HDIUTIL_LIMIT seconds, default 600) and is stopped when it runs past it.
+HDIUTIL_LIMIT="${STOOLS_HDIUTIL_LIMIT:-600}"
+[[ "$HDIUTIL_LIMIT" =~ ^[1-9][0-9]*$ ]] || fail "STOOLS_HDIUTIL_LIMIT must be a number of seconds, got \"$HDIUTIL_LIMIT\""
+run_hdiutil() {
+    local status=0
+    run_with_limit "$HDIUTIL_LIMIT" "hdiutil $1" hdiutil "$@" || status=$?
+    if [[ "$status" -eq 124 ]]; then
+        echo "note: hdiutil usually waits like this when its disk image helper is stuck. Quit hdiutil and diskimages-helper" \
+            "in Activity Monitor, eject any sTools disk image, and run this again." >&2
+    fi
+    return "$status"
+}
+
 echo "==> Compiling scripts/dmg-window.swift"
 swiftc -o "$WORK/dmg-window" "$ROOT/scripts/dmg-window.swift"
 
@@ -429,7 +414,7 @@ fi
 echo "==> Creating the read-write image"
 STAGE_KB="$(du -sk "$WORK/stage" | cut -f1)"
 SIZE_MB=$(( STAGE_KB * 12 / 10 / 1024 + 16 ))
-hdiutil create -quiet -srcfolder "$WORK/stage" -volname "$VOLUME_NAME" -fs HFS+ -format UDRW \
+run_hdiutil create -quiet -srcfolder "$WORK/stage" -volname "$VOLUME_NAME" -fs HFS+ -format UDRW \
     -size "${SIZE_MB}m" "$WORK/rw.dmg"
 
 echo "==> Writing the Finder layout"
@@ -462,7 +447,7 @@ ATTACHED=""
 echo "==> Compressing"
 mkdir -p "$WORK/out"
 BUILT="$WORK/out/$NAME"
-hdiutil convert -quiet "$WORK/rw.dmg" -format UDZO -imagekey zlib-level=9 -o "$BUILT"
+run_hdiutil convert -quiet "$WORK/rw.dmg" -format UDZO -imagekey zlib-level=9 -o "$BUILT"
 hdiutil verify -quiet "$BUILT" || fail "hdiutil verify failed for the compressed image"
 
 echo "==> Checking the DMG's contents"

@@ -53,15 +53,11 @@ fail() {
     exit 1
 }
 
-# Lines as printed: the home folder as ~ and the account name hidden.
-masked() {
-    LC_ALL=C awk -v home="$HOME" -v account="$(id -un)" '{
-        line = $0
-        while (length(home) > 1 && (at = index(line, home)) > 0) line = substr(line, 1, at - 1) "~" substr(line, at + length(home))
-        while (length(account) > 0 && (at = index(line, account)) > 0) line = substr(line, 1, at - 1) "<account name>" substr(line, at + length(account))
-        print line
-    }'
-}
+# Lines as printed: the home folder as ~ and the account name, the full name and each part of it hidden
+# (scripts/lib/mask-home.sh).
+# shellcheck source=lib/mask-home.sh
+source "$ROOT/scripts/lib/mask-home.sh"
+masked() { mask_home; }
 
 APP_IN="$ROOT/build/sTools.app"
 KEEP=0
@@ -195,7 +191,7 @@ LENGTH="${BASH_REMATCH[2]}"
 echo "==> Writing the feeds"
 printf 'sTools 0.1.1 (smoke test).\n' > "$WORK/notes.md"
 PLACEHOLDER="https://example.invalid/$DMG_NAME"
-"$ROOT/scripts/appcast-add-item.sh" "$ROOT/packaging/releases-repo/appcast.xml" 0.1.1 101 \
+"$ROOT/scripts/appcast-add-item.sh" "$ROOT/packaging/appcast-template.xml" 0.1.1 101 \
     "$(plutil -extract LSMinimumSystemVersion raw "$WORK/B/sTools.app/Contents/Info.plist")" "$PLACEHOLDER" "$LENGTH" \
     "$SIGNATURE" "$WORK/notes.md" | sed "s#$PLACEHOLDER#http://localhost:$PORT/$DMG_NAME#" > "$WORK/appcast-signed.xml"
 "$ROOT/scripts/check-appcast.sh" "$WORK/appcast-signed.xml" | sed 's/^/    /'

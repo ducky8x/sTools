@@ -130,6 +130,20 @@ private final class Layout {
     init(_ displays: [DisplayInfo]) { self.displays = displays }
 }
 
+/// Waits, without blocking the main actor, until `condition` holds or `timeout` of awake time passes. The bound is a
+/// clock, not a count of polls, so a busy Mac that polls less often still gets the whole time; `SuspendingClock`
+/// stops while the Mac sleeps, so a sleep mid-test doesn't use it up.
+@MainActor
+private func waitUntil(timeout: Duration = .seconds(10), _ condition: @MainActor () -> Bool) async -> Bool {
+    let clock = SuspendingClock()
+    let deadline = clock.now.advanced(by: timeout)
+    while !condition() {
+        guard clock.now < deadline else { return false }
+        try? await Task.sleep(for: .milliseconds(5))
+    }
+    return true
+}
+
 @Suite("DisplayInfo and DisplayDirectory", .serialized)
 @MainActor
 struct DisplayDirectoryTests {
@@ -198,9 +212,7 @@ struct DisplayDirectoryTests {
         let directory = DisplayDirectory(screenProvider: { layout.displays })
         layout.displays = [synthetic(3, isMain: true), synthetic(4, isMain: false)]
         NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
-        for _ in 0..<100 where directory.displays.map(\.id) != [3, 4] {
-            try? await Task.sleep(for: .milliseconds(20))
-        }
+        #expect(await waitUntil { directory.displays.map(\.id) == [3, 4] })
         #expect(directory.displays.map(\.id) == [3, 4])
     }
 
