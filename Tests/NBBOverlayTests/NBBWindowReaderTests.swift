@@ -240,6 +240,64 @@ struct NBBWindowReaderTests {
         #expect(accessibility.roleCalls == 0)
     }
 
+    // MARK: A walk that meets a busy copy
+
+    /// A walk (every 5 s, and after a change) that meets a copy that doesn't answer in time, or a label gone because its
+    /// panel is being rebuilt, keeps the copy's last result, as a look between walks does, and tries again at the next
+    /// look. It used to find nothing and wait two seconds, which blanked the overlay (and faded it as for a reset) for
+    /// as long, just when Ninjabrain Bot was busy with a throw.
+    @Test(arguments: [NBBAXText.noAnswer, .gone])
+    func aWalkThatMeetsABusyAppKeepsTheLastResultAndTriesAgainAtTheNextLook(answer: NBBAXText) async throws {
+        let (window, certainty) = nbbWindow()
+        let accessibility = FakeAccessibility(windows: [window])
+        let clock = ManualClock()
+        let reader = reader(accessibility, clock: clock)
+        let first = try #require(await reader.read(pid: 7))
+
+        certainty.answer = answer
+        clock.advance(by: .seconds(6))
+        #expect(await reader.read(pid: 7) == first, "the walk found the copy busy: its last result stays")
+
+        certainty.answer = nil
+        certainty.text = "42.0%"
+        accessibility.resetCounts()
+        clock.advance(by: .milliseconds(100))
+        let after = try #require(await reader.read(pid: 7))
+        #expect(after.stronghold.predictions.first?.certainty == 0.42, "the next look walks again, with no wait")
+        #expect(accessibility.roleCalls == 11)
+    }
+
+    /// With no result yet to keep, a busy copy gives nothing, and the next look walks again at once (no two-second wait,
+    /// which is for a window that shows no predictions table).
+    @Test func aFirstWalkThatMeetsABusyAppFindsNothingAndTriesAgainAtOnce() async throws {
+        let (window, certainty) = nbbWindow()
+        certainty.answer = .noAnswer
+        let accessibility = FakeAccessibility(windows: [window])
+        let clock = ManualClock()
+        let reader = reader(accessibility, clock: clock)
+        #expect(await reader.read(pid: 7) == nil)
+
+        certainty.answer = nil
+        accessibility.resetCounts()
+        clock.advance(by: .milliseconds(100))
+        #expect(try #require(await reader.read(pid: 7)).stronghold.predictions.first?.certainty == 1)
+        #expect(accessibility.roleCalls == 11)
+    }
+
+    /// Another copy's last result is never given for this one.
+    @Test func aBusyCopyNeverGetsAnotherCopysResult() async throws {
+        let (window, _) = nbbWindow()
+        let accessibility = FakeAccessibility(windows: [window])
+        let clock = ManualClock()
+        let reader = reader(accessibility, clock: clock)
+        _ = try #require(await reader.read(pid: 7))
+        let busy = Node("AXStaticText", "Location")
+        busy.answer = .noAnswer
+        accessibility.windows = [Node("AXWindow", "Ninjabrain Bot", [busy])]
+        clock.advance(by: .milliseconds(100))
+        #expect(await reader.read(pid: 8) == nil)
+    }
+
     @Test func withoutAccessibilityNothingIsAsked() async {
         let accessibility = FakeAccessibility(windows: [nbbWindow().window])
         accessibility.trusted = false
