@@ -60,7 +60,11 @@ private final class Folder {
         try Data(text.utf8).write(to: url.appending(path: "hotkeys.json"))
     }
 
-    var store: SettingsStore { SettingsStore(directory: url, debounce: .milliseconds(1)) }
+    var store: SettingsStore {
+        let store = SettingsStore(directory: url, debounce: .milliseconds(1))
+        store.registerHotkeysExactly()
+        return store
+    }
 
     func load() -> HotkeySettings { store.load(HotkeySettings.self) }
 
@@ -402,10 +406,11 @@ struct HotkeyMigrationTests {
         #expect(relaunched.bindings == center.bindings)
     }
 
-    /// A current file isn't written again at launch.
+    /// A current file isn't written again at launch, and neither is the option's file: nothing is written until
+    /// something changes. The store is a plain one, with Also fire while holding Shift or Control as it starts out.
     @Test func aCurrentFileIsntRewritten() async throws {
         let folder = try Folder(file(version: 3, oldList()))
-        let store = folder.store
+        let store = SettingsStore(directory: folder.url, debounce: .milliseconds(1))
         _ = HotkeyCenter(store: store, registrar: MigrationRegistrar(), toolStates: { [:] }, handler: { _ in })
         await store.flush()
         #expect(store.writeCount == 0)
