@@ -51,11 +51,7 @@ struct SplitSoundTests {
             soundEnd = frame
         }
         for index in 0..<frames {
-            var waited = 0
-            while !writer.canAcceptFrame, waited < 5000 {
-                try await Task.sleep(for: .milliseconds(1))
-                waited += 1
-            }
+            #expect(await waitUntil { writer.canAcceptFrame }, "the encoder took the last frame")
             #expect(writer.append(frame: WriterFixture.makeFrame(index: index), at: CMTime(value: CMTimeValue(index), timescale: 30)) == .written)
             writeSound(upTo: index * 1600 - lag)
         }
@@ -105,8 +101,8 @@ struct SplitSoundTests {
             game.push(frames: 1600, at: now, frequency: 440)
             base.push(.frame(picture(now)))
             clock.set(now + 0.001)
+            #expect(await waitUntil { session.canAcceptFrame }, "the encoder took the last frame")
             driver.fire()
-            try await Task.sleep(for: .milliseconds(4))
         }
         let result = await session.stop()
         await rig.stop()

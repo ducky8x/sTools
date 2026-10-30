@@ -256,7 +256,6 @@ struct AddSourcePopover: View {
                         .buttonStyle(STButtonStyle(.secondary))
                         .disabled(address.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
-                    Text("A web page\u{2019}s own sound isn\u{2019}t recorded yet.").stStyle(.caption).foregroundStyle(theme.inkTertiary)
                 }
                 group("App sound", available.apps.map { app in
                     (title: app.name, action: { controller.addAudio(.app(bundleID: app.bundleID), name: app.name) })
@@ -314,6 +313,21 @@ struct RecordingSoundSection: View {
                     }
                     STSwitch(isOn: Binding(get: { controller.layout.includesMinecraftAudio },
                                            set: { on in controller.updateLayout { $0.includesMinecraftAudio = on } }), label: "Record Minecraft's sound")
+                }
+            }
+            // One row for every web page on the canvas: WebKit plays their sound in one process, so it is one track.
+            if controller.layout.hasWebPages {
+                STSettingsRow(controller.layout.webPageAudioTitle) {
+                    HStack(spacing: 14) {
+                        if controller.layout.includesWebPageAudio {
+                            STSlider(value: Binding(get: { controller.layout.webPageAudioVolume * 100 },
+                                                    set: { value in controller.updateLayout { $0.webPageAudioVolume = value / 100 } }),
+                                     in: 0...150, label: "Web page volume", valueText: { "\(Int($0))%" })
+                        }
+                        STSwitch(isOn: Binding(get: { controller.layout.includesWebPageAudio },
+                                               set: { on in controller.updateLayout { $0.includesWebPageAudio = on } }),
+                                 label: "Record the web pages\u{2019} sound")
+                    }
                 }
             }
             ForEach(controller.layout.audioSources) { source in
