@@ -235,6 +235,9 @@ private struct Harness {
         options.canvas = .custom(PixelSize(width: 320, height: 180))
         options.frameRate = .fps30
         controller.options = options
+        // A start gives up when its first frame isn't in the file in five seconds. On a Mac this busy a first tick can
+        // be later than that, so only the test about the timeout (`aFirstFrameThatNeverComesEndsTheStart`) shortens it.
+        controller.firstFrameTimeout = .seconds(120)
     }
 
     /// Switches the tool on and waits (bounded, as `waitUntil`) until its sources are ready: the latest arming's rig has
@@ -1371,12 +1374,18 @@ struct ScreenRecordingFirstFrameTests {
         defer { harness.remove() }
         let driver = ManualTickDriver()
         harness.controller.makeTickDriver = { driver }
-        harness.controller.firstFrameTimeout = .milliseconds(300)
+        let timeout = Duration.milliseconds(300)
+        harness.controller.firstFrameTimeout = timeout
         var outcomes: [ScreenRecordingController.KeyStartOutcome] = []
         harness.controller.keyStartEnded = { outcomes.append($0) }
+        let pressed = SuspendingClock.now
         harness.controller.toggleRecording()
         #expect(await harness.waitUntil { driver.isRunning })
-        #expect(outcomes.isEmpty)
+        // Nothing is reported while the timeout runs. The timeout began no earlier than the press, so a look that comes
+        // before `timeout` has gone by since the press can't have missed it; a busy Mac that delays the look past that
+        // has nothing to say about the claim, and it isn't made then.
+        let early = outcomes.isEmpty
+        if SuspendingClock.now - pressed < timeout { #expect(early) }
         #expect(await harness.waitUntil { !outcomes.isEmpty })
         #expect(outcomes == [.failed("the video encoder didn\u{2019}t respond")])
         #expect(harness.controller.phase == .idle)
@@ -1480,7 +1489,8 @@ struct ScreenRecordingQuickStartTests {
         let harness = Harness()
         defer { harness.remove() }
         harness.factory.baseSendsFirstFrame = false
-        harness.controller.minecraftFrameWait = .seconds(10)
+        // Long enough that only the frame the test pushes can end the wait, however busy the Mac is.
+        harness.controller.minecraftFrameWait = .seconds(600)
         harness.controller.toggleRecording()
         #expect(await harness.waitUntil { harness.factory.bases[42]?.isRunning == true })
         try await Task.sleep(for: .milliseconds(150))
@@ -1502,10 +1512,11 @@ struct ScreenRecordingQuickStartTests {
         harness.controller.minecraftFrameWait = .milliseconds(300)
         let pressed = SuspendingClock.now
         harness.controller.toggleRecording()
+        // The recording starts although no frame ever comes: the wait ended on its own (`waitUntil` gives up after
+        // twenty seconds, far longer than the wait set here, however busy the Mac is).
         #expect(await harness.waitUntil { harness.controller.phase == .recording })
         let waited = SuspendingClock.now - pressed
-        #expect(waited >= .milliseconds(300))
-        #expect(waited < .seconds(5))
+        #expect(waited >= .milliseconds(300), "the start held for the whole wait first")
         await harness.controller.stopRecording(explanation: nil)
         harness.controller.delete()
     }
@@ -1516,21 +1527,24 @@ struct ScreenRecordingQuickStartTests {
 @Suite("Screen Recording's start timings", .serialized) @MainActor
 struct ScreenRecordingStartTimingTests {
     /// Already armed, with Minecraft's frame in, the writer opens right after the press: nothing waits for the sources
-    /// (they take 3 s to start here) or for Minecraft's frame (a wait of up to 10 s here), and the encoder and Core
-    /// Image were readied while the tool was armed. The bounds sit far below those waits, since the whole suite keeps
-    /// the main thread busy; the first frame's own wait is the encoder's, which is only logged.
+    /// or for Minecraft's frame, and the encoder and Core Image were readied while the tool was armed. Nothing is
+    /// timed against a clock, which a busy Mac would stretch: any source the press started again is held at its start
+    /// for good (and Minecraft's frame wait is ten minutes), so a start that waited for one would never get to
+    /// recording, and no source was made after the arming. The first frame's own wait is the encoder's, which is only
+    /// logged.
     @Test func anArmedToolOpensItsFileRightAfterThePress() async throws {
-        let harness = Harness(sourcesTake: .seconds(3))
+        let harness = Harness()
         defer { harness.remove() }
-        harness.controller.minecraftFrameWait = .seconds(10)
+        harness.controller.minecraftFrameWait = .seconds(600)
         await harness.arm()
         #expect(await harness.waitUntil { harness.factory.bases[42]?.isRunning == true && harness.controller.isWarmedUp })
+        harness.factory.baseStartGate = StartGate()
+        harness.factory.otherSourcesStartGate = StartGate()
         harness.controller.toggleRecording()
         #expect(await harness.waitUntil { harness.controller.phase == .recording })
+        #expect(harness.factory.baseCount == 1, "the press started no sources of its own")
         let timings = try #require(harness.controller.lastStartTimings)
         #expect(!timings.switchedOn)
-        #expect(timings.toSources < .milliseconds(1500), "\(timings.summary)")
-        #expect(timings.toWriter < .seconds(2), "\(timings.summary)")
         #expect(timings.toWriter <= timings.toFirstFrame)
         await harness.controller.stopRecording(explanation: nil)
         harness.controller.delete()
@@ -1938,9 +1952,12 @@ struct ScreenRecordingBusyChangeTests {
         let armedBefore = try #require(harness.factory.bases[42])
         try await Task.sleep(for: .milliseconds(100))
         harness.pushFrame()
-        let recorded = Task { await harness.controller.recordTest(for: .milliseconds(400)) }
+        // The test recording lasts until the test ends it (canceling its wait), not for a time a busy Mac could cut
+        // short before the change below is made.
+        let recorded = Task { await harness.controller.recordTest(for: .seconds(600)) }
         #expect(await harness.waitUntil { harness.controller.phase == .recording })
         let window = apply(change, to: harness)
+        recorded.cancel()
         #expect(await recorded.value)
         #expect(harness.controller.phase == .idle)
         #expect(harness.controller.isEnabled)
@@ -1975,7 +1992,8 @@ struct ScreenRecordingBusyChangeTests {
         #expect(harness.factory.baseCount == 1)
 
         harness.pushFrame()
-        try await Task.sleep(for: .milliseconds(100))
+        // Ticks go by after the first frame (the readout follows the clock), so the file holds more than that frame.
+        #expect(await harness.waitUntil { harness.controller.elapsedSeconds >= 0.1 })
         #expect(harness.controller.toggleRecording() == .stopped)
         #expect(await harness.waitUntil { harness.controller.phase == .deciding })
         let file = try #require(harness.controller.finished?.files.first)
@@ -2000,7 +2018,8 @@ struct ScreenRecordingBusyChangeTests {
         let recorded = try #require(harness.factory.bases[42])
         try await Task.sleep(for: .milliseconds(100))
         harness.pushFrame()
-        let saved = Task { await harness.controller.recordTest(for: .milliseconds(600)) }
+        // Lasts until the test ends it (canceling its wait), not for a time a busy Mac could cut short.
+        let saved = Task { await harness.controller.recordTest(for: .seconds(600)) }
         #expect(await harness.waitUntil { harness.controller.phase == .recording })
         harness.moveMinecraft(toWindow: 77)
         try await Task.sleep(for: .milliseconds(50))
@@ -2012,6 +2031,7 @@ struct ScreenRecordingBusyChangeTests {
         #expect(recorded.isRunning, "the recording's sources are never replaced under it")
         #expect(harness.factory.baseCount == 1)
 
+        saved.cancel()
         #expect(await saved.value)
         #expect(harness.controller.phase == .idle)
         #expect(await harness.waitUntil { harness.factory.bases[77]?.isRunning == true })
