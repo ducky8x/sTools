@@ -10,3 +10,6 @@ build/
 *.key
 *.pem
 
+# Hidden files and folders at the top level stay on this Mac.
+/.*
+!/.gitignore
