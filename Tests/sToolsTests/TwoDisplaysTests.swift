@@ -17,14 +17,15 @@ enum QADisplayKind: String, CaseIterable, Sendable, CustomTestStringConvertible 
 
     var testDescription: String { rawValue }
 
-    func display(id: UInt32) -> DisplayInfo {
+    func display(id: UInt32, origin: CGPoint) -> DisplayInfo {
         switch self {
         case .nonRetina:
-            QADisplays.display(id: id)
+            QADisplays.display(id: id, origin: origin)
         case .retina:
-            QADisplays.display(id: id, scale: 2, nativePixelSize: CGSize(width: 3840, height: 2160))
+            QADisplays.display(id: id, origin: origin, scale: 2, nativePixelSize: CGSize(width: 3840, height: 2160))
         case .scaled:
-            QADisplays.display(id: id, size: CGSize(width: 1147, height: 745), scale: 2, nativePixelSize: CGSize(width: 3024, height: 1964))
+            QADisplays.display(id: id, origin: origin, size: CGSize(width: 1147, height: 745), scale: 2,
+                               nativePixelSize: CGSize(width: 3024, height: 1964))
         }
     }
 }
@@ -49,7 +50,7 @@ struct TwoDisplaysTests {
     /// All four overlays land inside whichever display they're on, whatever it is, and the Crosshair is on its exact middle.
     @Test(arguments: QADisplayKind.allCases)
     func everyOverlayFitsOnADisplayOfEachKind(kind: QADisplayKind) async throws {
-        let display = kind.display(id: 1)
+        let display = kind.display(id: 1, origin: QADisplays.newOrigin())
         let harness = EverythingHarness(displays: [display])
         // The NBB Overlay's saved position is an offset from the display's center, 750 points right of it unless the
         // person changes it; a screen narrower than about 1,500 points needs it moved in, as its owner would do.
@@ -83,8 +84,9 @@ struct TwoDisplaysTests {
     // MARK: Two displays
 
     @Test func everyOverlayFollowsMinecraftToTheOtherDisplayAndBack() async {
-        let main = QADisplayKind.nonRetina.display(id: 1)
-        let side = QADisplayKind.retina.display(id: 2)
+        let origin = QADisplays.newOrigin()
+        let main = QADisplayKind.nonRetina.display(id: 1, origin: origin)
+        let side = QADisplayKind.retina.display(id: 2, origin: origin)
         let harness = EverythingHarness(displays: [main, side], instances: [QADisplays.minecraft(on: side)])
         switchEverythingOn(harness)
         #expect(await settle(harness, side, topmost: 3, backdrops: 1))
@@ -104,8 +106,9 @@ struct TwoDisplaysTests {
 
     /// The backdrop can cover the other display too, each with its own fill; the overlays stay with the game.
     @Test func theBackdropCoversTheOtherDisplayWhenAskedAndTheOverlaysStayWithTheGame() async {
-        let main = QADisplayKind.nonRetina.display(id: 1)
-        let side = QADisplayKind.retina.display(id: 2)
+        let origin = QADisplays.newOrigin()
+        let main = QADisplayKind.nonRetina.display(id: 1, origin: origin)
+        let side = QADisplayKind.retina.display(id: 2, origin: origin)
         let harness = EverythingHarness(displays: [main, side], instances: [QADisplays.minecraft(on: main)])
         switchEverythingOn(harness)
         #expect(await settle(harness, main, topmost: 3, backdrops: 1))
@@ -123,8 +126,9 @@ struct TwoDisplaysTests {
     /// A monitor taken out from under the game: the overlays go to the main display at once, and stay with Minecraft once
     /// its window has moved there. Plugged in again, and the game moved back, they follow it.
     @Test func aMonitorUnpluggedMidRunSendsTheOverlaysToTheMainDisplay() async {
-        let main = QADisplayKind.nonRetina.display(id: 1)
-        let side = QADisplayKind.retina.display(id: 2)
+        let origin = QADisplays.newOrigin()
+        let main = QADisplayKind.nonRetina.display(id: 1, origin: origin)
+        let side = QADisplayKind.retina.display(id: 2, origin: origin)
         let harness = EverythingHarness(displays: [main, side], instances: [QADisplays.minecraft(on: side)])
         switchEverythingOn(harness)
         #expect(await settle(harness, side, topmost: 3, backdrops: 1))
@@ -151,8 +155,9 @@ struct TwoDisplaysTests {
     /// Two games on two displays (the conflict rule): the overlays follow the one sTools follows, and the other goes on
     /// without them until it becomes the one followed.
     @Test func twoGamesOnTwoDisplaysAreFollowedByTheRule() async {
-        let main = QADisplayKind.nonRetina.display(id: 1)
-        let side = QADisplayKind.retina.display(id: 2)
+        let origin = QADisplays.newOrigin()
+        let main = QADisplayKind.nonRetina.display(id: 1, origin: origin)
+        let side = QADisplayKind.retina.display(id: 2, origin: origin)
         let first = QADisplays.minecraft(on: main, pid: 100, launched: 10)
         let second = QADisplays.minecraft(on: side, pid: 200, launched: 20)
         let harness = EverythingHarness(displays: [main, side], instances: [first, second])
@@ -171,8 +176,9 @@ struct TwoDisplaysTests {
 
     /// A game on another version loses to one on 1.16.1 whichever opened first, so the overlays go to the 1.16.1 game's display.
     @Test func the116GameWinsTheOverlaysEvenWhenItOpenedLater() async {
-        let main = QADisplayKind.nonRetina.display(id: 1)
-        let side = QADisplayKind.retina.display(id: 2)
+        let origin = QADisplays.newOrigin()
+        let main = QADisplayKind.nonRetina.display(id: 1, origin: origin)
+        let side = QADisplayKind.retina.display(id: 2, origin: origin)
         let other = QADisplays.minecraft(on: main, pid: 100, title: "Minecraft* 1.20.4", launched: 10)
         let speedrun = QADisplays.minecraft(on: side, pid: 200, title: "Minecraft* 1.16.1", launched: 20)
         let harness = EverythingHarness(displays: [main, side], instances: [other, speedrun])
@@ -185,8 +191,9 @@ struct TwoDisplaysTests {
 
     /// A key's confirmation goes to the game's display, whichever display that is.
     @Test func theConfirmationAppearsOnMinecraftsDisplay() async {
-        let main = QADisplayKind.nonRetina.display(id: 1)
-        let side = QADisplayKind.retina.display(id: 2)
+        let origin = QADisplays.newOrigin()
+        let main = QADisplayKind.nonRetina.display(id: 1, origin: origin)
+        let side = QADisplayKind.retina.display(id: 2, origin: origin)
         let harness = EverythingHarness(displays: [main, side], instances: [QADisplays.minecraft(on: side)])
         harness.model.hotkeys.isEnabled = true
         let id = harness.model.hotkeys.add(combo: HotkeyCombo(keyCode: 96, modifiers: []), actions: [.toggle(.crosshair)])

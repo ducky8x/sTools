@@ -26,6 +26,13 @@ private final class StandInJava {
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         try process.run()
+        // The kernel shows the new command line a moment after the process exists (longer on a busy Mac), and until then
+        // the old one: wait, bounded, until it's the shell's.
+        let deadline = SuspendingClock().now + .seconds(10)
+        while SuspendingClock().now < deadline,
+              MinecraftGameDirectory.arguments(processID: process.processIdentifier)?.contains("read line") != true {
+            usleep(2_000)
+        }
     }
 
     var processID: Int32 { process.processIdentifier }
@@ -64,6 +71,18 @@ private final class Folder {
 
 private func resolved(_ url: URL?) -> String? { url?.resolvingSymlinksInPath().path }
 
+/// `read` asks the kernel about another process (its command line, its directory), which can fail now and then on a busy
+/// Mac: it asks again, for at most five seconds, until it gives `expected`, and returns the last answer.
+private func asking<T: Equatable>(until expected: T, _ read: () -> T) -> T {
+    let deadline = SuspendingClock().now + .seconds(5)
+    var answer = read()
+    while answer != expected, SuspendingClock().now < deadline {
+        usleep(5_000)
+        answer = read()
+    }
+    return answer
+}
+
 @Suite("Minecraft started by each launcher")
 struct MinecraftLauncherProcessTests {
     /// The official launcher passes `--gameDir`, and the game's working directory can be anywhere.
@@ -75,7 +94,7 @@ struct MinecraftLauncherProcessTests {
                         "--gameDir", game.url.path, "--assetsDir", game.url.appending(path: "assets").path],
             workingDirectory: elsewhere.url)
         defer { java.stop() }
-        #expect(resolved(MinecraftGameDirectory.find(processID: java.processID)) == game.path)
+        #expect(asking(until: game.path) { resolved(MinecraftGameDirectory.find(processID: java.processID)) } == game.path)
     }
 
     /// Prism Launcher (and MultiMC) start Java inside the instance's folder and hand the game its arguments another way,
@@ -86,8 +105,8 @@ struct MinecraftLauncherProcessTests {
             arguments: ["-Xmx2G", "-Dorg.lwjgl.librarypath=/natives", "-jar", "NewLaunch.jar"],
             workingDirectory: instance.url)
         defer { java.stop() }
-        #expect(MinecraftGameDirectory.arguments(processID: java.processID)?.contains("--gameDir") == false)
-        #expect(resolved(MinecraftGameDirectory.find(processID: java.processID)) == instance.path)
+        #expect(asking(until: false) { MinecraftGameDirectory.arguments(processID: java.processID)?.contains("--gameDir") ?? true } == false)
+        #expect(asking(until: instance.path) { resolved(MinecraftGameDirectory.find(processID: java.processID)) } == instance.path)
     }
 
     /// The command line wins over the working directory when both say something, as the official launcher's does.
@@ -96,7 +115,7 @@ struct MinecraftLauncherProcessTests {
         let inside = try Folder("inside")
         let java = try StandInJava(arguments: ["--gameDir=\(named.url.path)"], workingDirectory: inside.url)
         defer { java.stop() }
-        #expect(resolved(MinecraftGameDirectory.find(processID: java.processID)) == named.path)
+        #expect(asking(until: named.path) { resolved(MinecraftGameDirectory.find(processID: java.processID)) } == named.path)
     }
 
     @Test func aProcessThatIsGoneHasNoGameFolder() throws {

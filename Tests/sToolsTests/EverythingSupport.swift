@@ -6,6 +6,7 @@ import Foundation
 @testable import ScreenRecording
 import STDesign
 @testable import STPlatform
+import Synchronization
 import Testing
 @testable import TimerOverlay
 @testable import sTools
@@ -16,18 +17,30 @@ import Testing
 // displays far outside every real one, so nothing ever shows on a screen. Nothing asks for a permission, plays a sound,
 // captures anything, opens a port or reads a Ninjabrain Bot or a Minecraft.
 
-/// Where a display of these tests sits: far from every real screen, and from the displays other suites use (which
-/// start at -9000), so a panel found there is this test's.
+/// Where the displays of these tests sit: far from every real screen and from the displays other suites use (which start
+/// at -9000). Every test takes a stretch of its own (`newOrigin()`), because suites run at the same time in one process and
+/// a window counted by its place must be this test's, never another's.
 enum QADisplays {
-    private static let originX: CGFloat = -30_000
-    private static let originY: CGFloat = -30_000
+    private static let nextStretch = Mutex(0)
     /// The height the primary display would have (the Core Graphics origin is at the top of it).
     private static let primaryHeight: CGFloat = 1080
+    /// Stretches in the area, each wide enough for two displays side by side; later tests start over from the first, long
+    /// after the earlier ones have gone.
+    private static let stretchCount = 76
 
-    /// Display `id` (1 is the main one), placed side by side from the first slot.
-    static func display(id: UInt32, size: CGSize = CGSize(width: 1920, height: 1080), scale: CGFloat = 1,
+    /// The origin of a stretch no other running test is using: displays go side by side from it.
+    static func newOrigin() -> CGPoint {
+        let n = nextStretch.withLock { value -> Int in
+            defer { value += 1 }
+            return value % stretchCount
+        }
+        return CGPoint(x: -32_000 + CGFloat(n % 4) * 4_800, y: -32_000 + CGFloat(n / 4) * 1_100)
+    }
+
+    /// Display `id` (1 is the main one) of the stretch that starts at `origin`.
+    static func display(id: UInt32, origin: CGPoint, size: CGSize = CGSize(width: 1920, height: 1080), scale: CGFloat = 1,
                         nativePixelSize: CGSize? = nil) -> DisplayInfo {
-        let frame = CGRect(x: originX + CGFloat(id - 1) * 2_400, y: originY, width: size.width, height: size.height)
+        let frame = CGRect(x: origin.x + CGFloat(id - 1) * 2_400, y: origin.y, width: size.width, height: size.height)
         let bounds = CGRect(x: frame.minX, y: primaryHeight - frame.maxY, width: size.width, height: size.height)
         return DisplayInfo(id: id, name: "QA display \(id)", frame: frame, bounds: bounds, backingScale: scale,
                            pixelSize: CGSize(width: size.width * scale, height: size.height * scale), isMain: id == 1,
@@ -129,9 +142,10 @@ final class EverythingHarness {
 
     /// - Parameter reducedMotion: Reduce animations, set the way its switch sets it (the app loads the saved appearance
     ///   over the theme it is given, so a theme made reduced would be made full again).
-    init(displays: [DisplayInfo] = [QADisplays.display(id: 1)], instances: [MinecraftInstance]? = nil,
+    init(displays given: [DisplayInfo]? = nil, instances: [MinecraftInstance]? = nil,
          reducedMotion: Bool = true, theme: STTheme = STTheme()) {
         self.theme = theme
+        let displays = given ?? [QADisplays.display(id: 1, origin: QADisplays.newOrigin())]
         displayBox = DisplayBox(displays)
         source = StaticMinecraftWindowSource(instances: instances ?? [QADisplays.minecraft(on: displays[0])])
         let store = SettingsStore(directory: directory, debounce: .milliseconds(10))
