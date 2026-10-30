@@ -19,12 +19,12 @@ struct ChoiceRowUsageTests {
     private static let outsideARow: [String: String] = [
         "LayoutChooser.swift": "two controls side by side in the first-visit plate, with no row label",
         "KeyRebinderProfileMenu.swift": "in the New Profile sheet, which has a width of its own",
+        "RecordingQualityRow.swift": "the Quality row lays itself out: the slider beside the choice, or on a line under it",
     ]
 
     /// Settings rows that hold a segmented control beside something else, by label, and why they stay `STSettingsRow`.
     private static let sharedRows: [String: String] = [
         "Keyboard": "two short controls stacked in one row",
-        "Quality": "a slider beside the control while Manual is chosen",
     ]
 
     /// The text of every Swift file under `Sources`, by path relative to it.

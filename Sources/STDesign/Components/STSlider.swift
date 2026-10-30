@@ -167,11 +167,12 @@ public struct STSlider: View {
     /// The width of a slider in a settings row, steppers and readout included.
     public static let rowWidth: CGFloat = 260
 
-    /// A track in a settings row is 96 pt when it has room and never under 80. Beside a short readout, 80 pt plus the gap
-    /// and the steppers is the 168 pt a slider has always needed at least, so the row shares out its room as before. A
-    /// longer readout raises that, and the track is what gives way to it.
+    /// A track in a settings row is never under 80 pt, and wants no more than that: its ideal width is its least. Beside a
+    /// short readout, 80 pt plus the gap and the steppers is the 168 pt a slider has always needed at least, so the row
+    /// shares out its room as before; a longer readout raises that, and the track is what gives way to it. A
+    /// `ViewThatFits` that puts the slider beside something, as the Quality row does, then keeps it there for as long as
+    /// the track has its 80 pt.
     private let trackMinimumWidth: CGFloat = 80
-    private let trackIdealWidth: CGFloat = 96
 
     public var body: some View {
         Group {
@@ -179,7 +180,7 @@ public struct STSlider: View {
                 // In a settings row every slider is the same width, so the tracks line up down a page instead of
                 // stretching to whatever the row's label leaves over.
                 HStack(spacing: 12) {
-                    track.frame(minWidth: trackMinimumWidth, idealWidth: trackIdealWidth)
+                    track.frame(minWidth: trackMinimumWidth)
                     steppers
                 }
                 .frame(maxWidth: Self.rowWidth)
