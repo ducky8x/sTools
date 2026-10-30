@@ -25,3 +25,15 @@ enum BackdropPlayerMessages {
     /// Said on the page when a file that was chosen can't be played any more (moved, deleted, damaged).
     static let cantPlay = "sTools can\u{2019}t play this file. Choose another one."
 }
+
+/// Stands in for a file that isn't there or can't be opened at all: it has failed from the start and does nothing.
+@MainActor
+final class BackdropFailedPlayer: BackdropPlayer {
+    let mediaLayer = CALayer()
+    let naturalSize: CGSize? = nil
+    let failure: String? = BackdropPlayerMessages.cantPlay
+    var onUpdate: (@MainActor () -> Void)?
+    func play() {}
+    func pause() {}
+    func stop() { onUpdate = nil }
+}

@@ -70,22 +70,17 @@ final class BackdropVideoPlayer: BackdropPlayer {
     // MARK: - Opening
 
     private func load(_ url: URL) async {
-        let asset = AVURLAsset(url: url)
         do {
-            guard try await asset.load(.isPlayable),
-                  let track = try await asset.loadTracks(withMediaType: .video).first else { return fail() }
-            let (size, transform, range) = try await track.load(.naturalSize, .preferredTransform, .timeRange)
-            guard range.duration.isNumeric, range.duration.seconds > 0 else { return fail() }
+            guard let video = try await BackdropVideoDescription.load(from: AVURLAsset(url: url)) else { return fail() }
             let composition = AVMutableComposition()
             guard let videoTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
                 return fail()
             }
-            try videoTrack.insertTimeRange(range, of: track, at: .zero)
-            videoTrack.preferredTransform = transform
+            try videoTrack.insertTimeRange(video.timeRange, of: video.track, at: .zero)
+            videoTrack.preferredTransform = video.transform
             guard !isStopped else { return }
 
-            let oriented = size.applying(transform)
-            naturalSize = CGSize(width: abs(oriented.width), height: abs(oriented.height))
+            naturalSize = video.pictureSize
             // `AVPlayerLooper` raises an exception for an item without a duration; the composition has one.
             let looper = AVPlayerLooper(player: player, templateItem: AVPlayerItem(asset: composition))
             self.looper = looper
