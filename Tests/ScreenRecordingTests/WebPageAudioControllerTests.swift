@@ -43,7 +43,7 @@ private struct AlwaysGranted: PermissionProbing {
 }
 
 @MainActor
-private struct Rig {
+private struct WebAudioHarness {
     let directory: URL
     let factory = WebAudioFactory()
     let controller: ScreenRecordingController
@@ -86,7 +86,7 @@ private func waitUntil(_ condition: () -> Bool) async -> Bool {
 @Suite("The web pages' sound, armed with the sources", .serialized) @MainActor
 struct WebPageAudioControllerTests {
     @Test func aWebPageArmsOneCaptureOfItsSoundAndSwitchingOffStopsIt() async throws {
-        let rig = Rig()
+        let rig = WebAudioHarness()
         defer { rig.remove() }
         rig.controller.addBrowserSource(url: "twitch.tv/someone")
         #expect(await rig.arm())
@@ -97,7 +97,7 @@ struct WebPageAudioControllerTests {
     }
 
     @Test func severalWebPagesShareOneCapture() async throws {
-        let rig = Rig()
+        let rig = WebAudioHarness()
         defer { rig.remove() }
         rig.controller.addBrowserSource(url: "twitch.tv/someone")
         rig.controller.addBrowserSource(url: "example.org")
@@ -108,7 +108,7 @@ struct WebPageAudioControllerTests {
     }
 
     @Test func withoutAWebPageThereIsNoCapture() async throws {
-        let rig = Rig()
+        let rig = WebAudioHarness()
         defer { rig.remove() }
         rig.controller.addVideo(.camera(CameraReference(uniqueID: "cam", name: "Cam")), contentSize: PixelSize(width: 640, height: 360))
         #expect(await rig.arm())
@@ -119,7 +119,7 @@ struct WebPageAudioControllerTests {
     /// A change to the sources restarts them (spec 5.4.4): the switch, the first page and the last page's removal all
     /// change what is tapped, and the capture that is no longer wanted is stopped.
     @Test func theSwitchRestartsTheSourcesAndTheOldCaptureIsStopped() async throws {
-        let rig = Rig()
+        let rig = WebAudioHarness()
         defer { rig.remove() }
         rig.controller.addBrowserSource(url: "twitch.tv/someone")
         #expect(await rig.arm())
@@ -135,7 +135,7 @@ struct WebPageAudioControllerTests {
     }
 
     @Test func removingTheLastWebPageStopsTheCapture() async throws {
-        let rig = Rig()
+        let rig = WebAudioHarness()
         defer { rig.remove() }
         rig.controller.addBrowserSource(url: "twitch.tv/someone")
         #expect(await rig.arm())
@@ -150,7 +150,7 @@ struct WebPageAudioControllerTests {
 
     /// The page says why the sound didn't start, as it does for any source; the rest of the recording is unaffected.
     @Test func aCaptureThatCantStartIsNotedOnThePage() async throws {
-        let rig = Rig()
+        let rig = WebAudioHarness()
         defer { rig.remove() }
         rig.factory.nextCaptureFailsToStart = true
         rig.controller.addBrowserSource(url: "twitch.tv/someone")
@@ -161,7 +161,7 @@ struct WebPageAudioControllerTests {
     }
 
     @Test func theNotesNameSeveralPagesTogether() async throws {
-        let rig = Rig()
+        let rig = WebAudioHarness()
         defer { rig.remove() }
         rig.factory.nextCaptureFailsToStart = true
         rig.controller.addBrowserSource(url: "twitch.tv/someone")
