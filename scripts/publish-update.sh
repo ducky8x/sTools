@@ -168,8 +168,8 @@ VISIBILITY="$(gh repo view "$REPO" --json visibility --jq .visibility 2>/dev/nul
     fail "cannot read $REPO from GitHub"
 echo "    gh is signed in as $LOGIN, and GitHub has the commit"
 if [[ "$VISIBILITY" != PUBLIC ]]; then
-    echo "    note: $REPO is private. The release is made either way, but only you can read it, and copies of sTools"
-    echo "    note: cannot fetch the feed until the repository is public."
+    echo "    note: $REPO is private. The release is made either way, but nobody outside the repository can read it, and"
+    echo "    note: copies of sTools cannot fetch the feed until the repository is public."
 fi
 
 if gh release view "$TAG" --repo "$REPO" --json tagName --jq .tagName > /dev/null 2> "$WORK/gh.log"; then
