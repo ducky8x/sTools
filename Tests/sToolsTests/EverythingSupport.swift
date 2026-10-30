@@ -194,7 +194,7 @@ final class EverythingHarness {
                 wake.action()
             }
         }
-        _ = await waitUntil(timeout: .seconds(10)) { self.displayBox.displays.allSatisfy { self.panels(on: $0).isEmpty } }
+        _ = await waitUntil { self.displayBox.displays.allSatisfy { self.panels(on: $0).isEmpty } }
     }
 
     deinit {

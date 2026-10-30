@@ -31,7 +31,7 @@ struct ReduceMotionOverlaysTests {
 
     private func switchOverlaysOn(_ harness: EverythingHarness) async {
         for tool in [ToolID.crosshair, .timerOverlay, .nbbOverlay, .windowBackdrop] { harness.model.userSwitched(tool, on: true) }
-        _ = await waitUntil(timeout: .seconds(10)) { harness.nbb.isOverlayVisible && harness.presenter.isShowing }
+        _ = await waitUntil { harness.nbb.isOverlayVisible && harness.presenter.isShowing }
     }
 
     /// The overlay that fades or crossfades does so only under full motion: the NBB Overlay's fade on reset and the

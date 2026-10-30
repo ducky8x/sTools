@@ -220,13 +220,25 @@ func fakeInstance(pid: Int32 = 100, version: String = "1.16.1", launched: TimeIn
 /// The bound counts only time the Mac is awake (`SuspendingClock`). `ContinuousClock` keeps running while the Mac
 /// sleeps, so a sleep in the middle of a test (an unattended run in Deep Idle with dark wakes) used up the whole bound
 /// at once, and the wait gave up right after wake although what it waited for came a moment later.
+///
+/// It also counts only the time it could look. It looks again every few milliseconds, and a longer pause between two looks
+/// means another test held the main actor (a page render holds it for seconds, tens of seconds on a busy Mac at the start of
+/// a run) or the Mac was starved. What the wait is for needs the main actor too, so it was held back by the same pause, and
+/// the pause counts for a quarter second at most. Counted whole, one pause used up the bound between two looks and the wait
+/// gave up with its window or result still queued behind it. A condition that never comes true still ends the wait after
+/// `timeout` of looking.
 @MainActor
 func waitUntil(timeout: Duration = .seconds(20), _ condition: @MainActor () -> Bool) async -> Bool {
     let clock = SuspendingClock()
-    let deadline = clock.now + timeout
+    let longestPauseCounted = Duration.milliseconds(250)
+    var counted = Duration.zero
+    var lastLook = clock.now
     while !condition() {
-        if clock.now > deadline { return false }
+        if counted > timeout { return false }
         try? await Task.sleep(for: .milliseconds(5))
+        let now = clock.now
+        counted += min(now - lastLook, longestPauseCounted)
+        lastLook = now
     }
     return true
 }

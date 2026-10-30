@@ -39,7 +39,7 @@ struct TwoDisplaysTests {
 
     /// Waits until `display` holds exactly this many overlay windows of each kind.
     private func settle(_ harness: EverythingHarness, _ display: DisplayInfo, topmost: Int, backdrops: Int) async -> Bool {
-        await waitUntil(timeout: .seconds(10)) {
+        await waitUntil {
             let panels = harness.panels(on: display)
             return panels.filter { $0.role == .topmost }.count == topmost && panels.filter { $0.role == .backdrop }.count == backdrops
         }
