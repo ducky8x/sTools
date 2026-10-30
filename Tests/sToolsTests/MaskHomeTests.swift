@@ -80,7 +80,7 @@ struct MaskHomeTests {
         // "Pell" and "Orrin" are hidden as words, but are left alone inside "Pelletier", "compelling" and "Orrins".
         #expect(try await world.mask("Pell's Mac, compelling, Pelletier") == "<full name>'s Mac, compelling, Pelletier")
         #expect(try await world.mask("Orrin and Orrins") == "<full name> and Orrins")
-        #expect(try await world.mask("/Users/pell/x") == "/Users/<full name>/x")
+        #expect(try await world.mask("/srv/pell/x") == "/srv/<full name>/x")
     }
 
     @Test func everyPartOfALongerNameIsHiddenToo() async throws {
