@@ -91,6 +91,14 @@ final class AnimatedRig {
         controller.reconcile()
     }
 
+    /// Changes Minecraft's window and leaves it to the controller's own watch to hear it: nothing here calls `reconcile()`.
+    func changeMinecraft(minimized: Bool) {
+        var instance = source.instances[0]
+        instance.window.isMinimized = minimized
+        source.instances = [instance]
+        services.minecraft.refresh()
+    }
+
     func closeMinecraft() {
         source.instances = []
         services.minecraft.refresh()

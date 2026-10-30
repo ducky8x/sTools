@@ -95,8 +95,14 @@ public final class BackdropController: ToolController {
     @ObservationIgnored private var windowObservers: [UInt32: NSObjectProtocol] = [:]
     /// Players of fills that a new fill replaced, paused on their last picture while that fades out.
     @ObservationIgnored private var retiring: [Retiring] = []
-    /// Which watch on the theme's motion setting is current; a new one ends the old.
-    @ObservationIgnored private var motionWatch = 0
+    /// Whether the watch on Minecraft and the displays, and the one on the theme's motion setting, are armed. At most one
+    /// of each, however often the tool is switched on.
+    @ObservationIgnored private var isWatchingMinecraft = false
+    @ObservationIgnored private var isWatchingMotion = false
+    /// How many times what the controller watches (Minecraft, the displays) changed and the watch handled it, and how many
+    /// watches on the theme's motion setting were started. For tests.
+    @ObservationIgnored private(set) var watchRounds = 0
+    @ObservationIgnored private(set) var motionWatchesStarted = 0
 
     /// Why an animation can't be played, by the name it's stored under: the page says so.
     private(set) var animationProblems: [String: String] = [:]
@@ -149,7 +155,6 @@ public final class BackdropController: ToolController {
             watchMotion()
             reconcile()
         } else {
-            motionWatch += 1
             for observer in observers { removeObserver(observer) }
             observers.removeAll()
             releasePanels()
@@ -363,7 +368,7 @@ public final class BackdropController: ToolController {
         observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.reconcile() }
         })
-        watchMinecraft()
+        if !isWatchingMinecraft { watchMinecraft() }
     }
 
     /// Removes an observer from whichever center it was added to.
@@ -376,14 +381,24 @@ public final class BackdropController: ToolController {
     /// Observation only re-runs SwiftUI view bodies on its own, so this re-arms itself after every
     /// change to also call `reconcile()` (spec 5.2.2's "focused window changing", "moving displays",
     /// "display changes" triggers).
+    ///
+    /// There is one watch at a time: switching the tool on while the last one is still armed keeps that one, and a watch
+    /// whose change comes after the tool was switched off ends there instead of arming again (the NBB Overlay's does the
+    /// same).
     private func watchMinecraft() {
+        isWatchingMinecraft = true
         withObservationTracking {
             _ = services.minecraft.active
             _ = services.displays.displays
         } onChange: { [weak self] in
+            // The change isn't made yet when this is called; the next turn of the main actor sees it.
             Task { @MainActor [weak self] in
-                self?.reconcile()
-                self?.watchMinecraft()
+                guard let self else { return }
+                isWatchingMinecraft = false
+                guard isEnabled else { return }
+                watchRounds += 1
+                reconcile()
+                watchMinecraft()
             }
         }
     }
@@ -530,22 +545,25 @@ public final class BackdropController: ToolController {
     }
 
     /// Plays or holds the animations again when motion is reduced or comes back, for as long as the tool is on. It re-arms
-    /// itself after each change; the tool being switched off, or on again, ends the watch it belongs to.
+    /// itself after each change, and there is one at a time, as with `watchMinecraft()`.
     private func watchMotion() {
-        guard let theme else { return }
-        motionWatch += 1
-        trackMotion(of: theme, watch: motionWatch)
+        guard let theme, !isWatchingMotion else { return }
+        trackMotion(of: theme)
     }
 
-    private func trackMotion(of theme: STTheme, watch: Int) {
+    private func trackMotion(of theme: STTheme) {
+        isWatchingMotion = true
+        motionWatchesStarted += 1
         withObservationTracking {
             _ = theme.reduceMotion
         } onChange: { [weak self] in
             // The change isn't made yet when this is called; the next turn of the main actor sees it.
             Task { @MainActor [weak self] in
-                guard let self, self.isEnabled, self.motionWatch == watch else { return }
-                self.updatePlayback()
-                self.trackMotion(of: theme, watch: watch)
+                guard let self else { return }
+                isWatchingMotion = false
+                guard isEnabled else { return }
+                updatePlayback()
+                trackMotion(of: theme)
             }
         }
     }
