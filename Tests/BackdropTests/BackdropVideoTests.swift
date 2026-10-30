@@ -66,6 +66,70 @@ struct BackdropVideoPlayerTests {
         #expect(await waitUntil { abs(player.seconds - stopped) > 0.1 }, "and it carries on")
     }
 
+    // MARK: - Holding the first frame (motion reduced, spec 3.4)
+
+    @Test func holdingTheFirstFrameRewindsAMovieThatWasPlayingAndPausesIt() async throws {
+        let folder = TempFolder()
+        let player = BackdropVideoPlayer(url: try await movie(in: folder))
+        defer { player.stop() }
+        player.play()
+        #expect(await waitUntil { player.seconds > 0.3 })
+        player.showFirstFrame()
+        #expect(!player.isPlaying)
+        #expect(await waitUntil { player.rate == 0 })
+        let held = await settledValue { player.seconds }
+        #expect(held < 0.05, "back at the first frame")
+        try? await Task.sleep(for: .milliseconds(300))
+        #expect(player.seconds < 0.05, "and it stays there")
+    }
+
+    @Test func playingAfterHoldingStartsAtTheStart() async throws {
+        let folder = TempFolder()
+        let player = BackdropVideoPlayer(url: try await movie(in: folder))
+        defer { player.stop() }
+        #expect(await waitUntil { player.naturalSize != nil })
+        player.showFirstFrame()
+        try? await Task.sleep(for: .milliseconds(200))
+        #expect(player.seconds < 0.05 && player.rate == 0)
+        player.play()
+        #expect(player.isPlaying)
+        #expect(await waitUntil { player.seconds > 0.1 }, "it plays from the start")
+    }
+
+    @Test func holdingBeforeTheMovieIsOpenKeepsItAtTheStart() async throws {
+        let folder = TempFolder()
+        let player = BackdropVideoPlayer(url: try await movie(in: folder))
+        defer { player.stop() }
+        player.showFirstFrame()
+        #expect(await waitUntil { player.naturalSize != nil })
+        try? await Task.sleep(for: .milliseconds(300))
+        #expect(player.rate == 0)
+        #expect(player.seconds < 0.02)
+        #expect(!player.isPlaying)
+    }
+
+    @Test func aPlayThatIsToldToHoldBeforeTheMovieOpensHoldsInstead() async throws {
+        let folder = TempFolder()
+        let player = BackdropVideoPlayer(url: try await movie(in: folder))
+        defer { player.stop() }
+        player.play()
+        player.showFirstFrame()
+        #expect(await waitUntil { player.naturalSize != nil })
+        try? await Task.sleep(for: .milliseconds(300))
+        #expect(player.rate == 0 && player.seconds < 0.02)
+    }
+
+    @Test func aStoppedOrFailedPlayerIgnoresAHold() async throws {
+        let folder = TempFolder()
+        let missing = BackdropVideoPlayer(url: folder.file("gone.mov"))
+        #expect(await waitUntil { missing.failure != nil })
+        missing.showFirstFrame()
+        #expect(!missing.isPlaying)
+        missing.stop()
+        missing.showFirstFrame()
+        #expect(!missing.isPlaying)
+    }
+
     @Test func playingBeforeTheMovieIsOpenStartsOnceItIs() async throws {
         let folder = TempFolder()
         let player = BackdropVideoPlayer(url: try await movie(in: folder))

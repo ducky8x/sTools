@@ -41,6 +41,8 @@ final class BackdropGIFPlayer: BackdropPlayer {
     private let cacheBudget: Int
     private var source: (any BackdropFrameSource)?
     private var wantsToPlay = false
+    /// Asked to hold the first frame (motion is reduced) and not yet told to play.
+    private var wantsFirstFrame = false
     private var isStopped = false
     /// The frame that is up, or that is due next while it isn't decoded yet.
     private var index = 0
@@ -78,8 +80,20 @@ final class BackdropGIFPlayer: BackdropPlayer {
     func play() {
         guard !isStopped, failure == nil else { return }
         wantsToPlay = true
+        wantsFirstFrame = false
         guard source != nil, !isPlaying else { return }
         begin()
+    }
+
+    func showFirstFrame() {
+        guard !isStopped, failure == nil else { return }
+        wantsToPlay = false
+        wantsFirstFrame = true
+        isPlaying = false
+        timer?.cancel()
+        timer = nil
+        waitingFor = nil
+        if source != nil { holdFirstFrame() }
     }
 
     func pause() {
@@ -94,6 +108,7 @@ final class BackdropGIFPlayer: BackdropPlayer {
     func stop() {
         isStopped = true
         wantsToPlay = false
+        wantsFirstFrame = false
         isPlaying = false
         timer?.cancel()
         timer = nil
@@ -121,12 +136,17 @@ final class BackdropGIFPlayer: BackdropPlayer {
         naturalSize = source.size
         frameBytes = max(1, Int(source.size.width) * Int(source.size.height) * 4)
         observers.notify()
-        if wantsToPlay { begin() }
+        if wantsToPlay {
+            begin()
+        } else if wantsFirstFrame {
+            holdFirstFrame()
+        }
     }
 
     private func fail() {
         failure = BackdropPlayerMessages.cantPlay
         wantsToPlay = false
+        wantsFirstFrame = false
         isPlaying = false
         timer?.cancel()
         timer = nil
@@ -138,6 +158,19 @@ final class BackdropGIFPlayer: BackdropPlayer {
         isPlaying = true
         plannedStart = clock.now
         present()
+    }
+
+    /// Puts frame 0 up, decoding it first if the cache has let go of it, and decodes nothing after it.
+    private func holdFirstFrame() {
+        index = 0
+        if let image = cache[0] {
+            show(image)
+        } else if undecodable.contains(0) {
+            fail()
+        } else {
+            waitingFor = 0
+            decodeWaitedFrame()
+        }
     }
 
     /// Puts the frame at `index` up if it's decoded, otherwise waits for it.
@@ -210,9 +243,21 @@ final class BackdropGIFPlayer: BackdropPlayer {
         return nil
     }
 
-    /// Decodes the next frame that's wanted, if none is being decoded; each one that lands starts the next.
+    /// Decodes the next frame that's wanted, if none is being decoded; each one that lands starts the next. Only while it
+    /// plays: a paused player decodes nothing new.
     private func decodeAhead() {
-        guard isPlaying, decodeTask == nil, let source, let target = nextIndexToDecode(source) else { return }
+        guard isPlaying, let source, let target = nextIndexToDecode(source) else { return }
+        startDecoding(target, from: source)
+    }
+
+    /// Decodes the frame something is waiting for, if the decoder isn't busy with another.
+    private func decodeWaitedFrame() {
+        guard let source, let waiting = waitingFor, cache[waiting] == nil else { return }
+        startDecoding(waiting, from: source)
+    }
+
+    private func startDecoding(_ target: Int, from source: any BackdropFrameSource) {
+        guard decodeTask == nil else { return }
         decodeTask = Task.detached(priority: .utility) { [weak self] in
             let image = source.frame(at: target)
             await self?.decoded(target, image)
@@ -233,9 +278,15 @@ final class BackdropGIFPlayer: BackdropPlayer {
         }
         if waitingFor == target {
             waitingFor = nil
-            present()
+            if isPlaying {
+                present()
+            } else if wantsFirstFrame {
+                holdFirstFrame()
+            }
         } else {
             decodeAhead()
+            // A frame asked for while the decoder was busy with another one.
+            decodeWaitedFrame()
         }
     }
 

@@ -202,6 +202,8 @@ final class FakePlayer: BackdropPlayer {
     private(set) var failure: String?
     private(set) var calls: [String] = []
     private(set) var isPlaying = false
+    /// Rewound to the first frame and holding it, as an animation does while motion is reduced.
+    private(set) var isHoldingFirstFrame = false
     private(set) var isStopped = false
     private var observers = BackdropPlayerObservers()
 
@@ -211,9 +213,10 @@ final class FakePlayer: BackdropPlayer {
     }
 
     func observe(_ handler: @escaping @MainActor () -> Void) { observers.add(handler) }
-    func play() { calls.append("play"); isPlaying = !isStopped }
+    func play() { calls.append("play"); isPlaying = !isStopped; isHoldingFirstFrame = false }
     func pause() { calls.append("pause"); isPlaying = false }
-    func stop() { calls.append("stop"); isPlaying = false; isStopped = true }
+    func showFirstFrame() { calls.append("firstFrame"); isPlaying = false; isHoldingFirstFrame = !isStopped }
+    func stop() { calls.append("stop"); isPlaying = false; isHoldingFirstFrame = false; isStopped = true }
 
     /// The file has been opened and its picture is this big.
     func learn(size: CGSize) { naturalSize = size; observers.notify() }

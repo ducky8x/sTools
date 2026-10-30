@@ -55,6 +55,15 @@ final class BackdropVideoPlayer: BackdropPlayer {
         player.pause()
     }
 
+    func showFirstFrame() {
+        guard !isStopped, failure == nil else { return }
+        wantsToPlay = false
+        player.pause()
+        // The first frame itself, not the nearest key frame. Before the movie is open there's nothing to rewind: it starts
+        // paused at its start.
+        player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero)
+    }
+
     func stop() {
         isStopped = true
         wantsToPlay = false

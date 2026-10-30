@@ -140,6 +140,129 @@ struct BackdropGIFPlayerTests {
         #expect(await waitUntil { player.cachedFrameIndices.count == colors.count })
     }
 
+    // MARK: - Holding the first frame (motion reduced, spec 3.4)
+
+    @Test func holdingTheFirstFrameShowsItWithNothingScheduledOrDecodedAhead() async {
+        let clock = FakeFrameClock()
+        let source = makeSource()
+        let player = BackdropGIFPlayer(clock: clock) { source }
+        player.showFirstFrame()
+        #expect(await waitUntil { player.shownFrameIndex == 0 })
+        #expect(isShowing(source.images[0], in: player))
+        #expect(!player.isPlaying)
+        #expect(clock.waiting.isEmpty)
+        clock.advance(by: 10)
+        #expect(player.shownFrameIndex == 0 && player.framesShown == 1)
+        try? await Task.sleep(for: .milliseconds(30))
+        #expect(source.decodeCalls == [0], "only the first frame is decoded: nothing is looked ahead while it holds")
+    }
+
+    @Test func holdingRewindsAPlayerThatWasOnALaterFrame() async {
+        let clock = FakeFrameClock()
+        let source = makeSource()
+        let player = BackdropGIFPlayer(clock: clock) { source }
+        player.play()
+        #expect(await waitUntil { player.shownFrameIndex == 0 && player.cachedFrameIndices.count == 3 })
+        clock.advance(by: 0.75)
+        #expect(player.shownFrameIndex == 2)
+
+        player.showFirstFrame()
+        #expect(player.shownFrameIndex == 0)
+        #expect(isShowing(source.images[0], in: player))
+        #expect(!player.isPlaying)
+        #expect(clock.waiting.isEmpty, "the frame timer is gone")
+        clock.advance(by: 10)
+        #expect(player.shownFrameIndex == 0)
+    }
+
+    @Test func playingAgainAfterHoldingStartsFromTheFirstFrame() async {
+        let clock = FakeFrameClock()
+        let source = makeSource()
+        let player = BackdropGIFPlayer(clock: clock) { source }
+        player.showFirstFrame()
+        #expect(await waitUntil { player.shownFrameIndex == 0 })
+        player.play()
+        #expect(player.isPlaying)
+        #expect(player.shownFrameIndex == 0 && player.framesShown == 1, "it doesn't show frame 0 again")
+        #expect(await waitUntil { player.cachedFrameIndices.count == 3 })
+        clock.advance(by: 0.25)
+        #expect(player.shownFrameIndex == 1, "the first frame gets its own delay, then the next goes up")
+    }
+
+    @Test func holdingBeforeTheFileIsOpenShowsFrameZeroOnceItIs() async {
+        let clock = FakeFrameClock()
+        let source = makeSource()
+        let gate = Gate()
+        let player = BackdropGIFPlayer(clock: clock) { await gate.wait(); return source }
+        player.showFirstFrame()
+        #expect(player.shownFrameIndex == nil)
+        gate.open()
+        #expect(await waitUntil { player.shownFrameIndex == 0 })
+        #expect(!player.isPlaying)
+        #expect(clock.waiting.isEmpty)
+    }
+
+    @Test func aPlayThatIsToldToHoldBeforeTheFileOpensHoldsInstead() async {
+        let clock = FakeFrameClock()
+        let source = makeSource()
+        let gate = Gate()
+        let player = BackdropGIFPlayer(clock: clock) { await gate.wait(); return source }
+        player.play()
+        player.showFirstFrame()
+        gate.open()
+        #expect(await waitUntil { player.shownFrameIndex == 0 })
+        #expect(!player.isPlaying)
+        #expect(clock.waiting.isEmpty)
+        #expect(source.decodeCalls == [0])
+    }
+
+    @Test func aHoldIsKeptWhenThePlayerIsPausedAfterIt() async {
+        let clock = FakeFrameClock()
+        let source = makeSource()
+        let player = BackdropGIFPlayer(clock: clock) { source }
+        player.showFirstFrame()
+        #expect(await waitUntil { player.shownFrameIndex == 0 })
+        player.pause()
+        #expect(player.shownFrameIndex == 0)
+        #expect(isShowing(source.images[0], in: player))
+    }
+
+    /// Frame 0 may have been let go of by the cache, and the decoder may be busy with another frame.
+    @Test func holdingWhileAnotherFrameIsBeingDecodedStillGetsTheFirstFrame() async {
+        let clock = FakeFrameClock()
+        let colors: [RGB] = [.red, .green, .blue, .yellow, .red, .green]
+        let source = FakeFrameSource(colors: colors, delays: Array(repeating: 0.25, count: colors.count))
+        let frameBytes = source.images[0].bytesPerRow * source.images[0].height
+        source.hold(5)
+        let player = BackdropGIFPlayer(clock: clock, cacheBudget: frameBytes * 5 / 2) { source }
+        player.play()
+        for step in 0..<4 {
+            #expect(await waitUntil { player.shownFrameIndex == step })
+            #expect(await waitUntil { player.cachedFrameIndices.contains(step + 1) })
+            clock.advance(by: 0.25)
+        }
+        #expect(await waitUntil { player.shownFrameIndex == 4 })
+        #expect(!player.cachedFrameIndices.contains(0), "the cache has let go of the first frame")
+
+        player.showFirstFrame()
+        #expect(player.shownFrameIndex == 4, "frame 0 isn't there yet, and the decoder is busy with frame 5")
+        source.release(5)
+        #expect(await waitUntil { player.shownFrameIndex == 0 })
+        #expect(isShowing(source.images[0], in: player))
+        #expect(!player.isPlaying)
+        #expect(clock.waiting.isEmpty)
+    }
+
+    @Test func aStoppedPlayerIgnoresAHold() async {
+        let clock = FakeFrameClock()
+        let source = makeSource()
+        let player = BackdropGIFPlayer(clock: clock) { source }
+        player.stop()
+        player.showFirstFrame()
+        try? await Task.sleep(for: .milliseconds(30))
+        #expect(player.shownFrameIndex == nil && player.mediaLayer.contents == nil)
+    }
+
     @Test func playingBeforeTheFileIsOpenStartsOnceItIs() async {
         let clock = FakeFrameClock()
         let source = makeSource()

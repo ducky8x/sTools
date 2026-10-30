@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import QuartzCore
+import STDesign
 import SwiftUI
 import Testing
 @testable import Backdrop
@@ -109,6 +110,28 @@ struct BackdropPanelHostingTests {
         let layer = try #require(playerLayers(in: panel).first)
         #expect(await waitUntil { layer.isReadyForDisplay }, "the first frame was decoded and reached the layer")
         #expect(layer.frame.size == CGSize(width: 1920, height: 1080), "a 16:9 movie fills a 16:9 display exactly")
+    }
+
+    /// With motion reduced a real video isn't played, but its first frame still reaches the layer.
+    @Test func aRealVideoHeldOnItsFirstFrameIsReadyToDisplayWithoutPlaying() async throws {
+        var made: [any BackdropPlayer] = []
+        let rig = AnimatedRig(showsPanels: true, minecraftWindowNumber: 0, theme: STTheme(motionMode: .reduced), makePlayer: { url, clock in
+            let player = BackdropAnimationFile.makePlayer(for: url, clock: clock)
+            made.append(player)
+            return player
+        })
+        let movie = try await TestMedia.writeMovie(to: rig.folder.file("clip.mp4"), colors: [.red, .blue], width: 640, height: 360)
+        await rig.controller.importAnimation(from: movie)
+        rig.controller.setEnabled(true)
+        defer { rig.controller.setEnabled(false) }
+        let video = try #require(made.first as? BackdropVideoPlayer)
+        let panel = try #require(rig.controller.existingPanel(for: displayOne.id))
+        #expect(await waitUntil { !self.playerLayers(in: panel).isEmpty })
+        let layer = try #require(playerLayers(in: panel).first)
+        #expect(await waitUntil { layer.isReadyForDisplay }, "the first frame is on the layer although nothing plays")
+        try? await Task.sleep(for: .milliseconds(300))
+        #expect(video.rate == 0 && video.seconds < 0.02, "and it hasn't moved")
+        #expect(!video.isPlaying)
     }
 
     private func playerLayers(in panel: NSWindow) -> [AVPlayerLayer] {

@@ -95,6 +95,8 @@ public final class BackdropController: ToolController {
     @ObservationIgnored private var windowObservers: [UInt32: NSObjectProtocol] = [:]
     /// Players of fills that a new fill replaced, paused on their last picture while that fades out.
     @ObservationIgnored private var retiring: [Retiring] = []
+    /// Which watch on the theme's motion setting is current; a new one ends the old.
+    @ObservationIgnored private var motionWatch = 0
 
     /// Why an animation can't be played, by the name it's stored under: the page says so.
     private(set) var animationProblems: [String: String] = [:]
@@ -144,8 +146,10 @@ public final class BackdropController: ToolController {
         if enabled {
             screensAreAsleep = false
             observeChanges()
+            watchMotion()
             reconcile()
         } else {
+            motionWatch += 1
             for observer in observers { removeObserver(observer) }
             observers.removeAll()
             releasePanels()
@@ -478,8 +482,8 @@ public final class BackdropController: ToolController {
         old.kind == .animated && new.kind == .animated && old.animationName != nil && old.animationName == new.animationName
     }
 
-    /// How long a fill change crossfades: none while motion is reduced. Reduce animations ends the crossfade and nothing
-    /// else: the animation itself keeps playing.
+    /// How long a fill change crossfades: none while motion is reduced, when an animated fill also holds still on its
+    /// first frame (`updatePlayback()`).
     var fillTransitionSeconds: Double {
         theme?.reduceMotion == true ? 0 : settings.fillTransitionSeconds
     }
@@ -515,11 +519,34 @@ public final class BackdropController: ToolController {
 
     /// Plays each display's animated fill while it can be seen and stops it otherwise, which is the whole of its cost
     /// control: nothing plays, decodes or ticks while the backdrop is off, hidden (Minecraft minimized, full screen, not
-    /// focused), covered, or its screen asleep.
+    /// focused), covered, or its screen asleep. While motion is reduced (Settings ▸ Appearance ▸ Reduce animations, or
+    /// macOS's Reduce motion) a fill that can be seen holds still on its first frame instead of playing (spec 3.4).
     func updatePlayback() {
+        let reduced = theme?.reduceMotion == true
         for (displayID, layers) in layers {
             let canBeSeen = isEnabled && shownDisplays.contains(displayID) && !coveredDisplays.contains(displayID) && !screensAreAsleep
-            layers.setPlaying(canBeSeen)
+            layers.setPlayback(canBeSeen ? (reduced ? .firstFrame : .playing) : .paused)
+        }
+    }
+
+    /// Plays or holds the animations again when motion is reduced or comes back, for as long as the tool is on. It re-arms
+    /// itself after each change; the tool being switched off, or on again, ends the watch it belongs to.
+    private func watchMotion() {
+        guard let theme else { return }
+        motionWatch += 1
+        trackMotion(of: theme, watch: motionWatch)
+    }
+
+    private func trackMotion(of theme: STTheme, watch: Int) {
+        withObservationTracking {
+            _ = theme.reduceMotion
+        } onChange: { [weak self] in
+            // The change isn't made yet when this is called; the next turn of the main actor sees it.
+            Task { @MainActor [weak self] in
+                guard let self, self.isEnabled, self.motionWatch == watch else { return }
+                self.updatePlayback()
+                self.trackMotion(of: theme, watch: watch)
+            }
         }
     }
 
@@ -546,8 +573,9 @@ public final class BackdropController: ToolController {
     /// The panel on `displayID`, if there is one. For tests.
     func existingPanel(for displayID: UInt32) -> OverlayPanel? { panels[displayID] }
 
-    /// Whether `displayID`'s animated fill is playing now. For tests.
+    /// Whether `displayID`'s animated fill is playing now, or is held on its first frame. For tests.
     func isPlayingAnimation(on displayID: UInt32) -> Bool { layers[displayID]?.isPlayingAnimation ?? false }
+    func isHoldingFirstFrame(on displayID: UInt32) -> Bool { layers[displayID]?.isHoldingFirstFrame ?? false }
 
     /// Minecraft's own display (while it's running) plus every additional display the user checked,
     /// limited to displays that actually exist right now.
@@ -601,6 +629,15 @@ public final class BackdropController: ToolController {
     }
 }
 
+/// What an animated fill's player is told to do.
+enum BackdropPlaybackState: Equatable {
+    /// Stopped where it is: the panel is hidden, covered or its screens asleep.
+    case paused
+    /// On its first frame and not playing, while motion is reduced (spec 3.4).
+    case firstFrame
+    case playing
+}
+
 /// What one backdrop panel shows. A new fill gets a new id, so SwiftUI crossfades from the old layer to it.
 @MainActor
 @Observable
@@ -615,12 +652,14 @@ final class BackdropLayers {
 
     private(set) var current: Layer
     var opacity: Double
-    /// Whether the player has been told to play. Not observed: the player is driven directly, because a SwiftUI view in a
+    /// What the player has been told to do. Not observed: the player is driven directly, because a SwiftUI view in a
     /// window that isn't on screen may not update until it is.
-    @ObservationIgnored private(set) var isPlayingPlayer = false
+    @ObservationIgnored private(set) var playbackState: BackdropPlaybackState = .paused
 
     /// Whether the fill is an animation and it is playing.
-    var isPlayingAnimation: Bool { isPlayingPlayer && current.player != nil }
+    var isPlayingAnimation: Bool { playbackState == .playing && current.player != nil }
+    /// Whether the fill is an animation held on its first frame.
+    var isHoldingFirstFrame: Bool { playbackState == .firstFrame && current.player != nil }
 
     init(fill: BackdropSettings.Fill, image: CGImage?, player: (any BackdropPlayer)? = nil, opacity: Double) {
         current = Layer(id: 0, fill: fill, image: image, player: player)
@@ -632,7 +671,7 @@ final class BackdropLayers {
     func show(_ fill: BackdropSettings.Fill, image: CGImage?, player: (any BackdropPlayer)? = nil) -> (any BackdropPlayer)? {
         let replaced = current.player
         current = Layer(id: current.id + 1, fill: fill, image: image, player: player)
-        isPlayingPlayer = false
+        playbackState = .paused
         return replaced
     }
 
@@ -641,15 +680,19 @@ final class BackdropLayers {
         current.fill = fill
     }
 
-    /// Plays or pauses the current fill's player, when that changes anything.
-    func setPlaying(_ playing: Bool) {
-        guard playing != isPlayingPlayer else { return }
-        isPlayingPlayer = playing
-        if playing { current.player?.play() } else { current.player?.pause() }
+    /// Tells the current fill's player what to do, when that changes anything.
+    func setPlayback(_ state: BackdropPlaybackState) {
+        guard state != playbackState else { return }
+        playbackState = state
+        switch state {
+        case .playing: current.player?.play()
+        case .firstFrame: current.player?.showFirstFrame()
+        case .paused: current.player?.pause()
+        }
     }
 
     func stopPlayer() {
-        isPlayingPlayer = false
+        playbackState = .paused
         current.player?.stop()
     }
 }

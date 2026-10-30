@@ -328,30 +328,165 @@ struct BackdropAnimatedFillTests {
         #expect(old.isStopped)
     }
 
-    /// Reduce animations takes away the fade, not the movie (spec 3.4).
-    @Test func reduceAnimationsEndsTheFadeButTheAnimationKeepsPlaying() {
-        let reduced = STTheme(motionMode: .reduced)
-        let rig = AnimatedRig(theme: reduced)
+    // MARK: - Reduced motion (spec 3.4): an Animated fill holds still on its first frame
+
+    @Test func whileMotionIsReducedAnAnimatedFillHoldsItsFirstFrameAndNeverPlays() {
+        let rig = AnimatedRig(theme: STTheme(motionMode: .reduced))
         rig.animate("Images/one.mp4")
         rig.controller.setEnabled(true)
         defer { rig.controller.setEnabled(false) }
-        #expect(rig.controller.fillTransitionSeconds == 0)
-        #expect(rig.player.isPlaying, "the movie plays")
-        let old = rig.player
-        rig.animate("Images/two.mp4")
-        #expect(rig.player.isPlaying, "and so does the next, with Reduce animations on")
-        rig.clock.advance(by: 0.1)
-        #expect(old.isStopped, "the old fill goes at once: no fade to wait for")
+        #expect(rig.controller.fillTransitionSeconds == 0, "the crossfade is instant too")
+        #expect(rig.log.players.count == 1)
+        #expect(rig.player.calls == ["firstFrame"], "told to hold the first frame, never to play")
+        #expect(rig.player.isHoldingFirstFrame && !rig.player.isPlaying)
+        #expect(rig.controller.isHoldingFirstFrame(on: displayOne.id))
+        #expect(!rig.controller.isPlayingAnimation(on: displayOne.id))
     }
 
-    @Test func macOSReduceMotionLeavesTheAnimationAloneToo() {
-        let theme = STTheme(systemReduceMotion: true)
+    @Test func macOSReduceMotionHoldsItToo() {
+        let rig = AnimatedRig(theme: STTheme(systemReduceMotion: true))
+        rig.animate()
+        rig.controller.setEnabled(true)
+        defer { rig.controller.setEnabled(false) }
+        #expect(rig.player.calls == ["firstFrame"])
+    }
+
+    @Test func reducingMotionWhileItPlaysHoldsTheFirstFrame() async {
+        let theme = STTheme()
         let rig = AnimatedRig(theme: theme)
         rig.animate()
         rig.controller.setEnabled(true)
         defer { rig.controller.setEnabled(false) }
-        #expect(rig.controller.fillTransitionSeconds == 0)
         #expect(rig.player.isPlaying)
+        theme.motionMode = .reduced
+        #expect(await waitUntil { !rig.player.isPlaying })
+        #expect(rig.player.calls == ["play", "firstFrame"])
+        #expect(rig.player.isHoldingFirstFrame)
+    }
+
+    @Test func macOSReduceMotionTurnedOnWhileItPlaysHoldsTheFirstFrame() async {
+        let theme = STTheme()
+        let rig = AnimatedRig(theme: theme)
+        rig.animate()
+        rig.controller.setEnabled(true)
+        defer { rig.controller.setEnabled(false) }
+        theme.systemReduceMotion = true
+        #expect(await waitUntil { rig.player.isHoldingFirstFrame })
+        theme.systemReduceMotion = false
+        #expect(await waitUntil { rig.player.isPlaying })
+    }
+
+    @Test func motionComingBackPlaysItAgainFromTheFirstFrame() async {
+        let theme = STTheme(motionMode: .reduced)
+        let rig = AnimatedRig(theme: theme)
+        rig.animate()
+        rig.controller.setEnabled(true)
+        defer { rig.controller.setEnabled(false) }
+        #expect(rig.player.isHoldingFirstFrame)
+        theme.motionMode = .full
+        #expect(await waitUntil { rig.player.isPlaying })
+        #expect(rig.player.calls == ["firstFrame", "play"])
+        #expect(!rig.player.isHoldingFirstFrame)
+    }
+
+    @Test func switchingMotionBackAndForthNeverOpensTheFileAgain() async {
+        let theme = STTheme()
+        let rig = AnimatedRig(theme: theme)
+        rig.animate()
+        rig.controller.setEnabled(true)
+        defer { rig.controller.setEnabled(false) }
+        for _ in 0..<3 {
+            theme.motionMode = .reduced
+            #expect(await waitUntil { rig.player.isHoldingFirstFrame })
+            theme.motionMode = .full
+            #expect(await waitUntil { rig.player.isPlaying })
+        }
+        #expect(rig.log.players.count == 1, "one player for the fill, however often motion is switched")
+        #expect(rig.log.urls.count == 1)
+        #expect(!rig.player.isStopped)
+    }
+
+    @Test func aChangeThatLeavesMotionAsItWasDoesNothing() async {
+        let theme = STTheme()
+        let rig = AnimatedRig(theme: theme)
+        rig.animate()
+        rig.controller.setEnabled(true)
+        defer { rig.controller.setEnabled(false) }
+        theme.accentHex = "#E4BC62"
+        theme.soundsEnabled = false
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(rig.player.calls == ["play"])
+    }
+
+    @Test func aFileChosenWhileMotionIsReducedHoldsItsFirstFrameToo() {
+        let rig = AnimatedRig(theme: STTheme(motionMode: .reduced))
+        rig.animate("Images/one.mp4")
+        rig.controller.setEnabled(true)
+        defer { rig.controller.setEnabled(false) }
+        let old = rig.player
+        rig.animate("Images/two.mp4")
+        #expect(rig.log.players.count == 2)
+        #expect(rig.player.calls == ["firstFrame"])
+        rig.clock.advance(by: 0.1)
+        #expect(old.isStopped, "the old fill goes at once: there's no fade to wait for")
+        #expect(!old.calls.contains("play"))
+    }
+
+    @Test func aBackdropHiddenWhileMotionIsReducedPausesAndComesBackHoldingTheFirstFrame() {
+        let rig = AnimatedRig(theme: STTheme(motionMode: .reduced))
+        rig.animate()
+        rig.controller.setEnabled(true)
+        defer { rig.controller.setEnabled(false) }
+        rig.minecraft(minimized: true)
+        #expect(rig.player.calls == ["firstFrame", "pause"])
+        rig.minecraft(minimized: false)
+        #expect(rig.player.calls == ["firstFrame", "pause", "firstFrame"])
+        #expect(rig.player.isHoldingFirstFrame && !rig.player.isPlaying)
+        #expect(!rig.player.calls.contains("play"), "it never plays while motion is reduced, however it is shown and hidden")
+    }
+
+    @Test func screensWakingWhileMotionIsReducedLeavesItOnTheFirstFrame() {
+        let rig = AnimatedRig(theme: STTheme(motionMode: .reduced))
+        rig.animate()
+        rig.controller.setEnabled(true)
+        defer { rig.controller.setEnabled(false) }
+        rig.screensSleep()
+        rig.screensWake()
+        #expect(rig.player.isHoldingFirstFrame && !rig.player.isPlaying)
+        #expect(!rig.player.calls.contains("play"))
+    }
+
+    @Test func theToolWatchesMotionOnlyWhileItIsOn() async {
+        let theme = STTheme()
+        let rig = AnimatedRig(theme: theme)
+        rig.animate()
+        rig.controller.setEnabled(true)
+        let player = rig.player
+        rig.controller.setEnabled(false)
+        let calls = player.calls
+        theme.motionMode = .reduced
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(player.calls == calls, "a stopped player is left alone")
+        rig.controller.setEnabled(true)
+        defer { rig.controller.setEnabled(false) }
+        #expect(rig.log.players.count == 2)
+        #expect(rig.player.isHoldingFirstFrame, "switching on again with motion reduced starts on the first frame")
+        theme.motionMode = .full
+        #expect(await waitUntil { rig.player.isPlaying }, "and it watches again")
+    }
+
+    @Test func switchingTheToolOffAndOnWatchesMotionOnce() async {
+        let theme = STTheme()
+        let rig = AnimatedRig(theme: theme)
+        rig.animate()
+        rig.controller.setEnabled(true)
+        rig.controller.setEnabled(false)
+        rig.controller.setEnabled(true)
+        defer { rig.controller.setEnabled(false) }
+        theme.motionMode = .reduced
+        #expect(await waitUntil { rig.player.isHoldingFirstFrame })
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(rig.player.calls == ["play", "firstFrame"], "one change is one call, not one for each time the tool was switched on")
     }
 
     @Test func theOpacityChangesAtOnceWithoutTouchingThePlayer() {

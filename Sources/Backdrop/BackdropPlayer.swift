@@ -17,6 +17,9 @@ protocol BackdropPlayer: AnyObject {
     func play()
     /// Stops at the picture on screen and releases the timer. Safe to call again.
     func pause()
+    /// Goes back to the first frame and holds it without playing: what an animation shows while motion is reduced
+    /// (spec 3.4). `play()` starts it again from there. Safe to call again.
+    func showFirstFrame()
     /// Lets everything go: decoded frames, the player, the file. It can't play again.
     func stop()
 }
@@ -45,5 +48,6 @@ final class BackdropFailedPlayer: BackdropPlayer {
     func observe(_ handler: @escaping @MainActor () -> Void) {}
     func play() {}
     func pause() {}
+    func showFirstFrame() {}
     func stop() {}
 }
