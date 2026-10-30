@@ -20,6 +20,9 @@
 #   DEVELOPER_DIR  Defaults to the Xcode beta when it is installed.
 #   TMPDIR         Where the work folder goes (default: the per-user temporary folder). Must be outside the home
 #                  folder.
+#   STOOLS_HDIUTIL_LIMIT
+#                  How many seconds hdiutil create and hdiutil convert may each run before they are stopped and the
+#                  build fails (default 600). A stuck disk image helper makes hdiutil wait for good.
 #
 # The window: a dark background drawn by scripts/dmg-window.swift (wordmark, a gold arrow from sTools to
 # Applications, and the one-time Open Anyway steps; the dev DMG says "sTools Dev" and draws in blue), at 1x and 2x
@@ -94,6 +97,8 @@ shown() {
 # shellcheck source=lib/mask-home.sh
 source "$ROOT/scripts/lib/mask-home.sh"
 mask_output_of "${BASH_SOURCE[0]}" "$@"
+# shellcheck source=lib/run-with-limit.sh
+source "$ROOT/scripts/lib/run-with-limit.sh"
 
 APP=""
 VOLUME_ICON=""
@@ -376,6 +381,20 @@ indented() {
     sed -e "s#$WORK/#(work folder)/#g" -e "s#${WORK#/private}/#(work folder)/#g" -e 's/^/    /'
 }
 
+# hdiutil create and hdiutil convert write the whole image, and they wait for good when the disk image helper behind
+# them is stuck. Each gets a limit (STOOLS_HDIUTIL_LIMIT seconds, default 600) and is stopped when it runs past it.
+HDIUTIL_LIMIT="${STOOLS_HDIUTIL_LIMIT:-600}"
+[[ "$HDIUTIL_LIMIT" =~ ^[1-9][0-9]*$ ]] || fail "STOOLS_HDIUTIL_LIMIT must be a number of seconds, got \"$HDIUTIL_LIMIT\""
+run_hdiutil() {
+    local status=0
+    run_with_limit "$HDIUTIL_LIMIT" "hdiutil $1" hdiutil "$@" || status=$?
+    if [[ "$status" -eq 124 ]]; then
+        echo "note: hdiutil usually waits like this when its disk image helper is stuck. Quit hdiutil and diskimages-helper" \
+            "in Activity Monitor, eject any sTools disk image, and run this again." >&2
+    fi
+    return "$status"
+}
+
 echo "==> Compiling scripts/dmg-window.swift"
 swiftc -o "$WORK/dmg-window" "$ROOT/scripts/dmg-window.swift"
 
@@ -395,7 +414,7 @@ fi
 echo "==> Creating the read-write image"
 STAGE_KB="$(du -sk "$WORK/stage" | cut -f1)"
 SIZE_MB=$(( STAGE_KB * 12 / 10 / 1024 + 16 ))
-hdiutil create -quiet -srcfolder "$WORK/stage" -volname "$VOLUME_NAME" -fs HFS+ -format UDRW \
+run_hdiutil create -quiet -srcfolder "$WORK/stage" -volname "$VOLUME_NAME" -fs HFS+ -format UDRW \
     -size "${SIZE_MB}m" "$WORK/rw.dmg"
 
 echo "==> Writing the Finder layout"
@@ -428,7 +447,7 @@ ATTACHED=""
 echo "==> Compressing"
 mkdir -p "$WORK/out"
 BUILT="$WORK/out/$NAME"
-hdiutil convert -quiet "$WORK/rw.dmg" -format UDZO -imagekey zlib-level=9 -o "$BUILT"
+run_hdiutil convert -quiet "$WORK/rw.dmg" -format UDZO -imagekey zlib-level=9 -o "$BUILT"
 hdiutil verify -quiet "$BUILT" || fail "hdiutil verify failed for the compressed image"
 
 echo "==> Checking the DMG's contents"
