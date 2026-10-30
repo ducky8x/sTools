@@ -28,7 +28,9 @@ private let ctrlOptC = combo(8, [.control, .option])
 @MainActor
 private func temporaryStore() -> (SettingsStore, URL) {
     let directory = FileManager.default.temporaryDirectory.appending(path: "hotkey-sets-\(UUID().uuidString)", directoryHint: .isDirectory)
-    return (SettingsStore(directory: directory, debounce: .milliseconds(1)), directory)
+    let store = SettingsStore(directory: directory, debounce: .milliseconds(1))
+    store.registerHotkeysExactly()
+    return (store, directory)
 }
 
 @Suite("Hotkey key sets")
