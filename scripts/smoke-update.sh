@@ -195,7 +195,7 @@ LENGTH="${BASH_REMATCH[2]}"
 echo "==> Writing the feeds"
 printf 'sTools 0.1.1 (smoke test).\n' > "$WORK/notes.md"
 PLACEHOLDER="https://example.invalid/$DMG_NAME"
-"$ROOT/scripts/appcast-add-item.sh" "$ROOT/packaging/releases-repo/appcast.xml" 0.1.1 101 \
+"$ROOT/scripts/appcast-add-item.sh" "$ROOT/packaging/appcast-template.xml" 0.1.1 101 \
     "$(plutil -extract LSMinimumSystemVersion raw "$WORK/B/sTools.app/Contents/Info.plist")" "$PLACEHOLDER" "$LENGTH" \
     "$SIGNATURE" "$WORK/notes.md" | sed "s#$PLACEHOLDER#http://localhost:$PORT/$DMG_NAME#" > "$WORK/appcast-signed.xml"
 "$ROOT/scripts/check-appcast.sh" "$WORK/appcast-signed.xml" | sed 's/^/    /'

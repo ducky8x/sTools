@@ -5,7 +5,9 @@ import Testing
 /// feed; then, when there is one, the app `scripts/build-app.sh` last built.
 @Suite("Update packaging")
 struct UpdatePackagingTests {
-    static let feedURL = "https://raw.githubusercontent.com/ducky8x/sTools-releases/main/appcast.xml"
+    /// The feed baked into every build: the `appcast.xml` attached to the release GitHub marks Latest on the
+    /// repository that holds the code (spec 6.3).
+    static let feedURL = "https://github.com/ducky8x/sTools/releases/latest/download/appcast.xml"
     static let packaging = repositoryRoot.appending(path: "packaging")
 
     static func plist(_ url: URL) throws -> [String: Any] {
@@ -39,16 +41,18 @@ struct UpdatePackagingTests {
         #expect(entitlements["com.apple.security.app-sandbox"] == nil)
     }
 
-    @Test func theReleasesRepositoryStartsWithAnEmptyFeed() throws {
-        let folder = Self.packaging.appending(path: "releases-repo")
-        let readme = try String(contentsOf: folder.appending(path: "README.md"), encoding: .utf8)
-        #expect(readme.contains("Release downloads and the update feed for sTools"))
-        let feed = try XMLDocument(contentsOf: folder.appending(path: "appcast.xml"))
+    @Test func theFeedTemplateStartsEmptyAndMarksWhereNewVersionsGo() throws {
+        let template = Self.packaging.appending(path: "appcast-template.xml")
+        let feed = try XMLDocument(contentsOf: template)
         let root = try #require(feed.rootElement())
         #expect(root.name == "rss")
         #expect(root.namespace(forPrefix: "sparkle")?.stringValue == "http://www.andymatuschak.org/xml-namespaces/sparkle")
         #expect(try feed.nodes(forXPath: "/rss/channel").count == 1)
         #expect(try feed.nodes(forXPath: "/rss/channel/item").isEmpty)
+        #expect(try String(contentsOf: template, encoding: .utf8).contains("<!-- New versions go right below this line"))
+        #expect(!FileManager.default.fileExists(atPath: Self.packaging.appending(path: "releases-repo").path),
+                "the separate releases repository's files are gone")
+        #expect(!FileManager.default.fileExists(atPath: repositoryRoot.appending(path: "scripts/create-releases-repo.sh").path))
     }
 
     @Test func publishingAddsASignedItemAtTheTopOfTheFeed() throws {
@@ -57,8 +61,8 @@ struct UpdatePackagingTests {
         defer { try? FileManager.default.removeItem(at: work) }
         let notes = work.appending(path: "notes.md")
         try "The first beta.\n".write(to: notes, atomically: true, encoding: .utf8)
-        let template = Self.packaging.appending(path: "releases-repo/appcast.xml").path
-        let url = "https://github.com/ducky8x/sTools-releases/releases/download/v0.1.0/sTools-0.1.0-beta-macOS.dmg"
+        let template = Self.packaging.appending(path: "appcast-template.xml").path
+        let url = "https://github.com/ducky8x/sTools/releases/download/v0.1.0/sTools-0.1.0-beta-macOS.dmg"
         let signature = Data(repeating: 7, count: 64).base64EncodedString()
         let output = try run(repositoryRoot.appending(path: "scripts/appcast-add-item.sh").path,
                              [template, "0.1.0", "155", "15.0", url, "1234", signature, notes.path])
