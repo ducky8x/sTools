@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// The top of a page: the title with a trailing control (the app passes the tool's switch), a
-/// gilt rule, and the tagline in standfirst style. The title is the page's accessibility header.
+/// gilt rule, and the tagline in standfirst style. The title is the page's accessibility header. It shrinks to fit
+/// its row, and wraps where it can't (`STPageTitle`).
 public struct STPageHeader<Trailing: View>: View {
     private let title: String
     private let tagline: String
@@ -18,11 +19,7 @@ public struct STPageHeader<Trailing: View>: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .center, spacing: 16) {
-                Text(title)
-                    .stStyle(.pageTitle)
-                    .foregroundStyle(STColor.ink)
-                    .lineLimit(1)
-                    .accessibilityAddTraits(.isHeader)
+                STPageTitle(title)
                 Spacer(minLength: 16)
                 trailing
             }
