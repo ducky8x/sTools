@@ -113,7 +113,7 @@ extension AppModel {
             minecraft: minecraft.active != nil ? "Detected: \(minecraft.active?.version ?? "unknown version")" : "Not running",
             enabledTools: enabledTools,
             settingsFiles: SettingsFileInfo.list(in: settings.directory),
-            logReader: OSLogLineReader(),
+            logReader: logReader,
             hotkeys: DiagnosticsHotkeys(
                 isEnabled: hotkeys.isEnabled, scope: hotkeys.scope.title, keySet: HotkeyKeySet.name(of: hotkeys.keySet)))
         report.copy(to: clipboard)
