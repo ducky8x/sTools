@@ -11,14 +11,24 @@ protocol BackdropPlayer: AnyObject {
     var naturalSize: CGSize? { get }
     /// A plain line saying why the file can't be played, once that is known.
     var failure: String? { get }
-    /// Called when `naturalSize` or `failure` first becomes known.
-    var onUpdate: (@MainActor () -> Void)? { get set }
+    /// Calls `handler` when `naturalSize` or `failure` first becomes known. Any number of handlers may ask.
+    func observe(_ handler: @escaping @MainActor () -> Void)
     /// Starts, or resumes from where it paused. Safe to call again.
     func play()
     /// Stops at the picture on screen and releases the timer. Safe to call again.
     func pause()
     /// Lets everything go: decoded frames, the player, the file. It can't play again.
     func stop()
+}
+
+/// The handlers a player tells when it learns something about its file.
+@MainActor
+struct BackdropPlayerObservers {
+    private var handlers: [@MainActor () -> Void] = []
+
+    mutating func add(_ handler: @escaping @MainActor () -> Void) { handlers.append(handler) }
+    mutating func removeAll() { handlers.removeAll() }
+    func notify() { for handler in handlers { handler() } }
 }
 
 enum BackdropPlayerMessages {
@@ -32,8 +42,8 @@ final class BackdropFailedPlayer: BackdropPlayer {
     let mediaLayer = CALayer()
     let naturalSize: CGSize? = nil
     let failure: String? = BackdropPlayerMessages.cantPlay
-    var onUpdate: (@MainActor () -> Void)?
+    func observe(_ handler: @escaping @MainActor () -> Void) {}
     func play() {}
     func pause() {}
-    func stop() { onUpdate = nil }
+    func stop() {}
 }

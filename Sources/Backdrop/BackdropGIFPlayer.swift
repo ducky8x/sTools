@@ -29,7 +29,7 @@ final class BackdropGIFPlayer: BackdropPlayer {
 
     private(set) var naturalSize: CGSize?
     private(set) var failure: String?
-    var onUpdate: (@MainActor () -> Void)?
+    private var observers = BackdropPlayerObservers()
 
     /// Which frame is on screen (nil before the first), and how many times a frame has gone up. For tests.
     private(set) var shownFrameIndex: Int?
@@ -71,6 +71,8 @@ final class BackdropGIFPlayer: BackdropPlayer {
         self.init(clock: clock) { await Task.detached(priority: .utility) { ImageIOFrameSource.open(at: url) }.value }
     }
 
+    func observe(_ handler: @escaping @MainActor () -> Void) { observers.add(handler) }
+
     // MARK: - Control
 
     func play() {
@@ -104,7 +106,7 @@ final class BackdropGIFPlayer: BackdropPlayer {
         source = nil
         shownFrameIndex = nil
         setContents(nil)
-        onUpdate = nil
+        observers.removeAll()
     }
 
     // MARK: - Playing
@@ -118,7 +120,7 @@ final class BackdropGIFPlayer: BackdropPlayer {
         self.source = source
         naturalSize = source.size
         frameBytes = max(1, Int(source.size.width) * Int(source.size.height) * 4)
-        onUpdate?()
+        observers.notify()
         if wantsToPlay { begin() }
     }
 
@@ -129,7 +131,7 @@ final class BackdropGIFPlayer: BackdropPlayer {
         timer?.cancel()
         timer = nil
         waitingFor = nil
-        onUpdate?()
+        observers.notify()
     }
 
     private func begin() {

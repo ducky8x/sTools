@@ -22,7 +22,7 @@ final class BackdropVideoPlayer: BackdropPlayer {
     var mediaLayer: CALayer { playerLayer }
     private(set) var naturalSize: CGSize?
     private(set) var failure: String?
-    var onUpdate: (@MainActor () -> Void)?
+    private var observers = BackdropPlayerObservers()
 
     init(url: URL) {
         player.isMuted = true
@@ -39,6 +39,8 @@ final class BackdropVideoPlayer: BackdropPlayer {
     }
 
     // MARK: - Control
+
+    func observe(_ handler: @escaping @MainActor () -> Void) { observers.add(handler) }
 
     var isPlaying: Bool { wantsToPlay && !isStopped && failure == nil }
 
@@ -64,7 +66,7 @@ final class BackdropVideoPlayer: BackdropPlayer {
         player.pause()
         player.removeAllItems()
         playerLayer.player = nil
-        onUpdate = nil
+        observers.removeAll()
     }
 
     // MARK: - Opening
@@ -88,7 +90,7 @@ final class BackdropVideoPlayer: BackdropPlayer {
                 guard looper.status == .failed else { return }
                 Task { @MainActor in self?.fail() }
             }
-            onUpdate?()
+            observers.notify()
             if wantsToPlay { player.play() }
         } catch {
             fail()
@@ -100,7 +102,7 @@ final class BackdropVideoPlayer: BackdropPlayer {
         failure = BackdropPlayerMessages.cantPlay
         wantsToPlay = false
         player.pause()
-        onUpdate?()
+        observers.notify()
     }
 
     // MARK: - For tests

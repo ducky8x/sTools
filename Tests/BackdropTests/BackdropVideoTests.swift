@@ -129,7 +129,7 @@ struct BackdropVideoPlayerTests {
         let player = BackdropVideoPlayer(url: text)
         defer { player.stop() }
         var updates = 0
-        player.onUpdate = { updates += 1 }
+        player.observe { updates += 1 }
         player.play()
         #expect(await waitUntil { player.failure != nil })
         #expect(player.naturalSize == nil)

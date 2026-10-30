@@ -171,7 +171,7 @@ struct BackdropGIFPlayerTests {
     @Test func aFileThatWontOpenFails() async {
         let player = BackdropGIFPlayer(clock: FakeFrameClock()) { nil }
         var updates = 0
-        player.onUpdate = { updates += 1 }
+        player.observe { updates += 1 }
         player.play()
         #expect(await waitUntil { player.failure != nil })
         #expect(updates == 1)

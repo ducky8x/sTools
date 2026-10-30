@@ -177,3 +177,30 @@ enum TestMedia {
         return buffer
     }
 }
+
+/// A player that only records what it was told, for the tests of everything around the players.
+@MainActor
+final class FakePlayer: BackdropPlayer {
+    let mediaLayer = CALayer()
+    private(set) var naturalSize: CGSize?
+    private(set) var failure: String?
+    private(set) var calls: [String] = []
+    private(set) var isPlaying = false
+    private(set) var isStopped = false
+    private var observers = BackdropPlayerObservers()
+
+    init(naturalSize: CGSize? = nil, failure: String? = nil) {
+        self.naturalSize = naturalSize
+        self.failure = failure
+    }
+
+    func observe(_ handler: @escaping @MainActor () -> Void) { observers.add(handler) }
+    func play() { calls.append("play"); isPlaying = !isStopped }
+    func pause() { calls.append("pause"); isPlaying = false }
+    func stop() { calls.append("stop"); isPlaying = false; isStopped = true }
+
+    /// The file has been opened and its picture is this big.
+    func learn(size: CGSize) { naturalSize = size; observers.notify() }
+    /// The file turned out not to play.
+    func fail(_ message: String) { failure = message; observers.notify() }
+}
