@@ -55,7 +55,7 @@ struct DMGTitleFontTests {
         #expect(drawn.output.contains("text fits"), "\(drawn.output)")
         for name in ["background.png", "background@2x.png", "background.tiff"] {
             let size = (try? FileManager.default.attributesOfItem(atPath: output.appending(path: name).path)[.size] as? Int) ?? 0
-            #expect((size ?? 0) > 10_000, "\(name) was drawn")
+            #expect(size > 10_000, "\(name) was drawn")
         }
     }
 }
