@@ -279,6 +279,16 @@ public actor AXNBBWindowReader: NBBWindowReading {
         var walksNext = false
     }
 
+    /// What a walk came to.
+    private enum WalkResult {
+        case found(Walked)
+        /// No window shows the predictions table: it's closed, or Accessibility lists the app itself as its window.
+        case noTable
+        /// The copy didn't answer in time, or an element went away while the walk was under way (Ninjabrain Bot
+        /// rebuilding a panel): the window is there, so this walk says nothing about it.
+        case interrupted
+    }
+
     private enum TextsRead {
         case texts([String])
         /// An element is gone (the window changed shape or closed): walk again.
@@ -349,14 +359,24 @@ public actor AXNBBWindowReader: NBBWindowReading {
             walked = nil
             return nil
         }
-        guard let found = walk(pid: pid, at: now) else {
+        switch walk(pid: pid, at: now) {
+        case .found(let found):
+            walked = found
+            failedWalk = nil
+            return found.snapshot
+        case .noTable:
             walked = nil
             failedWalk = (pid, now)
             return nil
+        case .interrupted:
+            // A copy that doesn't answer keeps its last result, as in a look between walks, and the next look walks
+            // again at once: only a window with no table waits (`retryInterval`), and this one has a window.
+            guard let current = walked, current.pid == pid else {
+                walked = nil
+                return nil
+            }
+            return current.snapshot
         }
-        walked = found
-        failedWalk = nil
-        return found.snapshot
     }
 
     /// The static texts at `indices` now; a button's title is the walk's.
@@ -386,7 +406,7 @@ public actor AXNBBWindowReader: NBBWindowReading {
         NBBWindowParser.Item(role: isButton ? "AXButton" : "AXStaticText", text: text)
     }
 
-    private func walk(pid: Int32, at time: ContinuousClock.Instant) -> Walked? {
+    private func walk(pid: Int32, at time: ContinuousClock.Instant) -> WalkResult {
         // Menus and the app's own element hold nothing of the window, and Accessibility can list the app inside it.
         let skipped: Set<String> = ["AXApplication", "AXMenuBar", "AXMenuBarItem", "AXMenu", "AXMenuItem"]
         var elements: [(element: NBBAXElement, isButton: Bool)] = []
@@ -407,18 +427,18 @@ public actor AXNBBWindowReader: NBBWindowReading {
             var kept: [(element: NBBAXElement, isButton: Bool, walkedText: String)] = []
             kept.reserveCapacity(elements.count)
             for (element, isButton) in elements {
-                guard case .text(let text) = accessibility.text(of: element, isButton: isButton) else { return nil }
+                guard case .text(let text) = accessibility.text(of: element, isButton: isButton) else { return .interrupted }
                 kept.append((element, isButton, text ?? ""))
             }
             let texts = kept.filter { !$0.isButton }.map(\.walkedText)
             if texts.contains("Location") && texts.contains("Dist.") {
                 let allTexts = kept.map(\.walkedText)
                 let items = kept.map { Self.item($0.isButton, $0.walkedText) }
-                return Walked(
+                return .found(Walked(
                     pid: pid, elements: kept, walkedAt: time, texts: allTexts, watched: NBBWindowParser.watchedIndices(items),
-                    readAt: time, snapshot: NBBWindowParser.parse(items))
+                    readAt: time, snapshot: NBBWindowParser.parse(items)))
             }
         }
-        return nil
+        return .noTable
     }
 }
