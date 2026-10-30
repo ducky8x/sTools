@@ -330,10 +330,10 @@ struct STTextFieldRenderingTests {
         render(field(points: points, revealed: revealed, text: text), width: 260, scale: scale)
     }
 
-    /// The field showing its own glyphs, and how many pixel rows from the top of the render it can draw them in: down
-    /// to its AppKit view's bottom edge, the bottom of its line. Now and then a process has SwiftUI size that view to
-    /// another font's line (see `stFieldLineHeight`); a shorter view still sits where the field belongs, but AppKit
-    /// cuts its glyphs off at that edge, so there's nothing below it to compare the overlay with.
+    /// The field showing its own glyphs, and how many pixel rows from the top of the render its AppKit view covers: down
+    /// to the bottom of its line, where the padding and the underline begin. Now and then a process has SwiftUI size
+    /// that view to another font's line; `STFieldLineGuard` makes it a full line again, so the descender rows are
+    /// compared too (`FieldDescenderTests` forces a short view).
     private func nativeFieldRep(points: Double, scale: Int) -> (rep: NSBitmapImageRep, drawableRows: Int) {
         let hosted = Hosted(field(points: points, revealed: true), width: 260, scale: scale)
         let rep = hosted.capture()
