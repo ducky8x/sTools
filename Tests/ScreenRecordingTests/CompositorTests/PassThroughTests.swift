@@ -83,7 +83,7 @@ private func writeMovie(_ pictures: [CVPixelBuffer], size: PixelSize, name: Stri
     let writer = RecordingWriter(configuration: configuration, freeSpace: FakeFreeSpace(.max), readinessOverride: nil)
     try writer.start(at: .zero)
     for (index, picture) in pictures.enumerated() {
-        while !writer.canAcceptFrame { try await Task.sleep(for: .milliseconds(2)) }
+        #expect(await waitUntil { writer.canAcceptFrame }, "the encoder took the last frame")
         #expect(writer.append(frame: picture, at: CMTime(value: CMTimeValue(index), timescale: 30)) == .written)
     }
     let result = await writer.finish()

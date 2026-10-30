@@ -51,11 +51,7 @@ struct SplitSoundTests {
             soundEnd = frame
         }
         for index in 0..<frames {
-            var waited = 0
-            while !writer.canAcceptFrame, waited < 5000 {
-                try await Task.sleep(for: .milliseconds(1))
-                waited += 1
-            }
+            #expect(await waitUntil { writer.canAcceptFrame }, "the encoder took the last frame")
             #expect(writer.append(frame: WriterFixture.makeFrame(index: index), at: CMTime(value: CMTimeValue(index), timescale: 30)) == .written)
             writeSound(upTo: index * 1600 - lag)
         }

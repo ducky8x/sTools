@@ -282,9 +282,7 @@ private struct Harness {
     /// Waits (bounded, generously: arming and starting can take seconds while the whole suite runs) for `condition`,
     /// yielding between checks.
     func waitUntil(_ condition: () -> Bool) async -> Bool {
-        let deadline = SuspendingClock.now + .seconds(20)
-        while !condition(), SuspendingClock.now < deadline { try? await Task.sleep(for: .milliseconds(5)) }
-        return condition()
+        await ScreenRecordingTests.waitUntil(condition)
     }
 
     /// Off, the key switches the tool on and records at once; pressed again after a moment, it stops and asks.
@@ -361,8 +359,7 @@ struct ScreenRecordingControllerTests {
         #expect(titles.contains("Timer alarm") == wantsRecording)
         #expect(titles.first == "Mix")
         harness.controller.setEnabled(false)
-        for _ in 0..<200 where feed.hasListeners { try? await Task.sleep(for: .milliseconds(5)) }
-        #expect(!feed.hasListeners)
+        #expect(await harness.waitUntil { !feed.hasListeners }, "switching the tool off let go of the feed")
     }
 
     @Test func aFeedTurnedOnDuringARecordingWaitsForTheNextOne() async throws {
@@ -481,7 +478,7 @@ struct ScreenRecordingControllerTests {
         }
         await harness.arm()
         harness.factory.videos[id]?.push(.ended("gone"))
-        for _ in 0..<100 where harness.controller.notes.isEmpty { try? await Task.sleep(for: .milliseconds(5)) }
+        #expect(await harness.waitUntil { !harness.controller.notes.isEmpty }, "the closed source was noted")
         #expect(harness.controller.notes == ["Discord \u{2014} Call closed; its place stays empty."])
         harness.controller.setEnabled(false)
     }
@@ -490,13 +487,13 @@ struct ScreenRecordingControllerTests {
         let harness = Harness()
         defer { harness.remove() }
         harness.controller.toggleRecording()
-        for _ in 0..<200 where harness.controller.phase != .recording { try? await Task.sleep(for: .milliseconds(5)) }
+        #expect(await harness.waitUntil { harness.controller.phase == .recording })
         #expect(harness.controller.isEnabled)
         #expect(harness.controller.phase == .recording)
         harness.factory.bases[42]?.push(.frame(VideoFrame(pixelBuffer: WriterFixture.makeFrame(index: 1), hostTime: HostMediaClock().now())))
         try await Task.sleep(for: .milliseconds(200))
         harness.controller.toggleRecording()
-        for _ in 0..<400 where harness.controller.phase != .deciding { try? await Task.sleep(for: .milliseconds(5)) }
+        #expect(await harness.waitUntil { harness.controller.phase == .deciding })
         #expect(harness.controller.phase == .deciding)
         harness.controller.delete()
         harness.controller.setEnabled(false)
