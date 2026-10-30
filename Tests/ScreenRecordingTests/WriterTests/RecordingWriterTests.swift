@@ -101,18 +101,18 @@ struct RecordingWriterTests {
         let writer = RecordingWriter(configuration: WriterFixture.configuration(dir))
         try writer.start(at: .zero)
         await WriterFixture.feed(writer, frames: 120)
-        var grown = false
-        for _ in 0..<200 where !grown {
-            grown = writer.currentFileSize > 20_000
-            if !grown { try await Task.sleep(for: .milliseconds(25)) }
-        }
-        #expect(grown)
+        #expect(await waitUntil { writer.currentFileSize > 20_000 }, "the file grew while the writer was still open")
 
-        // Copy the file while the writer is still open and never finished, as a crash would leave it.
+        // Copy the file while the writer is still open and never finished, as a crash would leave it. The first
+        // fragments reach the disk a moment after the frames go in, so a copy that doesn't open yet is tried again.
         let url = try #require(writer.currentFileURL)
         var recoveredDuration = 0.0
-        for attempt in 0..<40 where recoveredDuration <= 0 {
+        let clock = SuspendingClock()
+        let deadline = clock.now + .seconds(20)
+        var attempt = 0
+        while recoveredDuration <= 0, clock.now < deadline {
             let copy = dir.appendingPathComponent("crashed-\(attempt).mov")
+            attempt += 1
             try FileManager.default.copyItem(at: url, to: copy)
             recoveredDuration = (try? await AVURLAsset(url: copy).load(.duration).seconds) ?? 0
             if recoveredDuration <= 0 { try await Task.sleep(for: .milliseconds(100)) }
