@@ -99,6 +99,20 @@ final class OpenedURLs {
     var urls: [URL] = []
 }
 
+/// A Ninjabrain Bot that refuses every connection, and counts how often it was asked. The harness's NBB Overlay is wired to
+/// this one and never to port 52533, where the Ninjabrain Bot of whoever runs the tests may be open with its API on.
+final class RefusingNinjabrainBot: NBBEventSource, @unchecked Sendable {
+    private let asked = Mutex(0)
+
+    /// How many connections were asked for.
+    var attempts: Int { asked.withLock { $0 } }
+
+    func connect(to url: URL) async throws -> AsyncThrowingStream<[UInt8], Error> {
+        asked.withLock { $0 += 1 }
+        throw NBBConnectionError.badStatus(nil)
+    }
+}
+
 /// The harness's one display, its main: display 1, where `fakeInstance()` puts Minecraft, but far outside every
 /// real display, so a real controller switched on draws its panel where nothing shows on screen.
 let harnessDisplay = DisplayInfo(
@@ -123,6 +137,8 @@ final class Harness {
     let opened = OpenedURLs()
     let hotkeyRegistrar: any HotkeyRegistering
     let hotkeyHUD = FakeHotkeyHUD()
+    /// The Ninjabrain Bot the real NBB Overlay talks to (`usesRealControllers`): one that is never there.
+    let nbbSource = RefusingNinjabrainBot()
     /// The Key Rebinder's `karabiner.json` (with `withKeyRebinder`), in the harness's folder. Its folder exists;
     /// the file doesn't until a test writes it.
     let karabinerConfigURL: URL
@@ -158,7 +174,8 @@ final class Harness {
                                     minecraft: MinecraftLocator(source: source), permissions: permissions)
         timer = timerFakes.makeController(services: services, theme: theme)
         var all: [ToolID: any ToolController] = usesRealControllers
-            ? [.nbbOverlay: NBBOverlayController(services: services, copies: NBBCopiesMonitor(scanner: NoNBBCopiesScanner())),
+            ? [.nbbOverlay: NBBOverlayController(
+                services: services, connection: NBBConnection(source: nbbSource), copies: NBBCopiesMonitor(scanner: NoNBBCopiesScanner())),
                .windowBackdrop: BackdropController(services: services),
                .crosshair: CrosshairController(services: services)]
             : fakes.mapValues { $0 as any ToolController }
