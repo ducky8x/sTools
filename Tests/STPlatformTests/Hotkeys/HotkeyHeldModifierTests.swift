@@ -229,18 +229,61 @@ struct HotkeyHeldModifierTests {
         #expect(h.registrar.combos.count == 4)
     }
 
-    @Test func variantsStepAsideWithTheirHotkeyAndTypingOnlyPausesTheOnesThatTakeATypedKey() async {
+    @Test func variantsStepAsideWithTheirHotkeyWhileAKeyIsRecorded() async {
         let h = await Harness([(combo(letterC), [.toggle(.crosshair)])])
-        #expect(h.registrar.combos.count == 4)
-        h.center.setPaused(true, for: .typing)
-        // Bare C and ⇧C would type a letter; anything with ⌃ doesn't.
-        #expect(h.registrar.combos == [combo(letterC, .control), combo(letterC, [.shift, .control])])
-        h.center.setPaused(false, for: .typing)
         #expect(h.registrar.combos.count == 4)
         h.center.setPaused(true, for: .recordingKey)
         #expect(h.registrar.combos.isEmpty)
         h.center.setPaused(false, for: .recordingKey)
         #expect(h.registrar.combos.count == 4)
+    }
+
+    /// Typing in a text field pauses a hotkey on a typed key (C, ⇧C, ⌥C), and its variants go with it, ⌃C and ⌃⇧C among
+    /// them. Neither is a typed key, but neither is the hotkey's own key either, and Control-C is an editing key in the
+    /// field the hotkey has stepped aside for.
+    @Test(arguments: [HotkeyCombo.Modifiers([]), .shift, .option, [.shift, .option]])
+    func typingPausesTheVariantsOfAHotkeyItPauses(held: HotkeyCombo.Modifiers) async {
+        let h = await Harness([(combo(letterC, held), [.toggle(.crosshair)])])
+        let registered = h.registrar.combos
+        #expect(registered.count > 1, "the hotkey and its variants")
+        h.center.setPaused(true, for: .typing)
+        #expect(h.registrar.combos.isEmpty, "still registered: \(h.registrar.combos.map(\.displayString).sorted())")
+        h.center.setPaused(false, for: .typing)
+        #expect(h.registrar.combos == registered)
+    }
+
+    /// A hotkey that keeps working next to a text field (an F-key, a ⌘ or ⌃ combination) keeps its variants too.
+    @Test func typingLeavesTheVariantsOfAHotkeyItLeavesAlone() async {
+        let hotkeys = [combo(f6), combo(f6, .shift), combo(letterC, .command), combo(letterC, .control),
+                       combo(letterC, [.command, .shift])]
+        for hotkey in hotkeys {
+            let h = await Harness([(hotkey, [.toggle(.crosshair)])])
+            let registered = h.registrar.combos
+            h.center.setPaused(true, for: .typing)
+            #expect(h.registrar.combos == registered, "\(hotkey.displayString) and its variants stay registered")
+        }
+    }
+
+    /// What the pause is for: while the hotkey on C is out of the way, Control-C typed in a field goes to the field, and
+    /// it fires the hotkey again once the field is done.
+    @Test func aControlKeyTypedInAFieldIsNotTakenByAVariantOfAPausedHotkey() async {
+        let h = await Harness([(combo(letterC), [.toggle(.crosshair)])])
+        h.center.setPaused(true, for: .typing)
+        #expect(!h.center.handleKeyDown(keyCode: letterC, modifiers: .control, isRepeat: false))
+        #expect(!h.center.handleKeyDown(keyCode: letterC, modifiers: [.control, .shift], isRepeat: false))
+        #expect(h.events.isEmpty)
+        h.center.setPaused(false, for: .typing)
+        #expect(h.center.handleKeyDown(keyCode: letterC, modifiers: .control, isRepeat: false))
+        #expect(h.events == [.setTool(.crosshair, isOn: true)])
+    }
+
+    /// The release of a key held through a variant is sent once, when the hotkey and its variants step aside together.
+    @Test func aVariantSteppingAsideWhileItsKeyIsDownReleasesStartTimerOnce() async {
+        let h = await Harness([(combo(letterC), [.startTimer])])
+        h.registrar.press(combo(letterC, .control))
+        #expect(h.events == [.startTimer])
+        h.center.setPaused(true, for: .typing)
+        #expect(h.events == [.startTimer, .startTimerReleased], "macOS can't report that release any more, and it comes once")
     }
 
     @Test func variantsWorkWhereTheirHotkeyDoes() async {
