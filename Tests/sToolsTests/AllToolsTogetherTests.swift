@@ -17,7 +17,7 @@ import Testing
 struct AllToolsTogetherTests {
     /// Waits until the tool's window is up: the NBB Overlay's comes with the first result, the others at once.
     private func waitForOverlays(_ harness: EverythingHarness, on display: DisplayInfo, topmost: Int, backdrops: Int) async -> Bool {
-        await waitUntil(timeout: .seconds(10)) {
+        await waitUntil {
             let panels = harness.panels(on: display)
             return panels.filter { $0.role == .topmost }.count == topmost && panels.filter { $0.role == .backdrop }.count == backdrops
         }
@@ -42,7 +42,7 @@ struct AllToolsTogetherTests {
         case .windowBackdrop:
             #expect(await waitForOverlays(harness, on: display, topmost: 0, backdrops: 1))
         case .screenRecording:
-            #expect(await waitUntil(timeout: .seconds(10)) { harness.recording.sourcesAreReady })
+            #expect(await waitUntil { harness.recording.sourcesAreReady })
             #expect(harness.panels(on: display).isEmpty, "a recording draws no window of its own")
         case .keyRebinder:
             Issue.record("the Key Rebinder has no switch")
@@ -65,7 +65,7 @@ struct AllToolsTogetherTests {
         }
         #expect(qaSwitchableTools.allSatisfy(harness.model.isOn))
         #expect(await waitForOverlays(harness, on: display, topmost: 3, backdrops: 1))
-        #expect(await waitUntil(timeout: .seconds(10)) { harness.recording.sourcesAreReady })
+        #expect(await waitUntil { harness.recording.sourcesAreReady })
 
         let panels = harness.panels(on: display)
         for panel in panels {

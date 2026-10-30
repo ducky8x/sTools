@@ -15,7 +15,7 @@ struct HarnessIsolationTests {
         let nbb = try #require(harness.model.controller(for: .nbbOverlay, as: NBBOverlayController.self))
         harness.model.setTool(.nbbOverlay, on: true)
         // It asks the harness's own Ninjabrain Bot, which is never there...
-        #expect(await waitUntil(timeout: .seconds(10)) { harness.nbbSource.attempts >= 1 })
+        #expect(await waitUntil { harness.nbbSource.attempts >= 1 })
         // ...and so reads nothing, however long a connection to a Ninjabrain Bot on this Mac would have taken.
         let reached = await waitUntil(timeout: .seconds(1)) { nbb.isReachable || nbb.stronghold != nil }
         #expect(!reached, "the harness's NBB Overlay is reading a real Ninjabrain Bot")
