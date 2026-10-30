@@ -18,165 +18,314 @@
   <a href="#the-tools">Tools</a> ·
   <a href="#requirements">Requirements</a> ·
   <a href="#install">Install</a> ·
+  <a href="#how-its-written">How it’s written</a> ·
+  <a href="#speedrun-rules">Speedrun rules</a> ·
   <a href="#privacy">Privacy</a> ·
   <a href="#build-from-source">Build from source</a> ·
   <a href="#license">License</a>
 </p>
 
-sTools puts the tools around a speedrun into one native Mac app: a crosshair placed to the pixel, a countdown that pops up over the game on one key, Ninjabrain Bot's answer drawn over the game, a screen recorder that lays out a whole scene, a backdrop that hides everything behind Minecraft, and a visual editor for your Karabiner-Elements rebinds.
-
-It's built for the game first. Overlays are click-through and never take focus from Minecraft, and anything with a reasonable alternative is a setting. The app itself is always dark, set in serif type with gold accents.
+sTools is one native app with six tools: a crosshair, a countdown timer, Ninjabrain Bot’s answer drawn over the game, a screen recorder, a backdrop behind the game and an editor for your Karabiner-Elements rebinds. Its overlays are click-through and never take focus from Minecraft. The app is always dark, in serif type with gold accents.
 
 <p align="center">
-  <img src="docs/images/key-rebinder.png" alt="The Key Rebinder page: the sidebar with its six tools, and a drawn keyboard and mouse with Caps Lock rebound to F3 in gold, Minecraft's keybinds in small capitals under each key and gold rings on the keys of sTools hotkeys">
+  <img src="docs/images/key-rebinder.png" alt="The Key Rebinder page: the sidebar with the six tools, and a drawn keyboard and mouse with Caps Lock rebound to F3 in gold, Minecraft’s keybinds in small capitals under the keys, gold rings on the keys of sTools hotkeys and red dots where the checker found a problem">
 </p>
 
 ## The tools
 
 | | Tool | What it does | Needs |
 |---|------|--------------|-------|
-| 1 | [Crosshair](#crosshair) | Draws a crosshair at the exact center of the screen. | Accessibility |
-| 2 | [Timer Overlay](#timer-overlay) | Pops a countdown over the game on one key, rings and leaves. | Accessibility |
-| 3 | [NBB Overlay](#nbb-overlay) | Shows Ninjabrain Bot's current result over the game. | Accessibility, Ninjabrain Bot |
-| 4 | [Screen Recording](#screen-recording) | Records Minecraft and your other sources on one canvas. | Accessibility, Screen & System Audio Recording |
-| 5 | [Window Backdrop](#window-backdrop) | Hides everything behind the Minecraft window. | Accessibility |
-| 6 | [Key Rebinder](#key-rebinder) | Shows and edits your rebinds on a drawn keyboard and mouse. | Karabiner-Elements 16+, to edit |
+| 1 | Crosshair | Draws a crosshair at the exact center of Minecraft’s display. | Accessibility |
+| 2 | Timer Overlay | Pops a countdown over the game on one key, rings and leaves. | Accessibility |
+| 3 | NBB Overlay | Shows Ninjabrain Bot’s current result over the game. | Accessibility, Ninjabrain Bot |
+| 4 | Screen Recording | Records Minecraft and your other sources on one canvas. | Accessibility, Screen & System Audio Recording |
+| 5 | Window Backdrop | Hides everything behind the Minecraft window. | Accessibility |
+| 6 | Key Rebinder | Shows and edits your rebinds on a drawn keyboard and mouse. | Karabiner-Elements 16+, to edit |
 
-Each tool has its own page: a live preview where it helps, then its settings, with the rarely needed ones under **Advanced**. Switch tools on and off from the sidebar or their pages.
+Each tool has a page with its settings, the rarely needed ones under **Advanced**. Switch tools on and off from the sidebar or from their pages. Around them:
+
+- **Hotkeys.** Your own keys, alone or with ⌃ ⌥ ⇧ ⌘, switch tools on and off, start the timer and start or stop a recording. A new install has ⌘1–⌘5, one per tool in sidebar order. They work only while sTools or Minecraft is in front, so a browser keeps its own ⌘1.
+- **The Prologue.** On first launch it walks you through each permission, Ninjabrain Bot and Karabiner-Elements, then has you try every tool. Help ▸ Replay Introduction runs it again.
+- **Settings.** Open at login, sounds, Reduce animations, text size, accent color, update options, export and import of everything as one file, resetting, and Copy Diagnostics for bug reports.
+
+Close the window and your tools keep running; click the Dock icon to bring it back. Quitting turns everything off.
+
+## Requirements
+
+- **macOS 15 Sequoia or later**, on an Apple silicon or Intel Mac. sTools is one universal app; Intel is best effort.
+- **Minecraft: Java Edition.** sTools is made for 1.16.1 with the official launcher or Prism Launcher.
+- **[Ninjabrain Bot](https://github.com/Ninjabrain1/Ninjabrain-Bot)** for the NBB Overlay, with its API turned on (Settings ▸ Advanced in Ninjabrain Bot).
+- **[Karabiner-Elements](https://karabiner-elements.pqrs.org) 16.0 or later** to edit rebinds and profiles. The keyboard, your Minecraft keybinds, the key tester and hotkeys on keys work without it.
+- **Five permissions**, which the Prologue walks you through: Accessibility, Screen & System Audio Recording, App audio, Microphone and Camera. A tool’s page offers **Allow…** when something it needs is missing. [Why each one](#permissions) is further down.
+
+## Install
+
+1. Download the latest DMG from the [releases page](https://github.com/ducky8x/sTools/releases).
+2. Open it and drag **sTools** onto **Applications**.
+3. The first time you open sTools, macOS blocks it, because it is signed with ducky’s own self-signed certificate and isn’t notarized by Apple. To let it through:
+   1. Open sTools from Applications, then click **Done**.
+   2. Go to **System Settings ▸ Privacy & Security**.
+   3. Click **Open Anyway**, then confirm.
+
+After that it opens normally.
+
+**Updates.** sTools checks for a new version once a day and shows what’s new when it finds one. Settings ▸ Updates can also download and install updates when you quit; that switch starts off. Every release is signed with the same certificate, so macOS keeps the permissions you’ve granted. If someone sends you a newer DMG, choose **Settings ▸ Updates ▸ Install from DMG…** (or **sTools ▸ Install from DMG…**, or drop the DMG on that row). sTools installs it only if it’s a newer sTools signed with the same certificate, then opens again.
+
+## How it’s written
+
+This part is for someone about to read the code: the package first, then the tools one by one, then what they share, the build and the tests. Names in code font are types, files and scripts you can search for.
+
+### The package
+
+sTools is a Swift package (tools version 6.0, Swift 6 language mode, macOS 15) with one executable and a library per module:
+
+| Module | What’s in it |
+|--------|--------------|
+| `sTools` | The app: window, sidebar, Home and its hotkeys section, Settings, menus, the Dock tile, the updater, and `AppModel`, which wires the rest together |
+| `STDesign` | Colors, type (the bundled fonts), motion, sounds and the shared controls |
+| `STPlatform` | What every tool shares: Minecraft detection, displays, `OverlayPanel`, permissions, settings storage, hotkeys, logging, diagnostics |
+| `Crosshair` | Crosshair geometry, rendering and page |
+| `TimerOverlay` | Countdown engine, press rules, overlay, alarm and placement |
+| `NBBOverlay` | Ninjabrain Bot client, window reader and overlay |
+| `ScreenRecording` | Capture, compositing, audio and the file writer |
+| `Backdrop` | Window Backdrop |
+| `KeyRebinder` | Karabiner configuration and command line, keyboard layouts, checker, key tester |
+| `Prologue` | The first-launch introduction |
+
+A tool module depends on `STDesign` and `STPlatform` and nothing else, so tools can’t import each other; only the `sTools` target sees them all. Sparkle is linked into `sTools` alone. Apart from it, everything is Apple frameworks. Each module has a test target. `Benchmarks/` holds two executables, `RecordingBench` and `NBBBench`, that are never shipped. `scripts/` and `packaging/` hold the build and release tooling, and `docs/` holds the spec and the plans.
+
+Swift 6’s strict concurrency checking is on everywhere. The UI, the controllers and every AppKit window are on the main actor. The Karabiner config store is an `actor`, so each read-modify-write is serialized. A recording keeps its work off the main actor: capture callbacks run on their own queues, one serial queue ticks the frame clock, and only the recording’s state machine sits on the main actor.
+
+### The app shell
+
+`STApp` is a SwiftUI `App` with one `Window`: hidden title bar, 760 × 560 by default, never smaller than 680 × 500. The window’s content is SwiftUI. `AppDelegate`, attached with `@NSApplicationDelegateAdaptor`, covers what SwiftUI doesn’t. It keeps the app alive when the window closes, reopens the window from the Dock and builds the Dock menu. It also holds off quitting (`applicationShouldTerminate` answers `.terminateLater`) until `AppModel.shutDown()` has finished any recording, switched every tool off and flushed settings.
+
+`AppModel` (`@MainActor`, `@Observable`) is built once. It creates the shared services (`ToolServices`: the settings store, the display directory, the Minecraft locator and the permission center), the five switchable tool controllers and the Key Rebinder’s, the hotkey center, the updater and the Prologue. It also keeps each tool’s on/off state and the navigation history. A controller adopts `ToolController` (`isEnabled` and `setEnabled`) and the shell needs nothing more from it, so the app’s tests swap in fakes. Every tool starts off; Settings ▸ General ▸ Advanced can bring back the ones that were on at quit. A tool that needs Accessibility can’t be switched on without it, and one that’s on switches off when the grant is revoked.
+
+`ToolID.allCases` is the one place the sidebar order is written. The sidebar, its numbers, the Go menu, Home, the key sets and the Prologue’s lists all read it. While the main window is closed it holds no pages at all (the root view draws nothing), so their views, layers and caches are released while the tools keep running.
+
+### Overlays
+
+The overlays and the backdrop are `OverlayPanel`s, an `NSPanel` subclass with two roles.
+
+- **Topmost** (Crosshair, Timer Overlay, NBB Overlay and the hotkey confirmation): borderless, transparent and click-through (`ignoresMouseEvents`), at window level `.screenSaver`, which is above the menu bar, the Dock and pop-up menus. Its collection behavior is `canJoinAllSpaces`, `fullScreenAuxiliary`, `stationary` and `ignoresCycle`. So it shows on every Space and over a native full-screen game, Mission Control leaves it alone, and the Cycle Through Windows command skips it. Placement mode turns mouse handling on so you can drag an overlay.
+- **Backdrop** (Window Backdrop): the normal window level, ordered directly under Minecraft’s window. See [Window Backdrop](#window-backdrop).
+
+Both roles are non-activating and can never become key or main, so showing, moving or clicking a panel never takes focus from Minecraft. AppKit never animates a panel in or out (`animationBehavior = .none`); a fade belongs to the overlay itself and stops under Reduce animations. `constrainFrameRect` returns the frame as given, so AppKit can’t nudge a panel below the menu bar. SwiftUI content goes in through `NSHostingView` with its sizing options cleared, so the content can’t resize the window.
+
+Panels are capturable by default (`sharingType = .readOnly`), which is how overlays end up in sTools’ own recordings. A panel can also be created excluded from capture (`sharingType = .none`, fixed at creation). The hotkey confirmation, Timer Overlay’s placement guides and, with Show in recordings off, the timer itself are made that way. `OverlayPanel` posts a notification when a capturable panel is shown or hidden, and Screen Recording listens for it to update what it captures.
+
+### Finding Minecraft
+
+The tools all follow the Minecraft instance that `MinecraftLocator` publishes, and `AXMinecraftSource` feeds it:
+
+1. It lists running apps whose executable is `java` or `javaw`. Ninjabrain Bot is Java too; its window title tells it apart.
+2. It asks Accessibility for each one’s windows and keeps those titled `Minecraft`, an optional `*`, a space and a version that starts with a digit, such as `Minecraft* 1.16.1 - Singleplayer`. A launcher window or a browser tab titled `Minecraft…` has no version and doesn’t count.
+3. For each match it reads position, size and the minimized and full-screen flags. It takes the window number from the window server’s list (`CGWindowListCopyWindowInfo`) by matching process and frame. That list is metadata only; sTools never asks for window images. The display is the one the window overlaps most.
+
+Nothing polls. An `AXObserver` per Java process reports window, title, focus and minimize changes, and `NSWorkspace` notifications cover launches, quits, activation, hiding and Space changes. Accessibility lists only the current Space’s windows, so a full-screen game appears once its Space is active. A burst of events becomes one read 30 ms later. With more than one Minecraft open the locator follows the 1.16.1 one, then the one that started first, and Home says which. The game folder, for `options.txt`, comes from the `--gameDir` argument (read with `sysctl` and `KERN_PROCARGS2`; the official launcher passes it) or from the process’s working directory (`proc_pidinfo`; Prism Launcher starts the game inside the instance folder).
 
 ### Crosshair
 
-Draws a click-through crosshair at the exact center of Minecraft's display, above everything, a full-screen game included. Pick a plus, dot, circle or X, or use your own image, SVG or PDF with one of five anchor points. Set its color and outline, and its size, thickness, gap and offset in real pixels. Out of the box it sits exactly on Minecraft's own crosshair at GUI scale 3 on a 1920 × 1080 display, with Minecraft filling the screen.
+The crosshair is drawn in true display pixels. Everything is measured on the display’s backing-pixel grid (its frame in points times the backing scale, 1x or 2x), and the finished bitmap goes onto whole backing pixels with interpolation off, so one sprite pixel covers exactly one display pixel. `CrosshairGeometry.placement` takes the display’s center pixel plus the offset and puts the sprite’s hot pixel on it. A shape with an even width has no center pixel, so it sits on the far edge of the pixel just left of (or above) the middle, which is the exact center. AppKit floors a window’s origin to whole points even at 2x, so the window starts on a whole point and the sprite is padded inside a slightly larger canvas.
 
-<p align="center">
-  <img src="docs/images/crosshair.png" width="640" alt="The Crosshair page: its Hotkey row with ⌘1, a preview plate with a white plus outlined in black, and the Shape row">
-</p>
+Plus, dot, circle and X are masks computed at 4x supersampling. An outline is a dilation of the mask, and opacity is applied once to the finished composite so the outline and fill don’t stack their alpha. The default (a plus, 11 px, 3 px thick, offset −1, −1) covers Minecraft’s own crosshair exactly at GUI scale 3 on a 1920 × 1080 display, and on a 2x display that looks like one. On the page, the preview is the overlay’s own view, so the two can’t differ, and the overlay redraws only when something it draws has changed.
 
 ### Timer Overlay
 
-Press your Start-timer key and a countdown pops up over the game, 2:30 by default or any length you set. At zero it rings an alarm, pulses with each ring and leaves by itself; press again to restart, or twice quickly to cancel and switch Timer Overlay off, which sTools confirms over the game (the next press switches it back on and starts again). Choose a look (a plate, digits only or a compact pill) and its colors, font and size, and an alarm from macOS's sounds, four sTools alarms or your own files. Drag it into place with guides that show when it covers the hotbar, chat, toasts or anything else the rules need visible. It can also count down on the Dock icon, and it shows in your sTools recordings, with the alarm on its own track if you want it.
+`Countdown` is a plain struct state machine (idle, running, paused, finished) that is handed the time instead of reading it, so the app and its tests run the same code. `TimerEngine` supplies the time from `clock_gettime_nsec_np(CLOCK_MONOTONIC)`, which keeps counting while the Mac sleeps. It reads the clock again on `NSWorkspace.didWakeNotification`, so a run that passed zero in sleep finishes and rings on wake. It keeps at most one dispatch timer, set for the next change of what’s shown (every second, or every tenth in the last ten seconds with tenths on), so an idle or paused timer schedules nothing. While a run is live it holds `ProcessInfo.beginActivity(.userInitiatedAllowingIdleSystemSleep)`, which keeps App Nap from delaying the alarm without keeping the Mac awake.
+
+`PressPolicy`, a small value the controller owns, turns presses and releases into actions. A second press within 0.4 s cancels and switches the tool off, and with the Advanced option a hold of a second does the same. It reads no clock. The hotkey layer passes along the time macOS stamped on each key event (`GetEventTime`, on the uptime clock) and the controller converts it to its own clock, so the double-press window is measured between the keys and not between when sTools got around to handling them.
+
+The alarm plays through `AVAudioEngine`: one of macOS’s sounds, one of four alarms sTools generates (`scripts/generate-sounds.swift`, deterministic), or a file you add. With Alarm in sTools recordings on, it publishes each rendered buffer to a named in-process audio feed that Screen Recording carries as its own track. A process tap on sTools itself would catch its interface sounds too. The overlay is a topmost panel built for each pop-up. It is excluded from capture when Show in recordings is off, and `canHide = false` keeps it up through Hide sTools and Hide Others. The placement guides (zones the rules want visible, such as the hotbar, chat and toasts) are a second panel one window level below it, always excluded from capture.
 
 ### NBB Overlay
 
-Reads Ninjabrain Bot's local API and shows its current result in a small plate over the game: predictions with certainty, distance, the angle to travel at and how far to turn, your eye throws with the angle adjustment beside each angle, and its blind, divine and all-advancements modes. Ninjabrain Bot's boat sits at the top in its own colors (blue measuring, green ready, red error), and the whole plate can take the boat's color so you see it from the corner of your eye. If two Ninjabrain Bots are open, pick which one the overlay follows on its page; a copy that can't share its data over the API is read from its own window instead (everything but the boat). After an F3+C in the Overworld the predictions show Ninjabrain Bot's location (as its 4,4 block by default, or 8,8 or the chunk) and the distance there; after one in the Nether, its nether coordinates and the nether distance, with a small Overworld or Nether mark so you know which. A copy read from its window shows that window's own location and distance. It follows Ninjabrain Bot within a few milliseconds over the API (about a tenth of a second for a copy read from its window), fades out when you reset Ninjabrain Bot, and shows the next result at once. It shows only what Ninjabrain Bot itself shows. Drag it into place with snapping or type its position, and set its size and opacity.
+Ninjabrain Bot runs a small HTTP server on `localhost:52533` when its API is on. `NBBConnection` opens Server-Sent Events streams to it: `stronghold` first, then `blind`, `divine`, `boat`, `information-messages` and `all-advancements` once that one connects. It drops them if the first disconnects. A single `/api/v1/version` request completes the set, and the Prologue pings `/api/v1/ping`. While Ninjabrain Bot isn’t running that is one refused connection every few seconds, not seven.
+
+The streams use a `URLSession` of their own (ephemeral, 16 connections per host, a 24-hour idle timeout because Ninjabrain Bot sends nothing between changes) and pass each line on whole. `NBBSubscription` reconnects with a backoff from 0.5 s to 5 s. A repeated value is dropped, so a reconnect never redraws, and a new value redraws the overlay in the same main-actor turn, within a few milliseconds of Ninjabrain Bot writing it. If the content is too big for its plate, the overlay scales it down uniformly, to 60% at most, before it clips anything.
+
+Only one Ninjabrain Bot can hold the API’s port. `NBBCopiesMonitor` scans the process table (`libproc` and `sysctl`, no permission needed) on a background task, every 2 s while a copy is open and every 5 s while none is. It reads a command line only for this user’s Java and Ninjabrain-named executables, and it checks each copy’s sockets to see which one listens on 52533. The overlay follows the copy you pick, the newest by default.
+
+A copy without the API is read from its window. `AXNBBWindowReader` walks the window’s Accessibility tree on a queue of its own and keeps the static texts and buttons, and `NBBWindowParser` turns them into the same result type the API gives (predictions, throws and notes; no boat). Ninjabrain Bot’s Java UI doesn’t announce label changes to Accessibility, so the window is looked at ten times a second. Most looks ask only for the texts that change with a result, a full read comes at least every second, and a new walk every five.
 
 ### Screen Recording
 
-Records Minecraft with sTools' overlays and backdrop, plus any windows, displays, cameras and web pages you arrange on one canvas. Sources don't have to be visible on your real screen. Sound from Minecraft, other apps and microphones is saved as one mixed track plus a track per source. Choose .mp4 or .mov, H.264 or HEVC, 30 or 60 fps. Files are written crash-safe. One key switches Screen Recording on and starts recording, and stops it when pressed again; switching it on from its own switch starts a recording too. "Recording started" shows over the game once the first frame is in the file, so a run started on it loses nothing. A press before then cancels the start ("Recording canceled · Screen Recording off"), and a start that fails says why over the game ("Recording couldn't start: … · Screen Recording off"); either way Screen Recording switches off. The stop switches Screen Recording off right away, camera light and recording indicator included, and says so over the game ("Recording stopped · Screen Recording off"); a small panel then asks for a name and Save or Delete for the finished file right over the game, ready to type in without leaving it (Delete asks once more, Yes or No, before it removes anything).
+The recorder is four stages: capture, a frame clock and compositor, an encoder, and a file writer.
+
+**Capture.** A video source is a `VideoCapture`. Windows and displays are ScreenCaptureKit streams, cameras are `AVCaptureSession`s, and a web page is a `WKWebView` in a borderless window parked far off screen and captured like any window. The base layer is one stream over Minecraft’s display whose filter names Minecraft’s window and sTools’ visible overlay panels; the filter is updated about 50 ms after a panel shows or hides and checked every 2 s. A window source uses `SCContentFilter(desktopIndependentWindow:)`, so it can sit behind Minecraft or off screen and still be recorded. Each source’s frames go into `FrameHub`, which keeps only the latest one and remembers which were already used, because ScreenCaptureKit sends a frame only when something changes.
+
+**Clock and compositor.** `FrameClock` ticks at 30 or 60 fps on one serial queue. Tick n is stamped n/fps after the start, worked out from the slot and not from accumulated sleeps, so it doesn’t drift, and after a stall it reports the skipped slots instead of filling them. On each tick `Compositor` draws the hub’s latest frames into a pooled pixel buffer with Core Image on Metal: crop, scale, opacity, rounded corners and borders. A tick whose sources brought nothing new writes the last picture again. When Minecraft alone fills the output at its own size, its frame goes to the encoder through a VideoToolbox pixel-transfer copy without touching Core Image.
+
+**Encoder and writer.** `RecordingWriter` feeds an `AVAssetWriter`, which hands video to VideoToolbox (H.264 or HEVC, hardware encoding on). On Apple silicon the quality setting is a constant quality. Intel Macs’ encoders don’t take one, and `AVAssetWriterInput` throws an Objective-C exception if given the key, so there quality sets a bit rate. The file is a fragmented QuickTime movie with a fragment every second, so a crash loses at most the last second. A frame that finds the encoder busy is dropped and counted, never queued. Recordings are always `.mov` first, named by date and time. Save renames, and for .mp4 `Rewrapper` copies the samples without re-encoding and checks codec, sample counts and track names before the .mov is removed. A name is never overwritten: a taken one gets ` 2`, ` 3`, as Finder does.
+
+**Sound.** An audio source is an `AudioCapture`: a Core Audio process tap per app (`CATapDescription` in a private aggregate device, unmuted), microphones through `AVCaptureSession`, and sTools’ own in-process feeds. `AudioNormalizer` converts every chunk to 48 kHz stereo Float32. `AudioTimeline` places it on the host clock, which ScreenCaptureKit, AVFoundation and Core Audio all stamp with. Jitter under 10 ms is left alone, a larger gap is padded with silence and an overlap is trimmed. `AudioMixBus` hands the writer equal-length blocks a quarter second behind the picture, so a late source isn’t padded and then trimmed. The AAC tracks are the mix first, then one track per source, each named.
+
+**Arming and stopping.** Switching the tool on arms its sources and the page shows the live composite; Record starts the writer. Stop switches the tool and every source off at once, camera light included, finishes the file, and then a non-activating panel of its own, one window level above the overlays, asks for a name and Save or Delete (Delete asks once more). Each arming owns its sources (`CaptureRig`), and a `CaptureStartGate` makes a stop that arrives mid-start win. A start that is canceled or fails says so over the game and switches the tool off.
 
 ### Window Backdrop
 
-Covers the display Minecraft is on, edge to edge and behind the menu bar and Dock, and keeps the backdrop directly under the Minecraft window, so every other window disappears. Fill it with a color, a linear or radial gradient, or an image (a new fill crossfades in), and cover your other displays too, each with its own fill. Clicking it does nothing. Switch to another app and its windows come forward as usual; switch back and the backdrop is under Minecraft again.
+A backdrop is one `OverlayPanel` per covered display at the normal window level, the size of the display’s full frame, so it reaches under the menu bar and the Dock. It is ordered with `order(.below, relativeTo:)` against Minecraft’s window number, which puts it directly under the game and over every other window. The spec records a probe that confirmed this public call can order a window directly below another app’s.
+
+`BackdropOrdering.plan` is a pure function from Minecraft’s window, its display, focus and the settings to what each panel should do. The controller applies it again whenever an app activates, the displays change or the locator’s instance changes. A backdrop hides while Minecraft is minimized and, depending on a setting, while it is full screen. The panel handles mouse events only to swallow them: `mouseDown` calls `NSApp.preventWindowOrdering()`, so clicking it raises nothing and activates nothing. A new fill crossfades from the old one, at once under Reduce animations. Images are decoded when first drawn and let go when the tool switches off, because a screen-sized image is tens of megabytes decoded, and switching off closes the panels instead of hiding them.
 
 ### Key Rebinder
 
-Draws your keyboard (ANSI, ISO or JIS, laptop or full size) and mouse with every Karabiner-Elements rebind on its key and your Minecraft keybinds underneath, read from `options.txt`. Edit rebinds for all devices or just one, change complex rules, manage profiles, and light up keys as you press them. A checker points out duplicates and rebinds that may break the speedrun remap rules, but never blocks a save. Every save backs up `karabiner.json` first and leaves the rest of it as it was.
+The Key Rebinder reads and writes Karabiner-Elements’ own file, `~/.config/karabiner/karabiner.json`. It uses its own JSON parser and writer (`JSONValue`) instead of `JSONSerialization`: objects keep their key order, numbers keep the form they were written in, and the output follows Karabiner’s own layout. An edit changes what it means to and leaves everything sTools doesn’t understand where it was.
 
-## Around the tools
+`KarabinerConfigStore` is an actor, so edits are serialized, and every write takes the same steps:
 
-- **Global hotkeys.** Your own shortcuts, set at the top of Home, on each tool's page or right on a key in the Key Rebinder: any key, alone or with ⌃ ⌥ ⇧ ⌘, that switches a set of tools on or off together, starts the timer, or starts and stops a recording. By default they work only while sTools or Minecraft is in front, so other apps keep their own shortcuts (a browser's ⌘1 still switches tabs); Where hotkeys work, on Home, can make them work everywhere. Out of the box each tool but the Key Rebinder has a key in sidebar order, ⌘1–⌘5, and Key set, also on Home, swaps them all for ⌃1–⌃5, ⌥1–⌥5 or none; each tool's page says where its key works and which set it's from. Home lists them in sidebar order, and each tool keeps one key of its own: setting another asks whether to replace it. Recognizing Minecraft needs Accessibility, so until it's allowed they work only in sTools (Everywhere needs no permission). They show a small confirmation over the game. A hotkey's key goes to sTools instead of the game, so sTools warns you when it's one Minecraft uses. Hotkeys are on from the first launch, and they pause only while sTools records a key or you type in it.
-- **The Prologue.** On first launch, an animated welcome, then help with each permission, Ninjabrain Bot and Karabiner-Elements, then a hands-on try of every tool. Back and Skip work on every step, and Help ▸ Replay Introduction runs it again.
-- **Settings.** Open at login, sounds and volume, text size, accent color, update options, exporting and importing all your settings in one file, resetting the tools or all of sTools, and Copy Diagnostics for bug reports.
-- **Reduce animations.** sTools animates nearly everything: switches spring, numbers roll, successes stamp a gold seal, and the sidebar glides with a soft tick for each row it passes (and a tap on a Force Touch trackpad). One switch in Settings ▸ Appearance turns every animation off, and macOS's Reduce motion does the same.
-- **Updates.** sTools checks for new versions on its own and can download and install them when you quit. Settings ▸ Updates shows the version you're running, and Check for Updates… is there and in the app menu. Got a newer DMG by hand? Choose **Install from DMG…** (or drop the DMG on it), and sTools checks it, installs it and opens again.
+1. Refuse a symbolic link.
+2. Read the file again and run the edit on that fresh parse.
+3. If the file changed since sTools loaded it (compared by SHA-256), write nothing and show a preview first.
+4. Copy the current bytes to `~/Library/Application Support/sTools/Karabiner Backups`, with a UTC timestamp in the name. The newest 20 are kept by default.
+5. Write a temporary file next to the original and rename it over the original, keeping its permissions.
+6. Read it back and compare. If it differs, restore the backup.
 
-Close the window and your tools keep running; click the Dock icon to bring it back. Quitting turns everything off.
+A `DirectoryWatcher` on Karabiner’s folder notices edits made elsewhere. `karabiner_cli`, in `/Library/Application Support/org.pqrs/Karabiner-Elements/bin`, answers version, profile list, current profile and profile selection, and lints complex modifications. A `KarabinerStatus` check says whether Karabiner-Elements is installed, answering and at least version 16.0. sTools isn’t sandboxed, which is what lets it write into `~/.config`.
+
+The key list (`Resources/KeyTable.json`) is generated by `scripts/generate-key-table.swift` from a checkout of Karabiner-Elements’ own key data, so keys have Karabiner’s names. Minecraft’s keybinds come from the game’s `options.txt`, read only. The live key tester sees events after Karabiner has rebound them, so it works backward through your current rebinds to the physical key. It uses a local `NSEvent` monitor, so only keys that reach sTools’ own window count and no Input Monitoring permission is needed. The checker advises on duplicates, shadowed rules, chained rebinds and the remap rules (A.10.1–A.10.4); it never blocks a save.
+
+### Hotkeys
+
+`HotkeyCenter` registers keys with Carbon’s `RegisterEventHotKey` through a `HotkeyRegistering` protocol; tests use a fake that registers nothing. Registered this way a hotkey needs no permission of its own, and its key goes to sTools alone, so Minecraft never sees it. One application-wide handler receives presses and releases, each with the time macOS stamped on it.
+
+By default hotkeys work only while sTools or Minecraft is in front. Rather than listen everywhere and ignore presses, `HotkeyFrontAppWatcher` takes the registrations away when another app comes to the front, so that app gets its keys untouched (a browser’s ⌘1 still switches tabs), and puts them back when sTools or Minecraft returns. It follows `NSWorkspace` activation notifications and the locator’s instances, never a timer. Recognizing Minecraft needs Accessibility, so without it hotkeys work only in sTools unless Where hotkeys work is set to Everywhere. Hotkeys also pause while sTools listens for raw keys: a field recording a key, text being typed, the Key Rebinder’s tester.
+
+The list lives in `hotkeys.json`. It decodes leniently, so one bad entry never costs the rest, and its migrations never move a saved list: only an empty one gets ⌘1–⌘5.
+
+### Settings storage
+
+Modules save through `SettingsStore`: one JSON file per document in `~/Library/Application Support/sTools`, shaped `{"version": N, "value": {…}}` and written pretty-printed with sorted keys. A document is a `Codable` type that adopts `SettingsDocument`: a name, a version, a default, and optionally a migration. Saves are debounced by half a second and written atomically, and `flush()` runs at quit.
+
+Loading never throws. A missing file gives the default. An unreadable file, or one written by a newer version, is renamed aside and never deleted, which is why going back to an older build starts from that build’s own defaults. A migration upgrades the raw dictionary one version at a time. Examples are `hotkeys.json` from version 1 to 3, the NBB Overlay’s correction display from 1 to 2, and the recording layout’s move from canvas pixels to fractions of the canvas. Additive changes need none.
+
+Next to the JSON files are `Images` (what you pick for the crosshair or the backdrop is copied in), `Sounds` (your own alarm files), `Backups` (copies made before an import or a reset) and `Karabiner Backups`. Export writes everything into one `.stools-settings` file: a single JSON envelope holding the documents, with the images and sounds as base64. Import backs up first, never deletes anything, and restores from the backup if a write fails. Recordings go to `~/Movies/sTools` unless you pick another folder.
+
+sTools’ own code never touches `UserDefaults` or `@AppStorage`. Sparkle keeps its bookkeeping, such as the time of the last check, in the app’s defaults. Logging goes through `os.Logger` with subsystem `com.ducky8x.sTools`. Copy Diagnostics puts a report on the clipboard: versions, displays, permissions, what’s running, settings file names and sizes (no values), and the last 15 minutes of sTools’ own log, with home paths shortened to `~`.
+
+### Motion
+
+Animations go through `STMotion`: `stAnimation(_:value:)` in place of `.animation(_:value:)`, and `STMotion.animate` in place of `withAnimation`. Each window, sheet and panel root also gets `stMotionRoot(theme)`, which strips any animation still asked for. `STTheme.reduceMotion` is true when Settings ▸ Appearance ▸ Reduce animations is on or macOS’s Reduce motion is (`SystemMotionWatcher` follows its change notification), and then every change happens at once. Code that waits for an animation to finish has to use `STMotion.animate`’s completion, because SwiftUI never calls the completion of an animation that was taken away.
+
+### Permissions
+
+| Permission | Read with | Used for |
+|------------|-----------|----------|
+| Accessibility | `AXIsProcessTrusted` | Finding Minecraft’s window and following it, reading a Ninjabrain Bot window, and recognizing Minecraft in front for hotkeys |
+| Screen & System Audio Recording | `CGPreflightScreenCaptureAccess`, which never prompts | ScreenCaptureKit capture of Minecraft, windows and displays. macOS may ask to reopen sTools after you allow it |
+| App audio | A probe that makes and removes a Core Audio process tap, because there is no public preflight | The sound of Minecraft and other apps. Same Settings pane as screen recording; needs `NSAudioCaptureUsageDescription` |
+| Microphone | `AVCaptureDevice.authorizationStatus(for: .audio)` | Microphone sources. Needs a usage description and the audio-input entitlement |
+| Camera | `AVCaptureDevice.authorizationStatus(for: .video)` | Camera sources. Needs a usage description and the camera entitlement |
+
+`PermissionCenter` reads statuses with calls that never prompt, and asks only when you press **Allow…**, which opens the right System Settings pane. It polls only while a page that shows a permission is on screen (every second). While a tool that needs Accessibility runs, it rereads Accessibility alone when macOS posts its change notification, when sTools becomes active and every 15 s as a backstop. Without Accessibility the tools that need it stay off and hotkeys work only in sTools, unless Where hotkeys work is Everywhere; the Key Rebinder works without it.
+
+sTools never asks for Input Monitoring. Hotkeys go through Carbon, and the key tester watches only sTools’ own window.
+
+### Updates
+
+Updates use [Sparkle](https://sparkle-project.org) 2, the one outside dependency (`Package.resolved` pins 2.10.0; `Package.swift` allows any 2.x from 2.6.0). `AppUpdater` sits behind an `AppUpdating` protocol, so tests use a fake and nothing in the suite starts Sparkle. It builds an `SPUUpdater` with Sparkle’s standard windows directly, not `SPUStandardUpdaterController`, so a Sparkle that can’t start is logged and not shown as an alert. It runs only in a packaged app whose Info.plist has a feed URL and a public key. `swift run`, tests, the dev build and a debug build without the key say so in Settings instead.
+
+`SUFeedURL` is `https://github.com/ducky8x/sTools/releases/latest/download/appcast.xml`. GitHub sends that address to the `appcast.xml` attached to the release marked Latest. Each version is one release, tagged `v<version>`, with two files: the DMG and an `appcast.xml` that lists every version so far, newest first. Each item points at the DMG on its own release. Sparkle compares an item’s build number with the running `CFBundleVersion`; the build number is the commit count, so it only goes up. The feed itself isn’t signed (Sparkle’s `SURequireSignedFeed` is optional and off); the signature on each download is what protects you. The address answers once the repository is public.
+
+Each DMG is signed with an EdDSA key whose private half lives in the keychain of the Mac that publishes and never in the repository. The public half is `packaging/sparkle-public-key.txt`, which the build writes into Info.plist as `SUPublicEDKey`. Sparkle accepts an update only if the download validates against the key in the running copy or the new app’s code signature matches the old one’s (`SUUpdateValidator` in Sparkle’s source). sTools keeps both the same from release to release.
+
+Info.plist sets `SUEnableAutomaticChecks` and a `SUScheduledCheckInterval` of a day, so Sparkle checks daily and never stops to ask first; its default is to ask on the second launch. Settings ▸ Updates has two switches, handed to Sparkle at launch and on every change: check automatically (on by default) and download and install automatically (off by default, so a found update is shown and you decide). **Check Now** and sTools ▸ Check for Updates… call `checkForUpdateInformation()`, which asks the feed without opening a window. sTools words the answer itself (up to date, a version is available, the server can’t be reached) and opens Sparkle’s window only when there is an update to install. A scheduled check that fails says nothing.
+
+That window shows the release notes with Install Update, Skip This Version and Remind Me Later. Sparkle downloads the DMG, checks it, takes the app out, and hands over to `Autoupdate`, a helper inside the framework that waits for sTools to quit, replaces the app and starts it again. It clears the download quarantine from the new copy before it swaps it in.
+
+`scripts/publish-update.sh --version <x.y.z>` makes a release. It builds the release app and its DMG, signs the DMG with Sparkle’s `sign_update`, adds the version to the previous feed (`scripts/appcast-add-item.sh`) and reads the result back with Sparkle’s own parser (`scripts/check-appcast.sh`). Then it creates the GitHub release with the DMG and the feed attached, marked Latest. It never makes a pre-release or a draft, because the feed address skips those, and it refuses to run unless the commit is already on `origin/main`. It never pushes. `--dry-run` stops before anything reaches GitHub.
+
+#### Why permissions survive an update
+
+macOS decides whether a new build is the same app by its designated requirement, and the grants for Accessibility, Screen Recording, Microphone and Camera belong to that app. sTools’ is `identifier "com.ducky8x.sTools" and certificate leaf = H"…"`, a hash of the signing certificate. Notarizing needs a paid Apple developer account, so sTools is signed with a self-signed certificate named `ducky8x`, made once by `scripts/make-signing-identity.sh`. Every release uses that same certificate, so the requirement never changes. An ad hoc build changes it on every build, and a new certificate would change it for good. That is why the build scripts sign with that identity only and refuse every other.
+
+#### Why the library-validation entitlement
+
+The app is signed with the hardened runtime, which turns on library validation: a process may load only frameworks signed by Apple or by its own Team ID. A self-signed certificate has no Team ID (`TeamIdentifier=not set`), so without help the app can’t load `Sparkle.framework`, though the framework is signed with the very same certificate, and it quits at launch. `com.apple.security.cs.disable-library-validation` in `packaging/sTools.entitlements` turns the check off. The cost is that the app no longer refuses libraries signed by someone else, which is the usual trade for an app that isn’t notarized.
+
+The same file lists the camera and microphone entitlements, which the hardened runtime needs for those devices, and `com.apple.security.network.client`, which Apple documents for sandboxed apps. sTools isn’t sandboxed: it writes into `~/.config/karabiner`, runs `karabiner_cli`, reads other apps’ windows through Accessibility and reads process command lines. Sparkle bundles two XPC services for sandboxed apps. They ride along, signed, and go unused, because sTools’ Info.plist doesn’t switch them on.
+
+#### Install from DMG…
+
+This is the way in for a DMG someone sent you, and the fallback whenever Sparkle can’t be used. `DMGInstaller`:
+
+1. Mounts the DMG read-only and hidden from Finder (`hdiutil attach -nobrowse -readonly`, then `diskutil image attach` if that fails).
+2. Finds a top-level app with bundle ID `com.ducky8x.sTools` that is the same build variant as the running copy.
+3. Compares build numbers: the same build is refused, an older one asks first, a newer one goes on.
+4. Checks that the app satisfies the running copy’s own designated requirement, with strict, all-architecture validation of nested code. In plain words, it was signed with the same certificate.
+5. Refuses if sTools can’t replace itself, because it runs from the DMG or from a temporary copy macOS made for an app opened straight out of Downloads (App Translocation).
+6. Copies the app into a hidden staging folder beside the installed one, clears the quarantine flag, checks the copy’s signature again, and swaps it in with one `FileManager.replaceItemAt`. Nothing on disk changes until every check has passed.
+7. Ejects the DMG and relaunches through `AppRelauncher`, a short shell loop that waits for this process to exit and then runs `open`.
+
+It does no EdDSA check, because the code signature is its whole test, and it needs no network.
+
+### The dev build
+
+`scripts/build-app.sh <debug|release> --dev` builds `build/sTools Dev.app` beside `build/sTools.app` without touching it. The Info.plist marker `STVariant` = `dev` is what `AppVariant` reads. The dev build has the same bundle ID, the same `ducky8x` signature, the same settings folder and the same defaults domain, so its settings, saved data and macOS permissions carry over. That is also why only one of the two should be installed at a time. It is named sTools Dev in the menu bar and Finder, and its icon is the same mark in blue (`scripts/generate-icon.swift --tint blue packaging/dev`). It has no feed or key, so it never updates itself; Settings ▸ Updates says so, and Install from DMG… takes only a dev DMG, as the normal build takes only a normal one. `scripts/build-dmg.sh --dev` makes `sTools-<version>-dev-macOS.dmg` with the volume name “sTools Dev”.
+
+### Build, signing and the DMG
+
+`swift build` makes a bare executable, not an app. `scripts/build-app.sh` assembles `build/sTools.app` from it. It embeds `Sparkle.framework` without its headers, removes the rpaths that point into this Mac’s build folders, fills `Info.plist` from `packaging/Info.plist` (version, build number, update key), and copies SwiftPM’s resource bundles (fonts, sounds, the key table) with fixed bundle identifiers. It compiles the icon with `actool` and signs everything inside out with the hardened runtime. `debug` builds for this Mac. `release` builds one universal binary (arm64 and x86_64, with Swift Build), saves the debug symbols into `build/dSYMs` and strips them from the app. `VERSION` and `BUILD_NUMBER` set the two numbers; the build number defaults to the number of commits on HEAD.
+
+Signing looks for the code-signing identity named exactly `ducky8x` and signs with its hash, so no other identity on the Mac can be picked up. Without it the script stops. `--adhoc` is allowed for a debug build only, and macOS forgets that build’s permissions at every rebuild.
+
+`scripts/build-dmg.sh` makes the styled disk image. `scripts/dmg-window.swift` draws the background (the wordmark, an arrow from the app to Applications, and the one-time Open Anyway steps) and writes the Finder window layout straight into the volume’s `.DS_Store`, so there is no Finder scripting and no Automation permission. The script verifies the image, mounts the result again to check the app’s signature and the layout, and moves the DMG into place only when every check passed. The DMG itself isn’t signed: macOS checks the app’s signature, not the image’s.
+
+#### The home-path guard
+
+A macOS account name is often a real name, and compilers write absolute paths that start with it into debug info, resource-bundle accessors and build metadata. So release builds are guarded in layers. Prevention comes first. Release builds use Swift Build, because the other build system’s `Bundle.module` accessor embeds the build folder’s path as a string that `strip` can’t remove. Debug info goes to a dSYM and is stripped, and resource-bundle identifiers are fixed.
+
+Detection comes second. `scripts/check-no-home-paths.sh` compiles `scripts/check-no-home-paths.swift` once and scans everything that ships: file contents, names, symlink targets and extended attributes. It looks for home-folder paths, the account and full names, and this Mac’s identifiers, after decoding UTF-16, percent escapes, base64 and hex and unpacking compressed streams. It prints what it found and where, never the value. A hit fails the build and deletes the app. The build scripts also filter their own output, so the home folder prints as `~` and the names as placeholders.
+
+### Tests
+
+The tests use Swift Testing (`import Testing`): more than 2,700 of them, in a test target per module. Things with side effects sit behind protocols with fakes: permission probing, ScreenCaptureKit, AVFoundation and Core Audio listings and captures, the hotkey registrar, Karabiner’s file system and command runner, the updater, disk-image mounting and signature checks, the Ninjabrain Bot copies scanner, the alarm player. So a test never triggers a macOS permission prompt, never registers a real hotkey, and never touches the real `~/.config/karabiner`, your settings or your recordings. Each settings store points at a temporary folder, and an in-process `LocalSSEServer` on a free loopback port stands in for Ninjabrain Bot.
+
+A test that orders a panel in does it on a synthetic display far off screen, at (−9000, −9000) in most suites, so no overlay reaches a real screen. The one test that has to order a panel over the real main display runs only with `STOOLS_TESTS_ON_SCREEN=1`. Rendering tests host views in an `NSWindow` that is never shown and draw them to bitmaps. The crosshair default is checked pixel by pixel on even and odd displays at 1x and 2x, and animations are checked with Reduce animations on and off. The recorder is tested with synthetic frames and audio written and read back through `AVAsset`. Test waits have a time bound that counts only awake time (`SuspendingClock`), and no test blocks the main actor.
+
+Two executables measure cost and aren’t tests. `RecordingBench` runs a recording from fake sources into a temporary folder (`swift run -c release RecordingBench`), and `NBBBench` times the Ninjabrain Bot scan and window reads on your own process table. `scripts/smoke-update.sh` runs the updater end to end offline: two copies of a release build under a separate bundle ID, a local feed and a throwaway key. It checks that a signed update installs and that a one-byte change or a missing signature is refused.
 
 ## Speedrun rules
 
 Three tools touch the [Minecraft: Java Edition speedrunning rules](https://www.minecraftspeedrunning.com/public-resources/rules):
 
 - The NBB Overlay shows only what Ninjabrain Bot itself shows, as rule A.11.7.a.i requires of tools that use its API. Its settings can hide or reformat information, never add to it.
-- The Key Rebinder's checker cites the remap rules (A.10.1–A.10.4) when a rebind may break them. It only advises; you decide.
+- The Key Rebinder’s checker cites the remap rules (A.10.1–A.10.4) when a rebind may break them. It only advises; you decide.
 - Timer Overlay has been checked against the rules and is legal. It never reads or acts on the game, and its placement guides help keep the hotbar, chat, toasts and your in-game timer visible.
-
-## Requirements
-
-- **macOS 15 Sequoia or later.**
-- **An Apple silicon or Intel Mac.** sTools is one universal app; Intel support is best effort.
-- **Minecraft: Java Edition.** sTools is made for 1.16.1 with the official launcher or Prism Launcher.
-- **[Ninjabrain Bot](https://github.com/Ninjabrain1/Ninjabrain-Bot)** for the NBB Overlay, with its API turned on (Settings ▸ Advanced in Ninjabrain Bot).
-- **[Karabiner-Elements](https://karabiner-elements.pqrs.org) 16.0 or later** to edit rebinds and profiles. The keyboard, your Minecraft keybinds, the key tester and hotkeys on keys work without it.
-
-### Permissions
-
-The Prologue walks you through each one, and a tool's page offers **Allow…** when something it needs is missing.
-
-| Permission | Why | Used by |
-|------------|-----|---------|
-| Accessibility | Finds the Minecraft window and follows it: where it is, which display it's on, whether it has focus. Hotkeys use it to recognize Minecraft in front. | Crosshair, Timer Overlay, NBB Overlay, Screen Recording, Window Backdrop, hotkeys in Minecraft |
-| Screen & System Audio Recording | Records Minecraft and the windows and displays you add. macOS may ask you to reopen sTools after you allow it. | Screen Recording |
-| App audio | Records the sound of Minecraft and other apps. | Screen Recording |
-| Microphone | Records your voice, once you add a microphone. | Screen Recording |
-| Camera | Puts your camera on the canvas, once you add one. | Screen Recording |
-
-Without Accessibility, the tools that need it stay off and hotkeys work only in sTools, unless Where hotkeys work is set to Everywhere; the Key Rebinder works without it. sTools never asks for Input Monitoring: hotkeys go through macOS's own hotkey system, and the key tester only watches sTools' own window.
-
-## Install
-
-1. Download the latest DMG from the [releases page](https://github.com/ducky8x/sTools-releases/releases). Releases will appear there; the first beta, 0.1.0, goes to testers before a public release.
-2. Open the DMG and drag **sTools** onto **Applications**.
-3. The first time you open sTools, macOS blocks it, because sTools is signed with ducky's own self-signed certificate rather than notarized by Apple. To let it through:
-   1. Open sTools from Applications, then click **Done**.
-   2. Go to **System Settings ▸ Privacy & Security**.
-   3. Click **Open Anyway**, then confirm.
-
-After that it opens normally. Every release is signed with the same certificate, so macOS keeps the permissions you've granted when sTools updates itself.
-
-**Updating from a DMG.** You only drag sTools into Applications once. For the next version, download its DMG, then in sTools choose **Settings ▸ Updates ▸ Install from DMG…** (or **sTools ▸ Install from DMG…**) and pick it. sTools installs it only if it's a newer sTools signed with the same certificate, then opens again.
 
 ## Privacy
 
-sTools has no accounts, analytics or telemetry. It works with what's already on your Mac:
+sTools has no accounts, analytics or telemetry. It works with what is already on your Mac:
 
-- **Minecraft's window**, through Accessibility: where it is and whether it has focus, so the overlays and the backdrop can follow it.
-- **Minecraft's `options.txt`**, read-only, to label keys with their game actions.
-- **Karabiner-Elements' `karabiner.json`**, to draw your rebinds. sTools writes to it only when you change something, after saving a backup in `~/Library/Application Support/sTools/Karabiner Backups` (the newest 20 are kept).
-- **Ninjabrain Bot's local API** at `localhost:52533`, read-only.
+- **Minecraft’s window**, through Accessibility: where it is and whether it has focus, so the overlays and the backdrop can follow it.
+- **Minecraft’s `options.txt`**, read only, to label keys with their game actions.
+- **Karabiner-Elements’ `karabiner.json`**, to draw your rebinds. sTools writes to it only when you change something, after saving a backup in `~/Library/Application Support/sTools/Karabiner Backups` (the newest 20 are kept).
+- **Ninjabrain Bot’s local API** at `localhost:52533`, read only.
 
-Settings live in `~/Library/Application Support/sTools`, and recordings go to `~/Movies/sTools` unless you choose another folder. sTools goes online only to check for updates, and to load any web page you add to a recording yourself. Copy Diagnostics puts a report on your clipboard and sends nothing.
+Settings live in `~/Library/Application Support/sTools`, and recordings go to `~/Movies/sTools` unless you choose another folder. sTools goes online only to check GitHub for updates and to load a web page you add to a recording yourself. Copy Diagnostics puts a report on your clipboard and sends nothing.
 
 ## Build from source
 
-sTools is a Swift package (Swift 6, SwiftUI and AppKit) developed with the Xcode 27 beta. Run these from the repository root:
+You need Xcode’s toolchain; the Command Line Tools alone lack Swift Testing’s macros. Run these from the repository root:
 
 ```sh
-# Use Xcode's toolchain: the Command Line Tools alone lack Swift Testing's macros.
-export DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer
+export DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer   # or your Xcode
 
-swift build                     # compile every module
-swift test                      # run the tests
-scripts/build-app.sh debug      # build/sTools.app for this Mac: the app you actually run
-scripts/build-app.sh release    # build/sTools.app as a universal (Apple silicon and Intel) release
-scripts/build-dmg.sh            # wrap build/sTools.app in the styled DMG
-scripts/build-app.sh release --dev   # build/sTools Dev.app: the dev build, next to build/sTools.app (debug works too)
-scripts/build-dmg.sh --dev           # wrap build/sTools Dev.app in its own DMG: sTools-<version>-dev-macOS.dmg
-swift run -c release RecordingBench   # what a Screen Recording costs in CPU, with fake sources (never shipped)
-swift run -c release NBBBench scan     # what the NBB Overlay's Ninjabrain Bot scan and window reads cost (never shipped)
+swift build                          # compile every module
+swift test                           # run the tests
+scripts/build-app.sh debug           # build/sTools.app for this Mac: the app you run
+scripts/build-app.sh release         # the same as a universal (Apple silicon and Intel) release build
+scripts/build-dmg.sh                 # wrap build/sTools.app in the styled DMG
+scripts/build-app.sh release --dev   # build/sTools Dev.app, next to build/sTools.app (debug works too)
+scripts/build-dmg.sh --dev           # its own DMG: sTools-<version>-dev-macOS.dmg
+swift run -c release RecordingBench  # what a recording costs in CPU, with fake sources
+swift run -c release NBBBench scan   # what the NBB Overlay’s Ninjabrain Bot scan costs
 ```
 
-- `swift build` alone doesn't make the app. `scripts/build-app.sh` assembles `build/sTools.app` with its icon and resources, then signs it.
-- **Signing:** `build-app.sh` signs only with a code-signing identity named `ducky8x` and refuses any other, so macOS keeps permission grants from one build to the next. On a Mac without it, run `scripts/make-signing-identity.sh` once to create a self-signed one, or pass `--adhoc` for a throwaway debug build (macOS then forgets its permissions every time you rebuild). Release builds always need the identity.
-- **The dev build** is a second variant of the same app, the copy to use day to day. `--dev` builds `build/sTools Dev.app` beside `build/sTools.app` without touching it, and `build-dmg.sh --dev` makes its own DMG, `sTools-<version>-dev-macOS.dmg` (volume "sTools Dev"), in `~/Projects/App Outputs`. It is named "sTools Dev" in the menu bar and in Finder, and its icon is the same mark in blue instead of gold (`scripts/generate-icon.swift --tint blue packaging/dev` draws it). It has no update feed, so it never updates itself into the normal build: Settings ▸ Updates says so, and **Install from DMG…** takes only a dev DMG. Everything else is the same build: the same bundle identifier (`com.ducky8x.sTools`), the same "ducky8x" signature and the same settings folder, so your settings, saved data and macOS permissions carry over. For the same reason, install only one of the two at a time.
-- The tests use Swift Testing and fakes, so they don't put windows on screen, trigger permission prompts or touch your real Karabiner configuration.
-
-| Module | What's in it |
-|--------|--------------|
-| `sTools` | The app: window, sidebar, Home and hotkeys, Settings, menus |
-| `STDesign` | Colors, type, motion, sounds and the shared controls |
-| `STPlatform` | Minecraft detection, displays, overlay panels, permissions, settings storage, hotkeys |
-| `NBBOverlay` | Ninjabrain Bot client and overlay |
-| `Backdrop` | Window Backdrop |
-| `Crosshair` | Crosshair geometry and rendering |
-| `ScreenRecording` | Capture, compositing, audio and the file writer |
-| `KeyRebinder` | Karabiner configuration and command line, keyboard layouts, checker, key tester |
-| `Prologue` | The first-launch introduction |
-| `TimerOverlay` | Timer Overlay: countdown, overlay, alarm and placement |
-
-### Documentation
-
-
-Each change gets its own branch (`feat/`, `fix/`, `docs/`, `chore/`…), uses [Conventional Commits](https://www.conventionalcommits.org), and is merged into `main` with `git merge --no-ff`.
+- `scripts/build-app.sh` signs only with a code-signing identity named `ducky8x` and refuses any other. On a Mac without it, run `scripts/make-signing-identity.sh` once to create a self-signed one, or pass `--adhoc` for a throwaway debug build. Release builds always need the identity.
+- A build made from this repository carries the update feed and the public update key from `packaging/Info.plist` and `packaging/sparkle-public-key.txt`. If you fork it, change both and make your own key with `scripts/make-update-key.sh`, or your copies will offer this project’s releases as updates.
+- Each change gets its own branch (`feat/`, `fix/`, `docs/`, `chore/`…), uses [Conventional Commits](https://www.conventionalcommits.org) and is merged into `main` with `git merge --no-ff`.
 
 ## License
 
@@ -187,4 +336,4 @@ It bundles a few things under their own licenses:
 - The fonts Bodoni Moda, Source Serif 4 and DM Serif Display, under the SIL Open Font License 1.1 ([`OFL.txt`](Sources/STDesign/Resources/Fonts/OFL.txt)).
 - [Sparkle](https://sparkle-project.org), the update framework, under the MIT License.
 
-sTools is not an official Minecraft product and isn't affiliated with Mojang, Microsoft, Ninjabrain Bot or Karabiner-Elements.
+sTools is not an official Minecraft product and isn’t affiliated with Mojang, Microsoft, Ninjabrain Bot or Karabiner-Elements.
