@@ -318,13 +318,17 @@ extension KeyRebinderController {
 extension KeyRebinderController: HotkeyAdvising {
     /// The Minecraft caution for `combo` and the note naming the held modifiers that keep it from firing, from
     /// Minecraft's keybinds or 1.16.1's defaults. Both hotkey editors show them, through `HotkeyCenter.notes(for:)`.
+    /// While Also fire while holding Shift or Control is on the hotkey fires with Shift and Control held, so the note
+    /// names only the other modifiers Minecraft binds, and the caution stays as it is: it is about the key, and a
+    /// variant adds one use (⇧F3, the pie chart) to a key that is cautioned for F3 already.
     public func notes(for combo: HotkeyCombo) -> [HotkeyNote] {
         guard HotkeyCombo.isSupported(keyCode: combo.keyCode) else { return [] }
         var notes: [HotkeyNote] = []
         if let caution = HotkeyGameCheck.caution(for: combo, minecraftKeybinds: minecraftKeybinds) {
             notes.append(HotkeyNote(tone: .caution, text: caution.text))
         }
-        if let held = HotkeyGameCheck.heldModifierNote(for: combo, minecraftKeybinds: minecraftKeybinds) {
+        let covered: HotkeyCombo.Modifiers = hotkeyCenter?.alsoFiresWithShiftOrControl == true ? [.shift, .control] : []
+        if let held = HotkeyGameCheck.heldModifierNote(for: combo, minecraftKeybinds: minecraftKeybinds, alsoFiringWith: covered) {
             notes.append(HotkeyNote(tone: .note, text: held))
         }
         return notes
