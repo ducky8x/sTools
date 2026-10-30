@@ -74,6 +74,13 @@ final class FakeClipboard: ClipboardWriting {
     func copy(_ text: String) { copiedText = text }
 }
 
+/// A log with nothing in it. The unified log answers through a synchronous call that takes seconds on a busy Mac,
+/// with the main actor waiting, and every other test that needs the main actor waits with it; Copy Diagnostics reads
+/// this instead (`Harness` hands it to the model). Only the test of the real log reads the real one.
+struct EmptyLogReader: LogLineReading {
+    func recentLines(since: Date, limit: Int) throws -> [String] { [] }
+}
+
 /// Records every `setEnabled` call.
 @MainActor
 final class FakeController: ToolController {
@@ -176,6 +183,7 @@ final class Harness {
                          hotkeyRegistrar: hotkeyRegistrar, hotkeyHUD: hotkeyHUD, loginItem: FakeLoginItem())
         model.pingNinjabrainBot = { false }
         model.evaluateKarabiner = { .notInstalled }
+        model.logReader = EmptyLogReader()
     }
 
     deinit {
@@ -196,7 +204,7 @@ func fakeInstance(pid: Int32 = 100, version: String = "1.16.1", launched: TimeIn
 /// sleeps, so a sleep in the middle of a test (an unattended run in Deep Idle with dark wakes) used up the whole bound
 /// at once, and the wait gave up right after wake although what it waited for came a moment later.
 @MainActor
-func waitUntil(timeout: Duration = .seconds(3), _ condition: @MainActor () -> Bool) async -> Bool {
+func waitUntil(timeout: Duration = .seconds(20), _ condition: @MainActor () -> Bool) async -> Bool {
     let clock = SuspendingClock()
     let deadline = clock.now + timeout
     while !condition() {

@@ -22,7 +22,7 @@ struct CrosshairImageRow: View {
             STSettingsRow("Image scale") {
                 STSlider(value: scaleBinding, in: 10...400, label: "Image scale", valueText: { "\(Int($0))%" })
             }
-            STSettingsRow("Image anchor", combinesForAccessibility: false) {
+            STChoiceRow("Image anchor") {
                 STSegmented(selection: $controller.settings.imageAnchor, options: Self.anchors)
             }
         }

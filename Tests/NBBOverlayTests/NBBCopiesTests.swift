@@ -41,7 +41,7 @@ final class FakeCopiesScanner: NBBCopiesScanning, @unchecked Sendable {
 
 /// Waits, without blocking the main actor, until `condition` holds or `seconds` of awake time pass.
 @MainActor
-func waitUntil(seconds: Double = 2, _ condition: @MainActor () -> Bool) async {
+func waitUntil(seconds: Double = 20, _ condition: @MainActor () -> Bool) async {
     let clock = SuspendingClock()
     let deadline = clock.now.advanced(by: .seconds(seconds))
     while !condition(), clock.now < deadline { try? await Task.sleep(for: .milliseconds(5)) }

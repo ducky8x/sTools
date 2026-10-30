@@ -29,6 +29,9 @@ let package = Package(
         // Measures what watching Ninjabrain Bot costs: the copies scan and a window read (`swift run -c release NBBBench`);
         // reads only, never shipped.
         .executableTarget(name: "NBBBench", dependencies: ["NBBOverlay"], path: "Benchmarks/NBBBench"),
+        // Measures what an animated Window Backdrop fill costs while it plays: CPU, GPU and memory, for videos and GIFs
+        // it makes itself, in a window that never shows (`swift run -c release BackdropBench`); never shipped.
+        .executableTarget(name: "BackdropBench", dependencies: ["Backdrop", "STPlatform"], path: "Benchmarks/BackdropBench"),
         // Measures what the overlays cost sTools in CPU with Crosshair, Timer Overlay, NBB Overlay and Window Backdrop up on a
         // display outside every real screen, with fakes (`swift run -c release OverlayBench`); never shipped.
         .executableTarget(

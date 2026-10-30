@@ -88,6 +88,20 @@ private func fileNames(in directory: URL) throws -> [String] {
     try FileManager.default.contentsOfDirectory(atPath: directory.path).sorted()
 }
 
+/// Waits, without blocking the main actor, until `condition` holds or `timeout` of awake time passes. The bound is a
+/// clock, not a count of polls, so a busy Mac that polls less often still gets the whole time; `SuspendingClock`
+/// stops while the Mac sleeps, so a sleep mid-test doesn't use it up.
+@MainActor
+private func waitUntil(timeout: Duration = .seconds(10), _ condition: @MainActor () -> Bool) async -> Bool {
+    let clock = SuspendingClock()
+    let deadline = clock.now.advanced(by: timeout)
+    while !condition() {
+        guard clock.now < deadline else { return false }
+        try? await Task.sleep(for: .milliseconds(5))
+    }
+    return true
+}
+
 private func write(_ text: String, to name: String, in directory: URL) throws {
     try Data(text.utf8).write(to: directory.appending(path: name))
 }
@@ -368,7 +382,7 @@ private func modificationDate(of url: URL) throws -> Date {
             for count in 1...10 { store.save(Prefs(title: "v", count: count)) }
             #expect(try fileNames(in: directory).isEmpty)
 
-            for _ in 0..<500 where store.writeCount == 0 { try await Task.sleep(for: .milliseconds(10)) }
+            #expect(await waitUntil { store.writeCount > 0 }, "the debounced write happens")
             try await Task.sleep(for: .milliseconds(150))
 
             #expect(store.writeCount == 1)
@@ -499,7 +513,7 @@ private func modificationDate(of url: URL) throws -> Date {
             try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
             let store = SettingsStore(directory: directory, debounce: .milliseconds(20))
             store.save(Prefs(title: "blocked", count: 1))
-            for _ in 0..<500 where store.failedWriteCount == 0 { try await Task.sleep(for: .milliseconds(10)) }
+            #expect(await waitUntil { store.failedWriteCount > 0 }, "the debounced write is tried and fails")
             #expect(store.failedWriteCount == 1)
         }
     }

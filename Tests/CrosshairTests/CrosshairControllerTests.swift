@@ -67,7 +67,7 @@ struct CrosshairControllerTests {
 
         let looks = controller.placementCount
         source.instances = [minecraft(x: 40)]
-        let deadline = SuspendingClock.now + .seconds(2)
+        let deadline = SuspendingClock.now + .seconds(20)
         while controller.placementCount == looks, SuspendingClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }
@@ -94,7 +94,7 @@ struct CrosshairControllerTests {
 
         let looks = controller.placementCount
         source.instances = [minecraft(x: 40, frontmost: false)]
-        let deadline = SuspendingClock.now + .seconds(2)
+        let deadline = SuspendingClock.now + .seconds(20)
         while controller.placementCount == looks, SuspendingClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }

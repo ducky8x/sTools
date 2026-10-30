@@ -146,6 +146,20 @@ private final class Box<Value> {
     init(_ value: Value) { self.value = value }
 }
 
+/// Waits, without blocking the main actor, until `condition` holds or `timeout` of awake time passes. The bound is a
+/// clock, not a count of polls, so a busy Mac that polls less often still gets the whole time; `SuspendingClock`
+/// stops while the Mac sleeps, so a sleep mid-test doesn't use it up.
+@MainActor
+private func waitUntil(timeout: Duration = .seconds(10), _ condition: @MainActor () -> Bool) async -> Bool {
+    let clock = SuspendingClock()
+    let deadline = clock.now.advanced(by: timeout)
+    while !condition() {
+        guard clock.now < deadline else { return false }
+        try? await Task.sleep(for: .milliseconds(5))
+    }
+    return true
+}
+
 // MARK: - Tests
 
 @MainActor
@@ -457,7 +471,8 @@ struct TimerEngineTests {
         let wake = scheduler.schedule(after: 0.01) { fired.value += 1 }
         let cancelled = scheduler.schedule(after: 0.01) { cancelledFired.value = true }
         cancelled.cancel()
-        for _ in 0..<200 where fired.value == 0 { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(await waitUntil { fired.value > 0 }, "the live wake fires")
+        // The cancelled wake was due at the same moment, so a moment more is when it would have fired.
         try await Task.sleep(for: .milliseconds(50))
         #expect(fired.value == 1)
         #expect(!cancelledFired.value)
