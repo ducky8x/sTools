@@ -236,10 +236,14 @@ extension View {
     /// every field in that font; the field's own cell still measures its line right. Centered in its row, such a
     /// field sat half the difference off and moved the rows around it. In a slot of its own line's height the
     /// layout holds whatever height SwiftUI picks, and as an AppKit field draws its line from its top edge, the
-    /// glyphs stay where they belong too; a view shorter than its line still cuts off the bottom of glyphs the
-    /// field draws itself. Pass the field's font size and weight (`STFont.text` is regular, `figures` medium).
+    /// glyphs stay where they belong too. AppKit cuts a field's glyphs off at the bottom of its view, though, so a
+    /// view shorter than its line lost the descenders of everything the field draws itself (text too long for it,
+    /// right-to-left text, the number and slider value fields). `STFieldLineGuard` keeps that view one line tall.
+    /// Pass the field's font size and weight (`STFont.text` is regular, `figures` medium).
     public func stFieldLineHeight(_ size: CGFloat, weight: Font.Weight = .regular) -> some View {
-        frame(height: STFont.textLineHeight(size, weight: weight), alignment: .top)
+        let line = STFont.textLineHeight(size, weight: weight)
+        return frame(height: line, alignment: .top)
+            .background { STFieldLineGuard(minimumHeight: line) }
     }
 }
 
