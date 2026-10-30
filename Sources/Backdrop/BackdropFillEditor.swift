@@ -92,7 +92,7 @@ struct BackdropFillEditor: View {
     static func costNote(for kind: BackdropAnimationFile.Kind?) -> String? {
         switch kind {
         case .video: "A video is decoded by the Mac\u{2019}s video hardware, so it costs little."
-        case .gif: "A GIF is decoded by the CPU, so the bigger it is, the more it costs."
+        case .gif: "A GIF is decoded by the CPU, so a large one costs much more than a small one."
         case nil: nil
         }
     }
