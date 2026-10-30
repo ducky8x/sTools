@@ -564,36 +564,56 @@ struct ReduceAnimationsHUDTests {
         #expect(await waitUntil(timeout: .seconds(60)) { !hud.isShowing })
     }
 
+    // The two tests below move the HUD's clock by hand, so neither depends on how long a real wait takes. The fade is an
+    // AppKit animation and keeps real time whatever the clock says.
+
     @Test func aPressDuringAFadeOutComesBackAtOnceAndTheFadeNeverReturns() async {
         let theme = STTheme()
-        let hud = HotkeyHUD(theme: theme, hold: .seconds(2), fadeInDuration: 0.01, fadeOutDuration: 0.5)
+        let clock = ManualClock()
+        let hud = HotkeyHUD(theme: theme, hold: .seconds(2), fadeInDuration: 0.01, fadeOutDuration: 0.5, clock: clock)
         defer { hud.panel.hide() }
         hud.present("Crosshair on", sealed: true, on: offScreenDisplay)
-        // Into the full-motion fade-out, which would end at 2.5 s.
-        try? await Task.sleep(for: .milliseconds(2_150))
+        #expect(await clock.waitForWakes(.seconds(2)), "the hold waits on the clock")
+
+        // The hold ends and the full-motion fade-out starts; it would end at 2.5 s. Go 150 ms into it.
+        clock.advance(by: .seconds(2))
+        #expect(await clock.waitForWakes(.milliseconds(2_500)), "the fade-out wait is on the clock too")
+        clock.advance(by: .milliseconds(150))
 
         theme.motionMode = .reduced
         hud.present("Crosshair off", sealed: true, on: offScreenDisplay)
         #expect(hud.isShowing)
         #expect(hud.panel.alphaValue == 1, "the running fade stops; the line is simply there")
+        #expect(await clock.waitForWakes(.milliseconds(4_150)), "only the new hold is left to wait for")
 
         // Past where the old fade would have ended, well before the new hold does.
+        clock.advance(by: .milliseconds(650))
+        // A real wait, so an AppKit fade still running would have ended. A longer one can't fail the test: the clock
+        // stands still, so the hold can't end.
         try? await Task.sleep(for: .milliseconds(650))
         #expect(hud.isShowing)
         #expect(hud.panel.alphaValue == 1, "the old fade didn't come back")
+
+        clock.advance(by: .seconds(2))
         #expect(await waitUntil(timeout: .seconds(60)) { !hud.isShowing })
     }
 
     @Test func aNewPressStillStartsItOver() async {
-        let hud = HotkeyHUD(theme: STTheme(motionMode: .reduced), hold: .milliseconds(300), fadeInDuration: 1, fadeOutDuration: 1)
+        let clock = ManualClock()
+        let hud = HotkeyHUD(theme: STTheme(motionMode: .reduced), hold: .milliseconds(300), fadeInDuration: 1, fadeOutDuration: 1,
+                            clock: clock)
         defer { hud.panel.hide() }
         hud.present("Crosshair on", sealed: true, on: offScreenDisplay)
-        try? await Task.sleep(for: .milliseconds(200))
+        #expect(await clock.waitForWakes(.milliseconds(300)))
+        clock.advance(by: .milliseconds(200))
         hud.present("Crosshair off", sealed: true, on: offScreenDisplay)
-        try? await Task.sleep(for: .milliseconds(200))
+        #expect(await clock.waitForWakes(.milliseconds(500)), "the first hold is gone; the second counts from its own press")
+
+        clock.advance(by: .milliseconds(200))
         #expect(hud.isShowing, "past the first press's hold, the second keeps it up")
         #expect(hud.panel.alphaValue == 1)
-        #expect(await waitUntil { !hud.isShowing })
+        clock.advance(by: .milliseconds(100))
+        #expect(await waitUntil(timeout: .seconds(60)) { !hud.isShowing })
     }
 
     @Test func itsPanelNeverAnimatesInOrOut() {

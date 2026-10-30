@@ -20,17 +20,23 @@ final class HotkeyHUD: HotkeyConfirmationPresenting {
     private let hold: Duration
     private let fadeInDuration: TimeInterval
     private let fadeOutDuration: TimeInterval
+    /// What the hold and the wait for the fade-out to finish run on. The fade itself is an AppKit animation and keeps
+    /// real time.
+    private let clock: any Clock<Duration>
     /// Made up front, not on the first press, so a whole-display recording that started earlier
     /// already knows to leave it out (`OverlayPanel.captureExcludedWindowNumbers()`).
     let panel = OverlayPanel(role: .topmost, isExcludedFromCapture: true)
     private var dismissal: Task<Void, Never>?
 
+    /// `clock` defaults to `ContinuousClock`, the one `Task.sleep(for:)` uses. A test passes one it moves by hand.
     init(theme: STTheme, hold: Duration = .seconds(1.2),
-         fadeInDuration: TimeInterval = 0.12, fadeOutDuration: TimeInterval = 0.3) {
+         fadeInDuration: TimeInterval = 0.12, fadeOutDuration: TimeInterval = 0.3,
+         clock: any Clock<Duration> = ContinuousClock()) {
         self.theme = theme
         self.hold = hold
         self.fadeInDuration = fadeInDuration
         self.fadeOutDuration = fadeOutDuration
+        self.clock = clock
     }
 
     var isShowing: Bool { panel.isVisible }
@@ -50,13 +56,13 @@ final class HotkeyHUD: HotkeyConfirmationPresenting {
         NSAccessibility.post(element: NSApplication.shared, notification: .announcementRequested,
                              userInfo: [.announcement: line, .priority: NSAccessibilityPriorityLevel.high.rawValue])
 
-        dismissal = Task { [weak self, hold, fadeOutDuration] in
-            try? await Task.sleep(for: hold)
+        dismissal = Task { [weak self, hold, fadeOutDuration, clock] in
+            try? await clock.sleep(for: hold)
             guard !Task.isCancelled, let self else { return }
             // Read again here: the setting may have changed while the line was up.
             if !theme.reduceMotion {
                 animateAlpha(to: 0, duration: fadeOutDuration)
-                try? await Task.sleep(for: .seconds(fadeOutDuration))
+                try? await clock.sleep(for: .seconds(fadeOutDuration))
                 guard !Task.isCancelled else { return }
             }
             panel.hide()
