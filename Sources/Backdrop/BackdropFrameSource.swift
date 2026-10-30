@@ -29,15 +29,20 @@ final class ImageIOFrameSource: BackdropFrameSource, @unchecked Sendable {
     /// GIF made for a slow machine doesn't run flat out.
     static func displayDelay(_ delay: TimeInterval) -> TimeInterval { delay > 0.01 ? delay : 0.1 }
 
-    /// Opens the GIF at `url` without decoding any picture. Nil when it isn't a GIF, has no frames, or can't be read.
-    static func open(at url: URL) -> ImageIOFrameSource? {
+    /// The most pixels one frame may have, 4096 x 4096. A decoded frame is four bytes a pixel, and a few are held at once,
+    /// so a GIF past this could take gigabytes.
+    static let maximumPixels = 4096 * 4096
+
+    /// Opens the GIF at `url` without decoding any picture. Nil when it isn't a GIF, has no frames, has frames over
+    /// `maximumPixels`, or can't be read.
+    static func open(at url: URL, maximumPixels: Int = ImageIOFrameSource.maximumPixels) -> ImageIOFrameSource? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
               let type = CGImageSourceGetType(source), type as String == UTType.gif.identifier,
               CGImageSourceGetStatus(source) == .statusComplete else { return nil }
         let count = CGImageSourceGetCount(source)
         guard count > 0, let first = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let width = first[kCGImagePropertyPixelWidth] as? Int, let height = first[kCGImagePropertyPixelHeight] as? Int,
-              width > 0, height > 0 else { return nil }
+              width > 0, height > 0, width * height <= maximumPixels else { return nil }
         let delays = (0..<count).map { index -> TimeInterval in
             let properties = CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [CFString: Any]
             let gif = properties?[kCGImagePropertyGIFDictionary] as? [CFString: Any]

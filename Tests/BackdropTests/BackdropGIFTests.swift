@@ -331,6 +331,15 @@ struct BackdropGIFFileTests {
         #expect(ImageIOFrameSource.open(at: png) == nil)
     }
 
+    /// A decoded frame is four bytes a pixel and a few are held at once, so a huge picture is turned away.
+    @Test func aGIFWithAPictureOverTheLimitDoesNotOpen() throws {
+        let folder = TempFolder()
+        let url = TestMedia.writeGIF(to: folder.file("big.gif"), colors: [.red, .green], delays: [0.1, 0.1], width: 20, height: 10)
+        #expect(ImageIOFrameSource.open(at: url, maximumPixels: 199) == nil)
+        #expect(ImageIOFrameSource.open(at: url, maximumPixels: 200) != nil, "exactly the limit still opens")
+        #expect(ImageIOFrameSource.maximumPixels == 4096 * 4096)
+    }
+
     @Test func aGIFWithOneFrameOpens() throws {
         let folder = TempFolder()
         let url = TestMedia.writeGIF(to: folder.file("one.gif"), colors: [.yellow], delays: [0.1])
