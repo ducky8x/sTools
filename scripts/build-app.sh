@@ -7,9 +7,8 @@
 #   release     Universal binary (arm64 + x86_64), for shipping. Its debug symbols go to dSYMs in
 #               build/dSYMs/sTools-<version>-<build>-<UUIDs>/ (kept for crash reports, never shipped; the folder is
 #               named after the executable's UUIDs, so a rebuild never replaces the symbols of another binary) and
-#               are stripped from every binary in the app. The build fails, and build/sTools.app (build/sTools Dev.app
-#               with --dev) is removed, when a step fails or anything in the app holds a home-folder path, a name or a
-#               trace of this Mac (scripts/check-no-home-paths.sh).
+#               are stripped from every binary in the app. The build fails when a step fails or anything in the app
+#               holds a home-folder path, a name or a trace of this Mac (scripts/check-no-home-paths.sh).
 #   --dev       The dev build, the copy to use day to day: build/sTools Dev.app, beside build/sTools.app and never
 #               replacing it. The same bundle identifier (com.ducky8x.sTools) and the same "ducky8x" signature, so
 #               settings, saved data and macOS permissions are shared with the normal build and carry over; only one of
@@ -34,6 +33,12 @@
 # (written by scripts/make-update-key.sh). Without that file a release build fails and a debug build leaves the key
 # out, so it explains in Settings that it can't check for updates. The dev build leaves the feed and the key out
 # whatever the file holds, and needs neither the file nor the key.
+#
+# A failed build: the app is made in build/.staging and moved to build/sTools.app (build/sTools Dev.app with --dev) only
+# once it is signed and every check has passed (scripts/lib/stage-app.sh). So a failure, at any step, never leaves a
+# half-made or unsigned app under that name, and the app from the last good build stays where it was, usable. The
+# script then says that build/sTools.app was not replaced and which version and build it still is, so it cannot be taken
+# for this run's.
 #
 # Signing safety: the only identity this script will ever sign with is the code-signing identity whose
 # common name is exactly "ducky8x". It is matched by exact name, never by substring, and signing uses its
@@ -77,6 +82,8 @@ shown() {
 # shellcheck source=lib/mask-home.sh
 source "$ROOT/scripts/lib/mask-home.sh"
 mask_output_of "${BASH_SOURCE[0]}" "$@"
+# shellcheck source=lib/stage-app.sh
+source "$ROOT/scripts/lib/stage-app.sh"
 
 # The UUID and architecture of each slice of a Mach-O file or dSYM, one per line, sorted.
 macho_uuids() {
@@ -158,7 +165,23 @@ if [[ "$DEV" -eq 1 ]]; then
 else
     readonly APP_NAME="sTools.app"
 fi
-readonly APP="$ROOT/build/$APP_NAME"
+# Where the finished app goes, and where it is made until then.
+readonly FINAL_APP="$ROOT/build/$APP_NAME"
+readonly STAGE="$ROOT/build/.staging"
+readonly APP="$STAGE/$APP_NAME"
+
+COMMITTED=0
+SIGN_WORK=""
+# Whatever the build ends with, the staging folder goes. A build that failed says that the app in place is not its own.
+on_exit() {
+    local status=$?
+    [[ -z "$SIGN_WORK" ]] || rm -rf "$SIGN_WORK"
+    rm -rf "$STAGE"
+    if [[ "$status" -ne 0 ]]; then
+        stage_report_failure "$FINAL_APP" "$COMMITTED"
+    fi
+}
+trap on_exit EXIT
 
 if [[ "$MODE" == "release" && "$ADHOC" -eq 1 ]]; then
     fail "release builds must be signed with the \"$IDENTITY_NAME\" identity; --adhoc is not allowed"
@@ -259,19 +282,6 @@ fi
 
 cd "$ROOT"
 
-APP_STARTED=0
-SIGN_WORK=""
-# A release build that fails at any step leaves no app behind: it could be signed and look finished.
-on_exit() {
-    local status=$?
-    [[ -z "$SIGN_WORK" ]] || rm -rf "$SIGN_WORK"
-    if [[ "$status" -ne 0 && "$MODE" == "release" && "$APP_STARTED" -eq 1 && -e "$APP" ]]; then
-        rm -rf "$APP"
-        echo "error: removed build/$APP_NAME: a release build that failed must not be shipped" >&2
-    fi
-}
-trap on_exit EXIT
-
 echo "==> Building ($MODE)"
 if [[ "$MODE" == "release" ]]; then
     # Swift Build, pinned: the native build system's Bundle.module accessor (STDesign and KeyRebinder fall back
@@ -286,8 +296,7 @@ BIN_PATH="$(swift build "${BUILD_FLAGS[@]}" --show-bin-path)"
 [[ -x "$BIN_PATH/sTools" ]] || fail "build did not produce $(shown "$BIN_PATH/sTools")"
 
 echo "==> Assembling $(shown "$APP")"
-APP_STARTED=1
-rm -rf "$APP"
+rm -rf "$STAGE"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_PATH/sTools" "$APP/Contents/MacOS/sTools"
 
@@ -454,9 +463,12 @@ if [[ "$MODE" == "release" ]]; then
     UUID_TAG="$(xcrun dwarfdump --uuid "$APP/Contents/MacOS/sTools" | awk '{ print $3, $2 }' | sort |
         awk '{ printf "%s%s", (NR > 1 ? "-" : ""), substr($2, 1, 8) }')"
     [[ "$UUID_TAG" =~ ^[0-9A-F]{8}(-[0-9A-F]{8})+$ ]] || fail "cannot read the executable's UUIDs"
-    DSYM_DIR="$ROOT/build/dSYMs/sTools-$VERSION-$BUILD_NUMBER-$UUID_TAG"
-    [[ "$DEV" -eq 0 ]] || DSYM_DIR="$ROOT/build/dSYMs/sTools-Dev-$VERSION-$BUILD_NUMBER-$UUID_TAG"
-    echo "==> Saving the debug symbols to ${DSYM_DIR#"$ROOT/"} and stripping them from the app"
+    DSYM_NAME="sTools-$VERSION-$BUILD_NUMBER-$UUID_TAG"
+    [[ "$DEV" -eq 0 ]] || DSYM_NAME="sTools-Dev-$VERSION-$BUILD_NUMBER-$UUID_TAG"
+    # Made in the staging folder, like the app, and moved to build/dSYMs with it.
+    DSYM_DIR="$STAGE/dSYMs/$DSYM_NAME"
+    DSYM_FINAL="$ROOT/build/dSYMs/$DSYM_NAME"
+    echo "==> Saving the debug symbols to ${DSYM_FINAL#"$ROOT/"} and stripping them from the app"
     rm -rf "$DSYM_DIR"
     mkdir -p "$DSYM_DIR"
     STRIPPED=0
@@ -564,9 +576,19 @@ if [[ "$MODE" == "release" ]]; then
         fail "build/$APP_NAME must not ship: it holds a home-folder path, a name or a trace of this Mac (listed above)"
 fi
 
-echo
-echo "Built $(shown "$APP") ($MODE, version $VERSION, build $BUILD_NUMBER)"
+# Every step and check has passed: the app, and its symbols, take their places.
+echo "==> Moving the finished app to $(shown "$FINAL_APP")"
 if [[ "$MODE" == "release" ]]; then
-    echo "Debug symbols for its crash reports: ${DSYM_DIR#"$ROOT/"} (not shipped; keep them)"
+    mkdir -p "$ROOT/build/dSYMs"
+    rm -rf "$DSYM_FINAL"
+    mv "$DSYM_DIR" "$DSYM_FINAL"
 fi
-echo "Run it from the repository's folder with: open \"$(shown "$APP")\""
+stage_commit "$APP" "$FINAL_APP" "$STAGE"
+COMMITTED=1
+
+echo
+echo "Built $(shown "$FINAL_APP") ($MODE, version $VERSION, build $BUILD_NUMBER)"
+if [[ "$MODE" == "release" ]]; then
+    echo "Debug symbols for its crash reports: ${DSYM_FINAL#"$ROOT/"} (not shipped; keep them)"
+fi
+echo "Run it from the repository's folder with: open \"$(shown "$FINAL_APP")\""
