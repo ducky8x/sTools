@@ -45,10 +45,10 @@ final class AnimatedRig {
     let controller: BackdropController
     var imagesDirectory: URL { folder.file("Images") }
 
-    init(folder: TempFolder = TempFolder(), theme: STTheme? = nil, displays: [DisplayInfo] = [displayOne], minecraftOpen: Bool = true,
+    init(folder: TempFolder = TempFolder(), showsPanels: Bool = false, minecraftWindowNumber: UInt32 = 42, theme: STTheme? = nil, displays: [DisplayInfo] = [displayOne], minecraftOpen: Bool = true,
          makePlayer: (@MainActor (URL, any BackdropFrameClock) -> any BackdropPlayer)? = nil) {
         self.folder = folder
-        let window = MinecraftWindow(windowNumber: 42, processID: 4242, title: "Minecraft* 1.16.1", frame: displayOne.frame)
+        let window = MinecraftWindow(windowNumber: minecraftWindowNumber, processID: 4242, title: "Minecraft* 1.16.1", frame: displayOne.frame)
         let instance = MinecraftInstance(window: window, launchDate: Date(timeIntervalSince1970: 1), isFrontmost: true, displayID: displayOne.id)
         source = StaticMinecraftWindowSource(instances: minecraftOpen ? [instance] : [])
         let locator = MinecraftLocator(source: source)
@@ -66,7 +66,7 @@ final class AnimatedRig {
             },
             clock: clock, windowCanBeSeen: { _ in log.panelsCanBeSeen },
             workspaceNotifications: workspace, windowNotifications: windows)
-        controller = BackdropController(services: services, imagesDirectory: folder.file("Images"), showsPanels: false, theme: theme, playback: environment)
+        controller = BackdropController(services: services, imagesDirectory: folder.file("Images"), showsPanels: showsPanels, theme: theme, playback: environment)
     }
 
     var player: FakePlayer { log.players.last! }

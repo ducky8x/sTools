@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import QuartzCore
 import SwiftUI
 import Testing
@@ -88,5 +89,30 @@ struct BackdropPanelHostingTests {
         rig.player.fail("no")
         await settle(panel)
         #expect(rig.player.mediaLayer.isHidden)
+    }
+
+    /// The one test here that orders the real panel in: at coordinates no display reaches, behind nothing (window number 0
+    /// orders it to the back), so nothing can show. A real video in the real SwiftUI-hosted panel decodes its first frame and
+    /// the layer says it is ready to display.
+    @Test func aRealVideoInTheRealPanelBecomesReadyToDisplay() async throws {
+        let rig = AnimatedRig(showsPanels: true, minecraftWindowNumber: 0, makePlayer: { url, clock in
+            BackdropAnimationFile.makePlayer(for: url, clock: clock)
+        })
+        let movie = try await TestMedia.writeMovie(to: rig.folder.file("clip.mp4"), colors: [.red, .blue], width: 640, height: 360)
+        await rig.controller.importAnimation(from: movie)
+        rig.controller.setEnabled(true)
+        defer { rig.controller.setEnabled(false) }
+        let panel = try #require(rig.controller.existingPanel(for: displayOne.id))
+        #expect(panel.frame.origin.x <= -9000 && panel.frame.origin.y <= -9000, "far outside every display")
+        // SwiftUI makes the view when it first lays the panel out.
+        #expect(await waitUntil { !self.playerLayers(in: panel).isEmpty })
+        let layer = try #require(playerLayers(in: panel).first)
+        #expect(await waitUntil { layer.isReadyForDisplay }, "the first frame was decoded and reached the layer")
+        #expect(layer.frame.size == CGSize(width: 1920, height: 1080), "a 16:9 movie fills a 16:9 display exactly")
+    }
+
+    private func playerLayers(in panel: NSWindow) -> [AVPlayerLayer] {
+        guard let content = panel.contentView else { return [] }
+        return mediaViews(in: content).compactMap { $0.layer?.sublayers?.compactMap { $0 as? AVPlayerLayer }.first }
     }
 }
