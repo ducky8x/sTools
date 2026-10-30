@@ -5,23 +5,39 @@ import SwiftUI
 /// choice use this with `stMenuStyle()`.
 public struct STMenuLabel: View {
     private let title: String
+    private let widest: CGFloat?
     @Environment(\.stTheme) private var theme
 
-    public init(_ title: String) {
+    /// `widest` caps the label's width, in points at a text scale of 1; it grows with the text size. A longer title is cut
+    /// off with an ellipsis. Without it the label is as wide as its title.
+    public init(_ title: String, widest: CGFloat? = nil) {
         self.title = title
+        self.widest = widest
     }
 
     public var body: some View {
         HStack(spacing: 5) {
-            Text(title)
-                .stStyle(.body)
-                .foregroundStyle(STColor.ink)
+            name
             Image(systemName: "chevron.down")
                 .font(.system(size: 9 * theme.textScale, weight: .semibold))
                 .foregroundStyle(theme.inkSecondary)
                 .accessibilityHidden(true)
         }
+        .capped(at: widest.map { $0 * theme.textScale })
         .contentShape(Rectangle())
+    }
+
+    @ViewBuilder private var name: some View {
+        let text = Text(title)
+            .stStyle(.body)
+            .foregroundStyle(STColor.ink)
+        if widest != nil { text.lineLimit(1) } else { text }
+    }
+}
+
+private extension View {
+    @ViewBuilder func capped(at width: CGFloat?) -> some View {
+        if let width { frame(maxWidth: width) } else { self }
     }
 }
 

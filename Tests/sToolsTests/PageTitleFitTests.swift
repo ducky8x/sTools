@@ -1,5 +1,5 @@
 import AppKit
-import KeyRebinder
+@testable import KeyRebinder
 @testable import STDesign
 import SwiftUI
 import Testing
@@ -28,11 +28,15 @@ struct TitlePage: Sendable, CustomTestStringConvertible {
     }
 }
 
+/// A profile name well past what the Key Rebinder's menu button has room for.
+private let longProfile = "Minecraft speedrun practice"
+
 /// Home, Settings and the six tools, each with what its title row holds; the Key Rebinder with Karabiner's own first
-/// profile as well as none.
+/// profile and with a long name as well as none.
 private let pages: [TitlePage] = [TitlePage(title: "Home", beside: .nothing), TitlePage(title: "Settings", beside: .nothing)]
     + ToolID.allCases.map { TitlePage(title: $0.title, beside: $0.hasSwitch ? .switchControl : .profileMenu(nil)) }
-    + [TitlePage(title: ToolID.keyRebinder.title, beside: .profileMenu("Default profile"))]
+    + [TitlePage(title: ToolID.keyRebinder.title, beside: .profileMenu("Default profile")),
+       TitlePage(title: ToolID.keyRebinder.title, beside: .profileMenu(longProfile))]
 
 /// The text sizes Settings offers, 90% to 130% in steps of 5.
 private let textSizes = [0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3]
@@ -259,5 +263,26 @@ struct PageTitleFitTests {
                 #expect(across >= 0.68, "\(context): \(word) is \(across) of its width")
             }
         }
+    }
+
+    /// The Key Rebinder's profile button: "Default profile", the name Karabiner starts with, is whole at every text size, and a
+    /// longer name stops at the button's cap, which grows with the text size.
+    @Test(arguments: textSizes)
+    func theProfileButtonStopsAtItsCap(textScale: Double) async throws {
+        let appearance = theme(textScale)
+        func button(_ profile: String) async throws -> CGFloat {
+            let (menu, harness) = try await standingBeside(TitlePage(title: "Key Rebinder", beside: .profileMenu(profile)))
+            return withExtendedLifetime(harness) { NSHostingView(rootView: menu.environment(\.stTheme, appearance)).fittingSize.width }
+        }
+        func label(_ title: String) -> CGFloat {
+            NSHostingView(rootView: STMenuLabel(title).environment(\.stTheme, appearance)).fittingSize.width
+        }
+        let cap = (KeyRebinderProfileMenu.widestButton * textScale).rounded(.up)
+        let defaultButton = try await button("Default profile")
+        #expect(defaultButton == label("Default profile"), "Default profile is \(defaultButton) pt wide, and as a label \(label("Default profile")) pt")
+        #expect(defaultButton <= cap, "Default profile is \(defaultButton) pt wide at \(textScale)x, in a cap of \(cap) pt")
+        let longButton = try await button(longProfile)
+        #expect(label(longProfile) > cap + 20, "the long name is not long enough to test the cap")
+        #expect(abs(longButton - cap) <= 1, "\(longProfile) is \(longButton) pt wide at \(textScale)x, in a cap of \(cap) pt")
     }
 }
