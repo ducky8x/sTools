@@ -160,11 +160,13 @@ final class PublishFixture {
 extension PublishFixture {
     /// The real `scripts/build-app.sh` in this checkout, for a debug build signed ad hoc. The `swift` in the fake world
     /// refuses to build, so the script stops right after it names the build's number; nothing is built or signed.
-    func runRealBuildApp() async throws -> ScriptResult {
+    /// `environment` adds to the fake world's own, as `VERSION` would.
+    func runRealBuildApp(environment extra: [String: String] = [:]) async throws -> ScriptResult {
         var environment = gitEnvironment
         environment["PATH"] = "\(folder.appending(path: "bin").path):/usr/bin:/bin:/usr/sbin:/sbin"
         environment["TMPDIR"] = folder.appending(path: "tmp").path + "/"
         environment["FAKE_LOG"] = log.path
+        environment.merge(extra) { _, new in new }
         return try await runScript(root.appending(path: "scripts/real-build-app.sh"), ["debug", "--adhoc"],
                                    environment: environment, currentDirectory: root, timeout: .seconds(120))
     }
