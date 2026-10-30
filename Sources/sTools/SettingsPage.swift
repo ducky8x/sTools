@@ -80,7 +80,7 @@ struct SettingsPage: View {
                     .buttonStyle(STButtonStyle(.secondary))
             }
             .confirmationDialog(
-                "Reset every tool's settings to default?", isPresented: $isResetAllToolsConfirming, titleVisibility: .visible,
+                "Reset every tool\u{2019}s settings to default?", isPresented: $isResetAllToolsConfirming, titleVisibility: .visible,
                 actions: {
                     Button("Reset All Tools", role: .destructive) { model.resetAllToolsToDefault() }
                     Button("Cancel", role: .cancel) {}
@@ -145,7 +145,7 @@ struct SettingsPage: View {
                 let summary = try await model.exportSettings(to: url)
                 dataMessage = Self.exportedMessage(groups: summary.documentNames.count)
             } catch {
-                dataMessage = "Couldn't export: \(error.localizedDescription)"
+                dataMessage = "Couldn\u{2019}t export: \(error.localizedDescription)"
             }
         }
     }
@@ -160,7 +160,7 @@ struct SettingsPage: View {
                 let report = try await model.importSettings(from: url)
                 dataMessage = Self.importedMessage(applied: report.appliedCount, skipped: report.skippedCount)
             } catch {
-                dataMessage = "Couldn't import: \(error.localizedDescription)"
+                dataMessage = "Couldn\u{2019}t import: \(error.localizedDescription)"
             }
         }
     }

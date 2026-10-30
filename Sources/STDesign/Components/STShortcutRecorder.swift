@@ -102,7 +102,7 @@ enum STShortcutRecorderLogic {
     /// The recorder's own minimum: a known key, with or without modifiers. Hosts pass their own `validate` to add
     /// their rules (it replaces this one, so it must refuse unknown keys too).
     static func basicRejection(_ shortcut: STShortcut) -> String? {
-        STShortcutKeys.name(for: shortcut.keyCode) == nil ? "That key can't be used" : nil
+        STShortcutKeys.name(for: shortcut.keyCode) == nil ? "That key can\u{2019}t be used" : nil
     }
 
     /// Esc on its own cancels, Delete or Forward Delete on its own clears; any other key, with or without

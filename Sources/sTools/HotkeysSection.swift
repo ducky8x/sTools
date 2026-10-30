@@ -161,9 +161,9 @@ struct HotkeysSection: View {
         return keys.isEmpty ? "No tool has a key yet." : keys.joined(separator: " · ")
     }
 
-    /// The confirmation's title before `set` replaces keys set by hand: "Use ⌃1–⌃5?", "Remove every tool's key?".
+    /// The confirmation's title before `set` replaces keys set by hand: "Use ⌃1–⌃5?", "Remove every tool’s key?".
     static func keySetQuestion(_ set: HotkeyKeySet) -> String {
-        set == .noKeys ? "Remove every tool's key?" : "Use \(set.title)?"
+        set == .noKeys ? "Remove every tool\u{2019}s key?" : "Use \(set.title)?"
     }
 
     /// What picking `set` would take away: "This replaces the key you set for Crosshair (F6)." Other hotkeys stay.
