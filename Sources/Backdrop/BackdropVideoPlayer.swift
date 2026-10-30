@@ -3,12 +3,12 @@ import Foundation
 import QuartzCore
 
 /// Plays a video file as a layer, looped and muted (spec 5.2.3). AVFoundation decodes it, on the hardware decoder when
-/// the codec has one (H.264, HEVC and ProRes do on Apple silicon), and `AVPlayerLooper` makes the loop gapless. This
-/// class only starts and stops it: no frames pass through the app, no timer runs, and nothing polls.
+/// the codec has one (H.264 and HEVC do on every Apple silicon Mac), and `AVPlayerLooper` loops it; Apple doesn't promise
+/// the seam is gapless. This class only starts and stops it: no frames pass through the app, no timer runs, and nothing
+/// polls.
 ///
-/// The player is given the video track alone, in a composition. The sound is never opened, so the movie holds no audio
-/// engine, can't be picked up by the media keys or the Now Playing display, and costs no sound decoding; it's muted as
-/// well, for good measure. A paused player holds the picture on screen and decodes nothing.
+/// The player is given the video track alone, in a composition, so the file's sound is never opened or decoded; it's
+/// muted as well. A paused player holds the picture on screen and decodes nothing.
 @MainActor
 final class BackdropVideoPlayer: BackdropPlayer {
     private let playerLayer: AVPlayerLayer

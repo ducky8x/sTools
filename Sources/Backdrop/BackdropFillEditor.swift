@@ -91,7 +91,7 @@ struct BackdropFillEditor: View {
     /// file is known to be a video or a GIF; it gives no figure, which would hold for one Mac and one file only.
     static func costNote(for kind: BackdropAnimationFile.Kind?) -> String? {
         switch kind {
-        case .video: "A video is decoded by the Mac\u{2019}s video hardware, so it costs little."
+        case .video: "A video is usually decoded by the Mac\u{2019}s video hardware, so it costs little."
         case .gif: "A GIF is decoded by the CPU, so a large one costs much more than a small one."
         case nil: nil
         }

@@ -159,7 +159,7 @@ struct BackdropPageRenderTests {
     }
 
     @Test func theCostNoteDependsOnWhatTheFileTurnsOutToBe() {
-        #expect(BackdropFillEditor.costNote(for: .video) == "A video is decoded by the Mac\u{2019}s video hardware, so it costs little.")
+        #expect(BackdropFillEditor.costNote(for: .video) == "A video is usually decoded by the Mac\u{2019}s video hardware, so it costs little.")
         #expect(BackdropFillEditor.costNote(for: .gif) == "A GIF is decoded by the CPU, so a large one costs much more than a small one.")
         #expect(BackdropFillEditor.costNote(for: nil) == nil, "nothing is said about a file that isn't known yet")
         #expect(BackdropFillEditor.animationNote == "Loops with no sound and stops while the backdrop is hidden. The preview shows the first frame.")
