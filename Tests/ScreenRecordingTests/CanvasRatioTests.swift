@@ -254,14 +254,15 @@ struct CanvasRatioTests {
         let controller = makeController(display: display, settings: SettingsStore(directory: directory), factory: factory)
         controller.addVideo(.window(WindowReference(windowID: 7, appName: "Chat", title: "Room")), contentSize: PixelSize(width: 1600, height: 1200))
         controller.setEnabled(true)
-        for _ in 0..<200 where factory.videoRequests.isEmpty { try await Task.sleep(for: .milliseconds(5)) }
+        #expect(await waitUntil { !factory.videoRequests.isEmpty }, "arming asked for the window source's capture")
         #expect(factory.videoRequests.map(\.canvas) == [PixelSize(width: 3840, height: 2160)])
 
         display.change(scale: 1)
-        for _ in 0..<200 where factory.videoRequests.count < 2 { try await Task.sleep(for: .milliseconds(5)) }
+        #expect(await waitUntil { factory.videoRequests.count >= 2 }, "the display change restarted the sources")
         #expect(factory.videoRequests.map(\.canvas) == [PixelSize(width: 3840, height: 2160), PixelSize(width: 1920, height: 1080)])
         controller.setEnabled(false)
-        try await Task.sleep(for: .milliseconds(20))
+        // Switching off runs a moment later; let it finish before the test's folder goes.
+        #expect(await waitUntil { !controller.sourcesAreReady })
     }
 
     // MARK: Version-1 layouts

@@ -23,14 +23,6 @@ struct ProcessTapCaptureTests {
         ProcessTapCapture(target: .processID(4242), findProcesses: { app.find($0) }, retryInterval: .milliseconds(10))
     }
 
-    /// Waits (bounded, generously, on a clock a Mac sleep doesn't use up) for `condition`.
-    private func waitUntil(_ condition: () -> Bool) async -> Bool {
-        let clock = SuspendingClock()
-        let deadline = clock.now + .seconds(20)
-        while !condition(), clock.now < deadline { try? await Task.sleep(for: .milliseconds(5)) }
-        return condition()
-    }
-
     /// While the app is silent it keeps looking for its sound; the stop ends the looking (a lookup already under way
     /// as the stop comes may still finish).
     @Test func itLooksForTheAppsSoundUntilTheStop() async throws {

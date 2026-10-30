@@ -235,7 +235,10 @@ public enum AudioSourceKind: Equatable, Hashable, Sendable, Codable {
     /// Every audio process of the app with this bundle ID (helpers such as browser renderers included).
     case app(bundleID: String)
     case microphone(uniqueID: String)
-    /// The sound of a browser video source.
+    /// The sound of a browser video source, as the first build's layouts could name it. Nothing makes one now: the
+    /// web pages' sound is `RecordingLayout.includesWebPageAudio`, one track for all the pages, since WebKit plays
+    /// them in one process. A saved source of this kind still loads and keeps its row in the Sound section, but nothing is
+    /// captured for it.
     case browser(videoSourceID: UUID)
 
     private enum CodingKeys: String, CodingKey { case type, bundleID, uniqueID, videoSourceID }
@@ -318,6 +321,12 @@ public struct RecordingLayout: SettingsDocument {
     public var includesMinecraftAudio: Bool
     /// Volume of Minecraft's sound, 0...1.5.
     public var minecraftAudioVolume: Double
+    /// Whether the sound of the web pages on the canvas is recorded (on by default; it counts only while a web page is
+    /// on the canvas, `recordsWebPageAudio`). One switch, one volume and one track for all the pages: WebKit plays every
+    /// web page of an app in one helper process, so one page's sound can't be told from another's.
+    public var includesWebPageAudio: Bool
+    /// Volume of the web pages' sound, 0...1.5.
+    public var webPageAudioVolume: Double
     /// True for a layout read from a version-1 file: its frames, corner radii and border widths still hold the
     /// canvas pixels that file saved. Saved along with them, so they're never mistaken for fractions.
     public private(set) var holdsLegacyPixels = false
@@ -326,25 +335,33 @@ public struct RecordingLayout: SettingsDocument {
         videoSources: [VideoSource] = [],
         audioSources: [AudioSource] = [],
         includesMinecraftAudio: Bool = true,
-        minecraftAudioVolume: Double = 1
+        minecraftAudioVolume: Double = 1,
+        includesWebPageAudio: Bool = true,
+        webPageAudioVolume: Double = 1
     ) {
         self.videoSources = videoSources
         self.audioSources = audioSources
         self.includesMinecraftAudio = includesMinecraftAudio
         self.minecraftAudioVolume = AudioSource.clampVolume(minecraftAudioVolume)
+        self.includesWebPageAudio = includesWebPageAudio
+        self.webPageAudioVolume = AudioSource.clampVolume(webPageAudioVolume)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case videoSources, audioSources, includesMinecraftAudio, minecraftAudioVolume, legacyPixels
+        case videoSources, audioSources, includesMinecraftAudio, minecraftAudioVolume, includesWebPageAudio, webPageAudioVolume, legacyPixels
     }
 
+    /// A layout saved before the web pages' sound existed has neither of its keys: the sound is on, at full volume. A
+    /// build from before reads a newer file as it always did, ignoring the keys it doesn't know.
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
             videoSources: c.value(.videoSources, []),
             audioSources: c.value(.audioSources, []),
             includesMinecraftAudio: c.value(.includesMinecraftAudio, true),
-            minecraftAudioVolume: c.value(.minecraftAudioVolume, 1))
+            minecraftAudioVolume: c.value(.minecraftAudioVolume, 1),
+            includesWebPageAudio: c.value(.includesWebPageAudio, true),
+            webPageAudioVolume: c.value(.webPageAudioVolume, 1))
         holdsLegacyPixels = c.value(.legacyPixels, false)
     }
 
@@ -354,7 +371,39 @@ public struct RecordingLayout: SettingsDocument {
         try c.encode(audioSources, forKey: .audioSources)
         try c.encode(includesMinecraftAudio, forKey: .includesMinecraftAudio)
         try c.encode(minecraftAudioVolume, forKey: .minecraftAudioVolume)
+        try c.encode(includesWebPageAudio, forKey: .includesWebPageAudio)
+        try c.encode(webPageAudioVolume, forKey: .webPageAudioVolume)
         if holdsLegacyPixels { try c.encode(true, forKey: .legacyPixels) }
+    }
+
+    // MARK: Web pages' sound
+
+    /// The addresses of the web pages on the canvas, in the order they were added.
+    public var webPageAddresses: [String] {
+        videoSources.compactMap { source in
+            if case .browser(let address) = source.kind { address } else { nil }
+        }
+    }
+
+    /// A web page is on the canvas.
+    public var hasWebPages: Bool { !webPageAddresses.isEmpty }
+
+    /// A recording of this layout has the web pages' sound on a track of its own: a web page is on the canvas and the
+    /// sound's switch is on.
+    public var recordsWebPageAudio: Bool { includesWebPageAudio && hasWebPages }
+
+    /// What the web pages' track and its row in the Sound section are called: the page's host when there is one web
+    /// page (`twitch.tv`), else *Web pages*.
+    public var webPageAudioTitle: String {
+        let addresses = webPageAddresses
+        guard addresses.count == 1, let address = addresses.first else { return "Web pages" }
+        return Self.pageTitle(forAddress: address)
+    }
+
+    /// A web address by its host, lower case and without a leading `www.`; *Web page* when it has none.
+    static func pageTitle(forAddress address: String) -> String {
+        guard let host = URL(string: address)?.host?.lowercased(), !host.isEmpty else { return "Web page" }
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 
     /// Version 1 saved frames, corner radii and border widths in pixels of a canvas it didn't record. The file
@@ -480,6 +529,7 @@ public struct RecordingLayout: SettingsDocument {
         }
         for i in audioSources.indices { audioSources[i].volume = AudioSource.clampVolume(audioSources[i].volume) }
         minecraftAudioVolume = AudioSource.clampVolume(minecraftAudioVolume)
+        webPageAudioVolume = AudioSource.clampVolume(webPageAudioVolume)
     }
 
     private mutating func move(_ id: UUID, _ change: (inout [UUID], Int) -> Void) {
