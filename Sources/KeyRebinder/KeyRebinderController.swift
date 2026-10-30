@@ -71,6 +71,14 @@ public final class KeyRebinderController {
 
     public var selectedKey: KarabinerEvent?
 
+    /// True once `karabiner.json` has been read, including while its parsed tree is let go of between visits to the
+    /// page (`releaseLoadedFile()`); the page draws from `derived` in the meantime, as it does with the tree.
+    public var hasLoadedConfig: Bool { config != nil || configIsLetGo }
+    /// The parsed file was let go when the page closed, and `derived` still describes it.
+    @ObservationIgnored private var configIsLetGo = false
+    /// Counts the times the file was let go, so a read that finishes after one doesn't bring the tree back.
+    @ObservationIgnored private var releaseCount = 0
+
     /// The app's hotkey list, once `connect(hotkeys:)` has run. The Key Rebinder shows and edits it on the keys
     /// (spec 5.5.2, 5.5.3) and advises on it (`HotkeyAdvising`).
     public internal(set) var hotkeyCenter: HotkeyCenter?
@@ -132,7 +140,7 @@ public final class KeyRebinderController {
 
     /// Editing and profiles need Karabiner fully ready and a writable file (spec 5.5.7).
     public var canEdit: Bool {
-        requirement == .ready && config != nil && currentProfile != nil && !configIsSymbolicLink
+        requirement == .ready && hasLoadedConfig && currentProfile != nil && !configIsSymbolicLink
     }
 
     /// Every key and button the user has: the chosen keyboard plus mouse buttons 1–8.
@@ -166,7 +174,16 @@ public final class KeyRebinderController {
 
     /// Works out `derived` again. Internal so the hotkey extension can run it when the hotkey list changes.
     func recompute() {
-        var next = Derived()
+        // While the file is let go there is nothing to work its parts out from: they stay as they were, and the rest
+        // (Minecraft's actions, the hotkey layer) is worked out again around them.
+        var next = configIsLetGo ? derived : Derived()
+        if configIsLetGo {
+            next.minecraftActions = [:]
+            next.hotkeysByKey = [:]
+            next.unplacedHotkeys = []
+            next.hotkeyFindings = []
+            next.hotkeyFlaggedKeys = []
+        }
         // The hotkeys macOS accepted, while hotkeys are on: they consume their keys.
         let activeHotkeys = hotkeysAreOn ? hotkeyCenter?.activeBindings ?? [] : []
         // While an edit waits for confirmation, the plate shows the file as it would be after saving.
@@ -229,12 +246,17 @@ public final class KeyRebinderController {
     /// Reads `karabiner.json` again (profiles from the file; the CLI's answer wins in `refresh`).
     public func reloadConfig() async {
         guard pendingEdit == nil else { return }
+        let released = releaseCount
         do {
             let loaded = try await store.load()
+            // The page closed while the file was being read: the tree isn't kept, and the next visit reads it again.
+            guard released == releaseCount else { return }
             apply(loadedConfig: loaded)
             configProblem = nil
         } catch {
+            guard released == releaseCount else { return }
             config = nil
+            configIsLetGo = false
             profileNames = []
             currentProfile = nil
             configProblem = error.localizedDescription
@@ -242,8 +264,21 @@ public final class KeyRebinderController {
         recompute()
     }
 
+    /// Lets go of the parsed `karabiner.json` when the page closes. The controller lives as long as the app, and the
+    /// tree costs about four times the file's size in memory (several MB for a file with many rules). What the keys and
+    /// the page's sections show is in `derived` and the profile names, which stay, so the page comes back the way it
+    /// was and reads the file again as it does on every visit. Nothing is let go while an edit waits for confirmation:
+    /// its preview and the file are what the page is showing.
+    public func releaseLoadedFile() {
+        releaseCount += 1
+        guard pendingEdit == nil, config != nil else { return }
+        config = nil
+        configIsLetGo = true
+    }
+
     private func apply(loadedConfig loaded: KarabinerConfig) {
         config = loaded
+        configIsLetGo = false
         profileNames = loaded.profiles.map(\.name)
         // Without Karabiner running there is no CLI answer, so the file's selected profile is the current one.
         if requirement != .ready || !profileNames.contains(currentProfile ?? "") {
