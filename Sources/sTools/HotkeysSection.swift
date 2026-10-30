@@ -50,7 +50,7 @@ struct HotkeysSection: View {
         }
         // Both choices stay in view, every option at once, rather than behind menus (revision 9).
         let scopeNote = Self.scopeNote(scope: hotkeys.scope, accessibilityGranted: model.accessibilityGranted)
-        HotkeysChoiceRow("Where hotkeys work", showsRule: scopeNote == nil) {
+        STChoiceRow("Where hotkeys work", showsRule: scopeNote == nil) {
             STSegmented(selection: scopeBinding, options: Self.scopeOptions)
         }
         if let scopeNote {
@@ -58,7 +58,7 @@ struct HotkeysSection: View {
         }
         // One key per tool, in sidebar order; picking a set changes only those, and asks before a key set by hand goes.
         // Nothing is underlined while the keys are Custom.
-        HotkeysChoiceRow("Key set", showsRule: false) {
+        STChoiceRow("Key set", showsRule: false) {
             STSegmented(selection: keySetBinding, options: Self.keySetOptions)
         }
         HotkeysCaption(Self.keySetCaption(hotkeys.keySet)).hotkeysCaptionRow()
@@ -463,46 +463,6 @@ struct HotkeyEditor: View {
         guard let existing else { return }
         model.hotkeys.remove(existing.id)
         onDone()
-    }
-}
-
-/// A choice Home ▸ Hotkeys keeps in view (Where hotkeys work, Key set): its small-caps label with every option beside
-/// it, as a settings row, or the options under the label when the column is too narrow for both on one line. Either
-/// way VoiceOver finds a group named by the label and reads each option in it, the chosen one selected, instead of
-/// one element that runs every option together.
-private struct HotkeysChoiceRow<Control: View>: View {
-    private let label: String
-    private let showsRule: Bool
-    private let control: Control
-    @Environment(\.stTheme) private var theme
-
-    init(_ label: String, showsRule: Bool = true, @ViewBuilder control: () -> Control) {
-        self.label = label
-        self.showsRule = showsRule
-        self.control = control()
-    }
-
-    var body: some View {
-        ViewThatFits(in: .horizontal) {
-            STSettingsRow(label, showsRule: showsRule, combinesForAccessibility: false) { control.fixedSize() }
-            VStack(alignment: .leading, spacing: 4) {
-                Text(label)
-                    .stStyle(.label)
-                    .foregroundStyle(theme.inkSecondary)
-                    .accessibilityHidden(true)
-                control
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 12)
-            .overlay(alignment: .bottom) {
-                if showsRule {
-                    Rectangle().fill(STColor.rule).frame(height: 1).accessibilityHidden(true)
-                }
-            }
-            // A group named by the label, its options read one by one, as the settings row keeps them.
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel(label)
-        }
     }
 }
 
