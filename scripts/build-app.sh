@@ -23,7 +23,7 @@
 #   --identity  Accepts only the name "ducky8x" (the default); any other name is refused.
 #
 # Environment:
-#   VERSION       CFBundleShortVersionString (default 0.1.0)
+#   VERSION       CFBundleShortVersionString (default 0.2.0)
 #   BUILD_NUMBER  CFBundleVersion (default: the number of commits on HEAD plus 1000, or 1001 outside a git checkout;
 #                 scripts/lib/build-number.sh says why)
 #   DEVELOPER_DIR Defaults to the Xcode beta when it is installed.
@@ -203,7 +203,7 @@ if [[ -z "${DEVELOPER_DIR:-}" && -d "$XCODE_BETA" ]]; then
     export DEVELOPER_DIR="$XCODE_BETA"
 fi
 
-VERSION="${VERSION:-0.1.0}"
+VERSION="${VERSION:-0.2.0}"
 BUILD_NUMBER="$(build_number "$ROOT")"
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] ||
     fail "VERSION must look like 1.2.3 or 1.2.3-beta.1, got \"$VERSION\""
