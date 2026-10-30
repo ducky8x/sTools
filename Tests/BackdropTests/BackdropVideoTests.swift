@@ -62,7 +62,8 @@ struct BackdropVideoPlayerTests {
         #expect(abs(player.seconds - stopped) < 0.02, "a paused movie doesn't move (it settles a few thousandths of a second)")
 
         player.play()
-        #expect(await waitUntil { player.seconds > stopped + 0.1 }, "and it carries on")
+        // The movie is a second long: it carries on, or, if it was paused near its end, has already come back to the start.
+        #expect(await waitUntil { abs(player.seconds - stopped) > 0.1 }, "and it carries on")
     }
 
     @Test func playingBeforeTheMovieIsOpenStartsOnceItIs() async throws {

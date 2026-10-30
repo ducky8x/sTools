@@ -61,12 +61,13 @@ private final class PageStage {
         host.layoutSubtreeIfNeeded()
     }
 
-    func capture() -> NSBitmapImageRep {
-        // Lets the page's own updates (a first frame that has just come in) reach the view before it's drawn.
+    func capture() async -> NSBitmapImageRep {
+        // Lets the page's own updates (a first frame that has just come in) reach the view before it's drawn, without
+        // holding the main actor: other tests in the process need it.
         let end = SuspendingClock.now.advanced(by: .seconds(0.1))
         repeat {
             fit()
-            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+            try? await Task.sleep(for: .milliseconds(20))
         } while SuspendingClock.now < end
         let size = host.bounds.size
         let rep = NSBitmapImageRep(
@@ -116,7 +117,7 @@ struct BackdropPageRenderTests {
         await chooseGIF(rig)
         #expect(await waitUntil { rig.controller.image(for: rig.controller.settings.fill) != nil })
         let stage = PageStage(controller: rig.controller)
-        let rep = stage.capture()
+        let rep = await stage.capture()
         save(rep, as: "backdrop-animated-fill")
         // Fill covers the plate, so a good part of it is the GIF's first frame, and none of it the second.
         #expect(count(.green, in: rep) > 20_000)
@@ -131,7 +132,7 @@ struct BackdropPageRenderTests {
         rig.controller.settings.fill.imageBackgroundColor = "#0000FF"
         #expect(await waitUntil { rig.controller.image(for: rig.controller.settings.fill) != nil })
         let stage = PageStage(controller: rig.controller)
-        let rep = stage.capture()
+        let rep = await stage.capture()
         save(rep, as: "backdrop-animated-fill-fit")
         let green = count(.green, in: rep), blue = count(.blue, in: rep)
         #expect(green > 2_000, "the frame is there")
@@ -141,14 +142,18 @@ struct BackdropPageRenderTests {
     @Test func aFileThatCantBePlayedShowsAPlainLineInRed() async throws {
         let rig = AnimatedRig()
         await chooseGIF(rig)
+        await rig.services.settings.flush()
         let fill = rig.controller.settings.fill
-        let calm = PageStage(controller: rig.controller).capture()
+        let calm = await PageStage(controller: rig.controller).capture()
         #expect(count(STColor.danger.rgb, in: calm, tolerance: 30) == 0, "a file that plays has no line")
 
+        // The next launch, with the file gone: the page's first look at the fill finds it out.
         try FileManager.default.removeItem(at: rig.imagesDirectory.appending(path: ((fill.animationName ?? "") as NSString).lastPathComponent))
-        _ = rig.controller.image(for: fill)
-        #expect(await waitUntil { rig.controller.animationProblem(for: fill) != nil })
-        let broken = PageStage(controller: rig.controller).capture()
+        let next = AnimatedRig(folder: rig.folder)
+        #expect(next.controller.settings.fill == fill)
+        _ = next.controller.image(for: fill)
+        #expect(await waitUntil { next.controller.animationProblem(for: fill) != nil })
+        let broken = await PageStage(controller: next.controller).capture()
         save(broken, as: "backdrop-animated-fill-problem")
         #expect(count(STColor.danger.rgb, in: broken, tolerance: 30) > 50, "the line is drawn in the danger color")
     }
@@ -169,7 +174,7 @@ struct BackdropPageRenderTests {
         let heightBefore = before.host.bounds.height
         #expect(await waitUntil { rig.controller.animationKind(for: fill) == .gif })
         let after = PageStage(controller: rig.controller)
-        save(after.capture(), as: "backdrop-animated-fill-gif")
+        save(await after.capture(), as: "backdrop-animated-fill-gif")
         #expect(after.host.bounds.height > heightBefore, "a line was added under the Animation row")
     }
 
@@ -177,7 +182,7 @@ struct BackdropPageRenderTests {
         let rig = AnimatedRig()
         rig.controller.settings.fill.kind = .animated
         rig.controller.settings.fill.imageBackgroundColor = "#00FF00"
-        let rep = PageStage(controller: rig.controller).capture()
+        let rep = await PageStage(controller: rig.controller).capture()
         save(rep, as: "backdrop-animated-fill-empty")
         #expect(count(.green, in: rep) > 20_000, "the plate is the fill's background color")
     }
