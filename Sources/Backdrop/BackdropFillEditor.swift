@@ -55,6 +55,8 @@ struct BackdropFillEditor: View {
                         STColorWell(hex: $fill.imageBackgroundColor, label: "Background color")
                     }
                 }
+            case .animated:
+                EmptyView()
             }
         }
     }

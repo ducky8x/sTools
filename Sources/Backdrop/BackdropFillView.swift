@@ -31,7 +31,7 @@ struct BackdropFillView: View {
                 center: UnitPoint(x: fill.gradientCenterX, y: fill.gradientCenterY),
                 startRadius: 0,
                 endRadius: fill.gradientRadius * diagonal(of: size))
-        case .image:
+        case .image, .animated:
             ZStack {
                 STColorWellHex.color(from: fill.imageBackgroundColor)
                 if let image {
