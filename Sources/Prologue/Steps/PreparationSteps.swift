@@ -107,7 +107,7 @@ struct CompanionStepView: View {
             }
         }
 
-        /// A line under the plate; Karabiner-Elements is someone else's app (M9, A060).
+        /// A line under the plate; Karabiner-Elements is someone else's app (M9).
         static func note(_ companion: PrologueCompanion) -> String? {
             switch companion {
             case .ninjabrainBot: nil
