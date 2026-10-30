@@ -65,7 +65,7 @@ struct CrosshairCenteringTests {
         #expect(thin.contains("2 px") && !thin.contains("0 px"))
     }
 
-    /// ducky's M9 wording (B032, B047).
+    /// ducky's M9 wording.
     @Test func theNotesReadAsDuckyWroteThem() throws {
         #expect(CrosshairCentering.minecraftNote
             == "By default, this lines up with Minecraft\u{2019}s crosshair in full screen (1920 \u{00D7} 1080, GUI scale 3).")

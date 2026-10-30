@@ -8,7 +8,7 @@ import Testing
 @MainActor
 @Suite("Prologue wording")
 struct PrologueWordingTests {
-    /// Accessibility's how-to ends once sTools is on in the list: the status turns to Ready by itself (A024).
+    /// Accessibility's how-to ends once sTools is on in the list: the status turns to Ready by itself.
     @Test func accessibilityHowToHasTwoSteps() {
         #expect(PermissionStepView.Copy.howTo(.accessibility) == [
             "Press Allow. System Settings will open at Privacy & Security \u{25B8} Accessibility.",
@@ -25,7 +25,7 @@ struct PrologueWordingTests {
         }
     }
 
-    /// The download site in Karabiner-Elements' first step is a link; the step reads as plain text around it (A060).
+    /// The download site in Karabiner-Elements' first step is a link; the step reads as plain text around it.
     @Test func karabinerDownloadSiteIsALink() throws {
         let step = try #require(CompanionStepView.Copy.howTo(.karabiner).first)
         let text = HowToSteps.text(of: step)
@@ -42,7 +42,7 @@ struct PrologueWordingTests {
         #expect(HowToSteps.text(of: step).runs.allSatisfy { $0.link == nil })
     }
 
-    /// Karabiner-Elements' step says it's a third-party app; Ninjabrain Bot's step has no such line (A060).
+    /// Karabiner-Elements' step says it's a third-party app; Ninjabrain Bot's step has no such line.
     @Test func karabinerStepCarriesTheThirdPartyNote() {
         #expect(CompanionStepView.Copy.note(.karabiner)
             == "Karabiner-Elements is a third-party app that is not associated with sTools.")
