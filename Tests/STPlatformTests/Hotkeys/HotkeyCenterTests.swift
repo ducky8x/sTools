@@ -64,10 +64,9 @@ private final class Harness {
     /// Starts from an empty list unless `preload` says otherwise; a new install's key set has tests of its own.
     init(preload: HotkeySettings? = HotkeySettings()) async {
         store = SettingsStore(directory: directory, debounce: .milliseconds(1))
-        if let preload {
-            store.save(preload)
-            await store.flush()
-        }
+        store.registerHotkeysExactly()
+        if let preload { store.save(preload) }
+        await store.flush()
         makeCenter()
     }
 

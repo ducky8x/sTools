@@ -7,9 +7,8 @@
 #   release     Universal binary (arm64 + x86_64), for shipping. Its debug symbols go to dSYMs in
 #               build/dSYMs/sTools-<version>-<build>-<UUIDs>/ (kept for crash reports, never shipped; the folder is
 #               named after the executable's UUIDs, so a rebuild never replaces the symbols of another binary) and
-#               are stripped from every binary in the app. The build fails, and build/sTools.app (build/sTools Dev.app
-#               with --dev) is removed, when a step fails or anything in the app holds a home-folder path, a name or a
-#               trace of this Mac (scripts/check-no-home-paths.sh).
+#               are stripped from every binary in the app. The build fails when a step fails or anything in the app
+#               holds a home-folder path, a name or a trace of this Mac (scripts/check-no-home-paths.sh).
 #   --dev       The dev build, the copy to use day to day: build/sTools Dev.app, beside build/sTools.app and never
 #               replacing it. The same bundle identifier (com.ducky8x.sTools) and the same "ducky8x" signature, so
 #               settings, saved data and macOS permissions are shared with the normal build and carry over; only one of
@@ -35,6 +34,13 @@
 # out, so it explains in Settings that it can't check for updates. The dev build leaves the feed and the key out
 # whatever the file holds, and needs neither the file nor the key.
 #
+# A failed build: the app is made in build/.staging (build/.staging-dev with --dev) and moved to build/sTools.app
+# (build/sTools Dev.app) only once it is signed and every check has passed (scripts/lib/stage-app.sh). So a failure, at
+# any step, never leaves a
+# half-made or unsigned app under that name, and the app from the last good build stays where it was, usable. The
+# script then says that build/sTools.app was not replaced and which version and build it still is, so it cannot be taken
+# for this run's.
+#
 # Signing safety: the only identity this script will ever sign with is the code-signing identity whose
 # common name is exactly "ducky8x". It is matched by exact name, never by substring, and signing uses its
 # SHA-1 hash, so other identities in the keychain can never be picked up. Everything inside the app that holds
@@ -42,7 +48,8 @@
 # signed with it too, inside out, keeping each item's own entitlements and, for a loose tool, its identifier.
 #
 # Output: everything printed, by the script and by the tools it runs, shows the home folder as ~ and never the
-# account name or the full name, so terminals and logs don't carry them either.
+# account name, the full name or a part of it, so terminals and logs don't carry them either
+# (scripts/lib/mask-home.sh).
 
 set -euo pipefail
 
@@ -70,47 +77,14 @@ shown() {
     esac
 }
 
-# Copies standard input to standard output, line by line, with the home folder shortened to ~ and the full name and
-# the account name hidden in any letter case. A name shorter than six letters is hidden only as a word of its own:
-# hidden inside longer words too, it would show which of their letters it is.
-mask_home() {
-    LC_ALL=C awk -v home="$HOME" -v account="$(id -un)" -v full="$(id -F 2>/dev/null || true)" '
-        function hide(line, value, placeholder,    out, at, size, before, after) {
-            size = length(value)
-            out = ""
-            while (size > 0 && (at = index(tolower(line), tolower(value))) > 0) {
-                before = at > 1 ? substr(line, at - 1, 1) : ""
-                after = substr(line, at + size, 1)
-                if (size >= 6 || (before !~ /[A-Za-z]/ && after !~ /[A-Za-z]/)) {
-                    out = out substr(line, 1, at - 1) placeholder
-                } else {
-                    out = out substr(line, 1, at + size - 1)
-                }
-                line = substr(line, at + size)
-            }
-            return out line
-        }
-        {
-            line = $0
-            while (length(home) > 1 && (at = index(line, home)) > 0) {
-                line = substr(line, 1, at - 1) "~" substr(line, at + length(home))
-            }
-            print hide(hide(line, full, "<full name>"), account, "<account name>")
-            fflush()
-        }'
-}
-
-# Everything printed goes through mask_home: this script's own lines and what the tools it runs print (swift build's
-# diagnostics, codesign's "replacing existing signature" and "valid on disk" lines, ...), which name files in the
-# home folder. So the script runs itself once more with its output and its errors each passed through it; the
-# filters ignore Ctrl-C, so what the script prints while it cleans up still gets through.
-if [[ "${STOOLS_OUTPUT_MASKED:-}" != 1 ]]; then
-    export STOOLS_OUTPUT_MASKED=1
-    STATUS=0
-    { "$BASH" "${BASH_SOURCE[0]}" "$@" 2>&1 1>&3 3>&- | (trap '' INT; mask_home) >&2 3>&-; } 3>&1 |
-        (trap '' INT; mask_home) || STATUS=$?
-    exit "$STATUS"
-fi
+# Everything printed goes through mask_home (scripts/lib/mask-home.sh): this script's own lines and what the tools it runs
+# print (swift build's diagnostics, codesign's "replacing existing signature" and "valid on disk" lines, ...), which name
+# files in the home folder. So the script runs itself once more with its output and its errors each passed through it.
+# shellcheck source=lib/mask-home.sh
+source "$ROOT/scripts/lib/mask-home.sh"
+mask_output_of "${BASH_SOURCE[0]}" "$@"
+# shellcheck source=lib/stage-app.sh
+source "$ROOT/scripts/lib/stage-app.sh"
 
 # The UUID and architecture of each slice of a Mach-O file or dSYM, one per line, sorted.
 macho_uuids() {
@@ -189,10 +163,29 @@ MODE="${MODE:-debug}"
 # The dev build sits beside the normal one under its own name, so building either never touches the other.
 if [[ "$DEV" -eq 1 ]]; then
     readonly APP_NAME="sTools Dev.app"
+    readonly STAGE_NAME=".staging-dev"
 else
     readonly APP_NAME="sTools.app"
+    readonly STAGE_NAME=".staging"
 fi
-readonly APP="$ROOT/build/$APP_NAME"
+# Where the finished app goes, and where it is made until then. The dev build has a staging folder of its own, so a
+# normal build and a dev build running at the same time cannot clear each other's.
+readonly FINAL_APP="$ROOT/build/$APP_NAME"
+readonly STAGE="$ROOT/build/$STAGE_NAME"
+readonly APP="$STAGE/$APP_NAME"
+
+COMMITTED=0
+SIGN_WORK=""
+# Whatever the build ends with, the staging folder goes. A build that failed says that the app in place is not its own.
+on_exit() {
+    local status=$?
+    [[ -z "$SIGN_WORK" ]] || rm -rf "$SIGN_WORK"
+    rm -rf "$STAGE"
+    if [[ "$status" -ne 0 ]]; then
+        stage_report_failure "$FINAL_APP" "$COMMITTED"
+    fi
+}
+trap on_exit EXIT
 
 if [[ "$MODE" == "release" && "$ADHOC" -eq 1 ]]; then
     fail "release builds must be signed with the \"$IDENTITY_NAME\" identity; --adhoc is not allowed"
@@ -293,19 +286,6 @@ fi
 
 cd "$ROOT"
 
-APP_STARTED=0
-SIGN_WORK=""
-# A release build that fails at any step leaves no app behind: it could be signed and look finished.
-on_exit() {
-    local status=$?
-    [[ -z "$SIGN_WORK" ]] || rm -rf "$SIGN_WORK"
-    if [[ "$status" -ne 0 && "$MODE" == "release" && "$APP_STARTED" -eq 1 && -e "$APP" ]]; then
-        rm -rf "$APP"
-        echo "error: removed build/$APP_NAME: a release build that failed must not be shipped" >&2
-    fi
-}
-trap on_exit EXIT
-
 echo "==> Building ($MODE)"
 if [[ "$MODE" == "release" ]]; then
     # Swift Build, pinned: the native build system's Bundle.module accessor (STDesign and KeyRebinder fall back
@@ -320,8 +300,7 @@ BIN_PATH="$(swift build "${BUILD_FLAGS[@]}" --show-bin-path)"
 [[ -x "$BIN_PATH/sTools" ]] || fail "build did not produce $(shown "$BIN_PATH/sTools")"
 
 echo "==> Assembling $(shown "$APP")"
-APP_STARTED=1
-rm -rf "$APP"
+rm -rf "$STAGE"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_PATH/sTools" "$APP/Contents/MacOS/sTools"
 
@@ -488,9 +467,12 @@ if [[ "$MODE" == "release" ]]; then
     UUID_TAG="$(xcrun dwarfdump --uuid "$APP/Contents/MacOS/sTools" | awk '{ print $3, $2 }' | sort |
         awk '{ printf "%s%s", (NR > 1 ? "-" : ""), substr($2, 1, 8) }')"
     [[ "$UUID_TAG" =~ ^[0-9A-F]{8}(-[0-9A-F]{8})+$ ]] || fail "cannot read the executable's UUIDs"
-    DSYM_DIR="$ROOT/build/dSYMs/sTools-$VERSION-$BUILD_NUMBER-$UUID_TAG"
-    [[ "$DEV" -eq 0 ]] || DSYM_DIR="$ROOT/build/dSYMs/sTools-Dev-$VERSION-$BUILD_NUMBER-$UUID_TAG"
-    echo "==> Saving the debug symbols to ${DSYM_DIR#"$ROOT/"} and stripping them from the app"
+    DSYM_NAME="sTools-$VERSION-$BUILD_NUMBER-$UUID_TAG"
+    [[ "$DEV" -eq 0 ]] || DSYM_NAME="sTools-Dev-$VERSION-$BUILD_NUMBER-$UUID_TAG"
+    # Made in the staging folder, like the app, and moved to build/dSYMs with it.
+    DSYM_DIR="$STAGE/dSYMs/$DSYM_NAME"
+    DSYM_FINAL="$ROOT/build/dSYMs/$DSYM_NAME"
+    echo "==> Saving the debug symbols to ${DSYM_FINAL#"$ROOT/"} and stripping them from the app"
     rm -rf "$DSYM_DIR"
     mkdir -p "$DSYM_DIR"
     STRIPPED=0
@@ -598,9 +580,19 @@ if [[ "$MODE" == "release" ]]; then
         fail "build/$APP_NAME must not ship: it holds a home-folder path, a name or a trace of this Mac (listed above)"
 fi
 
-echo
-echo "Built $(shown "$APP") ($MODE, version $VERSION, build $BUILD_NUMBER)"
+# Every step and check has passed: the app, and its symbols, take their places.
+echo "==> Moving the finished app to $(shown "$FINAL_APP")"
 if [[ "$MODE" == "release" ]]; then
-    echo "Debug symbols for its crash reports: ${DSYM_DIR#"$ROOT/"} (not shipped; keep them)"
+    mkdir -p "$ROOT/build/dSYMs"
+    rm -rf "$DSYM_FINAL"
+    mv "$DSYM_DIR" "$DSYM_FINAL"
 fi
-echo "Run it from the repository's folder with: open \"$(shown "$APP")\""
+stage_commit "$APP" "$FINAL_APP" "$STAGE"
+COMMITTED=1
+
+echo
+echo "Built $(shown "$FINAL_APP") ($MODE, version $VERSION, build $BUILD_NUMBER)"
+if [[ "$MODE" == "release" ]]; then
+    echo "Debug symbols for its crash reports: ${DSYM_FINAL#"$ROOT/"} (not shipped; keep them)"
+fi
+echo "Run it from the repository's folder with: open \"$(shown "$FINAL_APP")\""

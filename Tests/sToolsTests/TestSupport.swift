@@ -74,6 +74,13 @@ final class FakeClipboard: ClipboardWriting {
     func copy(_ text: String) { copiedText = text }
 }
 
+/// A log with nothing in it. The unified log answers through a synchronous call that takes seconds on a busy Mac,
+/// with the main actor waiting, and every other test that needs the main actor waits with it; Copy Diagnostics reads
+/// this instead (`Harness` hands it to the model). Only the test of the real log reads the real one.
+struct EmptyLogReader: LogLineReading {
+    func recentLines(since: Date, limit: Int) throws -> [String] { [] }
+}
+
 /// Records every `setEnabled` call.
 @MainActor
 final class FakeController: ToolController {
@@ -97,6 +104,20 @@ struct FailingCommandRunner: CommandRunner {
 @MainActor
 final class OpenedURLs {
     var urls: [URL] = []
+}
+
+/// A Ninjabrain Bot that refuses every connection, and counts how often it was asked. The harness's NBB Overlay is wired to
+/// this one and never to port 52533, where the Ninjabrain Bot of whoever runs the tests may be open with its API on.
+final class RefusingNinjabrainBot: NBBEventSource, @unchecked Sendable {
+    private let asked = Mutex(0)
+
+    /// How many connections were asked for.
+    var attempts: Int { asked.withLock { $0 } }
+
+    func connect(to url: URL) async throws -> AsyncThrowingStream<[UInt8], Error> {
+        asked.withLock { $0 += 1 }
+        throw NBBConnectionError.badStatus(nil)
+    }
 }
 
 /// The harness's one display, its main: display 1, where `fakeInstance()` puts Minecraft, but far outside every
@@ -123,6 +144,8 @@ final class Harness {
     let opened = OpenedURLs()
     let hotkeyRegistrar: any HotkeyRegistering
     let hotkeyHUD = FakeHotkeyHUD()
+    /// The Ninjabrain Bot the real NBB Overlay talks to (`usesRealControllers`): one that is never there.
+    let nbbSource = RefusingNinjabrainBot()
     /// The Key Rebinder's `karabiner.json` (with `withKeyRebinder`), in the harness's folder. Its folder exists;
     /// the file doesn't until a test writes it.
     let karabinerConfigURL: URL
@@ -142,6 +165,9 @@ final class Harness {
         prober = FakeProber(accessibility: accessibility)
         source = StaticMinecraftWindowSource(instances: instances)
         store = SettingsStore(directory: directory, debounce: .milliseconds(10))
+        // Also fire while holding Shift or Control is off here, so what the fake registrar holds is the list itself; the
+        // tests of that option turn it on (`HotkeyHeldModifierAppTests`).
+        store.save(HotkeyHeldModifierSettings(alsoFiresWithShiftOrControl: false))
         if prologueCompleted { store.save(AppState(prologueCompleted: true)) }
         if let hotkeys { store.save(hotkeys) }
         var fakes: [ToolID: FakeController] = [:]
@@ -155,7 +181,8 @@ final class Harness {
                                     minecraft: MinecraftLocator(source: source), permissions: permissions)
         timer = timerFakes.makeController(services: services, theme: theme)
         var all: [ToolID: any ToolController] = usesRealControllers
-            ? [.nbbOverlay: NBBOverlayController(services: services, copies: NBBCopiesMonitor(scanner: NoNBBCopiesScanner())),
+            ? [.nbbOverlay: NBBOverlayController(
+                services: services, connection: NBBConnection(source: nbbSource), copies: NBBCopiesMonitor(scanner: NoNBBCopiesScanner())),
                .windowBackdrop: BackdropController(services: services),
                .crosshair: CrosshairController(services: services)]
             : fakes.mapValues { $0 as any ToolController }
@@ -173,6 +200,7 @@ final class Harness {
                          hotkeyRegistrar: hotkeyRegistrar, hotkeyHUD: hotkeyHUD, loginItem: FakeLoginItem())
         model.pingNinjabrainBot = { false }
         model.evaluateKarabiner = { .notInstalled }
+        model.logReader = EmptyLogReader()
     }
 
     deinit {
@@ -193,7 +221,7 @@ func fakeInstance(pid: Int32 = 100, version: String = "1.16.1", launched: TimeIn
 /// sleeps, so a sleep in the middle of a test (an unattended run in Deep Idle with dark wakes) used up the whole bound
 /// at once, and the wait gave up right after wake although what it waited for came a moment later.
 @MainActor
-func waitUntil(timeout: Duration = .seconds(3), _ condition: @MainActor () -> Bool) async -> Bool {
+func waitUntil(timeout: Duration = .seconds(20), _ condition: @MainActor () -> Bool) async -> Bool {
     let clock = SuspendingClock()
     let deadline = clock.now + timeout
     while !condition() {

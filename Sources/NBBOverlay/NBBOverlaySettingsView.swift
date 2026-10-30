@@ -8,8 +8,10 @@ public struct NBBOverlaySettingsView: View {
     @State private var advancedExpanded = false
     @State private var isResetConfirming = false
 
-    public init(controller: NBBOverlayController) {
+    /// - Parameter showsAdvanced: whether Advanced starts open; tests and renders open it to see every row.
+    public init(controller: NBBOverlayController, showsAdvanced: Bool = false) {
         self.controller = controller
+        _advancedExpanded = State(initialValue: showsAdvanced)
     }
 
     public var body: some View {
@@ -52,7 +54,7 @@ public struct NBBOverlaySettingsView: View {
                 STSettingsRow("Width") {
                     STSlider(value: widthBinding, in: Double(NBBOverlaySettings.widthRange.lowerBound)...Double(NBBOverlaySettings.widthRange.upperBound), label: "Width", valueText: { "\(Int($0)) px" })
                 }
-                STSettingsRow("Aspect ratio", combinesForAccessibility: false) {
+                STChoiceRow("Aspect ratio") {
                     STSegmented(selection: aspectRatioPresetBinding, options: NBBAspectRatioPreset.allCases.map { STSegmentedOption($0, $0.title) })
                 }
                 if aspectRatioPresetBinding.wrappedValue == .custom {
@@ -86,7 +88,7 @@ public struct NBBOverlaySettingsView: View {
                     STSettingsRow("Nether coordinates in the Nether") {
                         STSwitch(isOn: $controller.settings.showsNetherCoordinatesInNether, label: "Nether coordinates in the Nether")
                     }
-                    STSettingsRow("Location shown as", combinesForAccessibility: false) {
+                    STChoiceRow("Location shown as") {
                         STSegmented(
                             selection: $controller.settings.locationDisplay,
                             options: NBBLocationDisplay.allCases.map { STSegmentedOption($0, $0.title) })
@@ -101,7 +103,7 @@ public struct NBBOverlaySettingsView: View {
                         STSwitch(isOn: $controller.settings.showsAngleCorrection, label: "Angle correction")
                     }
                     if controller.settings.showsAngleCorrection {
-                        STSettingsRow("Correction shown as", combinesForAccessibility: false) {
+                        STChoiceRow("Correction shown as") {
                             STSegmented(
                                 selection: $controller.settings.correctionDisplay,
                                 options: NBBCorrectionDisplay.allCases.map { STSegmentedOption($0, $0.title) })

@@ -82,7 +82,7 @@ struct TimerAdvancedSection: View {
             }
             .transition(.opacity)
         }
-        STSettingsRow("Progress", combinesForAccessibility: false) {
+        STChoiceRow("Progress") {
             STSegmented(selection: $controller.settings.progress, options: [.init(.off, "None"), .init(.bar, "Bar"), .init(.ring, "Ring")])
         }
         STSettingsRow("Color near zero") {
@@ -107,7 +107,7 @@ struct TimerAdvancedSection: View {
     // MARK: - The time
 
     @ViewBuilder private var timeRows: some View {
-        STSettingsRow("Time format", combinesForAccessibility: false) {
+        STChoiceRow("Time format") {
             STSegmented(selection: $controller.settings.timeFormat, options: [
                 .init(.minutesAndSeconds, "MM:SS"), .init(.shortMinutes, "M:SS"), .init(.secondsOnly, "Seconds"),
             ])
@@ -115,7 +115,7 @@ struct TimerAdvancedSection: View {
         STSettingsRow("Tenths in the last 10 s") {
             STSwitch(isOn: $controller.settings.showsTenths, label: "Tenths in the last 10 s")
         }
-        STSettingsRow("At zero, show", combinesForAccessibility: false) {
+        STChoiceRow("At zero, show") {
             STSegmented(selection: $controller.settings.atZero, options: [
                 .init(.holdZero, "00:00"), .init(.word, "A word"), .init(.overtime, "Overtime"),
             ])
@@ -131,7 +131,7 @@ struct TimerAdvancedSection: View {
     // MARK: - Motion
 
     @ViewBuilder private var motionRows: some View {
-        STSettingsRow("Pop-up motion", combinesForAccessibility: false) {
+        STChoiceRow("Pop-up motion") {
             STSegmented(selection: $controller.settings.popUpMotion, options: [
                 .init(.springPop, "Pop"), .init(.fade, "Fade"), .init(.slide, "Slide"), .init(.instant, "None"),
             ])
@@ -180,7 +180,7 @@ struct TimerAdvancedSection: View {
                 .init(.ignore, "Is ignored"),
             ], label: "A press while ringing or lingering")
         }
-        STSettingsRow("Cancel gesture", showsRule: false, combinesForAccessibility: false) {
+        STChoiceRow("Cancel gesture", showsRule: false) {
             STSegmented(selection: $controller.settings.cancelGesture, options: [
                 .init(.doublePress, "Double press"), .init(.hold, "Hold"), .init(.off, "None"),
             ])
@@ -195,7 +195,9 @@ struct TimerAdvancedSection: View {
     }
 
     /// What the cancel gesture does, under its row (spec 5.6.2): either gesture switches Timer Overlay off, and the
-    /// next press switches it back on. Wording from ducky's M9 review (B138-B140).
+    /// next press switches it back on. With None no gesture does, so the line says the key never will and points to the
+    /// switch. Wording from ducky's M9 review (B138, B139); None's is B140b, set at ducky's request because B140's
+    /// ("Only the double click gesture will turn off the Timer Overlay.") isn't true there (revision 42).
     static func cancelGestureNote(for gesture: TimerOverlaySettings.CancelGesture) -> String {
         let back = "Press again to turn it on and start."
         return switch gesture {
@@ -204,7 +206,7 @@ struct TimerAdvancedSection: View {
         case .hold:
             "Hold the key for \(points(PressPolicy.holdDuration)) s to switch Timer Overlay off. \(back)"
         case .off:
-            "Only the double click gesture will turn off the Timer Overlay."
+            "The key will never turn off the Timer Overlay. Use its switch."
         }
     }
 
@@ -241,7 +243,7 @@ struct TimerAdvancedSection: View {
         STSettingsRow("Pause while Minecraft isn\u{2019}t focused") {
             STSwitch(isOn: $controller.settings.pausesWhileMinecraftNotFocused, label: "Pause while Minecraft isn\u{2019}t focused")
         }
-        STSettingsRow("Display", combinesForAccessibility: false) {
+        STChoiceRow("Display") {
             STSegmented(selection: $controller.settings.displayChoice, options: [
                 .init(.followMinecraft, "Follow Minecraft"), .init(.specific, "A specific display"),
             ])

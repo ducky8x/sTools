@@ -16,8 +16,9 @@ public final class DisplayDirectory {
         self.init(screenProvider: { NSScreen.screens.compactMap { DisplayInfo(screen: $0) } })
     }
 
-    /// Separate from `init()` so tests can drive the directory with synthetic layouts.
-    init(screenProvider: @escaping @MainActor () -> [DisplayInfo]) {
+    /// Separate from `init()` so tests and benchmarks can drive the directory with synthetic layouts, such as displays outside
+    /// every real screen.
+    public init(screenProvider: @escaping @MainActor () -> [DisplayInfo]) {
         self.screenProvider = screenProvider
         self.displays = screenProvider()
         observer = NotificationCenter.default.addObserver(

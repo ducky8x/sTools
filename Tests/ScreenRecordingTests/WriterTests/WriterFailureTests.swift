@@ -23,11 +23,7 @@ struct WriterFailureTests {
     ) async -> Int? {
         for index in range {
             before(index)
-            var waited = 0
-            while !writer.canAcceptFrame, writer.currentFileURL != nil, waited < 5000 {
-                try? await Task.sleep(for: .milliseconds(1))
-                waited += 1
-            }
+            await WriterFixture.waitForEncoder(writer)
             if writer.append(frame: WriterFixture.makeFrame(index: index), at: time(index)) == .stopped { return index }
             let soundFrame = index - lagFrames
             if sound, soundFrame >= 0 {

@@ -51,6 +51,10 @@ public final class NBBOverlayController: ToolController {
     @ObservationIgnored private var currentDisplay: DisplayInfo?
     /// How many times the overlay's content was built into the panel. For tests.
     @ObservationIgnored private(set) var drawCount = 0
+    /// How many times what the overlay watches (Minecraft's window, the copies) changed and the watch handled it. For tests.
+    @ObservationIgnored private(set) var watchRounds = 0
+    /// Whether the watch is armed: at most one, however often the tool is switched on (`watchForUpdates()`).
+    @ObservationIgnored private var isWatchingForUpdates = false
     /// Called once new content is built into the panel and the panel is shown. For tests that time an update.
     @ObservationIgnored var didDraw: (@MainActor () -> Void)?
     /// What the panel shows now, so a refresh that changes nothing it draws (Minecraft gaining or losing focus,
@@ -180,6 +184,8 @@ public final class NBBOverlayController: ToolController {
         if settings.snappingEnabled {
             frame = PlacementSnapping.snapped(frame, in: display.frame, threshold: 14)
         }
+        // Dropped past the display's edge, the plate comes to rest inside it, and so does the offset it stores.
+        frame = NBBPlacement.kept(frame, inside: display.frame)
         panel.moveTo(frame: frame)
         settings.offsetX = Int((frame.midX - display.frame.midX).rounded())
         settings.offsetY = Int((display.frame.midY - frame.midY).rounded())
@@ -211,23 +217,31 @@ public final class NBBOverlayController: ToolController {
         observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.refreshIfEnabled() }
         })
-        watchForUpdates()
+        if !isWatchingForUpdates { watchForUpdates() }
     }
 
     /// `services.minecraft` and `copies` are `@Observable`; this re-arms itself after every change so a Minecraft
     /// display change or another copy redraws the panel. Ninjabrain Bot's results don't come this way: an observation's
     /// change comes before the value is set, so acting on it takes one more main-actor hop. A stream's value
     /// (`connection.onChange`) and a window read (`showWindow`) redraw the panel directly instead.
+    ///
+    /// There is one watch at a time: switching the tool on while the last one is still armed keeps that one, and a watch
+    /// whose change comes after the tool was switched off ends there instead of arming again (Crosshair's does the same).
     private func watchForUpdates() {
+        isWatchingForUpdates = true
         withObservationTracking {
             _ = services.minecraft.active
             _ = copies.copies
             _ = copies.choice
         } onChange: { [weak self] in
-            Task { @MainActor in
-                self?.syncWindowReading()
-                self?.refreshIfEnabled()
-                self?.watchForUpdates()
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                isWatchingForUpdates = false
+                guard isEnabled else { return }
+                watchRounds += 1
+                syncWindowReading()
+                refreshIfEnabled()
+                watchForUpdates()
             }
         }
     }
@@ -331,11 +345,9 @@ public final class NBBOverlayController: ToolController {
             drawCount += 1
         }
 
+        // Kept on the display the overlay is on (spec 5.1.5); the stored offset stays as it is.
         let size = CGSize(width: CGFloat(settings.width), height: CGFloat(settings.width) / settings.aspectRatio)
-        let origin = CGPoint(
-            x: display.frame.midX + CGFloat(settings.offsetX) - size.width / 2,
-            y: display.frame.midY - CGFloat(settings.offsetY) - size.height / 2)
-        showPanel(frame: CGRect(origin: origin, size: size))
+        showPanel(frame: NBBPlacement.plateFrame(size: size, offsetX: settings.offsetX, offsetY: settings.offsetY, on: display.frame))
         if drawCount != drawsBefore { didDraw?() }
     }
 

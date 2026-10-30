@@ -4,9 +4,13 @@ import SwiftUI
 
 /// Draws one fill (spec 5.2.3) at whatever size it's given — the backdrop panel's full display, or a
 /// small preview plate. `opacity` applies to the finished fill as a whole (spec 5.2.4 "Opacity").
+///
+/// An Animated fill draws its `player` when it's given one (the panel). Without one (the page's preview) it draws
+/// `image`, the animation's first frame, fitted the same way.
 struct BackdropFillView: View {
     let fill: BackdropSettings.Fill
     let image: CGImage?
+    var player: (any BackdropPlayer)?
     var opacity: Double = 1
 
     var body: some View {
@@ -31,10 +35,12 @@ struct BackdropFillView: View {
                 center: UnitPoint(x: fill.gradientCenterX, y: fill.gradientCenterY),
                 startRadius: 0,
                 endRadius: fill.gradientRadius * diagonal(of: size))
-        case .image:
+        case .image, .animated:
             ZStack {
                 STColorWellHex.color(from: fill.imageBackgroundColor)
-                if let image {
+                if fill.kind == .animated, let player {
+                    BackdropAnimationHost(player: player, mode: fill.imageContentMode)
+                } else if let image {
                     let rect = BackdropImageLayout.rect(
                         imageSize: CGSize(width: image.width, height: image.height), containerSize: size, mode: fill.imageContentMode)
                     Image(image, scale: 1, label: Text(""))

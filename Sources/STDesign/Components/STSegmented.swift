@@ -30,6 +30,69 @@ enum STSegmentedNavigation {
     }
 }
 
+/// How a segmented control lays its options out.
+enum STSegmentedLayout {
+    /// The space between options on a line.
+    static let spacing: CGFloat = 18
+    /// The space between lines, when the options wrap.
+    static let lineSpacing: CGFloat = 4
+}
+
+extension EnvironmentValues {
+    /// Whether the `STSegmented` it reaches lets its options wrap onto further lines, a whole option at a time, when they
+    /// don't fit on one: `STChoiceRow`'s last resort. Off, the options stay on one line.
+    @Entry var stSegmentedWraps: Bool = false
+}
+
+/// Lays its subviews out left to right, each at its own size, and starts a new line before one that would pass the width
+/// it is offered, so a line break falls between subviews and never inside one. With no width to go by, one line.
+struct STWrappingRow: Layout {
+    var spacing: CGFloat
+    var lineSpacing: CGFloat
+
+    private struct Line {
+        var items: [(subview: LayoutSubview, size: CGSize)] = []
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let lines = arrange(subviews, width: proposal.width)
+        let gaps = lineSpacing * CGFloat(max(lines.count - 1, 0))
+        return CGSize(width: lines.map(\.width).max() ?? 0, height: lines.map(\.height).reduce(0, +) + gaps)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for line in arrange(subviews, width: proposal.width ?? bounds.width) {
+            var x = bounds.minX
+            for item in line.items {
+                item.subview.place(at: CGPoint(x: x, y: y + (line.height - item.size.height) / 2), proposal: ProposedViewSize(item.size))
+                x += item.size.width + spacing
+            }
+            y += line.height + lineSpacing
+        }
+    }
+
+    private func arrange(_ subviews: Subviews, width: CGFloat?) -> [Line] {
+        var lines = [Line()]
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            var line = lines.removeLast()
+            let gap = line.items.isEmpty ? 0 : spacing
+            if let width, !line.items.isEmpty, line.width + gap + size.width > width + 0.5 {
+                lines.append(line)
+                line = Line()
+            }
+            line.width += (line.items.isEmpty ? 0 : spacing) + size.width
+            line.height = max(line.height, size.height)
+            line.items.append((subview, size))
+            lines.append(line)
+        }
+        return lines
+    }
+}
+
 /// Small-caps words with an accent underline that slides to the selection.
 ///
 /// The left and right arrow keys move the selection while the control has keyboard focus, and a click anywhere on it
@@ -44,6 +107,7 @@ public struct STSegmented<Value: Hashable>: View {
     @Environment(\.stTheme) private var theme
     @Environment(\.stSoundPlayer) private var sound
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.stSegmentedWraps) private var wraps
     @FocusState private var isFocused: Bool
     @Namespace private var underlineSpace
 
@@ -56,7 +120,10 @@ public struct STSegmented<Value: Hashable>: View {
     }
 
     public var body: some View {
-        HStack(spacing: 18) {
+        let layout = wraps
+            ? AnyLayout(STWrappingRow(spacing: STSegmentedLayout.spacing, lineSpacing: STSegmentedLayout.lineSpacing))
+            : AnyLayout(HStackLayout(spacing: STSegmentedLayout.spacing))
+        layout {
             ForEach(options) { option in
                 STSegmentedItem(title: option.title, spokenTitle: option.accessibilityTitle,
                                 isSelected: option.value == selection,
