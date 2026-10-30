@@ -21,7 +21,7 @@ struct BackdropFillEditor: View {
 
     var body: some View {
         Group {
-            STSettingsRow("Fill type", combinesForAccessibility: false) {
+            STChoiceRow("Fill type") {
                 STSegmented(selection: $fill.kind, options: Self.kindOptions)
             }
             switch fill.kind {
@@ -47,7 +47,7 @@ struct BackdropFillEditor: View {
                 if let importError {
                     Text(importError).stStyle(.caption).foregroundStyle(STColor.danger)
                 }
-                STSettingsRow("Fit", combinesForAccessibility: false) {
+                STChoiceRow("Fit") {
                     STSegmented(selection: $fill.imageContentMode, options: Self.contentModeOptions)
                 }
                 if fill.imageContentMode == .fit || fill.imageContentMode == .center {
