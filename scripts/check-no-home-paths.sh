@@ -14,7 +14,8 @@
 #     of its own, so it is not found inside longer words);
 #   - this user's temporary-folder id and UUID; this Mac's hardware UUID, serial number and volume UUIDs; and the
 #     provenance id macOS stamps on the files that apps it tracks make (as data inside files);
-#   - any names listed one per line in CHECK_NO_HOME_PATHS_EXTRA_NAMES (to test the check with a made-up name).
+#   - any names listed one per line in CHECK_NO_HOME_PATHS_EXTRA_NAMES (to test the check with a made-up name; the
+#     build scripts' output filter, scripts/lib/mask-home.sh, hides them too).
 # Text is found as UTF-8 and UTF-16 and with %XX, &#NN; and backslash escapes decoded. Compressed streams that
 # unpack completely and pass their checksums are unpacked and searched too: zlib (PNG chunks, compressed disk
 # images), gzip, zip, LZFSE and LZVN (asset catalogs), LZ4 and xz; so are property list <data>, other base64 and
@@ -26,7 +27,8 @@
 #
 # Each finding is printed with its path relative to the argument and a count; for a name looked for only as a word,
 # also the byte offsets where it was found (look with xxd -s <offset> <file>), never the bytes around it, which can
-# hold the rest of a name. Nothing looked for is ever printed: placeholders such as <account name> stand in for it.
+# hold the rest of a name. Nothing looked for is ever printed: placeholders such as <account name> stand in for it, for
+# the full name and for each part of it on its own.
 #
 # The check itself is scripts/check-no-home-paths.swift, compiled once per version of that file and of the compiler
 # into the per-user temporary folder.
@@ -37,8 +39,11 @@ set -euo pipefail
 
 readonly XCODE_BETA="/Applications/Xcode-beta.app/Contents/Developer"
 
-SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/check-no-home-paths.swift"
-readonly SOURCE
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+readonly ROOT
+readonly SOURCE="$ROOT/scripts/check-no-home-paths.swift"
+# shellcheck source=lib/mask-home.sh
+source "$ROOT/scripts/lib/mask-home.sh"
 
 usage() {
     sed -n '2,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
@@ -75,7 +80,7 @@ if [[ ! -x "$CHECKER" ]]; then
     mkdir -p "$CACHE" && chmod 700 "$CACHE" || broken "cannot create the folder for the compiled check"
     PARTIAL="$(mktemp "$CACHE/partial.XXXXXX")" || broken "cannot create a file in the folder for the compiled check"
     if ! xcrun swiftc -O -o "$PARTIAL" "$SOURCE" 2>"$PARTIAL.log"; then
-        sed "s#$HOME#~#g" "$PARTIAL.log" >&2
+        mask_home < "$PARTIAL.log" >&2
         rm -f "$PARTIAL" "$PARTIAL.log"
         broken "scripts/check-no-home-paths.swift does not compile"
     fi
