@@ -2,7 +2,8 @@
 #
 # A build is made in a staging folder, and the finished app replaces build/<App>.app only once every step and check has
 # passed. So a build that fails never leaves a half-made app under the real name, and the app from the last good build
-# stays where it was, usable. What a failed build says is that it did not replace that app, and what that app is.
+# stays where it was, usable. A failed build says that it did not replace that app and which version and build it
+# still is.
 #
 # stage_describe <app>
 #   Prints "version 0.2.0, build 773, made Oct 27 22:10" for an app, or nothing when it has no Info.plist.

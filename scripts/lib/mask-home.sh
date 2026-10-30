@@ -6,8 +6,8 @@
 #     - the home folder shortened to ~;
 #     - the full name (`id -F`) hidden: as it is, last name first, run together or joined with a dot, an underscore or a
 #       hyphen, and each part of it of three letters or more on its own, so a surname alone is hidden too;
-#     - the account name (`id -un`) and the home folder's name hidden;
-#   in any letter case, whatever stands in their place is "<full name>", "<account name>" or "<home folder name>". A name
+#     - the account name (`id -un`) and the home folder's name hidden.
+#   Names are hidden in any letter case and replaced by "<full name>", "<account name>" or "<home folder name>". A name
 #   shorter than six letters is hidden only as a word of its own: hidden inside longer words too, it would show which of
 #   their letters it is. What is put in a name's place is never searched again.
 #
