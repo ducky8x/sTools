@@ -21,6 +21,22 @@ func waitUntil(seconds: Double = 5, _ condition: @MainActor () -> Bool) async ->
     return true
 }
 
+/// Waits, without blocking the main actor, until `read` gives the same value twice, 100 ms apart, and returns it. A
+/// player told to pause may take a moment to stop under load, so a test compares what it held still afterward.
+@MainActor
+func settledValue(seconds: Double = 5, _ read: @MainActor () -> Double) async -> Double {
+    let clock = SuspendingClock()
+    let deadline = clock.now.advanced(by: .seconds(seconds))
+    var last = read()
+    while clock.now < deadline {
+        try? await Task.sleep(for: .milliseconds(100))
+        let now = read()
+        if abs(now - last) < 0.005 { return now }
+        last = now
+    }
+    return last
+}
+
 /// A folder that is removed again when the test is over.
 final class TempFolder {
     let url: URL

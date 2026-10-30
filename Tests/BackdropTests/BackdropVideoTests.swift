@@ -57,9 +57,9 @@ struct BackdropVideoPlayerTests {
         player.pause()
         #expect(!player.isPlaying)
         #expect(await waitUntil { player.rate == 0 })
-        let stopped = player.seconds
+        let stopped = await settledValue { player.seconds }
         try? await Task.sleep(for: .milliseconds(300))
-        #expect(abs(player.seconds - stopped) < 0.02, "a paused movie doesn't move (it settles a few thousandths of a second)")
+        #expect(abs(player.seconds - stopped) < 0.02, "a paused movie doesn't move")
 
         player.play()
         // The movie is a second long: it carries on, or, if it was paused near its end, has already come back to the start.

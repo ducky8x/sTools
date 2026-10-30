@@ -33,7 +33,7 @@ struct BackdropAnimatedIntegrationTests {
 
         rig.minecraft(minimized: true)
         #expect(await waitUntil { video.rate == 0 })
-        let stoppedAt = video.seconds
+        let stoppedAt = await settledValue { video.seconds }
         try? await Task.sleep(for: .milliseconds(300))
         #expect(abs(video.seconds - stoppedAt) < 0.02, "and it doesn't move while the backdrop is hidden")
 
