@@ -27,7 +27,7 @@ public struct KeyRebinderView: View {
     /// list (those need no file).
     static func showsFindings(controller: KeyRebinderController, showsHotkeys: Bool) -> Bool {
         controller.settings.checkerEnabled
-            && (controller.config != nil || (showsHotkeys && !controller.derived.hotkeyFindings.isEmpty))
+            && (controller.hasLoadedConfig || (showsHotkeys && !controller.derived.hotkeyFindings.isEmpty))
     }
 
     /// Everything but the keyboard keeps the app's usual reading width; the page around it is wider so the
@@ -52,7 +52,7 @@ public struct KeyRebinderView: View {
                     if Self.showsFindings(controller: controller, showsHotkeys: showsHotkeys) {
                         FindingsSection(controller: controller, showsHotkeyFindings: showsHotkeys)
                     }
-                    if controller.config != nil {
+                    if controller.hasLoadedConfig {
                         FnKeysSection(controller: controller)
                         ComplexRulesSection(controller: controller) { ruleBeingEdited = RuleSheetItem(index: $0) }
                     }
@@ -74,6 +74,7 @@ public struct KeyRebinderView: View {
             controller.stopWatching()
             controller.isTesting = false
             controller.isCapturingOutput = false
+            controller.releaseLoadedFile()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await controller.refresh() }

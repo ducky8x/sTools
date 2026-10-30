@@ -10,8 +10,10 @@ public actor KarabinerConfigStore {
     private let fileSystem: any KarabinerFileSystem
     private let backups: KarabinerBackups
 
-    /// What was on disk at the last `load()` or successful write.
-    private var loaded: Snapshot?
+    /// The digest of what was on disk at the last `load()` or successful write. Only the digest is kept: an edit always
+    /// runs on a fresh read, and the parsed tree and the bytes would be a second copy of the file in memory for as long
+    /// as the app runs.
+    private var loadedDigest: Data?
     /// Digest of the on-disk content whose `.changedExternally` preview was shown; only a confirmed call
     /// that still finds exactly this content may write over an external change.
     private var previewedDigest: Data?
@@ -55,7 +57,7 @@ public actor KarabinerConfigStore {
     /// A symbolic link is read (so the diagram works) but never written.
     public func load() throws -> KarabinerConfig {
         let disk = try readDisk()
-        loaded = disk
+        loadedDigest = disk.digest
         previewedDigest = nil
         return disk.config
     }
@@ -70,7 +72,7 @@ public actor KarabinerConfigStore {
         confirm: Bool = false,
         _ edit: @Sendable (JSONValue) throws -> JSONValue
     ) throws -> ApplyResult {
-        guard let loaded else { throw KarabinerStoreError.notLoaded }
+        guard let loadedDigest else { throw KarabinerStoreError.notLoaded }
         if fileSystem.stat(configURL)?.isSymbolicLink == true {
             throw KarabinerStoreError.symbolicLink(configURL)
         }
@@ -78,11 +80,11 @@ public actor KarabinerConfigStore {
         let edited = try edit(disk.root)
 
         if edited == disk.root {
-            self.loaded = disk
+            self.loadedDigest = disk.digest
             previewedDigest = nil
             return .unchanged(config: disk.config)
         }
-        if disk.digest != loaded.digest, !(confirm && previewedDigest == disk.digest) {
+        if disk.digest != loadedDigest, !(confirm && previewedDigest == disk.digest) {
             previewedDigest = disk.digest
             return .changedExternally(preview: KarabinerConfig(root: edited))
         }
@@ -91,6 +93,7 @@ public actor KarabinerConfigStore {
 
     // MARK: Reading
 
+    /// One read of the file, held only while a call uses it.
     private struct Snapshot {
         var root: JSONValue
         var digest: Data
@@ -150,7 +153,7 @@ public actor KarabinerConfigStore {
         }
 
         backups.prune()
-        loaded = Snapshot(root: edited, digest: Self.digest(of: written), containsComments: false, data: written)
+        loadedDigest = Self.digest(of: written)
         previewedDigest = nil
         return .written(config: KarabinerConfig(root: edited), backupURL: backupURL)
     }
@@ -175,7 +178,7 @@ public actor KarabinerConfigStore {
         } catch {
             return .restoreFailed(reason: reason, backup: backupURL)
         }
-        loaded = disk
+        loadedDigest = disk.digest
         previewedDigest = nil
         return .verificationFailed(reason: reason)
     }
