@@ -1,7 +1,9 @@
 import AppKit
 import Foundation
 import Prologue
+import STDesign
 import STPlatform
+import SwiftUI
 import Testing
 @testable import KeyRebinder
 @testable import sTools
@@ -11,6 +13,9 @@ import Testing
 // Continue is enabled: until the step is done Return goes to the drawn keyboard, as it always did. The page asks
 // `KeyRebinderController.handle` what to do with each key; a key it doesn't use goes on to the window, whose default
 // button is Continue. Nothing here shows a window or reads a real keyboard.
+
+/// SwiftUI has a `KeyPress` too; this is the Key Rebinder's.
+private typealias KeyPress = KeyRebinder.KeyPress
 
 @MainActor
 @Suite("Prologue ▸ Return on the Key Rebinder trial")
@@ -130,6 +135,40 @@ struct PrologueReturnKeyTests {
         #expect(trial.keyRebinder.selectedKey == .key("return_or_enter"))
     }
 
+    // MARK: Through the real page
+
+    /// A Return in the app meets the page's key monitor first, which asks `handle`, and reaches the window only when
+    /// the page didn't use it. Here the introduction's real view hosts the trial, so the window half is the footer's own
+    /// default button: once the step is done Return moves on to the Finale, and while the page keeps Return it doesn't.
+    @Test func returnMovesOnFromTheHostedTrialOnceItIsDone() throws {
+        let trial = try Trial()
+        let window = KeyWindow(PrologueView(model: trial.prologue))
+        defer { trial.content.onDisappear() }
+        #expect(trial.pageUses(Self.returnKey), "grayed out: the page keeps Return, so the window never sees it")
+        #expect(trial.prologue.step == .keyRebinderTrial)
+
+        trial.finishTheTrial()
+        window.settle()
+        trial.keyRebinder.selectedKey = nil
+        if !trial.pageUses(Self.returnKey) { window.pressReturn() }
+        #expect(trial.prologue.step == .youreSet)
+        #expect(trial.keyRebinder.selectedKey == nil)
+    }
+
+    /// The control: with the hook gone (what every build did) the page keeps Return even once the step is done, which
+    /// is the bug this fixes.
+    @Test func withoutTheHookThePageKeepsReturnFromContinue() throws {
+        let trial = try Trial()
+        let window = KeyWindow(PrologueView(model: trial.prologue))
+        trial.finishTheTrial()
+        window.settle()
+        trial.keyRebinder.hostTakesKey = nil
+        if !trial.pageUses(Self.returnKey) { window.pressReturn() }
+        #expect(trial.prologue.step == .keyRebinderTrial, "Return never reached Continue")
+        #expect(trial.keyRebinder.selectedKey == .key("return_or_enter"))
+        trial.content.onDisappear()
+    }
+
     @Test func theKeyRebinderPageTakesReturnWhenThereIsNoIntroduction() throws {
         let harness = Harness(withKeyRebinder: true)
         let keyRebinder = try #require(harness.model.keyRebinder)
@@ -137,5 +176,45 @@ struct PrologueReturnKeyTests {
         #expect(harness.model.prologue == nil)
         #expect(keyRebinder.handle(Self.returnKey, commandHeld: false, isBusy: false))
         #expect(keyRebinder.selectedKey == .key("return_or_enter"))
+    }
+}
+
+/// A window that's never ordered in, with the view under Reduce animations so nothing plays, and Return sent to it the
+/// way `PrologueContinueTests` does.
+@MainActor
+private final class KeyWindow {
+    let window: NSWindow
+    let host: NSHostingView<AnyView>
+
+    init<V: View>(_ view: V) {
+        _ = NSApplication.shared
+        let theme = STTheme(motionMode: .reduced)
+        host = NSHostingView(rootView: AnyView(view.stMotionRoot(theme).environment(\.stTheme, theme)))
+        host.frame = CGRect(x: 0, y: 0, width: 760, height: 560)
+        window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        settle()
+    }
+
+    isolated deinit {
+        window.contentView = nil
+    }
+
+    func settle() {
+        for _ in 0..<3 {
+            host.layoutSubtreeIfNeeded()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
+        host.layoutSubtreeIfNeeded()
+    }
+
+    func pressReturn() {
+        let event = NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r",
+            isARepeat: false, keyCode: 36)!
+        if !window.performKeyEquivalent(with: event) { window.sendEvent(event) }
+        settle()
     }
 }
