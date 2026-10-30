@@ -62,7 +62,7 @@ struct KeyRebinderSettingsSection: View {
                             STSwitch(isOn: $controller.settings.showsHotkeys, label: "Show hotkeys")
                         }
                     }
-                    STSettingsRow("Backups kept", combinesForAccessibility: false) {
+                    STChoiceRow("Backups kept") {
                         STSegmented(selection: backupsBinding, options: KeyRebinderSettings.backupsKeptChoices.map { STSegmentedOption($0, "\($0)") })
                     }
                     Text("Copies of karabiner.json made before every change, in ~/Library/Application Support/sTools/Karabiner Backups.")
