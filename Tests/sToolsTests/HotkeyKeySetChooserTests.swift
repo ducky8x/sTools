@@ -109,7 +109,7 @@ struct HotkeyKeySetChooserTests {
         var bindings = HotkeyKeySet.command.bindings()
         bindings[0].combo = f6
         #expect(HotkeysSection.keySetQuestion(.control) == "Use ⌃1–⌃5?")
-        #expect(HotkeysSection.keySetQuestion(.noKeys) == "Remove every tool's key?")
+        #expect(HotkeysSection.keySetQuestion(.noKeys) == "Remove every tool\u{2019}s key?")
         #expect(HotkeysSection.keySetWarning(.control, bindings: bindings)
             == "This replaces the key you set for Crosshair (F6). Other hotkeys don\u{2019}t change.")
         bindings[1].combo = f7

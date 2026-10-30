@@ -95,9 +95,9 @@ struct ShortcutLogicTests {
     }
 
     @Test func unknownKeyIsRejected() {
-        #expect(outcome(56, .command) == .reject("That key can't be used"))
-        #expect(outcome(56, []) == .reject("That key can't be used"))
-        #expect(outcome(999, []) == .reject("That key can't be used"))
+        #expect(outcome(56, .command) == .reject("That key can\u{2019}t be used"))
+        #expect(outcome(56, []) == .reject("That key can\u{2019}t be used"))
+        #expect(outcome(999, []) == .reject("That key can\u{2019}t be used"))
     }
 
     @Test func escapeAloneCancels() {
@@ -153,14 +153,14 @@ struct ShortcutModelTests {
         model.begin()
         #expect(model.keyDown(keyCode: keyUnknown, modifiers: [], validate: basic) == .none)
         #expect(model.isRecording)
-        #expect(model.message == "That key can't be used")
+        #expect(model.message == "That key can\u{2019}t be used")
     }
 
     @Test func movingModifiersClearsTheMessageAndShowsThemLive() {
         var model = STShortcutRecorderModel()
         model.begin()
         _ = model.keyDown(keyCode: keyUnknown, modifiers: [], validate: basic)
-        #expect(model.message == "That key can't be used")
+        #expect(model.message == "That key can\u{2019}t be used")
         model.flagsChanged([.control, .option])
         #expect(model.message == nil)
         #expect(model.heldModifiers == [.control, .option])
@@ -184,7 +184,7 @@ struct ShortcutModelTests {
         var model = STShortcutRecorderModel()
         model.begin()
         _ = model.keyDown(keyCode: keyUnknown, modifiers: .shift, validate: basic)
-        #expect(model.message == "That key can't be used")
+        #expect(model.message == "That key can\u{2019}t be used")
         model.cancel()
         model.begin()
         #expect(model.message == nil)

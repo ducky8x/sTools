@@ -28,7 +28,7 @@ struct MinecraftStatusTextTests {
     }
 
     @Test func nothingRunning() {
-        #expect(text([]) == "Minecraft isn't running.")
+        #expect(text([]) == "Minecraft isn\u{2019}t running.")
     }
 
     @Test func oneInstanceNamesVersionAndDisplay() {
