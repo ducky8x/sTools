@@ -27,8 +27,10 @@ public struct BackdropSettingsView: View {
                 BackdropFillEditor(
                     fill: $controller.settings.fill,
                     onImportImage: { controller.importImage(from: $0) },
+                    onImportAnimation: { url in Task { await controller.importAnimation(from: url) } },
                     image: controller.image(for: controller.settings.fill),
-                    importError: controller.imageImportError)
+                    importError: controller.imageImportError,
+                    animationError: controller.animationImportError ?? controller.animationProblem(for: controller.settings.fill))
             }
 
             if !otherDisplays.isEmpty {
@@ -103,8 +105,11 @@ private struct BackdropOtherDisplayRow: View {
                     BackdropFillEditor(
                         fill: fillBinding,
                         onImportImage: { controller.importImage(from: $0, forDisplayID: display.id) },
+                        onImportAnimation: { url in Task { await controller.importAnimation(from: url, forDisplayID: display.id) } },
                         image: controller.image(for: controller.settings.fill(for: display.id)),
-                        importError: controller.imageImportError(for: display.id))
+                        importError: controller.imageImportError(for: display.id),
+                        animationError: controller.animationImportError(for: display.id)
+                            ?? controller.animationProblem(for: controller.settings.fill(for: display.id)))
                 }
                 .padding(.leading, 12)
             }
