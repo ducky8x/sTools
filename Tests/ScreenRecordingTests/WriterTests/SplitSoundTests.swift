@@ -101,8 +101,8 @@ struct SplitSoundTests {
             game.push(frames: 1600, at: now, frequency: 440)
             base.push(.frame(picture(now)))
             clock.set(now + 0.001)
+            #expect(await waitUntil { session.canAcceptFrame }, "the encoder took the last frame")
             driver.fire()
-            try await Task.sleep(for: .milliseconds(4))
         }
         let result = await session.stop()
         await rig.stop()

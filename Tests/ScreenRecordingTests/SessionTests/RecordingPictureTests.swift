@@ -56,8 +56,8 @@ struct RecordingPictureTests {
         for i in 0..<ticks {
             beforeTick(i)
             clock.set(10 + Double(i) / 30 + 0.001)
+            #expect(await waitUntil { session.canAcceptFrame }, "the encoder took the last frame")
             driver.fire()
-            try await Task.sleep(for: .milliseconds(4))
         }
         let result = await session.stop()
         await rig.stop()
@@ -198,8 +198,8 @@ struct RecordingPictureTests {
         for i in 0..<6 {
             base.push(.frame(VideoFrame(pixelBuffer: WriterFixture.makeFrame(index: i, size: tall), hostTime: .seconds(10 + Double(i) / 30))))
             clock.set(10 + Double(i) / 30 + 0.001)
+            #expect(await waitUntil { session.canAcceptFrame }, "the encoder took the last frame")
             driver.fire()
-            try await Task.sleep(for: .milliseconds(4))
         }
         _ = await session.stop()
         await rig.stop()
