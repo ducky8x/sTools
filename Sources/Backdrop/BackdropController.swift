@@ -389,6 +389,7 @@ public final class BackdropController: ToolController {
     func reconcile() {
         guard isEnabled else { return }
         defer { updatePlayback() }
+        uncoverPanelsTheWindowServerNoLongerCalls()
         if services.minecraft.active == nil, let standIn,
            let display = services.displays.displays.first(where: { $0.id == standIn.displayID }) {
             let panel = panel(for: display.id)
@@ -519,6 +520,15 @@ public final class BackdropController: ToolController {
         for (displayID, layers) in layers {
             let canBeSeen = isEnabled && shownDisplays.contains(displayID) && !coveredDisplays.contains(displayID) && !screensAreAsleep
             layers.setPlaying(canBeSeen)
+        }
+    }
+
+    /// A panel marked covered is looked at again on every re-order. Only a notice marks one covered, so if the notice that
+    /// it can be seen again never came, this puts it right at the next app switch. It never marks one covered: a panel
+    /// ordered in a moment ago may not have its visibility yet, and only the window server's notice may say so.
+    private func uncoverPanelsTheWindowServerNoLongerCalls() {
+        for displayID in coveredDisplays {
+            if let panel = panels[displayID], playback.windowCanBeSeen(panel) { coveredDisplays.remove(displayID) }
         }
     }
 

@@ -176,6 +176,33 @@ struct BackdropAnimatedFillTests {
         #expect(!rig.player.isPlaying)
     }
 
+    /// A missed notice can't leave it paused for good: the next re-order looks again.
+    @Test func aPanelTheWindowServerNoLongerCallsCoveredPlaysAgainAtTheNextReorder() {
+        let rig = AnimatedRig()
+        rig.animate()
+        rig.controller.setEnabled(true)
+        defer { rig.controller.setEnabled(false) }
+        rig.panelVisibilityChanges(canBeSeen: false)
+        #expect(!rig.player.isPlaying)
+        rig.log.panelsCanBeSeen = true // the notice that it can be seen again never arrives
+        #expect(!rig.player.isPlaying)
+        rig.workspace.post(name: NSWorkspace.didActivateApplicationNotification, object: nil)
+        #expect(rig.player.isPlaying)
+    }
+
+    /// Looking again never covers a panel: that is for the window server's notice, since a panel just ordered in may not
+    /// have its visibility yet.
+    @Test func reorderingNeverCoversAPanelBySelf() {
+        let rig = AnimatedRig()
+        rig.animate()
+        rig.controller.setEnabled(true)
+        defer { rig.controller.setEnabled(false) }
+        rig.log.panelsCanBeSeen = false // no notice has said so
+        rig.workspace.post(name: NSWorkspace.didActivateApplicationNotification, object: nil)
+        rig.controller.reconcile()
+        #expect(rig.player.isPlaying)
+    }
+
     @Test func aPanelOrderedInAgainStartsAsSeenWhateverItWasBefore() {
         let rig = AnimatedRig()
         rig.animate()
