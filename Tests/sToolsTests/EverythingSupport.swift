@@ -74,6 +74,20 @@ struct ScriptedNBBSource: NBBEventSource {
     }
 }
 
+/// What `NSWorkspace.didWakeNotification` does for the Timer Overlay's engine: the test says when the Mac woke.
+@MainActor
+final class WakeSimulator: TimerWakeWatching {
+    private var handler: (@MainActor () -> Void)?
+
+    func start(_ handler: @escaping @MainActor () -> Void) { self.handler = handler }
+    func stop() { handler = nil }
+
+    /// Whether the engine is listening for a wake, which it does only while a run counts.
+    var isWatching: Bool { handler != nil }
+
+    func macWoke() { handler?() }
+}
+
 /// A Save/Delete question nobody sees.
 @MainActor
 final class NoQuestion: RecordingDecisionPresenting {
@@ -104,6 +118,8 @@ final class EverythingHarness {
     let timerScheduler = FakeTimerScheduler()
     let presenter: TimerOverlayPresenter
     let timerAnnouncer = FakeTimerAnnouncer()
+    let alarm = FakeAlarm()
+    let wakeSimulator = WakeSimulator()
     let crosshair: CrosshairController
     let nbb: NBBOverlayController
     let backdrop: BackdropController
@@ -138,7 +154,7 @@ final class EverythingHarness {
         backdrop = BackdropController(services: services, imagesDirectory: images, showsPanels: true, theme: theme)
         timer = TimerOverlayController(
             services: services, theme: theme, clock: timerClock, scheduler: timerScheduler, activity: FakeTimerActivity(),
-            wakeWatcher: FakeTimerWakeWatcher(), presenter: presenter, guides: FakeRuleGuides(), alarm: FakeAlarm(),
+            wakeWatcher: wakeSimulator, presenter: presenter, guides: FakeRuleGuides(), alarm: alarm,
             announcer: timerAnnouncer, inProcessAudio: InProcessAudio())
         recording = ScreenRecordingController(
             services: services, makeFactory: { _ in NothingToCapture() }, loadAvailable: { _ in AvailableSources() },
@@ -173,6 +189,17 @@ final class EverythingHarness {
 
     /// A display of the test, by id.
     func display(_ id: UInt32) -> DisplayInfo { displayBox.displays.first { $0.id == id }! }
+
+    /// Runs the Timer Overlay's scheduled wakes in the order they fall due, moving its clock to each, until none is left or
+    /// `until` is true; bounded. The way a run goes on in real time, with no waiting.
+    func runTimerWakes(until done: () -> Bool = { false }) {
+        for _ in 0..<500 where !done() {
+            guard let next = timerScheduler.pending.min(by: { $0.due < $1.due }) else { return }
+            timerClock.time = max(timerClock.time, next.due)
+            next.isCancelled = true
+            next.action()
+        }
+    }
 
     /// Tells the app the displays changed, as macOS does after a monitor comes or goes: the directory reads them again,
     /// then every observer of the notification looks at them.
