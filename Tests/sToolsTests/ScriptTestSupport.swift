@@ -1,5 +1,25 @@
 import Foundation
 
+/// Whether the tests run translated by Rosetta: `sysctl.proc_translated` is 1. It is 0 for a native process and missing on
+/// an Intel Mac.
+let testsRunTranslated: Bool = {
+    var translated: Int32 = 0
+    var size = MemoryLayout<Int32>.size
+    return sysctlbyname("sysctl.proc_translated", &translated, &size, nil, 0) == 0 && translated == 1
+}()
+
+/// What to run to start `executable` from a test. A translated test starts the x86_64 half of a universal tool, and Apple's
+/// developer tools (`git`, `swift`, `otool` and the rest of what `/usr/bin` hands to `xcrun`) can't start that way here:
+/// the Command Line Tools' libxcrun is arm64-only on this Mac. Through `arch -arm64` they, and everything they start,
+/// run natively, and the test checks what it always did. `arch` replaces itself with the tool, so a timeout signals the
+/// tool itself. A native run and an Intel Mac start the tool as it is.
+func nativeCommand(
+    _ executable: URL, _ arguments: [String], translated: Bool = testsRunTranslated
+) -> (executable: URL, arguments: [String]) {
+    guard translated else { return (executable, arguments) }
+    return (URL(filePath: "/usr/bin/arch"), ["-arm64", executable.path] + arguments)
+}
+
 /// What a script printed (standard output and standard error together) and how it ended.
 struct ScriptResult {
     let status: Int32
@@ -33,7 +53,7 @@ private final class RunningScript: @unchecked Sendable {
 /// that prints a lot can't fill a pipe and hang.
 ///
 /// The environment is exactly `environment`: tests give scripts a home folder, a PATH and fakes of their own, so
-/// nothing of the real user's reaches them.
+/// nothing of the real user's reaches them. A translated test starts the script natively (`nativeCommand`).
 func runScript(
     _ executable: URL, _ arguments: [String] = [], environment: [String: String],
     currentDirectory: URL? = nil, timeout: Duration = .seconds(240)
@@ -47,8 +67,9 @@ func runScript(
     defer { try? sink.close() }
 
     let running = RunningScript()
-    running.process.executableURL = executable
-    running.process.arguments = arguments
+    let command = nativeCommand(executable, arguments)
+    running.process.executableURL = command.executable
+    running.process.arguments = command.arguments
     running.process.environment = environment
     running.process.currentDirectoryURL = currentDirectory
     running.process.standardInput = FileHandle.nullDevice

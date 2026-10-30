@@ -145,11 +145,13 @@ struct UpdatePackagingTests {
     }
 }
 
-/// Runs `tool` and returns its exit status and everything it printed.
+/// Runs `tool` and returns its exit status and everything it printed. A translated test starts it natively
+/// (`nativeCommand`).
 func run(_ tool: String, _ arguments: [String]) throws -> (status: Int32, text: String) {
     let process = Process()
-    process.executableURL = URL(filePath: tool)
-    process.arguments = arguments
+    let command = nativeCommand(URL(filePath: tool), arguments)
+    process.executableURL = command.executable
+    process.arguments = command.arguments
     let pipe = Pipe()
     process.standardOutput = pipe
     process.standardError = pipe

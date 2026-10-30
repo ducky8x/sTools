@@ -85,6 +85,16 @@ func bundledSoundHasNoSampleJumps(_ sound: STSound) throws {
     #expect(largestStep < 0.15, "step \(largestStep) would be heard as a click")
 }
 
+/// Whether the tests run translated by Rosetta (`sysctl.proc_translated` is 1; it is 0 natively and missing on an Intel Mac).
+/// A translated test starts the x86_64 half of `swift`, which can't load the Command Line Tools' arm64-only libxcrun on this
+/// Mac, so the generator is started through `arch -arm64`. It then runs natively, as it did when it made the bundled files.
+/// The sToolsTests target keeps the same rule in `nativeCommand`; test targets share no code.
+private let testsRunTranslated: Bool = {
+    var translated: Int32 = 0
+    var size = MemoryLayout<Int32>.size
+    return sysctlbyname("sysctl.proc_translated", &translated, &size, nil, 0) == 0 && translated == 1
+}()
+
 @Test func generatorIsDeterministic() throws {
     let script = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -94,8 +104,9 @@ func bundledSoundHasNoSampleJumps(_ sound: STSound) throws {
 
     for run in ["a", "b"] {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["swift", script.path, root.appendingPathComponent(run).path]
+        let generate = ["swift", script.path, root.appendingPathComponent(run).path]
+        process.executableURL = URL(fileURLWithPath: testsRunTranslated ? "/usr/bin/arch" : "/usr/bin/env")
+        process.arguments = testsRunTranslated ? ["-arm64", "/usr/bin/env"] + generate : generate
         process.standardError = FileHandle.nullDevice
         try process.run()
         process.waitUntilExit()
