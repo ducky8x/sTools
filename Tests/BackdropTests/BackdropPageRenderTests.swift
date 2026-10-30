@@ -35,11 +35,12 @@ private final class PageStage {
     private let width: CGFloat
     private let scale = 2
 
-    init(controller: BackdropController, width: CGFloat = 620) {
+    init(controller: BackdropController, theme: STTheme = STTheme(), width: CGFloat = 620) {
         _ = NSApplication.shared
         STFont.register()
         self.width = width
         let page = BackdropSettingsView(controller: controller)
+            .environment(\.stTheme, theme)
             .environment(\.stSoundPlayer, STSoundPlayer.silent)
             .padding(24)
             .frame(width: width, alignment: .topLeading)
@@ -176,6 +177,29 @@ struct BackdropPageRenderTests {
         let after = PageStage(controller: rig.controller)
         save(await after.capture(), as: "backdrop-animated-fill-gif")
         #expect(after.host.bounds.height > heightBefore, "a line was added under the Animation row")
+    }
+
+    /// Under reduced motion the fill holds still, and the page says so in one line.
+    @Test func aLineSaysItHoldsStillWhileMotionIsReduced() async throws {
+        #expect(BackdropFillEditor.reducedMotionNote == "Motion is reduced, so it holds still on its first frame.")
+        let rig = AnimatedRig()
+        await chooseGIF(rig)
+        let fill = rig.controller.settings.fill
+        _ = rig.controller.image(for: fill) // the page's first look starts reading the file
+        #expect(await waitUntil { rig.controller.animationKind(for: fill) == .gif })
+        let calm = PageStage(controller: rig.controller, theme: STTheme())
+        for theme in [STTheme(motionMode: .reduced), STTheme(systemReduceMotion: true)] {
+            let reduced = PageStage(controller: rig.controller, theme: theme)
+            #expect(reduced.host.bounds.height > calm.host.bounds.height, "one line is added under the notes")
+        }
+        save(await PageStage(controller: rig.controller, theme: STTheme(motionMode: .reduced)).capture(), as: "backdrop-animated-fill-reduced")
+    }
+
+    @Test func noLineAboutReducedMotionIsAddedToAnotherKindOfFill() async throws {
+        let rig = AnimatedRig()
+        let calm = PageStage(controller: rig.controller, theme: STTheme())
+        let reduced = PageStage(controller: rig.controller, theme: STTheme(motionMode: .reduced))
+        #expect(reduced.host.bounds.height == calm.host.bounds.height)
     }
 
     @Test func anAnimatedFillWithNoFileYetShowsOnlyItsBackground() async throws {
