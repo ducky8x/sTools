@@ -180,6 +180,8 @@ public final class NBBOverlayController: ToolController {
         if settings.snappingEnabled {
             frame = PlacementSnapping.snapped(frame, in: display.frame, threshold: 14)
         }
+        // Dropped past the display's edge, the plate comes to rest inside it, and so does the offset it stores.
+        frame = NBBPlacement.kept(frame, inside: display.frame)
         panel.moveTo(frame: frame)
         settings.offsetX = Int((frame.midX - display.frame.midX).rounded())
         settings.offsetY = Int((display.frame.midY - frame.midY).rounded())
@@ -331,11 +333,9 @@ public final class NBBOverlayController: ToolController {
             drawCount += 1
         }
 
+        // Kept on the display the overlay is on (spec 5.1.5); the stored offset stays as it is.
         let size = CGSize(width: CGFloat(settings.width), height: CGFloat(settings.width) / settings.aspectRatio)
-        let origin = CGPoint(
-            x: display.frame.midX + CGFloat(settings.offsetX) - size.width / 2,
-            y: display.frame.midY - CGFloat(settings.offsetY) - size.height / 2)
-        showPanel(frame: CGRect(origin: origin, size: size))
+        showPanel(frame: NBBPlacement.plateFrame(size: size, offsetX: settings.offsetX, offsetY: settings.offsetY, on: display.frame))
         if drawCount != drawsBefore { didDraw?() }
     }
 
