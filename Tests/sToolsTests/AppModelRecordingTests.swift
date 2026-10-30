@@ -93,6 +93,9 @@ private final class RecordingHarness {
         recording.options.canvas = .custom(PixelSize(width: 320, height: 180))
         recording.options.frameRate = .fps30
         recording.options.fileType = .mov
+        // A start gives up when its first frame isn't in the file in five seconds, which a busy Mac can outlast. The
+        // line over the game then says the encoder didn't respond, and the phase never reaches `.recording`.
+        recording.firstFrameTimeout = .seconds(120)
         model = AppModel(services: services, theme: STTheme(), sound: .silent, controllers: [.screenRecording: recording],
                          hotkeyRegistrar: registrar, hotkeyHUD: hud, loginItem: FakeLoginItem())
     }
