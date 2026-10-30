@@ -28,6 +28,8 @@ private final class FakeFactory: CaptureFactory {
     var baseSendsFirstFrame = true
     /// How long every other source (windows, cameras, microphones, app sound) takes to start.
     var otherSourcesStartTake: Duration?
+    /// Holds every other source's start (Minecraft's sound included) until the test opens it.
+    var otherSourcesStartGate: StartGate?
     /// How long every sound source takes to stop, which holds a stopped recording in its finishing.
     var soundSourcesStopTake: Duration?
 
@@ -44,21 +46,23 @@ private final class FakeFactory: CaptureFactory {
 
     func video(for source: VideoSource, canvas: PixelSize, showsCursor: Bool) -> (any VideoCapture)? {
         if case .window(let reference) = source.kind { capturedWindowIDs.append(reference.windowID) }
-        let capture = FakeVideoCapture(name: "video", stops: stops, startTakes: otherSourcesStartTake)
+        let capture = FakeVideoCapture(name: "video", stops: stops, startTakes: otherSourcesStartTake, startGate: otherSourcesStartGate)
         videos[source.id] = capture
         videoCaptures.append(capture)
         return capture
     }
 
     func audio(for source: AudioSource) -> (any AudioCapture)? {
-        let capture = FakeAudioCapture(name: "audio", stops: stops, startTakes: otherSourcesStartTake, stopTakes: soundSourcesStopTake)
+        let capture = FakeAudioCapture(name: "audio", stops: stops, startTakes: otherSourcesStartTake, stopTakes: soundSourcesStopTake,
+                                       startGate: otherSourcesStartGate)
         audios[source.id] = capture
         audioCaptures.append(capture)
         return capture
     }
 
     func minecraftAudio(processID: Int32) -> (any AudioCapture)? {
-        let capture = FakeAudioCapture(name: "audio", stops: stops, startTakes: otherSourcesStartTake, stopTakes: soundSourcesStopTake)
+        let capture = FakeAudioCapture(name: "audio", stops: stops, startTakes: otherSourcesStartTake, stopTakes: soundSourcesStopTake,
+                                       startGate: otherSourcesStartGate)
         minecraftAudio = capture
         audioCaptures.append(capture)
         return capture
@@ -193,10 +197,13 @@ private struct Harness {
     /// on real hardware. `listingTakes`: how long Add Source's listing takes, and `listing` what it finds.
     /// `permissions`: what the permission center reads; everything is granted by default. `listingGate`: each listing
     /// read waits for the test to finish it, canceled or not. `baseStartGate`: Minecraft's capture's start waits for
-    /// the test to open it, canceled or not.
+    /// the test to open it, canceled or not. `sourcesGate`: every source's start, Minecraft's capture's included,
+    /// waits for the test to open it, so a test checks what a cancel or a switch-off does to sources that are still
+    /// starting without racing a timer; `baseStartGate` holds Minecraft's capture's start alone.
     init(minecraft: Bool = true, sourcesTake: Duration? = nil, listingTakes: Duration? = nil,
          listing: AvailableSources = AvailableSources(), permissions: any PermissionProbing = Granted(),
-         listingGate: ListingGate? = nil, baseStartGate: StartGate? = nil, screens: ScreenList? = nil) {
+         listingGate: ListingGate? = nil, baseStartGate: StartGate? = nil, sourcesGate: StartGate? = nil,
+         screens: ScreenList? = nil) {
         directory = FileManager.default.temporaryDirectory.appending(path: "stools-recording-\(UUID().uuidString)", directoryHint: .isDirectory)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let window = MinecraftWindow(windowNumber: 42, processID: 4242, title: "Minecraft* 1.16.1", frame: CGRect(x: 0, y: 0, width: 800, height: 600))
@@ -211,7 +218,8 @@ private struct Harness {
         let factory = factory
         factory.baseStartTakes = sourcesTake
         factory.otherSourcesStartTake = sourcesTake
-        factory.baseStartGate = baseStartGate
+        factory.baseStartGate = baseStartGate ?? sourcesGate
+        factory.otherSourcesStartGate = sourcesGate
         let listings = listings
         controller = ScreenRecordingController(
             services: services, makeFactory: { _ in factory },
@@ -240,6 +248,27 @@ private struct Harness {
     /// Waits (bounded, as `waitUntil`) until the latest arming's sources have finished starting.
     func waitUntilSourcesAreReady() async -> Bool {
         await waitUntil { controller.sourcesAreReady }
+    }
+
+    /// Waits (bounded, as `waitUntil`) until at least `count` sources have been made and every one made has begun
+    /// starting, so a test that holds them at the start (`sourcesGate`) knows a cancel comes while they all start.
+    func waitUntilSourcesAreStarting(atLeast count: Int = 1) async -> Bool {
+        await waitUntil {
+            factory.videoCaptures.count + factory.audioCaptures.count >= count
+                && factory.videoCaptures.allSatisfy { $0.progress.startsBegun >= 1 }
+                && factory.audioCaptures.allSatisfy { $0.progress.startsBegun >= 1 }
+        }
+    }
+
+    /// Waits (bounded, as `waitUntil`) until every source made so far has finished starting and none is left running:
+    /// a start held at the gate and opened after a cancel finishes late, as ScreenCaptureKit's, a camera's and a
+    /// process tap's do, and is stopped as it finishes.
+    func waitUntilLateStartsAreStopped() async -> Bool {
+        await waitUntil {
+            factory.videoCaptures.allSatisfy { $0.progress.startsFinished >= $0.progress.startsBegun }
+                && factory.audioCaptures.allSatisfy { $0.progress.startsFinished >= $0.progress.startsBegun }
+                && !factory.anyRunning
+        }
     }
 
     /// Records about `seconds` of a still base frame.
@@ -962,18 +991,22 @@ struct ScreenRecordingKeyTests {
     /// press in that moment cancels the start, as one during a countdown does: nothing is written, nothing is asked,
     /// and the tool is off. (It used to start a second recording, and one of the two kept writing unseen.)
     @Test func aSecondPressWhileItStartsCancelsItAndWritesNothing() async throws {
-        let harness = Harness(sourcesTake: .milliseconds(300))
-        defer { harness.remove() }
+        // The sources are held at their start until the test lets them go, so the second press always comes while they
+        // start, however busy the Mac is.
+        let starts = StartGate()
+        let harness = Harness(sourcesGate: starts)
+        defer { starts.open(); harness.remove() }
         #expect(harness.controller.toggleRecording() == .starting(waitsForSources: true))
         #expect(harness.controller.phase == .starting)
         #expect(harness.controller.isEnabled)
         #expect(harness.controller.isLayoutLocked)
-        try await Task.sleep(for: .milliseconds(50))
+        #expect(await harness.waitUntilSourcesAreStarting())
         #expect(harness.controller.toggleRecording() == .canceled)
         #expect(harness.controller.phase == .idle)
         #expect(!harness.controller.isEnabled)
-        // Long after the sources would have started, still nothing.
-        try await Task.sleep(for: .milliseconds(700))
+        // Once the sources finish starting, which is after the cancel, still nothing: they are stopped as they come up.
+        starts.open()
+        #expect(await harness.waitUntilLateStartsAreStopped())
         #expect(harness.controller.phase == .idle)
         #expect(!harness.controller.isEnabled)
         #expect(harness.savedFileNames().isEmpty)
@@ -1000,12 +1033,15 @@ struct ScreenRecordingKeyTests {
 
     /// After a canceled start, the next press switches the tool on and records again.
     @Test func aPressAfterACanceledStartRecords() async throws {
-        let harness = Harness(sourcesTake: .milliseconds(200))
-        defer { harness.remove() }
+        let starts = StartGate()
+        let harness = Harness(sourcesGate: starts)
+        defer { starts.open(); harness.remove() }
         harness.controller.toggleRecording()
-        try await Task.sleep(for: .milliseconds(30))
+        #expect(await harness.waitUntilSourcesAreStarting())
         #expect(harness.controller.toggleRecording() == .canceled)
-        try await Task.sleep(for: .milliseconds(100))
+        // The canceled start's sources finish starting now, and are stopped as they do; later starts aren't held.
+        starts.open()
+        #expect(await harness.waitUntilLateStartsAreStopped())
         #expect(harness.controller.toggleRecording() == .starting(waitsForSources: true))
         #expect(await harness.waitUntil { harness.controller.phase == .recording })
         #expect(harness.controller.isEnabled)
@@ -1018,13 +1054,15 @@ struct ScreenRecordingKeyTests {
 
     /// Switching the tool off while it starts ends the start too.
     @Test func switchingOffWhileItStartsWritesNothing() async throws {
-        let harness = Harness(sourcesTake: .milliseconds(300))
-        defer { harness.remove() }
+        let starts = StartGate()
+        let harness = Harness(sourcesGate: starts)
+        defer { starts.open(); harness.remove() }
         harness.controller.toggleRecording()
-        try await Task.sleep(for: .milliseconds(50))
+        #expect(await harness.waitUntilSourcesAreStarting())
         harness.controller.setEnabled(false)
         #expect(harness.controller.phase == .idle)
-        try await Task.sleep(for: .milliseconds(600))
+        starts.open()
+        #expect(await harness.waitUntilLateStartsAreStopped())
         #expect(harness.controller.phase == .idle)
         #expect(!harness.controller.isEnabled)
         #expect(harness.savedFileNames().isEmpty)
@@ -1034,48 +1072,58 @@ struct ScreenRecordingKeyTests {
     /// running once their starts finish: no screen recording indicator, no camera light, no microphone (a canceled
     /// start used to leave the starting sources capturing unseen). Every fake source finishes starting after the press.
     @Test func aSecondPressWhileItStartsLeavesNoSourceRunning() async throws {
-        let harness = Harness(sourcesTake: .milliseconds(300))
-        defer { harness.remove() }
+        let starts = StartGate()
+        let harness = Harness(sourcesGate: starts)
+        defer { starts.open(); harness.remove() }
         harness.addCameraAndMicrophone()
         #expect(harness.controller.toggleRecording() == .starting(waitsForSources: true))
         #expect(await harness.waitUntil { harness.factory.videoCaptures.count == 2 && harness.factory.audioCaptures.count == 2 })
+        #expect(await harness.waitUntilSourcesAreStarting(atLeast: 4))
         #expect(harness.controller.toggleRecording() == .canceled)
-        try await Task.sleep(for: .milliseconds(700))
+        starts.open()
+        #expect(await harness.waitUntilLateStartsAreStopped())
         #expect(!harness.factory.anyRunning)
         #expect(!harness.controller.isEnabled)
     }
 
     /// Switching the tool off while it starts leaves no source running either.
     @Test func switchingOffWhileItStartsLeavesNoSourceRunning() async throws {
-        let harness = Harness(sourcesTake: .milliseconds(300))
-        defer { harness.remove() }
+        let starts = StartGate()
+        let harness = Harness(sourcesGate: starts)
+        defer { starts.open(); harness.remove() }
         harness.addCameraAndMicrophone()
         harness.controller.setEnabled(true)
-        #expect(await harness.waitUntil { harness.factory.videoCaptures.count == 2 })
+        #expect(await harness.waitUntil { harness.factory.videoCaptures.count == 2 && harness.factory.audioCaptures.count == 2 })
+        #expect(await harness.waitUntilSourcesAreStarting(atLeast: 4))
         harness.controller.setEnabled(false)
-        try await Task.sleep(for: .milliseconds(700))
+        starts.open()
+        #expect(await harness.waitUntilLateStartsAreStopped())
         #expect(!harness.factory.anyRunning)
     }
 
     /// A change that restarts the sources while they still start stops the ones it replaces: only the new arming's
     /// sources run afterwards.
     @Test func restartingWhileTheSourcesStartLeavesOnlyTheNewOnesRunning() async throws {
-        let harness = Harness(sourcesTake: .milliseconds(300))
-        defer { harness.remove() }
+        let starts = StartGate()
+        let harness = Harness(sourcesGate: starts)
+        defer { starts.open(); harness.remove() }
         harness.addCameraAndMicrophone()
         harness.controller.setEnabled(true)
-        #expect(await harness.waitUntil { harness.factory.videoCaptures.count == 2 })
+        #expect(await harness.waitUntil { harness.factory.videoCaptures.count == 2 && harness.factory.audioCaptures.count == 2 })
+        #expect(await harness.waitUntilSourcesAreStarting(atLeast: 4))
         let firstVideo = harness.factory.videoCaptures
         let firstAudio = harness.factory.audioCaptures
         harness.controller.options.showCursor.toggle()
-        #expect(await harness.waitUntil { harness.factory.videoCaptures.count == 4 })
+        #expect(await harness.waitUntil { harness.factory.videoCaptures.count == 4 && harness.factory.audioCaptures.count == 4 })
+        #expect(await harness.waitUntilSourcesAreStarting(atLeast: 8))
+        // Every start, the replaced arming's and the new one's, finishes only now.
+        starts.open()
         #expect(await harness.waitUntil {
             harness.factory.videoCaptures.suffix(2).allSatisfy { $0.isRunning }
                 && harness.factory.audioCaptures.suffix(2).allSatisfy { $0.isRunning }
+                && firstVideo.allSatisfy { $0.progress.startsFinished == 1 && !$0.isRunning }
+                && firstAudio.allSatisfy { $0.progress.startsFinished == 1 && !$0.isRunning }
         })
-        try await Task.sleep(for: .milliseconds(300))
-        #expect(firstVideo.allSatisfy { !$0.isRunning })
-        #expect(firstAudio.allSatisfy { !$0.isRunning })
         harness.controller.setEnabled(false)
         #expect(await harness.waitUntil { !harness.factory.anyRunning })
     }
@@ -1392,11 +1440,16 @@ struct ScreenRecordingQuickStartTests {
     /// Add Source's listing (ScreenCaptureKit's window list, the cameras and microphones) can take a while; a start
     /// with no window source records without waiting for it, and the listing still arrives for the page.
     @Test func theListingDoesntHoldUpAStart() async throws {
-        let harness = Harness(listingTakes: .seconds(2))
-        defer { harness.remove() }
+        // The listing is held until the test lets it go, so it can't have finished by the time the recording starts
+        // however slow the Mac is.
+        let gate = ListingGate()
+        let harness = Harness(listingGate: gate)
+        defer { gate.finishAll(); harness.remove() }
         harness.controller.toggleRecording()
         #expect(await harness.waitUntil { harness.controller.phase == .recording })
         #expect(harness.listings.finished == 0)
+        #expect(await harness.waitUntil { gate.pending == 1 }, "the listing is under way")
+        gate.finishAll()
         #expect(await harness.waitUntil { harness.listings.finished == 1 })
         await harness.controller.stopRecording(explanation: nil)
         harness.controller.delete()
