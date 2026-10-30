@@ -8,11 +8,17 @@ import STPlatform
 /// defaults, so a hand-edited or damaged file can never produce an unrenderable backdrop.
 public struct BackdropSettings: SettingsDocument {
     public static let name = "backdrop"
-    public static let version = 1
+    /// Version 2 adds the Animated fill (`FillKind.animated`, `Fill.animationName`; spec revision 46). A version 1 file
+    /// loads as it is, so the migration is the default one that changes nothing; the bump is for the other direction:
+    /// a build that reads up to version 1 moves a version 2 file aside instead of reading `animated` as a color and
+    /// saving that over the person's animation.
+    public static let version = 2
     public static var defaultValue: BackdropSettings { BackdropSettings() }
 
     public enum FillKind: String, Codable, CaseIterable, Sendable {
         case color, linearGradient, radialGradient, image
+        /// A GIF or a video, looped and muted (spec 5.2.3).
+        case animated
     }
 
     public enum ImageContentMode: String, Codable, CaseIterable, Sendable {
@@ -37,6 +43,10 @@ public struct BackdropSettings: SettingsDocument {
         public var gradientRadius: Double = 0.75
         /// The imported image, relative to the sTools support folder (`Images/<uuid>.<ext>`).
         public var imageName: String?
+        /// The imported GIF or video, stored like `imageName` (`Images/<uuid>.<ext>`).
+        public var animationName: String?
+        /// How the image or the animation is fitted (spec 5.2.3: the Animated fill has "the same fit modes"), and the
+        /// color behind it for Fit and Center. The two fills share them, so these keep their image-fill names.
         public var imageContentMode: ImageContentMode = .fill
         public var imageBackgroundColor = "#0B0A09"
 
@@ -56,6 +66,7 @@ public struct BackdropSettings: SettingsDocument {
             gradientCenterY = container.lossy(Double.self, .gradientCenterY) ?? defaults.gradientCenterY
             gradientRadius = container.lossy(Double.self, .gradientRadius) ?? defaults.gradientRadius
             imageName = container.lossy(String.self, .imageName)
+            animationName = container.lossy(String.self, .animationName)
             imageContentMode = container.lossy(ImageContentMode.self, .imageContentMode) ?? defaults.imageContentMode
             imageBackgroundColor = container.lossy(String.self, .imageBackgroundColor) ?? defaults.imageBackgroundColor
         }
@@ -127,7 +138,7 @@ public struct BackdropSettings: SettingsDocument {
 
 extension BackdropSettings.Fill {
     /// This fill with every numeric field inside its sane range; hex colors normalized or defaulted;
-    /// an `imageName` outside the Images folder dropped.
+    /// an `imageName` or `animationName` outside the Images folder dropped.
     func clamped() -> Self {
         var result = self
         result.color = STColorWellHex.normalized(color) ?? "#0B0A09"
@@ -139,6 +150,7 @@ extension BackdropSettings.Fill {
         result.gradientCenterY = gradientCenterY.clamped(to: 0...1)
         result.gradientRadius = gradientRadius.clamped(to: 0.05...2)
         result.imageName = imageName.flatMap(Self.validImageName)
+        result.animationName = animationName.flatMap(Self.validImageName)
         return result
     }
 

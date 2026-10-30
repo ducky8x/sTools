@@ -195,7 +195,11 @@ enum Fonts {
         return CTFontCreateWithFontDescriptor(descriptor, size, nil)
     }
 
-    static func display(_ size: CGFloat) throws -> CTFont { try font("DMSerifDisplay-Regular.ttf", size: size) }
+    /// Bodoni Moda, the face the app sets its titles in (`STFont.display`): weight 400, with the optical-size axis at
+    /// its display maximum, 96. The same two numbers as the app, so the window's title looks like a tool page's.
+    static func display(_ size: CGFloat) throws -> CTFont {
+        try font("BodoniModa[opsz,wght].ttf", size: size, axes: ["wght": 400, "opsz": 96])
+    }
 
     /// Source Serif 4, the app's text face, at an optical size matching the point size. Only the roman is
     /// bundled, so italic is the roman slanted, which is what the app's `.italic()` text looks like too.
@@ -331,9 +335,10 @@ func drawBackground(on canvas: Canvas, palette: [String: CGColor], accent: CGCol
     context.setFillColor(color("background"))
     context.fill(CGRect(origin: .zero, size: canvas.size))
 
-    // Header: the wordmark, the version across from it, a gilt rule and the standfirst (as on a tool page).
+    // Header: the wordmark, the version across from it, a gilt rule and the standfirst (as on a tool page). The
+    // wordmark is a page title: Bodoni Moda at 40 pt with no extra tracking (`STTextStyle.pageTitle`).
     let titleBaseline: CGFloat = 74
-    canvas.draw(canvas.line(variant.name, font: try Fonts.display(40), color: color("ink"), kern: -0.2),
+    canvas.draw(canvas.line(variant.name, font: try Fonts.display(40), color: color("ink")),
                 x: margin - 2, baseline: titleBaseline)
     if let version {
         let label = canvas.line("Version \(version)", font: try Fonts.text(12, weight: 600, smallCaps: true),

@@ -148,7 +148,7 @@ private func windowRow(number: Int, pid: Int, rect: CGRect, layer: Int = 0) -> [
 // MARK: - Locator
 
 @MainActor
-private func eventually(timeout: Duration = .seconds(3), _ condition: @MainActor () -> Bool) async -> Bool {
+private func eventually(timeout: Duration = .seconds(20), _ condition: @MainActor () -> Bool) async -> Bool {
     let clock = SuspendingClock()
     let deadline = clock.now + timeout
     while clock.now < deadline {

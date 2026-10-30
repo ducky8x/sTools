@@ -533,21 +533,22 @@ struct ReduceAnimationsWindowTests {
 struct ReduceAnimationsHUDTests {
     init() { _ = NSApplication.shared }
 
-    // Fades here are a minute long, so "gone well inside the wait" can only mean no fade ran, however busy the main
-    // actor is with other tests.
+    // Fades here last ten minutes and the waits a minute, so "gone inside the wait" can only mean no fade ran, however
+    // busy the main actor is with other tests (at the start of a run on a busy Mac the page-render tests hold it for
+    // tens of seconds).
 
     @Test func itAppearsAtOnceAndLeavesRightAfterItsHold() async {
         let hud = HotkeyHUD(theme: STTheme(motionMode: .reduced), hold: .milliseconds(150),
-                            fadeInDuration: 60, fadeOutDuration: 60)
+                            fadeInDuration: 600, fadeOutDuration: 600)
         defer { hud.panel.hide() }
         hud.present("Crosshair on", sealed: true, on: offScreenDisplay)
         #expect(hud.isShowing)
         #expect(hud.panel.alphaValue == 1, "no fade in")
-        #expect(await waitUntil(timeout: .seconds(20)) { !hud.isShowing }, "no minute-long fade out")
+        #expect(await waitUntil(timeout: .seconds(60)) { !hud.isShowing }, "no ten-minute fade out")
     }
 
     @Test func underFullMotionItFadesIn() async {
-        let hud = HotkeyHUD(theme: STTheme(), hold: .milliseconds(100), fadeInDuration: 60, fadeOutDuration: 60)
+        let hud = HotkeyHUD(theme: STTheme(), hold: .milliseconds(100), fadeInDuration: 600, fadeOutDuration: 600)
         defer { hud.panel.hide() }
         hud.present("Crosshair on", sealed: true, on: offScreenDisplay)
         try? await Task.sleep(for: .milliseconds(50))
@@ -556,11 +557,11 @@ struct ReduceAnimationsHUDTests {
 
     @Test func turningItOnWhileTheLineIsUpSkipsTheFadeOut() async {
         let theme = STTheme()
-        let hud = HotkeyHUD(theme: theme, hold: .milliseconds(300), fadeInDuration: 0.01, fadeOutDuration: 60)
+        let hud = HotkeyHUD(theme: theme, hold: .milliseconds(300), fadeInDuration: 0.01, fadeOutDuration: 600)
         defer { hud.panel.hide() }
         hud.present("Crosshair on", sealed: true, on: offScreenDisplay)
         theme.motionMode = .reduced
-        #expect(await waitUntil(timeout: .seconds(20)) { !hud.isShowing })
+        #expect(await waitUntil(timeout: .seconds(60)) { !hud.isShowing })
     }
 
     @Test func aPressDuringAFadeOutComesBackAtOnceAndTheFadeNeverReturns() async {
@@ -580,7 +581,7 @@ struct ReduceAnimationsHUDTests {
         try? await Task.sleep(for: .milliseconds(650))
         #expect(hud.isShowing)
         #expect(hud.panel.alphaValue == 1, "the old fade didn't come back")
-        #expect(await waitUntil(timeout: .seconds(10)) { !hud.isShowing })
+        #expect(await waitUntil(timeout: .seconds(60)) { !hud.isShowing })
     }
 
     @Test func aNewPressStillStartsItOver() async {

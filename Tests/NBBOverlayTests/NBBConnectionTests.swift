@@ -46,7 +46,7 @@ private final class RecordingSource: NBBEventSource, @unchecked Sendable {
 }
 
 @MainActor
-private func eventually(timeout: Duration = .seconds(5), _ condition: @MainActor () -> Bool) async -> Bool {
+private func eventually(timeout: Duration = .seconds(20), _ condition: @MainActor () -> Bool) async -> Bool {
     let deadline = SuspendingClock.now + timeout
     while SuspendingClock.now < deadline {
         if condition() { return true }

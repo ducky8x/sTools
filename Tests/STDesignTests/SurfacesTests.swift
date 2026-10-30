@@ -841,7 +841,7 @@ struct STTextFieldInputTests {
         var rep = focused.capture()
         let y = rep.pixelsHigh - 1
         // The underline grows with an animation; on a busy machine it can take longer than one spin to finish.
-        let deadline = SuspendingClock.now.advanced(by: .seconds(3))
+        let deadline = SuspendingClock.now.advanced(by: .seconds(20))
         while SuspendingClock.now < deadline,
               !(isClose(pixel(rep, x: 20, y: y), hex: STPalette.gold, tolerance: 12)
                 && isClose(pixel(rep, x: rep.pixelsWide - 20, y: y), hex: STPalette.gold, tolerance: 12)) {

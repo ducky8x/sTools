@@ -30,17 +30,18 @@ final class LocalSSEServer: @unchecked Sendable {
     }
 
     /// Listens again on `requested` after `stop()`, as Ninjabrain Bot reopening on its port. The old socket closes on the
-    /// server's queue, so a bind that comes before it is tried again for a moment.
+    /// server's queue, so a bind that comes before it is tried again until it goes through or 10 s of awake time (not a
+    /// count of tries, which a busy Mac stretches or squeezes) have passed.
     func listen(on requested: UInt16) async throws {
-        for _ in 0..<200 {
+        let deadline = SuspendingClock.now.advanced(by: .seconds(10))
+        while true {
             do {
                 try bindAndListen(on: requested)
                 return
-            } catch POSIXError.EADDRINUSE {
+            } catch POSIXError.EADDRINUSE where SuspendingClock.now < deadline {
                 try await Task.sleep(for: .milliseconds(5))
             }
         }
-        try bindAndListen(on: requested)
     }
 
     private func bindAndListen(on requested: UInt16) throws {

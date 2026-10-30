@@ -64,7 +64,7 @@ private final class FakeProber: PermissionProbing {
 /// Waits (without fixed sleeps in the assertion path) until `condition` holds or the timeout passes.
 @MainActor
 private func eventually(
-    timeout: Duration = .seconds(3),
+    timeout: Duration = .seconds(20),
     _ condition: @MainActor () -> Bool
 ) async -> Bool {
     let deadline = SuspendingClock.now + timeout
