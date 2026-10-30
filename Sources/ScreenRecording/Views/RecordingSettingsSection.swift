@@ -49,15 +49,7 @@ struct RecordingSettingsSection: View {
                     STChoiceRow("Codec") {
                         STSegmented(selection: $controller.options.codec, options: [.init(.h264, "H.264"), .init(.hevc, "HEVC")])
                     }
-                    STSettingsRow("Quality") {
-                        HStack(spacing: 12) {
-                            if case .manual(let value) = controller.options.quality {
-                                STSlider(value: Binding(get: { value * 100 }, set: { controller.options.quality = .manual($0 / 100) }),
-                                         in: 10...100, label: "Quality", valueText: { "\(Int($0))%" })
-                            }
-                            STSegmented(selection: manualQuality, options: [.init(false, "Automatic"), .init(true, "Manual")])
-                        }
-                    }
+                    RecordingQualityRow(isManual: manualQuality, percent: qualityPercent)
                     STSettingsRow("Show mouse pointer") {
                         STSwitch(isOn: $controller.options.showCursor, label: "Show mouse pointer")
                     }
@@ -117,6 +109,13 @@ struct RecordingSettingsSection: View {
         Binding(
             get: { if case .manual = controller.options.quality { true } else { false } },
             set: { manual in controller.options.quality = manual ? .manual(0.7) : .automatic })
+    }
+
+    /// The manual quality as the slider shows it, a percentage; 70 while the quality is automatic and no slider is up.
+    private var qualityPercent: Binding<Double> {
+        Binding(
+            get: { if case .manual(let value) = controller.options.quality { value * 100 } else { 70 } },
+            set: { controller.options.quality = .manual($0 / 100) })
     }
 
     private func chooseFolder() {

@@ -8,9 +8,9 @@ import Testing
 // wrapped in the text that sizes the readout, which made those rows 16 pt taller than the others. The steppers around the
 // readout are offered only a share of the slider's width; fixed at their own width, they leave the track to give way.
 
-/// A readout the app puts on a slider, with the label of its row.
+/// A readout the app puts on a slider, with the label of its row: the two that wrapped, and a short one.
 enum SliderReadout: CaseIterable, Sendable, CustomTestStringConvertible {
-    case lowDisk, offset
+    case lowDisk, offset, quality
 
     var testDescription: String { label }
 
@@ -18,6 +18,7 @@ enum SliderReadout: CaseIterable, Sendable, CustomTestStringConvertible {
         switch self {
         case .lowDisk: "Low-disk warning"
         case .offset: "Offset X"
+        case .quality: "Quality"
         }
     }
 
@@ -25,6 +26,7 @@ enum SliderReadout: CaseIterable, Sendable, CustomTestStringConvertible {
         switch self {
         case .lowDisk: 1...100
         case .offset: -500...500
+        case .quality: 10...100
         }
     }
 
@@ -32,6 +34,7 @@ enum SliderReadout: CaseIterable, Sendable, CustomTestStringConvertible {
         switch self {
         case .lowDisk: 20
         case .offset: -250
+        case .quality: 70
         }
     }
 
@@ -39,6 +42,7 @@ enum SliderReadout: CaseIterable, Sendable, CustomTestStringConvertible {
         switch self {
         case .lowDisk: "under \(Int(value)) GB"
         case .offset: "\(Int(value)) px"
+        case .quality: "\(Int(value))%"
         }
     }
 
@@ -122,6 +126,17 @@ struct SliderReadoutTests {
         let height = hostingView(AnyView(
             readout.slider.labelsHidden().environment(\.stSoundPlayer, STSoundPlayer.silent).frame(width: width))).fittingSize.height
         #expect(height == oneLine(), "\(height) pt tall in \(width) pt: the value wrapped")
+    }
+
+    /// A slider asks for no more than it needs: its ideal width is its least, so a `ViewThatFits` that offers it beside
+    /// something (the Quality row, beside its choice) keeps it there for as long as its track has its 80 pt, and not only
+    /// while the track has the room it would like.
+    @Test(arguments: SliderReadout.allCases)
+    func aSliderAsksForNoMoreThanItNeeds(readout: SliderReadout) {
+        let slider = AnyView(readout.slider.labelsHidden().environment(\.stSoundPlayer, STSoundPlayer.silent))
+        let ideal = hostingView(slider).fittingSize.width
+        let least = NSHostingController(rootView: slider).sizeThatFits(in: CGSize(width: 0, height: 1_000)).width
+        #expect(abs(ideal - least) < 0.5, "wants \(ideal) pt and needs \(least) pt")
     }
 
     /// The control: a slider with a short readout is as wide as it ever was, so keeping the long ones on one line took
