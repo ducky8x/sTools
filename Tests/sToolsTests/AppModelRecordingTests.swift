@@ -63,8 +63,9 @@ private final class RecordingHarness {
     let prober: FakeProber
     let recording: ScreenRecordingController
     let model: AppModel
-    /// Arming and starting a recording can take seconds while the whole suite runs at once.
-    static let patience: Duration = .seconds(20)
+    /// Arming and starting a recording takes seconds while the whole suite runs at once. At the start of a run on a
+    /// busy Mac the page-render tests hold the main actor for tens of seconds, and the recording's phase changes on it.
+    static let patience: Duration = .seconds(60)
 
     /// `hotkeys` is the `hotkeys.json` the launch finds: an existing, empty list by default; nil for a new install,
     /// which starts with ⌘1–⌘5. `sourcesTake`: how long the sources take to come up when the tool switches on, as the
