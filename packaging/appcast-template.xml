@@ -2,9 +2,9 @@
 <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
     <channel>
         <title>sTools</title>
-        <link>https://github.com/ducky8x/sTools-releases</link>
+        <link>https://github.com/ducky8x/sTools/releases</link>
         <description>Updates for sTools, newest first.</description>
         <language>en</language>
-        <!-- New versions go right below this line, newest first (scripts/publish-update.sh in the sTools repository). -->
+        <!-- New versions go right below this line, newest first (scripts/publish-update.sh adds them). -->
     </channel>
 </rss>
