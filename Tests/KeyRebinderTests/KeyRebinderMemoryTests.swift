@@ -1,5 +1,4 @@
 import AppKit
-import Darwin
 import Foundation
 import Observation
 import STDesign
@@ -85,11 +84,51 @@ private final class Rig {
     }
 }
 
-/// Bytes malloc has handed out and not taken back, over every zone.
-private func heapInUse() -> Int {
-    var statistics = malloc_statistics_t()
-    malloc_zone_statistics(nil, &statistics)
-    return Int(statistics.size_in_use)
+/// What a value holds on to: the bytes of JSON in the parsed trees (`JSONValue`, `KarabinerConfig`, `KarabinerProfile`) and
+/// of `Data` and `String` reachable from it. It follows stored properties, enum payloads and collection elements, once for
+/// each object. A test of what an object retains reads the object, not the process's heap, which every suite running
+/// beside it changes. A key's own event is a few dozen bytes of JSON too, so a test allows for those and not for a file.
+private struct Holdings {
+    var json = 0
+    var bytes = 0
+    var visited = 0
+}
+
+private func holdings(of value: Any, depth: Int = 10) -> Holdings {
+    var found = Holdings()
+    var seen = Set<ObjectIdentifier>()
+    func visit(_ value: Any, _ depth: Int) {
+        found.visited += 1
+        switch value {
+        case let tree as JSONValue:
+            found.json += tree.serialized().utf8.count
+            return
+        case let config as KarabinerConfig:
+            found.json += config.root.serialized().utf8.count
+            return
+        case let profile as KarabinerProfile:
+            found.json += profile.json.serialized().utf8.count
+            return
+        case let data as Data:
+            found.bytes += data.count
+            return
+        case let text as String:
+            found.bytes += text.utf8.count
+            return
+        case is URL:
+            return
+        default:
+            break
+        }
+        guard depth > 0, found.visited < 500_000 else { return }
+        let mirror = Mirror(reflecting: value)
+        if mirror.displayStyle == .class {
+            guard seen.insert(ObjectIdentifier(value as AnyObject)).inserted else { return }
+        }
+        for child in mirror.children { visit(child.value, depth - 1) }
+    }
+    visit(value, depth)
+    return found
 }
 
 @MainActor
@@ -97,8 +136,6 @@ private func spin(_ seconds: TimeInterval) {
     let end = SuspendingClock.now.advanced(by: .seconds(seconds))
     repeat { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) } while SuspendingClock.now < end
 }
-
-private let megabyte = 1_048_576
 
 @MainActor
 @Suite("Key Rebinder memory", .serialized)
@@ -166,33 +203,57 @@ struct KeyRebinderMemoryTests {
         #expect(controller.config == nil, "a file read after the page closed was kept")
     }
 
-    // MARK: Measured
+    // MARK: What is held
 
-    /// A file of 4,000 rules, measured in bytes malloc holds: several MB while loaded, a fraction of that after.
-    @Test func theLoadedFileCostsMemoryOnlyWhileThePageIsOpen() async throws {
-        let rig = try Rig(rules: 4000)
-        spin(0.2)
-        let before = heapInUse()
-        await rig.controller.refresh()
-        spin(0.2)
-        let loaded = heapInUse() - before
-        rig.controller.releaseLoadedFile()
-        spin(0.2)
-        let kept = heapInUse() - before
-        #expect(loaded > 3 * megabyte, "the control: loading the file should cost several MB, it cost \(loaded / 1024) KB")
-        #expect(kept < loaded / 3, "\(kept / 1024) KB of \(loaded / 1024) KB are still held after the page closed")
+    /// The walk has to see what it looks for, or a pass means nothing.
+    @Test func theWalkSeesParsedFilesAndBytes() throws {
+        let tree = try JSONValue.parse(#"{"profiles": []}"#)
+        let size = tree.serialized().utf8.count
+        #expect(size > 0 && holdings(of: tree).json == size)
+        #expect(holdings(of: KarabinerConfig(root: tree)).json == size)
+        #expect(holdings(of: [Data(count: 5_000), Data(count: 20)]).bytes == 5_020)
+        let nested = (name: "a profile", cache: [Optional(tree)])
+        #expect(holdings(of: nested).json == size, "a file inside an optional inside an array wasn't found")
+        #expect(holdings(of: nested).bytes == 9)
     }
 
-    /// The store used to keep the file it last read, tree and bytes, to compare digests later, and only ever read the digest.
+    /// While the page is open the controller holds the parsed file; once it closes, nothing the controller reaches (the
+    /// store, the rebinds and rules it kept, a pending edit) holds more JSON than a few keys' own events. A 300-rule
+    /// file, so the tree is big.
+    @Test func theParsedFileIsHeldOnlyWhileThePageIsOpen() async throws {
+        let rig = try Rig(rules: 300)
+        await rig.controller.refresh()
+        let open = holdings(of: rig.controller)
+        #expect(open.json > 100_000, "the control: the walk should find the file the page just loaded, it found \(open.json) bytes of JSON")
+
+        rig.controller.releaseLoadedFile()
+        let closed = holdings(of: rig.controller)
+        #expect(closed.json < 2_000, "\(closed.json) bytes of parsed JSON are still reachable from the controller after the page closed")
+        #expect(closed.visited < 500_000, "the walk gave up, so it proves nothing")
+    }
+
+    /// The store used to keep the file it last read, tree and bytes, to compare digests with, and only ever read the
+    /// digest. Everything it holds between calls is the digests, a few dozen bytes.
     @Test func theStoreKeepsOnlyTheDigestOfTheFileItRead() async throws {
-        let rig = try Rig(rules: 4000)
+        let rig = try Rig(rules: 300)
         let store = KarabinerConfigStore(configURL: rig.configURL, backupsDirectory: rig.directory.appending(path: "store-backups"))
-        spin(0.2)
-        let before = heapInUse()
-        _ = try await store.load()
-        spin(0.2)
-        let kept = heapInUse() - before
-        #expect(kept < megabyte, "the store holds \(kept / 1024) KB after its caller dropped the file")
+        let file = try await store.load()
+        #expect(holdings(of: file).json > 100_000, "the control: the file the store returned is a parsed file")
+        let kept = holdings(of: store)
+        #expect(kept.json == 0, "the store still holds \(kept.json) bytes of parsed JSON")
+        #expect(kept.bytes < 256, "the store holds \(kept.bytes) bytes of data and text, where a digest is 32")
+    }
+
+    /// An edit writes through the store, which keeps the digest of what it wrote and nothing else.
+    @Test func theStoreKeepsOnlyADigestAfterAnEditToo() async throws {
+        let rig = try Rig(rules: 300)
+        await rig.controller.refresh()
+        await rig.controller.setRebind(.key("a"), to: .key("b"))
+        #expect(rig.controller.errorMessage == nil)
+        #expect(rig.controller.derived.rebinds.map(\.from).contains(.key("a")))
+        rig.controller.releaseLoadedFile()
+        let closed = holdings(of: rig.controller)
+        #expect(closed.json < 2_000, "\(closed.json) bytes of parsed JSON are still reachable from the controller after an edit and the close")
     }
 
     // MARK: The page
