@@ -65,6 +65,8 @@ enum BackdropAnimationFile {
                 if wantsPoster {
                     let generator = AVAssetImageGenerator(asset: asset)
                     generator.appliesPreferredTrackTransform = true
+                    // A 4K frame is 33 MB; anything larger is brought down to it for the preview.
+                    generator.maximumSize = CGSize(width: 3840, height: 3840)
                     poster = try? await generator.image(at: .zero).image
                 }
                 return .success(Info(kind: .video, size: video.pictureSize, poster: poster))
