@@ -20,7 +20,7 @@ final class PublishFixture {
 
     private(set) var headSHA = ""
 
-    /// Three commits on `main`, all pushed to `origin`, so the build number is 3.
+    /// Three commits on `main`, all pushed to `origin`, so the build number is 1003: the count plus 1000.
     init(visibility: String = "PRIVATE") async throws {
         folder = FileManager.default.temporaryDirectory.appending(path: "sTools-publish-\(UUID().uuidString)")
         for name in ["home", "tmp", "github", "origin.git", "repo"] {
@@ -35,6 +35,14 @@ final class PublishFixture {
         // The real scripts under test, and stand-ins for everything that builds, signs or reads a feed with Sparkle.
         try copyFromRepository("scripts/publish-update.sh", executable: true)
         try copyFromRepository("scripts/appcast-add-item.sh", executable: true)
+        // The libraries every real script sources, and the real build script under another name (`scripts/build-app.sh`
+        // is a stand-in here), which `runRealBuildApp` stops before it builds anything.
+        let libraries = repositoryRoot.appending(path: "scripts/lib")
+        for name in try FileManager.default.contentsOfDirectory(atPath: libraries.path) {
+            try copyFromRepository("scripts/lib/\(name)")
+        }
+        try write(String(contentsOf: repositoryRoot.appending(path: "scripts/build-app.sh"), encoding: .utf8),
+                  "repo/scripts/real-build-app.sh", executable: true)
         try copyFromRepository("packaging/appcast-template.xml")
         try copyFromRepository("packaging/sparkle-public-key.txt")
         try write(FakeScripts.buildApp, "repo/scripts/build-app.sh", executable: true)
@@ -44,6 +52,7 @@ final class PublishFixture {
         try write("build/\n.build/\n", "repo/.gitignore")
         try write(FakeScripts.gh, "bin/gh", executable: true)
         try write(FakeScripts.git, "bin/git", executable: true)
+        try write(FakeScripts.swift, "bin/swift", executable: true)
         let sparkle = "repo/.build/artifacts/sparkle/Sparkle/bin"
         try write(FakeScripts.signUpdate, "\(sparkle)/sign_update", executable: true)
         try write(FakeScripts.generateKeys, "\(sparkle)/generate_keys", executable: true)
@@ -115,7 +124,7 @@ final class PublishFixture {
 
     // MARK: The fake GitHub
 
-    /// One earlier release, v0.2.0 (build 2), whose feed holds that version.
+    /// One earlier release, v0.2.0 (build 773, the 0.2.0 beta's), whose feed holds that version.
     func addEarlierRelease() async throws {
         let notes = folder.appending(path: "old-notes.md")
         try "The second beta.\n".write(to: notes, atomically: true, encoding: .utf8)
@@ -124,7 +133,7 @@ final class PublishFixture {
         let signature = Data(repeating: 3, count: 64).base64EncodedString()
         let feed = try await runScript(
             repositoryRoot.appending(path: "scripts/appcast-add-item.sh"),
-            [template, "0.2.0", "2", "15.0", url, "1000", signature, notes.path],
+            [template, "0.2.0", "773", "15.0", url, "1000", signature, notes.path],
             environment: gitEnvironment, timeout: .seconds(60))
         try #require(feed.status == 0, "\(feed.output)")
         try write(feed.output, "github/files/v0.2.0/appcast.xml")
@@ -148,8 +157,29 @@ final class PublishFixture {
     }
 }
 
+extension PublishFixture {
+    /// The real `scripts/build-app.sh` in this checkout, for a debug build signed ad hoc. The `swift` in the fake world
+    /// refuses to build, so the script stops right after it names the build's number; nothing is built or signed.
+    func runRealBuildApp() async throws -> ScriptResult {
+        var environment = gitEnvironment
+        environment["PATH"] = "\(folder.appending(path: "bin").path):/usr/bin:/bin:/usr/sbin:/sbin"
+        environment["TMPDIR"] = folder.appending(path: "tmp").path + "/"
+        environment["FAKE_LOG"] = log.path
+        return try await runScript(root.appending(path: "scripts/real-build-app.sh"), ["debug", "--adhoc"],
+                                   environment: environment, currentDirectory: root, timeout: .seconds(120))
+    }
+}
+
 /// The stand-ins. Each writes its call to `$FAKE_LOG`.
 enum FakeScripts {
+    /// swift, which will not build: `scripts/build-app.sh` stops at it.
+    static let swift = #"""
+    #!/bin/sh
+    echo "swift $*" >> "$FAKE_LOG"
+    echo "fake swift: not building" >&2
+    exit 1
+    """#
+
     /// The GitHub CLI. It knows only the calls `publish-update.sh` makes, and answers from `$FAKE_GITHUB`.
     static let gh = #"""
     #!/bin/sh

@@ -24,7 +24,8 @@
 #
 # Environment:
 #   VERSION       CFBundleShortVersionString (default 0.1.0)
-#   BUILD_NUMBER  CFBundleVersion (default: the number of commits on HEAD, or 1 outside a git checkout)
+#   BUILD_NUMBER  CFBundleVersion (default: the number of commits on HEAD plus 1000, or 1001 outside a git checkout;
+#                 scripts/lib/build-number.sh says why)
 #   DEVELOPER_DIR Defaults to the Xcode beta when it is installed.
 #
 # Updates (spec 6.3): Sparkle.framework, which the build produces from the SwiftPM dependency, goes into
@@ -85,6 +86,8 @@ source "$ROOT/scripts/lib/mask-home.sh"
 mask_output_of "${BASH_SOURCE[0]}" "$@"
 # shellcheck source=lib/stage-app.sh
 source "$ROOT/scripts/lib/stage-app.sh"
+# shellcheck source=lib/build-number.sh
+source "$ROOT/scripts/lib/build-number.sh"
 
 # The UUID and architecture of each slice of a Mach-O file or dSYM, one per line, sorted.
 macho_uuids() {
@@ -201,12 +204,9 @@ if [[ -z "${DEVELOPER_DIR:-}" && -d "$XCODE_BETA" ]]; then
 fi
 
 VERSION="${VERSION:-0.1.0}"
-if [[ -z "${BUILD_NUMBER:-}" ]]; then
-    BUILD_NUMBER="$(git -C "$ROOT" rev-list --count HEAD 2>/dev/null || echo 1)"
-fi
+BUILD_NUMBER="$(build_number "$ROOT")"
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] ||
     fail "VERSION must look like 1.2.3 or 1.2.3-beta.1, got \"$VERSION\""
-[[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]] || fail "BUILD_NUMBER must be a whole number, got \"$BUILD_NUMBER\""
 
 # Sparkle's public EdDSA key: base64 of 32 bytes, on the file's first line.
 readonly UPDATE_KEY_FILE="$ROOT/packaging/sparkle-public-key.txt"
@@ -286,7 +286,7 @@ fi
 
 cd "$ROOT"
 
-echo "==> Building ($MODE)"
+echo "==> Building ($MODE): version $VERSION, build $BUILD_NUMBER"
 if [[ "$MODE" == "release" ]]; then
     # Swift Build, pinned: the native build system's Bundle.module accessor (STDesign and KeyRebinder fall back
     # to it) holds the build folder's absolute path as a string literal, which no strip removes. Swift Build's

@@ -34,7 +34,7 @@ struct PublishUpdateTests {
         #expect(result.output.contains("Dry run"), "\(result.output)")
         #expect(result.output.contains("nothing was created on GitHub"), "\(result.output)")
 
-        #expect(world.calls.contains("build-app release VERSION=0.3.0 BUILD_NUMBER=3"), "built the release app")
+        #expect(world.calls.contains("build-app release VERSION=0.3.0 BUILD_NUMBER=1003"), "built the release app")
         #expect(world.calls.contains("build-dmg"), "built the DMG")
         #expect(world.calls.contains("sign_update --account sTools"), "signed it with the keychain's key")
 
@@ -42,7 +42,7 @@ struct PublishUpdateTests {
         try #require(try count(in: written) == 1, "the first release starts from the template")
         let item = "/rss/channel/item[1]"
         #expect(try value("\(item)/sparkle:shortVersionString", in: written) == "0.3.0")
-        #expect(try value("\(item)/sparkle:version", in: written) == "3")
+        #expect(try value("\(item)/sparkle:version", in: written) == "1003", "the commit count, 3, plus 1000")
         #expect(try value("\(item)/enclosure/@url", in: written) == "\(Self.downloadBase)/v0.3.0/sTools-0.3.0-macOS.dmg")
         #expect(try value("\(item)/enclosure/@sparkle:edSignature", in: written) == "RkFLRVNJR05BVFVSRQ==")
         #expect(try value("\(item)/enclosure/@length", in: written) == "4096")
@@ -98,7 +98,7 @@ struct PublishUpdateTests {
         #expect(try world.read(world.github.appending(path: "latest")) == "v0.3.0\n")
 
         #expect(world.calls.contains("check-appcast --live --expect 0.3.0"), "the public address was checked afterwards")
-        #expect(result.output.contains("Published sTools 0.3.0 (build 3)"), "\(result.output)")
+        #expect(result.output.contains("Published sTools 0.3.0 (build 1003)"), "\(result.output)")
         #expect(!result.output.contains("sTools-publish-"), "no path of this machine is printed: \(result.output)")
 
         // The script makes no commit, branch or tag, and pushes nothing: gh creates the tag on GitHub.
@@ -210,13 +210,13 @@ struct PublishUpdateTests {
     @Test func itRefusesAVersionThatIsNotNewerThanTheFeed() async throws {
         let world = try await PublishFixture()
         try await world.addEarlierRelease()
-        // The feed gets a build higher than this checkout's (3).
+        // The feed gets a build higher than this checkout's (1003).
         let feedPath = world.github.appending(path: "files/v0.2.0/appcast.xml")
-        let feed = try world.read(feedPath).replacingOccurrences(of: "<sparkle:version>2<", with: "<sparkle:version>9<")
+        let feed = try world.read(feedPath).replacingOccurrences(of: "<sparkle:version>773<", with: "<sparkle:version>1200<")
         try world.write(feed, "github/files/v0.2.0/appcast.xml")
         let result = try await world.run(["--version", "0.3.0", "--dry-run"])
         #expect(result.status != 0)
-        #expect(result.output.contains("not newer than build 9"), "\(result.output)")
+        #expect(result.output.contains("not newer than build 1200"), "\(result.output)")
         #expect(!world.calls.contains("build-app"), "checked before the build")
     }
 

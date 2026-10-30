@@ -6,7 +6,8 @@
 # Usage: scripts/publish-update.sh --version <x.y.z> [--beta] [--notes <file.md>] [--dry-run] [--yes]
 #
 #   --version  The version people see (CFBundleShortVersionString), such as 0.1.0. Its build number is the number of
-#              commits on HEAD, which must be higher than every build already in the feed.
+#              commits on HEAD plus 1000 (scripts/lib/build-number.sh says why), which must be higher than every build
+#              already in the feed. BUILD_NUMBER in the environment sets it instead.
 #   --beta     Names the DMG as a beta (sTools-<version>-beta-macOS.dmg). The release is still the Latest one, never a
 #              pre-release: see below.
 #   --notes    Release notes in Markdown, shown in Sparkle's update window and on the GitHub release
@@ -57,6 +58,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 readonly ROOT
 readonly SPARKLE_BIN="$ROOT/.build/artifacts/sparkle/Sparkle/bin"
 readonly APP="$ROOT/build/sTools.app"
+# shellcheck source=lib/build-number.sh
+source "$ROOT/scripts/lib/build-number.sh"
 
 fail() {
     echo "error: $*" >&2
@@ -143,8 +146,12 @@ WORK="$(mktemp -d -t sTools-publish)"
 trap 'rm -rf "$WORK"' EXIT
 
 echo "==> Checking this checkout, GitHub and the update key"
-[[ -z "$(git -C "$ROOT" status --porcelain)" ]] || fail "commit or stash every change first: the build number counts commits"
-BUILD="$(git -C "$ROOT" rev-list --count HEAD)"
+[[ -z "$(git -C "$ROOT" status --porcelain)" ]] ||
+    fail "commit or stash every change first: the build is of HEAD, and its number counts HEAD's commits"
+BUILD="$(build_number "$ROOT")"
+if [[ -n "${BUILD_NUMBER:-}" ]]; then
+    echo "    note: BUILD_NUMBER is set, so the build number is $BUILD, not the commit count plus 1000."
+fi
 SHA="$(git -C "$ROOT" rev-parse HEAD)"
 SHORT_SHA="$(git -C "$ROOT" rev-parse --short HEAD)"
 
