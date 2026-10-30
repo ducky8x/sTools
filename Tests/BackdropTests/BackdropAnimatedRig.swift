@@ -35,7 +35,7 @@ final class PlayerLog {
 /// own and players that only record what they're told.
 @MainActor
 final class AnimatedRig {
-    let folder = TempFolder()
+    let folder: TempFolder
     let log = PlayerLog()
     let clock = FakeFrameClock()
     let workspace = NotificationCenter()
@@ -45,8 +45,9 @@ final class AnimatedRig {
     let controller: BackdropController
     var imagesDirectory: URL { folder.file("Images") }
 
-    init(theme: STTheme? = nil, displays: [DisplayInfo] = [displayOne], minecraftOpen: Bool = true,
+    init(folder: TempFolder = TempFolder(), theme: STTheme? = nil, displays: [DisplayInfo] = [displayOne], minecraftOpen: Bool = true,
          makePlayer: (@MainActor (URL, any BackdropFrameClock) -> any BackdropPlayer)? = nil) {
+        self.folder = folder
         let window = MinecraftWindow(windowNumber: 42, processID: 4242, title: "Minecraft* 1.16.1", frame: displayOne.frame)
         let instance = MinecraftInstance(window: window, launchDate: Date(timeIntervalSince1970: 1), isFrontmost: true, displayID: displayOne.id)
         source = StaticMinecraftWindowSource(instances: minecraftOpen ? [instance] : [])
