@@ -121,7 +121,7 @@ enum TestMedia {
     @discardableResult
     static func writeMovie(to url: URL, colors: [RGB], framesPerColor: Int = 5, framesPerSecond: Int32 = 10,
                            width: Int = 128, height: Int = 96, codec: AVVideoCodecType = .h264,
-                           fileType: AVFileType = .mp4) async throws -> URL {
+                           fileType: AVFileType = .mp4, transform: CGAffineTransform = .identity) async throws -> URL {
         let writer = try AVAssetWriter(outputURL: url, fileType: fileType)
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: codec, AVVideoWidthKey: width, AVVideoHeightKey: height,
@@ -130,6 +130,7 @@ enum TestMedia {
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
             kCVPixelBufferWidthKey as String: width, kCVPixelBufferHeightKey as String: height,
         ])
+        input.transform = transform
         writer.add(input)
         guard writer.startWriting() else { throw writer.error ?? CocoaError(.fileWriteUnknown) }
         writer.startSession(atSourceTime: .zero)
