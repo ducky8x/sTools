@@ -553,10 +553,17 @@ public final class KeyRebinderController {
         litKeys.remove(event)
     }
 
+    /// Asked about each key before the page uses it: true when the app around the page has a use for that key right
+    /// now, so the page leaves it alone (the tester still lights it) and the window gets it. The introduction's trial
+    /// takes Return this way while its Continue is enabled, as Return presses Continue on every other step
+    /// (spec 4.1). Nil everywhere else.
+    @ObservationIgnored public var hostTakesKey: (@MainActor (KarabinerEvent) -> Bool)?
+
     /// Routes a press from sTools' window: the tester first, then output capture, then selecting the pressed
-    /// key on the diagram. `isBusy` is true while a text field or sheet has the keyboard. Returns true when the
-    /// press was used, so the window doesn't also beep at it.
+    /// key on the diagram. `isBusy` is true while a text field or sheet has the keyboard, and a key the host takes
+    /// (`hostTakesKey`) counts as one too. Returns true when the press was used, so the window doesn't also beep at it.
     func handle(_ press: KeyPress, commandHeld: Bool, isBusy: Bool) -> Bool {
+        let isBusy = isBusy || hostTakesKey?(press.event) == true
         let isKey = if case .key = press.event { true } else { false }
         if isTesting {
             switch press {
