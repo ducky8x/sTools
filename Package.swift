@@ -29,6 +29,9 @@ let package = Package(
         // Measures what watching Ninjabrain Bot costs: the copies scan and a window read (`swift run -c release NBBBench`);
         // reads only, never shipped.
         .executableTarget(name: "NBBBench", dependencies: ["NBBOverlay"], path: "Benchmarks/NBBBench"),
+        // Measures what an animated Window Backdrop fill costs while it plays: CPU, GPU and memory, for videos and GIFs
+        // it makes itself, in a window that never shows (`swift run -c release BackdropBench`); never shipped.
+        .executableTarget(name: "BackdropBench", dependencies: ["Backdrop", "STPlatform"], path: "Benchmarks/BackdropBench"),
         .testTarget(name: "STDesignTests", dependencies: ["STDesign"]),
         .testTarget(name: "STPlatformTests", dependencies: ["STPlatform"]),
         // The test bundle finds Sparkle.framework next to it in the build folder.
