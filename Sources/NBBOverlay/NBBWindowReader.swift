@@ -301,12 +301,17 @@ public actor AXNBBWindowReader: NBBWindowReading {
     private let now: @Sendable () -> ContinuousClock.Instant
     private var walked: Walked?
     private var failedWalk: (pid: Int32, at: ContinuousClock.Instant)?
+    /// The last walk that was interrupted (a busy copy, a label gone) and when.
+    private var interruptedWalk: (pid: Int32, at: ContinuousClock.Instant)?
     /// Walks again at least this often, in case a panel changed which labels it shows.
     private let rewalkInterval: Duration = .seconds(5)
     /// Reads every static text at least this often; the reads in between ask only the watched ones.
     static let fullReadInterval: Duration = .seconds(1)
     /// How long a walk that found no predictions table waits before the next try.
     private let retryInterval: Duration = .seconds(2)
+    /// How long an interrupted walk waits: a quarter of a second, a few looks, since the window is there but not every
+    /// look, so a copy that never answers isn't asked its 340 questions ten times a second.
+    private let interruptedRetryInterval: Duration = .milliseconds(250)
     /// Ninjabrain Bot's window has about 170 elements; a walk stops at this many.
     static let walkLimit = 1_000
     private let queue = DispatchSerialQueue(label: "com.ducky8x.sTools.nbb-window-reader", qos: .utility)
@@ -359,24 +364,35 @@ public actor AXNBBWindowReader: NBBWindowReading {
             walked = nil
             return nil
         }
+        if let interruptedWalk, interruptedWalk.pid == pid, now - interruptedWalk.at < interruptedRetryInterval {
+            return lastResult(of: pid)
+        }
         switch walk(pid: pid, at: now) {
         case .found(let found):
             walked = found
             failedWalk = nil
+            interruptedWalk = nil
             return found.snapshot
         case .noTable:
             walked = nil
             failedWalk = (pid, now)
+            interruptedWalk = nil
             return nil
         case .interrupted:
-            // A copy that doesn't answer keeps its last result, as in a look between walks, and the next look walks
-            // again at once: only a window with no table waits (`retryInterval`), and this one has a window.
-            guard let current = walked, current.pid == pid else {
-                walked = nil
-                return nil
-            }
-            return current.snapshot
+            // A copy that doesn't answer keeps its last result, as in a look between walks, and walks again a moment
+            // later: only a window with no table waits for long (`retryInterval`), and this one has a window.
+            interruptedWalk = (pid, now)
+            return lastResult(of: pid)
         }
+    }
+
+    /// What the last walk of `pid`'s window gave, kept while a new walk can't finish; another copy's is never given.
+    private func lastResult(of pid: Int32) -> NBBWindowSnapshot? {
+        guard let current = walked, current.pid == pid else {
+            walked = nil
+            return nil
+        }
+        return current.snapshot
     }
 
     /// The static texts at `indices` now; a button's title is the walk's.
