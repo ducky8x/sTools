@@ -141,7 +141,7 @@ The alarm plays through `AVAudioEngine`: one of macOS’s sounds, one of four al
 
 ### NBB Overlay
 
-Ninjabrain Bot runs a small HTTP server on `localhost:52533` when its API is on. `NBBConnection` opens Server-Sent Events streams to it: `stronghold` first, then `blind`, `divine`, `boat`, `information-messages` and `all-advancements`, which start when the first one connects and stop if it disconnects. A single `/api/v1/version` request completes the set, and the Prologue pings `/api/v1/ping`. While Ninjabrain Bot isn’t running that is one refused connection every few seconds, not seven.
+Ninjabrain Bot runs a small HTTP server on `localhost:52533` when its API is on. `NBBConnection` opens Server-Sent Events streams to it: `stronghold` first, then `blind`, `divine`, `boat`, `information-messages` and `all-advancements`, which start when the first one connects and stop if it disconnects. A one-off `/api/v1/version` request asks for the version, and the Prologue pings `/api/v1/ping`. While Ninjabrain Bot isn’t running that is one refused connection every few seconds, not seven.
 
 The streams use a `URLSession` of their own (ephemeral, 16 connections per host, a 24-hour idle timeout because Ninjabrain Bot sends nothing between changes) and pass each line on whole. `NBBSubscription` reconnects with a backoff from 0.5 s to 5 s. A repeated value is dropped, so a reconnect never redraws, and a new value redraws the overlay in the same main-actor turn, within a few milliseconds of Ninjabrain Bot writing it. If the content is too big for its plate, the overlay scales it down uniformly, to 60% at most, before it clips anything.
 
