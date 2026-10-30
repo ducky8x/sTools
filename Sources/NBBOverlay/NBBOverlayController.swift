@@ -51,6 +51,8 @@ public final class NBBOverlayController: ToolController {
     @ObservationIgnored private var currentDisplay: DisplayInfo?
     /// How many times the overlay's content was built into the panel. For tests.
     @ObservationIgnored private(set) var drawCount = 0
+    /// How many times what the overlay watches (Minecraft's window, the copies) changed and the watch handled it. For tests.
+    @ObservationIgnored private(set) var watchRounds = 0
     /// Called once new content is built into the panel and the panel is shown. For tests that time an update.
     @ObservationIgnored var didDraw: (@MainActor () -> Void)?
     /// What the panel shows now, so a refresh that changes nothing it draws (Minecraft gaining or losing focus,
@@ -225,6 +227,7 @@ public final class NBBOverlayController: ToolController {
             _ = copies.choice
         } onChange: { [weak self] in
             Task { @MainActor in
+                self?.watchRounds += 1
                 self?.syncWindowReading()
                 self?.refreshIfEnabled()
                 self?.watchForUpdates()
