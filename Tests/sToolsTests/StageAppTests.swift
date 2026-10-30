@@ -125,4 +125,11 @@ struct StageAppTests {
         #expect(script.contains(#"readonly APP="$STAGE/$APP_NAME""#), "every step works on the staged app")
         #expect(!script.contains(#"rm -rf "$FINAL_APP""#), "the app in place is never removed by hand")
     }
+
+    @Test func theDevBuildStagesInAFolderOfItsOwn() throws {
+        let script = try String(contentsOf: repositoryRoot.appending(path: "scripts/build-app.sh"), encoding: .utf8)
+        #expect(script.contains(#"readonly STAGE_NAME=".staging""#))
+        #expect(script.contains(#"readonly STAGE_NAME=".staging-dev""#), "a dev build cannot clear a normal build's folder")
+        #expect(script.contains(#"readonly STAGE="$ROOT/build/$STAGE_NAME""#))
+    }
 }

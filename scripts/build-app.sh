@@ -34,8 +34,9 @@
 # out, so it explains in Settings that it can't check for updates. The dev build leaves the feed and the key out
 # whatever the file holds, and needs neither the file nor the key.
 #
-# A failed build: the app is made in build/.staging and moved to build/sTools.app (build/sTools Dev.app with --dev) only
-# once it is signed and every check has passed (scripts/lib/stage-app.sh). So a failure, at any step, never leaves a
+# A failed build: the app is made in build/.staging (build/.staging-dev with --dev) and moved to build/sTools.app
+# (build/sTools Dev.app) only once it is signed and every check has passed (scripts/lib/stage-app.sh). So a failure, at
+# any step, never leaves a
 # half-made or unsigned app under that name, and the app from the last good build stays where it was, usable. The
 # script then says that build/sTools.app was not replaced and which version and build it still is, so it cannot be taken
 # for this run's.
@@ -162,12 +163,15 @@ MODE="${MODE:-debug}"
 # The dev build sits beside the normal one under its own name, so building either never touches the other.
 if [[ "$DEV" -eq 1 ]]; then
     readonly APP_NAME="sTools Dev.app"
+    readonly STAGE_NAME=".staging-dev"
 else
     readonly APP_NAME="sTools.app"
+    readonly STAGE_NAME=".staging"
 fi
-# Where the finished app goes, and where it is made until then.
+# Where the finished app goes, and where it is made until then. The dev build has a staging folder of its own, so a
+# normal build and a dev build running at the same time cannot clear each other's.
 readonly FINAL_APP="$ROOT/build/$APP_NAME"
-readonly STAGE="$ROOT/build/.staging"
+readonly STAGE="$ROOT/build/$STAGE_NAME"
 readonly APP="$STAGE/$APP_NAME"
 
 COMMITTED=0
