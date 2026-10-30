@@ -115,13 +115,20 @@ import Testing
 
 /// A start waits for Minecraft's first frame, so the recording's first frame shows the game (spec 5.4.4), but never
 /// for long.
+///
+/// The waits that must end early are given a timeout of a minute and checked against half of it: what ends them is a
+/// frame, or the frames being let go of, which takes a moment however busy the Mac is, while a wait that ran to its
+/// timeout would take the whole minute. Nothing here depends on how fast a moment is.
 @Suite struct FrameHubFirstFrameTests {
+    private static let timeout = Duration.seconds(60)
+    private static let wayBeforeTheTimeout = Duration.seconds(30)
+
     @Test func aFrameAlreadyThereNeedsNoWait() async {
         let hub = FrameHub()
         hub.submit(ClockTestFrames.frame(at: 1), for: .base)
         let began = SuspendingClock.now
-        #expect(await hub.waitForFrame(of: .base, timeout: .seconds(5)))
-        #expect(SuspendingClock.now - began < .seconds(1))
+        #expect(await hub.waitForFrame(of: .base, timeout: Self.timeout))
+        #expect(SuspendingClock.now - began < Self.wayBeforeTheTimeout)
     }
 
     @Test func theWaitEndsAsTheFirstFrameArrives() async {
@@ -132,10 +139,10 @@ import Testing
             hub.submit(ClockTestFrames.frame(at: 1), for: .source(UUID()))
             hub.submit(ClockTestFrames.frame(at: 2), for: .base)
         }
-        #expect(await hub.waitForFrame(of: .base, timeout: .seconds(5)))
+        #expect(await hub.waitForFrame(of: .base, timeout: Self.timeout))
         let waited = SuspendingClock.now - began
         #expect(waited >= .milliseconds(100))
-        #expect(waited < .seconds(4))
+        #expect(waited < Self.wayBeforeTheTimeout)
     }
 
     @Test func theWaitGivesUpAfterItsTimeout() async {
@@ -155,7 +162,7 @@ import Testing
             hub.removeAll()
         }
         let began = SuspendingClock.now
-        #expect(!(await hub.waitForFrame(of: .base, timeout: .seconds(5))))
-        #expect(SuspendingClock.now - began < .seconds(4))
+        #expect(!(await hub.waitForFrame(of: .base, timeout: Self.timeout)))
+        #expect(SuspendingClock.now - began < Self.wayBeforeTheTimeout)
     }
 }

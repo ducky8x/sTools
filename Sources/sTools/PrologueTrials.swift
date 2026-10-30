@@ -356,9 +356,20 @@ extension AppModel {
         return saved.files.first
     }
 
+    /// Whether the introduction's window has a use for `event` right now, which the Key Rebinder's drawn keyboard then
+    /// leaves to it: Return, once Continue is enabled (spec 4.1, revision 43). The keyboard takes every key pressed in the
+    /// window and selects it, which kept Return from pressing Continue here as it does on every other step. While Continue
+    /// is grayed out Return still goes to the keyboard, as does the key a Press… is waiting for; the keypad's Enter is a key
+    /// of its own and stays with the keyboard.
+    func keyRebinderTrialTakes(_ event: KarabinerEvent) -> Bool {
+        guard event == .key("return_or_enter"), let keyRebinder, !keyRebinder.isCapturingOutput else { return false }
+        return prologue?.canContinue == true
+    }
+
     private func keyRebinderTrial() -> TrialContent {
         guard let keyRebinder else { return Self.emptyTrial }
         let session = trials
+        let hostTakesKey: @MainActor (KarabinerEvent) -> Bool = { [weak self] in self?.keyRebinderTrialTakes($0) ?? false }
         return TrialContent(
             items: { [
                 ChecklistItem(id: "layout", title: TrialCopy.KeyRebinder.layout),
@@ -380,6 +391,7 @@ extension AppModel {
             },
             controls: { AnyView(TrialToolControls(model: self, tool: .keyRebinder)) },
             onAppear: {
+                keyRebinder.hostTakesKey = hostTakesKey
                 session.watchProfileMenu()
                 session.watch(for: .keyRebinder) {
                     let lit = keyRebinder.litKeys
@@ -396,6 +408,9 @@ extension AppModel {
                     if session.madeRebind && rebinds == start { session.madeAndRemovedRebind = true }
                 }
             },
-            onDisappear: { session.stopWatching(.keyRebinder) })
+            onDisappear: {
+                keyRebinder.hostTakesKey = nil
+                session.stopWatching(.keyRebinder)
+            })
     }
 }

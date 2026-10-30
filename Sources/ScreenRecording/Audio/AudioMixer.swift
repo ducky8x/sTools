@@ -3,6 +3,8 @@ import Foundation
 /// Names a source's audio track.
 public enum AudioTrackID: Hashable, Sendable {
     case minecraft
+    /// The sound of the web pages on the canvas, all together (spec 5.4.1).
+    case webPages
     case source(UUID)
     /// sTools' own sound from the in-process feed with this name, such as *Timer alarm* (`InProcessAudio`).
     case feed(String)
