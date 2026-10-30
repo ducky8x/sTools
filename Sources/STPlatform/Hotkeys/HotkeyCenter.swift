@@ -60,10 +60,10 @@ public enum HotkeyStatus: Equatable, Sendable {
 ///
 /// Where they work, they pause only while sTools itself listens for raw keys (`setPaused(_:for:)`): a field
 /// recording a key, a text field being edited, the Key Rebinder's Test keys or output capture; typing pauses only
-/// the hotkeys that would take a typed key. A paused hotkey, like one in an app it doesn't work in, isn't registered
-/// and its presses are ignored; a combination macOS hasn't accepted yet this run is still tried once (registered and
-/// released at once), so a refusal shows the moment a hotkey is added. When the pause ends, or an app it works in
-/// comes to the front, it registers for real.
+/// the hotkeys that would take a typed key, and their variants with them. A paused hotkey, like one in an app it
+/// doesn't work in, isn't registered and its presses are ignored; a combination macOS hasn't accepted yet this run is
+/// still tried once (registered and released at once), so a refusal shows the moment a hotkey is added. When the pause
+/// ends, or an app it works in comes to the front, it registers for real.
 ///
 /// A registered hotkey's key that reaches sTools' own window as an ordinary key press (`handleKeyDown`) fires it
 /// too, through the same press rules, so a hotkey works in sTools even when macOS hands the key to the window.
@@ -239,7 +239,7 @@ public final class HotkeyCenter {
     }
 
     /// Hotkeys are on but paused, because something in sTools is listening for raw keys. While only typing pauses
-    /// them, just the hotkeys that would take a typed key step aside.
+    /// them, just the hotkeys that would take a typed key step aside, and their variants with them.
     public var isPaused: Bool { settings.isEnabled && !pauses.isEmpty }
 
     /// Starts or ends a pause for `reason`. Hotkeys come back when the last pause ends.
@@ -258,6 +258,16 @@ public final class HotkeyCenter {
         guard worksInFrontApp else { return true }
         guard !pauses.isEmpty else { return false }
         return pauses == [.typing] ? combo.interferesWithTyping : true
+    }
+
+    /// Whether a variant steps aside right now: whenever its hotkey does, since all it does is keep the hotkey working
+    /// while Shift or Control is held. Judged by its own combination, a variant would not step aside while someone
+    /// types: a bare A hotkey does, but ⌃A isn't a typed key, so it would stay registered and take Control-A from the
+    /// text field. `wanted` holds the combination of each hotkey that wants its key; a variant whose hotkey isn't there
+    /// has nothing to follow, so it steps aside.
+    private func stepsAside(_ variant: Variant, wanted: [UUID: HotkeyCombo]) -> Bool {
+        guard let hotkey = wanted[variant.owner] else { return true }
+        return stepsAside(hotkey)
     }
 
     /// While the master switch is on, the bindings that take their key from the apps they work in: valid, the first
@@ -695,7 +705,7 @@ public final class HotkeyCenter {
                 if down.startsTimer { timerReleases += 1 }
             }
         }
-        for (id, variant) in variants where stepsAside(variant.combo) || !wantedVariants.contains(variant) {
+        for (id, variant) in variants where stepsAside(variant, wanted: wanted) || !wantedVariants.contains(variant) {
             registrar.unregister(id: id)
             variants[id] = nil
             // The same for a press that came through this variant: the key is its hotkey's, and macOS can't report it.
@@ -720,7 +730,7 @@ public final class HotkeyCenter {
             }
         }
         // A hotkey macOS refused (or that another owns) has no variants: only one that holds its key gets them.
-        for variant in wantedVariants where newStatuses[variant.owner] == .registered && !stepsAside(variant.combo)
+        for variant in wantedVariants where newStatuses[variant.owner] == .registered && !stepsAside(variant, wanted: wanted)
             && !variants.values.contains(variant) {
             register(variant)
         }
