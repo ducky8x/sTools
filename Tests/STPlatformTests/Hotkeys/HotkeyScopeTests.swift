@@ -76,6 +76,7 @@ private final class ScopeHarness {
 
     init(front pid: Int32? = sToolsPID, minecraft: [Int32] = [minecraftPID], scope: HotkeyScope = .sToolsAndMinecraft) {
         store = SettingsStore(directory: directory, debounce: .milliseconds(1))
+        store.registerHotkeysExactly()
         store.save(HotkeySettings(isEnabled: true, scope: scope))
         frontmost = FakeFrontmostApp(pid)
         source = StaticMinecraftWindowSource(instances: minecraft.map(minecraftInstance(pid:)))
@@ -267,6 +268,7 @@ struct HotkeyScopeTests {
     /// Tests and previews never tell a center which app is in front, so it acts as if sTools were.
     @Test func aCenterNobodyTellsActsAsIfSToolsWereInFront() {
         let store = SettingsStore(directory: FileManager.default.temporaryDirectory.appending(path: "hotkey-scope-\(UUID().uuidString)"))
+        store.registerHotkeysExactly()
         store.save(HotkeySettings(isEnabled: true))
         let registrar = ScopeRegistrar()
         let center = HotkeyCenter(store: store, registrar: registrar, toolStates: { [:] }, handler: { _ in })

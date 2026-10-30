@@ -19,9 +19,17 @@ func uncancellableWait(_ duration: Duration) async {
     await Task.detached { try? await Task.sleep(for: duration) }.value
 }
 
-/// Holds a fake source's start until the test opens it, canceled or not, so a test can check what happens while a
-/// source is still starting without racing a timer (a busy test process can stall the main actor for longer than any
-/// start time a test could afford to wait).
+/// How far a fake source got: starts begun and finished, stops begun. A test waits on these to see that a start or a
+/// stop is under way, or done, instead of guessing how long it takes.
+struct SourceProgress: Sendable, Equatable {
+    var startsBegun = 0
+    var startsFinished = 0
+    var stopsBegun = 0
+}
+
+/// Holds a fake source's start (or its stop) until the test opens it, canceled or not, so a test can check what
+/// happens while a source is still starting without racing a timer (a busy test process can stall the main actor for
+/// longer than any start time a test could afford to wait).
 final class StartGate: @unchecked Sendable {
     private let state = OSAllocatedUnfairLock(initialState: (isOpen: false, waiting: [CheckedContinuation<Void, Never>]()))
 
@@ -60,9 +68,12 @@ final class FakeVideoCapture: VideoCapture, @unchecked Sendable {
     private let stopTakes: Duration?
     /// Holds the start until the test opens it.
     private let startGate: StartGate?
+    /// Holds the stop until the test opens it.
+    private let stopGate: StartGate?
+    private let progressLock = OSAllocatedUnfairLock(initialState: SourceProgress())
 
     init(failsToStart: Bool = false, name: String = "video", stops: StopLog? = nil, startTakes: Duration? = nil,
-         firstFrame: VideoFrame? = nil, stopTakes: Duration? = nil, startGate: StartGate? = nil) {
+         firstFrame: VideoFrame? = nil, stopTakes: Duration? = nil, startGate: StartGate? = nil, stopGate: StartGate? = nil) {
         self.failsToStart = failsToStart
         self.name = name
         self.stops = stops
@@ -70,9 +81,12 @@ final class FakeVideoCapture: VideoCapture, @unchecked Sendable {
         self.firstFrame = firstFrame
         self.stopTakes = stopTakes
         self.startGate = startGate
+        self.stopGate = stopGate
     }
 
     func start(deliver: @escaping @Sendable (VideoCaptureEvent) -> Void) async throws {
+        progressLock.withLock { $0.startsBegun += 1 }
+        defer { progressLock.withLock { $0.startsFinished += 1 } }
         if let startGate { await startGate.wait() }
         if let startTakes { await uncancellableWait(startTakes) }
         if failsToStart { throw CocoaError(.featureUnsupported) }
@@ -81,9 +95,13 @@ final class FakeVideoCapture: VideoCapture, @unchecked Sendable {
     }
 
     func stop() async {
+        progressLock.withLock { $0.stopsBegun += 1 }
+        if let stopGate { await stopGate.wait() }
         if let stopTakes { try? await Task.sleep(for: stopTakes) }
         if handler.clear() { stops?.append(name) }
     }
+
+    var progress: SourceProgress { progressLock.withLock { $0 } }
 
     /// Started and not stopped since: a real camera's light, or macOS's recording indicator for a screen, would be on.
     var isRunning: Bool { handler.isSet }
@@ -97,23 +115,37 @@ final class FakeAudioCapture: AudioCapture, @unchecked Sendable {
     private let stops: StopLog?
     private let startTakes: Duration?
     private let stopTakes: Duration?
+    /// Hold the start (or the stop) until the test opens the gate.
+    private let startGate: StartGate?
+    private let stopGate: StartGate?
+    private let progressLock = OSAllocatedUnfairLock(initialState: SourceProgress())
 
-    init(name: String = "audio", stops: StopLog? = nil, startTakes: Duration? = nil, stopTakes: Duration? = nil) {
+    init(name: String = "audio", stops: StopLog? = nil, startTakes: Duration? = nil, stopTakes: Duration? = nil,
+         startGate: StartGate? = nil, stopGate: StartGate? = nil) {
         self.name = name
         self.stops = stops
         self.startTakes = startTakes
         self.stopTakes = stopTakes
+        self.startGate = startGate
+        self.stopGate = stopGate
     }
 
     func start(deliver: @escaping @Sendable (AudioChunk) -> Void) async throws {
+        progressLock.withLock { $0.startsBegun += 1 }
+        defer { progressLock.withLock { $0.startsFinished += 1 } }
+        if let startGate { await startGate.wait() }
         if let startTakes { await uncancellableWait(startTakes) }
         handler.set(deliver)
     }
 
     func stop() async {
+        progressLock.withLock { $0.stopsBegun += 1 }
+        if let stopGate { await stopGate.wait() }
         if let stopTakes { try? await Task.sleep(for: stopTakes) }
         if handler.clear() { stops?.append(name) }
     }
+
+    var progress: SourceProgress { progressLock.withLock { $0 } }
 
     /// Started and not stopped since: macOS's indicator for recording sound would be on.
     var isRunning: Bool { handler.isSet }
@@ -170,8 +202,8 @@ struct RecordingSessionTests {
             voice.push(frames: 1600, at: now, frequency: 660)
             if i % 3 == 0 { base.push(.frame(solidFrame(canvas, at: now))) }
             clock.set(now + 0.001)
+            #expect(await waitUntil { session.canAcceptFrame }, "the encoder took the last frame")
             driver.fire()
-            try await Task.sleep(for: .milliseconds(4))
         }
         for i in 60..<70 {
             let now = 100 + Double(i) / 30
@@ -226,8 +258,8 @@ struct RecordingSessionTests {
             publishAlarm(at: now)
             if i % 3 == 0 { base.push(.frame(solidFrame(canvas, at: now))) }
             clock.set(now + 0.001)
+            #expect(await waitUntil { session.canAcceptFrame }, "the encoder took the last frame")
             driver.fire()
-            try await Task.sleep(for: .milliseconds(4))
         }
         for i in 30..<40 {
             let now = 100 + Double(i) / 30
@@ -278,8 +310,8 @@ struct RecordingSessionTests {
         try session.start()
         for i in 0..<10 {
             clock.set(5 + Double(i) / 30 + 0.001)
+            #expect(await waitUntil { session.canAcceptFrame }, "the encoder took the last frame")
             driver.fire()
-            try await Task.sleep(for: .milliseconds(4))
         }
         let result = await session.stop()
         await rig.stop()
@@ -322,86 +354,88 @@ struct CaptureRigTests {
     }
 
     /// The sources of a recording start together (spec 5.4.4): switching the tool on with its key waits for the
-    /// slowest source, not for each in turn. Three pictures and two sounds that each take 200 ms to start are all up in
-    /// about 200 ms; one after another they would take a second.
+    /// slowest source, not for each in turn. Three pictures and two sounds are held at the start by a gate: every one
+    /// has begun starting before any has finished, which one after another could never be (the second would wait for
+    /// the first, which waits for the gate). No clock is read, so a busy Mac can't tip it.
     @Test func everySourceStartsAtOnce() async {
-        let take = Duration.milliseconds(200)
-        let video: [SourceKey: any VideoCapture] = [
-            .base: FakeVideoCapture(startTakes: take),
-            .source(UUID()): FakeVideoCapture(startTakes: take),
-            .source(UUID()): FakeVideoCapture(startTakes: take),
-        ]
-        let audio: [AudioTrackID: any AudioCapture] = [
-            .minecraft: FakeAudioCapture(startTakes: take),
-            .source(UUID()): FakeAudioCapture(startTakes: take),
-        ]
-        let rig = CaptureRig(video: video, audio: audio, minimizedShowsNothing: false)
-        let began = SuspendingClock.now
-        await rig.start()
-        let took = SuspendingClock.now - began
-        #expect(took >= take)
-        #expect(took < .milliseconds(800))
-        #expect(video.values.allSatisfy { ($0 as? FakeVideoCapture)?.isRunning == true })
-        #expect(audio.values.allSatisfy { ($0 as? FakeAudioCapture)?.isRunning == true })
+        let gate = StartGate()
+        let pictures = (0..<3).map { _ in FakeVideoCapture(startGate: gate) }
+        let sounds = (0..<2).map { _ in FakeAudioCapture(startGate: gate) }
+        let rig = CaptureRig(
+            video: [.base: pictures[0], .source(UUID()): pictures[1], .source(UUID()): pictures[2]],
+            audio: [.minecraft: sounds[0], .source(UUID()): sounds[1]], minimizedShowsNothing: false)
+        let starting = Task { await rig.start() }
+        #expect(await waitUntil {
+            pictures.allSatisfy { $0.progress.startsBegun == 1 } && sounds.allSatisfy { $0.progress.startsBegun == 1 }
+        }, "every source began starting while the first was still held")
+        #expect(pictures.allSatisfy { !$0.isRunning } && sounds.allSatisfy { !$0.isRunning })
+        gate.open()
+        await starting.value
+        #expect(pictures.allSatisfy { $0.isRunning })
+        #expect(sounds.allSatisfy { $0.isRunning })
         await rig.stop()
     }
 
     /// The stop ends every picture at once (spec 5.4.4: "stopping recording turns off the tool"): a camera that's slow
-    /// to stop doesn't keep the screen's recording indicator on behind it. Three pictures that each take 200 ms to stop
-    /// are all off in about 200 ms; one after another they would take 600 ms. The sound keeps running for the
-    /// recording's last samples.
+    /// to stop doesn't keep the screen's recording indicator on behind it. The three pictures' stops are held by a
+    /// gate: all three have begun before any has finished, which one after another could never be. The sound keeps
+    /// running for the recording's last samples.
     @Test func everyPictureStopsAtOnce() async {
-        let take = Duration.milliseconds(200)
-        let pictures = [FakeVideoCapture(stopTakes: take), FakeVideoCapture(stopTakes: take), FakeVideoCapture(stopTakes: take)]
+        let gate = StartGate()
+        let pictures = (0..<3).map { _ in FakeVideoCapture(stopGate: gate) }
         let sound = FakeAudioCapture()
         let rig = CaptureRig(
             video: [.base: pictures[0], .source(UUID()): pictures[1], .source(UUID()): pictures[2]],
             audio: [.minecraft: sound], minimizedShowsNothing: false)
         await rig.start()
-        let began = SuspendingClock.now
-        await rig.stopVideo()
-        let took = SuspendingClock.now - began
-        #expect(took >= take)
-        #expect(took < .milliseconds(450))
+        let stopping = Task { await rig.stopVideo() }
+        #expect(await waitUntil { pictures.allSatisfy { $0.progress.stopsBegun == 1 } }, "every stop began while the first was still held")
+        #expect(pictures.allSatisfy { $0.isRunning })
+        gate.open()
+        await stopping.value
         #expect(pictures.allSatisfy { !$0.isRunning })
         #expect(sound.isRunning)
         await rig.stop()
         #expect(!sound.isRunning)
     }
 
-    /// The full stop ends the sounds at once too, once the pictures are off.
+    /// The full stop ends the sounds at once too, once the pictures are off: all three stops begin before any ends.
     @Test func everySoundStopsAtOnce() async {
-        let take = Duration.milliseconds(200)
-        let sounds = [FakeAudioCapture(stopTakes: take), FakeAudioCapture(stopTakes: take), FakeAudioCapture(stopTakes: take)]
+        let gate = StartGate()
+        let sounds = (0..<3).map { _ in FakeAudioCapture(stopGate: gate) }
         let rig = CaptureRig(
             video: [.base: FakeVideoCapture()],
             audio: [.minecraft: sounds[0], .source(UUID()): sounds[1], .source(UUID()): sounds[2]], minimizedShowsNothing: false)
         await rig.start()
-        let began = SuspendingClock.now
-        await rig.stop()
-        let took = SuspendingClock.now - began
-        #expect(took >= take)
-        #expect(took < .milliseconds(450))
+        let stopping = Task { await rig.stop() }
+        #expect(await waitUntil { sounds.allSatisfy { $0.progress.stopsBegun == 1 } }, "every stop began while the first was still held")
+        #expect(sounds.allSatisfy { $0.isRunning })
+        gate.open()
+        await stopping.value
         #expect(sounds.allSatisfy { !$0.isRunning })
     }
 
     /// A stop that comes while the sources start (a second press of the key, the tool switched off) leaves nothing
     /// running, even though each source finishes starting after the stop, as ScreenCaptureKit's stream, a camera and
     /// a process tap can. The fakes ignore a stop that comes before their start finished, as a source without its own
-    /// guard would.
+    /// guard would. A gate holds every start until the stop has come, so the order never depends on a timer.
     @Test func aStopWhileTheSourcesStartLeavesNothingRunning() async {
-        let take = Duration.milliseconds(200)
-        let pictures = [FakeVideoCapture(startTakes: take, firstFrame: solidFrame(PixelSize(width: 8, height: 8), at: 1)),
-                        FakeVideoCapture(startTakes: take)]
-        let sounds = [FakeAudioCapture(startTakes: take), FakeAudioCapture(startTakes: take)]
+        let gate = StartGate()
+        let pictures = [FakeVideoCapture(firstFrame: solidFrame(PixelSize(width: 8, height: 8), at: 1), startGate: gate),
+                        FakeVideoCapture(startGate: gate)]
+        let sounds = [FakeAudioCapture(startGate: gate), FakeAudioCapture(startGate: gate)]
         let rig = CaptureRig(
             video: [.base: pictures[0], .source(UUID()): pictures[1]],
             audio: [.minecraft: sounds[0], .source(UUID()): sounds[1]], minimizedShowsNothing: false)
         let starting = Task { await rig.start() }
-        try? await Task.sleep(for: .milliseconds(50))
+        #expect(await waitUntil {
+            pictures.allSatisfy { $0.progress.startsBegun == 1 } && sounds.allSatisfy { $0.progress.startsBegun == 1 }
+        }, "every source is starting")
         await rig.stop()
+        gate.open()
         await starting.value
-        try? await Task.sleep(for: .milliseconds(100))
+        // The starts finished after the stop; the rig stopped each one as its start came back.
+        #expect(pictures.allSatisfy { $0.progress.startsFinished == 1 } && sounds.allSatisfy { $0.progress.startsFinished == 1 })
         #expect(pictures.allSatisfy { !$0.isRunning })
         #expect(sounds.allSatisfy { !$0.isRunning })
         #expect(!rig.hasStarted(.base))
@@ -422,12 +456,13 @@ struct CaptureRigTests {
     /// Pictures stopped while they start (a recording stopped at once) stay stopped; the sound runs on until the full
     /// stop.
     @Test func picturesStoppedWhileTheyStartStayStopped() async {
-        let take = Duration.milliseconds(200)
-        let picture = FakeVideoCapture(startTakes: take), sound = FakeAudioCapture()
+        let gate = StartGate()
+        let picture = FakeVideoCapture(startGate: gate), sound = FakeAudioCapture()
         let rig = CaptureRig(video: [.base: picture], audio: [.minecraft: sound], minimizedShowsNothing: false)
         let starting = Task { await rig.start() }
-        try? await Task.sleep(for: .milliseconds(50))
+        #expect(await waitUntil { picture.progress.startsBegun == 1 && sound.isRunning }, "the picture is starting, the sound runs")
         await rig.stopVideo()
+        gate.open()
         await starting.value
         #expect(!picture.isRunning)
         #expect(sound.isRunning)

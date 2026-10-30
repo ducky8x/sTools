@@ -117,19 +117,22 @@ public struct SettingsFileInfo: Sendable, Equatable {
     }
 }
 
-/// How hotkeys are set, for the report's header: the master switch, Where hotkeys work and the key set the tools' own
-/// keys follow, each in the words Home uses.
+/// How hotkeys are set, for the report's header: the master switch, Where hotkeys work, the key set the tools' own
+/// keys follow and whether each hotkey also fires with Shift or Control held, each in the words Home uses.
 public struct DiagnosticsHotkeys: Sendable, Equatable {
     public var isEnabled: Bool
     /// Where hotkeys work, by its name in the chooser (`HotkeyScope.title`).
     public var scope: String
     /// The key set by name (`HotkeyKeySet.name(of:)`): its title, or Custom.
     public var keySet: String
+    /// Advanced ▸ Also fire while holding Shift or Control.
+    public var alsoFiresWithShiftOrControl: Bool
 
-    public init(isEnabled: Bool, scope: String, keySet: String) {
+    public init(isEnabled: Bool, scope: String, keySet: String, alsoFiresWithShiftOrControl: Bool = true) {
         self.isEnabled = isEnabled
         self.scope = scope
         self.keySet = keySet
+        self.alsoFiresWithShiftOrControl = alsoFiresWithShiftOrControl
     }
 }
 
@@ -210,6 +213,7 @@ public struct DiagnosticsReport: Sendable {
             out.append("Hotkeys: \(hotkeys.isEnabled ? "on" : "off")")
             out.append("Where hotkeys work: \(hotkeys.scope)")
             out.append("Key set: \(hotkeys.keySet)")
+            out.append("Also fires with Shift or Control: \(hotkeys.alsoFiresWithShiftOrControl ? "on" : "off")")
         }
         out.append("")
         out.append("macOS: \(system.macOSVersion)")

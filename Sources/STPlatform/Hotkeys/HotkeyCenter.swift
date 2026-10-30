@@ -68,6 +68,12 @@ public enum HotkeyStatus: Equatable, Sendable {
 /// A registered hotkey's key that reaches sTools' own window as an ordinary key press (`handleKeyDown`) fires it
 /// too, through the same press rules, so a hotkey works in sTools even when macOS hands the key to the window.
 ///
+/// With Also fire while holding Shift or Control on (`alsoFiresWithShiftOrControl`, the default), each hotkey that holds
+/// its key also has its variants registered, under ids of their own: the same key with ⇧, ⌃ and ⇧⌃ added, since macOS
+/// matches modifiers exactly. A variant's presses and releases are its hotkey's (one press state per hotkey), it steps
+/// aside and returns with its hotkey, and one a hotkey of the list, macOS or (while sTools is in front) sTools' own
+/// menu has is left out; the saved list never changes.
+///
 /// Presses count only for a binding registered right now, so a press macOS delivered just before an unregistration
 /// is ignored. With a registrar that reports releases, the center also keeps which keys are down: a press for a key
 /// that is still down is a repeat and is ignored until its release, a press that sent Start timer gets
@@ -86,6 +92,9 @@ public enum HotkeyStatus: Equatable, Sendable {
 @Observable
 public final class HotkeyCenter {
     public private(set) var settings: HotkeySettings
+    /// Advanced ▸ Also fire while holding Shift or Control, stored on its own (`hotkeyHeldModifiers.json`) so `settings`,
+    /// the saved hotkey list, is never touched by it.
+    public private(set) var heldModifiers: HotkeyHeldModifierSettings
     /// Assigned only when a status really changes, so app switches don't re-render the pages that show them.
     public private(set) var statuses: [UUID: HotkeyStatus] = [:]
 
@@ -105,8 +114,16 @@ public final class HotkeyCenter {
     @ObservationIgnored private let registrar: any HotkeyRegistering
     @ObservationIgnored private let toolStates: @MainActor () -> [HotkeyTool: Bool]
     @ObservationIgnored private let handler: @MainActor ([HotkeyEvent]) -> Void
+    /// The combinations sTools' own menus use (the Go menu's ⌃⌘0–⌃⌘6, ⌘, ⌘[ and ⌘]), which a variant never takes while
+    /// sTools is in front, the only time a menu has them: the app passes them in, since they belong to its menus.
+    @ObservationIgnored private let menuShortcuts: Set<HotkeyCombo>
     /// What is registered with the system right now. Empty while paused.
     @ObservationIgnored private var registered: [UUID: HotkeyCombo] = [:]
+    /// What is registered beyond the hotkeys themselves while Also fire while holding Shift or Control is on, by the id
+    /// each registration was made under: a hotkey's key with Shift and/or Control added, and the hotkey it belongs to.
+    @ObservationIgnored private var variants: [UUID: Variant] = [:]
+    /// Variants macOS refused this run, so each is logged once however often registrations are brought in step.
+    @ObservationIgnored private var refusedVariants: Set<HotkeyCombo> = []
     /// Combinations macOS accepted this run, so a pause tries each one only once. A refusal forgets it again.
     @ObservationIgnored private var accepted: Set<HotkeyCombo> = []
     /// The registered bindings whose key is down: pressed, and not released or unregistered since. A press for one
@@ -128,18 +145,24 @@ public final class HotkeyCenter {
 
     /// - Parameters:
     ///   - toolStates: Reports which switchable tools are on right now. Read on every press.
+    ///   - menuShortcuts: The combinations sTools' own menus use, which no hotkey's Shift or Control variant takes while
+    ///     sTools is the app in front.
     ///   - handler: Receives each press's events together, in order: one per tool change, then one for
     ///     recording, then one for Start timer. One call per press, so the app can confirm the press once.
     ///     A release that ends a Start-timer press comes in a call of its own, `[.startTimerReleased]`.
     public init(store: SettingsStore,
                 registrar: any HotkeyRegistering,
                 toolStates: @escaping @MainActor () -> [HotkeyTool: Bool],
+                menuShortcuts: Set<HotkeyCombo> = [],
                 handler: @escaping @MainActor ([HotkeyEvent]) -> Void) {
         self.store = store
         self.registrar = registrar
         self.toolStates = toolStates
+        self.menuShortcuts = menuShortcuts
         self.handler = handler
         self.settings = store.load(HotkeySettings.self)
+        // Its own file, which nothing writes until the option is changed.
+        self.heldModifiers = store.load(HotkeyHeldModifierSettings.self)
         // A file from an earlier version was upgraded as it loaded (an empty version 1 list becomes ⌘1–⌘5 in sidebar
         // order, and build 449's version 2 list goes back to ducky's keys; any other list is kept as it is): writing it
         // back makes that happen once.
@@ -182,6 +205,22 @@ public final class HotkeyCenter {
         }
     }
 
+    /// Advanced ▸ Also fire while holding Shift or Control (spec 6.1): on, each hotkey also registers with ⇧, ⌃ and ⇧⌃
+    /// added to the modifiers it holds, since macOS matches a hotkey's modifiers exactly, so it works while someone
+    /// sneaks or sprints; a press of any of them is that hotkey's own. A variant is left out where its combination is
+    /// another hotkey's, one of sTools' own menu shortcuts (while sTools is in front), one macOS keeps, or one macOS
+    /// refuses. The saved hotkey list never changes: variants exist only in what is registered. Changing the option
+    /// registers or unregisters them at once.
+    public var alsoFiresWithShiftOrControl: Bool {
+        get { heldModifiers.alsoFiresWithShiftOrControl }
+        set {
+            guard newValue != heldModifiers.alsoFiresWithShiftOrControl else { return }
+            heldModifiers.alsoFiresWithShiftOrControl = newValue
+            store.save(heldModifiers)
+            synchronize()
+        }
+    }
+
     /// Whether hotkeys work in the app in front: always with Everywhere; with In sTools and Minecraft, while sTools
     /// or a Minecraft instance is in front.
     public var worksInFrontApp: Bool { settings.scope == .everywhere || frontApp != .other }
@@ -191,8 +230,12 @@ public final class HotkeyCenter {
     public func setFrontApp(_ app: HotkeyFrontApp) {
         guard app != frontApp else { return }
         let worked = worksInFrontApp
+        let menusWereInFront = frontApp == .sTools
         frontApp = app
-        if worksInFrontApp != worked { synchronize() }
+        // sTools' menu shortcuts count against a hotkey's variants only while sTools is in front, so coming or going
+        // changes which variants are registered.
+        let menusChanged = (app == .sTools) != menusWereInFront && !menuShortcuts.isEmpty && heldModifiers.alsoFiresWithShiftOrControl
+        if worksInFrontApp != worked || menusChanged { synchronize() }
     }
 
     /// Hotkeys are on but paused, because something in sTools is listening for raw keys. While only typing pauses
@@ -353,15 +396,15 @@ public final class HotkeyCenter {
 
     /// A key went down in sTools' own window at `time` (the event's `timestamp`, system uptime): macOS handed it to the
     /// window instead of turning it into a hotkey press. When a registered hotkey has exactly this key and these
-    /// modifiers, it fires as a press from macOS would (a repeat, or a press macOS reported too, is ignored) and this
-    /// returns true, so the window doesn't also type it. False while hotkeys are off or paused, or when no hotkey has
-    /// this combination.
+    /// modifiers, or a variant of one does (Also fire while holding Shift or Control), it fires as a press from macOS
+    /// would (a repeat, or a press macOS reported too, is ignored) and this returns true, so the window doesn't also
+    /// type it. False while hotkeys are off or paused, or when no hotkey has this combination.
     @discardableResult
     public func handleKeyDown(keyCode: UInt16, modifiers: HotkeyCombo.Modifiers, isRepeat: Bool,
                               at time: TimeInterval? = nil) -> Bool {
         let combo = HotkeyCombo(keyCode: keyCode, modifiers: modifiers)
         // Only a live registration counts: a paused one is unregistered, so its key goes on to the field.
-        guard let id = registered.first(where: { $0.value == combo })?.key else { return false }
+        guard let id = liveOwner(of: combo) else { return false }
         if !reachedWindow {
             reachedWindow = true
             log.notice("A hotkey's key reached sTools' window: \(combo.displayString, privacy: .public)")
@@ -371,15 +414,20 @@ public final class HotkeyCenter {
             keysDown[id]?.lastReport = usableTime(time) ?? uptime()
             return true
         }
-        handlePress(id, from: .window, at: time)
+        handlePress(id, combo: combo, from: .window, at: time)
         return true
+    }
+
+    /// The hotkey that has `combo` registered right now: its own key, or one of its variants.
+    private func liveOwner(of combo: HotkeyCombo) -> UUID? {
+        registered.first(where: { $0.value == combo })?.key ?? variants.values.first(where: { $0.combo == combo })?.owner
     }
 
     /// A key came up in sTools' own window at `time`. Ends the press of each hotkey on this key whose press came from
     /// the window; true when there was one.
     @discardableResult
     public func handleKeyUp(keyCode: UInt16, at time: TimeInterval? = nil) -> Bool {
-        let ids = keysDown.filter { $0.value.fromWindow && registered[$0.key]?.keyCode == keyCode }.map(\.key)
+        let ids = keysDown.filter { $0.value.fromWindow && $0.value.combo.keyCode == keyCode }.map(\.key)
         for id in ids {
             handleRelease(id, from: .window, at: time)
         }
@@ -430,8 +478,10 @@ public final class HotkeyCenter {
     /// no key is ever marked down.
     private var reportsReleases: Bool { registrar.onRelease != nil }
 
-    /// A key that is down, in `keysDown`.
+    /// A key that is down, in `keysDown`, under the id of the hotkey it fires.
     private struct KeyDown {
+        /// The combination the press matched: the hotkey's own, or one of its variants.
+        var combo: HotkeyCombo
         /// Whether its press sent Start timer, so its release sends `.startTimerReleased`.
         var startsTimer: Bool
         /// Whether its press came from sTools' own window, whose release comes from there too.
@@ -443,6 +493,13 @@ public final class HotkeyCenter {
         var repeats = 0
     }
 
+    /// A combination registered for a hotkey beyond its own: its key with Shift and/or Control added.
+    private struct Variant: Hashable {
+        /// The hotkey that fires when it is pressed.
+        let owner: UUID
+        let combo: HotkeyCombo
+    }
+
     /// Where a key event came from, for the log.
     private enum KeySource: String {
         case macOS
@@ -450,14 +507,27 @@ public final class HotkeyCenter {
         case sTools = "sTools itself"
     }
 
-    /// A press from the registrar, stamped with its event's time when the registrar knows it.
-    private func handlePress(_ id: UUID) {
-        handlePress(id, from: .macOS, at: registrar.eventTime)
+    /// The hotkey and the combination behind a registration made under `id`, while it is live: a hotkey's own, or a
+    /// variant of it.
+    private func liveRegistration(_ id: UUID) -> (owner: UUID, combo: HotkeyCombo)? {
+        if let combo = registered[id] { return (id, combo) }
+        if let variant = variants[id] { return (variant.owner, variant.combo) }
+        return nil
     }
 
-    /// A release from the registrar.
+    /// A press from the registrar, stamped with its event's time when the registrar knows it.
+    private func handlePress(_ id: UUID) {
+        guard let live = liveRegistration(id) else {
+            log.notice("A press from \(KeySource.macOS.rawValue, privacy: .public) of a hotkey that isn't live now was ignored")
+            return
+        }
+        handlePress(live.owner, combo: live.combo, from: .macOS, at: registrar.eventTime)
+    }
+
+    /// A release from the registrar. A variant's release ends its hotkey's press, as the hotkey's own does.
     private func handleRelease(_ id: UUID) {
-        handleRelease(id, from: .macOS, at: registrar.eventTime)
+        let live = liveRegistration(id)
+        handleRelease(live?.owner ?? id, from: .macOS, at: registrar.eventTime, combo: live?.combo)
     }
 
     /// A press counts only for a binding registered right now: nothing is while hotkeys are off or paused, and a
@@ -467,9 +537,9 @@ public final class HotkeyCenter {
     /// so its press counts. A stamped press no later than the last counted one is a second or late report of a press
     /// that already counted. Whether macOS repeats held hotkeys or ever drops a release is to be confirmed on hardware
     /// (spec 6.1); the log says what happened.
-    private func handlePress(_ id: UUID, from source: KeySource, at stamp: TimeInterval?) {
+    private func handlePress(_ id: UUID, combo: HotkeyCombo, from source: KeySource, at stamp: TimeInterval?) {
         let stamped = usableTime(stamp)
-        guard let combo = registered[id], let binding = settings.bindings.first(where: { $0.id == id }) else {
+        guard let binding = settings.bindings.first(where: { $0.id == id }) else {
             log.notice("A press from \(source.rawValue, privacy: .public) of a hotkey that isn't live now was ignored")
             return
         }
@@ -490,8 +560,8 @@ public final class HotkeyCenter {
                 }
                 log.notice("\(key, privacy: .public) down: its release never came (last seen \(quiet, format: .fixed(precision: 2), privacy: .public) s before), so this press is new")
             }
-            keysDown[id] = KeyDown(startsTimer: binding.actions.contains(.startTimer), fromWindow: source == .window,
-                                   downAt: time, lastReport: time)
+            keysDown[id] = KeyDown(combo: combo, startsTimer: binding.actions.contains(.startTimer),
+                                   fromWindow: source == .window, downAt: time, lastReport: time)
         }
         if let stamped { lastCountedPress[id] = stamped }
         let outcome = HotkeyAction.resolve(binding.actions, toolStates: toolStates())
@@ -505,9 +575,9 @@ public final class HotkeyCenter {
 
     /// A release counts only for a key whose press counted, and sends an event only when that press sent Start
     /// timer. A stamped release from before its key's press is a late report of an earlier release, so it ends nothing.
-    private func handleRelease(_ id: UUID, from source: KeySource, at stamp: TimeInterval?) {
+    private func handleRelease(_ id: UUID, from source: KeySource, at stamp: TimeInterval?, combo: HotkeyCombo? = nil) {
         let stamped = usableTime(stamp)
-        let key = Self.describe(registered[id], from: source, at: stamped)
+        let key = Self.describe(combo ?? keysDown[id]?.combo ?? registered[id], from: source, at: stamped)
         guard let down = keysDown[id] else {
             log.notice("\(key, privacy: .public) up: ignored, no press of it counted")
             return
@@ -568,6 +638,7 @@ public final class HotkeyCenter {
     /// What is live now and why, for the log: every change to what's registered with macOS is logged.
     private func logRegistrations() {
         let live = settings.bindings.compactMap { registered[$0.id]?.displayString }
+        let more = variants.isEmpty ? "" : " and \(variants.count) more with Shift or Control held"
         let why = if !settings.isEnabled {
             "hotkeys are off"
         } else if !worksInFrontApp {
@@ -577,7 +648,7 @@ public final class HotkeyCenter {
         } else {
             "\(frontApp) is in front"
         }
-        let line = "\(live.isEmpty ? "none" : live.joined(separator: " ")) (\(why); Where hotkeys work: \(settings.scope.title))"
+        let line = "\(live.isEmpty ? "none" : live.joined(separator: " "))\(more) (\(why); Where hotkeys work: \(settings.scope.title))"
         log.notice("Hotkeys live: \(line, privacy: .public)")
     }
 
@@ -607,7 +678,11 @@ public final class HotkeyCenter {
             }
         }
 
+        // Variants are planned from the hotkeys that want their keys, before anything is registered, so a variant that
+        // is no longer wanted (a hotkey was added on its combination, say) is gone before a hotkey registers it.
+        let wantedVariants = plannedVariants(wanted: wanted)
         let wasLive = registered
+        let wasLiveVariants = variants
         var timerReleases = 0
         for (id, combo) in registered where stepsAside(combo) || wanted[id] != combo {
             registrar.unregister(id: id)
@@ -616,6 +691,17 @@ public final class HotkeyCenter {
             lastCountedPress[id] = nil
             if let down = keysDown.removeValue(forKey: id) {
                 let key = Self.describe(combo, from: .sTools, at: nil)
+                log.notice("\(key, privacy: .public) up: its hotkey stood aside while the key was down\(down.startsTimer ? ", Start timer released" : "", privacy: .public)")
+                if down.startsTimer { timerReleases += 1 }
+            }
+        }
+        for (id, variant) in variants where stepsAside(variant.combo) || !wantedVariants.contains(variant) {
+            registrar.unregister(id: id)
+            variants[id] = nil
+            // The same for a press that came through this variant: the key is its hotkey's, and macOS can't report it.
+            if let down = keysDown[variant.owner], down.combo == variant.combo {
+                keysDown[variant.owner] = nil
+                let key = Self.describe(variant.combo, from: .sTools, at: nil)
                 log.notice("\(key, privacy: .public) up: its hotkey stood aside while the key was down\(down.startsTimer ? ", Start timer released" : "", privacy: .public)")
                 if down.startsTimer { timerReleases += 1 }
             }
@@ -633,9 +719,57 @@ public final class HotkeyCenter {
                 newStatuses[binding.id] = .conflict(.systemRefused)
             }
         }
+        // A hotkey macOS refused (or that another owns) has no variants: only one that holds its key gets them.
+        for variant in wantedVariants where newStatuses[variant.owner] == .registered && !stepsAside(variant.combo)
+            && !variants.values.contains(variant) {
+            register(variant)
+        }
         if newStatuses != statuses { statuses = newStatuses }
-        if registered != wasLive { logRegistrations() }
+        if registered != wasLive || variants != wasLiveVariants { logRegistrations() }
         for _ in 0..<timerReleases { send([.startTimerReleased], stampedAt: nil) }
+    }
+
+    /// What `synchronize()` registers beyond the hotkeys' own while Also fire while holding Shift or Control is on: each
+    /// hotkey that wants its key, with ⇧, ⌃ and ⇧⌃ added to what it holds, in list order. A variant is left out when it
+    /// is a combination of the list (every hotkey's own wins, whatever its place, and an earlier hotkey's variant wins
+    /// over a later one's), one macOS keeps (`HotkeyCombo.issue`, and the screenshots to the clipboard, which no hotkey
+    /// may hold either), or, while sTools is the app in front, one of its own menu shortcuts (a menu exists only
+    /// then, so in the game ⌘1 also fires with Control held), so a hotkey never takes what another has.
+    private func plannedVariants(wanted: [UUID: HotkeyCombo]) -> [Variant] {
+        guard settings.isEnabled, heldModifiers.alsoFiresWithShiftOrControl else { return [] }
+        let menus = frontApp == .sTools ? menuShortcuts : []
+        var taken = Set(settings.bindings.map(\.combo))
+        var planned: [Variant] = []
+        for binding in settings.bindings where wanted[binding.id] != nil {
+            for combo in binding.combo.shiftAndControlVariants {
+                guard combo.issue == nil, !Self.macOSKeepsForVariants.contains(combo), !menus.contains(combo),
+                      taken.insert(combo).inserted else { continue }
+                planned.append(Variant(owner: binding.id, combo: combo))
+            }
+        }
+        return planned
+    }
+
+    /// What macOS keeps that `HotkeyCombo.issue` doesn't list, because it only matters to a variant (a hotkey's own
+    /// key has always been the person's choice): ⌃⇧⌘3 and ⌃⇧⌘4 take a screenshot to the clipboard.
+    private static let macOSKeepsForVariants: Set<HotkeyCombo> = [
+        HotkeyCombo(keyCode: 20, modifiers: [.control, .shift, .command]),
+        HotkeyCombo(keyCode: 21, modifiers: [.control, .shift, .command]),
+    ]
+
+    /// Registers a variant under an id of its own. macOS refusing it only leaves it out (logged once): the hotkey and
+    /// its other variants are unaffected.
+    private func register(_ variant: Variant) {
+        let id = UUID()
+        do {
+            try registrar.register(variant.combo, id: id)
+            variants[id] = variant
+            refusedVariants.remove(variant.combo)
+        } catch {
+            if refusedVariants.insert(variant.combo).inserted {
+                log.notice("macOS refused \(variant.combo.displayString, privacy: .public), so it is left out (\(String(describing: error), privacy: .public))")
+            }
+        }
     }
 
     /// While stepping aside: a combination macOS accepted before is fine; anything else is registered and released
