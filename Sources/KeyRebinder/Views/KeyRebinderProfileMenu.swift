@@ -9,6 +9,11 @@ public struct KeyRebinderProfileMenu: View {
     @State private var showsManage = false
     @Environment(\.stTheme) private var theme
 
+    /// The widest the menu's button gets, in points at a text scale of 1: room for "Default profile", the name Karabiner
+    /// gives its first profile, with a little to spare. A longer name is cut off in the button, so it can't push the page's
+    /// title off the row; the menu lists every name whole, and VoiceOver reads the whole of the current one.
+    static let widestButton: CGFloat = 120
+
     public init(controller: KeyRebinderController) {
         self.controller = controller
     }
@@ -26,7 +31,7 @@ public struct KeyRebinderProfileMenu: View {
             Button("New Profile\u{2026}") { showsNew = true }
             Button("Manage Profiles\u{2026}") { showsManage = true }
         } label: {
-            STMenuLabel(controller.currentProfile ?? "No profile")
+            STMenuLabel(controller.currentProfile ?? "No profile", widest: Self.widestButton)
         }
         .stMenuStyle()
         .disabled(!controller.canEdit || controller.isBusy)
