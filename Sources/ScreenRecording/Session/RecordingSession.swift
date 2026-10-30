@@ -152,6 +152,10 @@ public final class RecordingSession: @unchecked Sendable {
         return writer.droppedFrameCount + local
     }
 
+    /// Whether the encoder can take a frame now. A tick that finds it busy drops its frame and counts it; tests that
+    /// fire ticks by hand wait for this first, so no frame is dropped because the Mac was busy.
+    var canAcceptFrame: Bool { writer.canAcceptFrame }
+
     /// Pictures the compositor drew, and ticks that wrote the last one again because no source had changed.
     var picturesDrawn: Int { state.withLock { $0.drawn } }
     var picturesPassedThrough: Int { state.withLock { $0.passedThrough } }

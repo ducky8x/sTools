@@ -36,14 +36,17 @@ public struct SystemCaptureFactory: CaptureFactory {
         switch source.kind {
         case .app(let bundleID): ProcessTapCapture(target: .bundleID(bundleID))
         case .microphone(let uniqueID): MicrophoneCapture(uniqueID: uniqueID)
-        // Which WebKit helper process plays a page's sound can't be told with public API, so a browser
-        // source's own audio isn't recorded in v1.
+        // A saved layout of the first build could hold one; the web pages' sound is `webPageAudio()` now.
         case .browser: nil
         }
     }
 
     public func minecraftAudio(processID: Int32) -> (any AudioCapture)? {
         ProcessTapCapture(target: .processID(processID))
+    }
+
+    public func webPageAudio() -> (any AudioCapture)? {
+        ProcessTapCapture(target: .ownWebViews)
     }
 }
 

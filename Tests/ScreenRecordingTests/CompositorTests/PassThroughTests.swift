@@ -37,7 +37,8 @@ private var captureTags: [CFString: CFString] { [
     kCVImageBufferYCbCrMatrixKey: kCVImageBufferYCbCrMatrix_ITU_R_709_2,
 ] }
 
-/// Each decoded frame of a movie as 4:2:0 planes (luma, then chroma), and the video track's color tags.
+/// Each decoded frame of a movie as 4:2:0 planes (luma, then chroma), and the video track's color tags. The decoding
+/// read runs off the Swift concurrency pool (`MovieInfo.offThePool`).
 private func decodedFrames(of url: URL) async throws -> (frames: [[UInt8]], tags: [String]) {
     let asset = AVURLAsset(url: url)
     let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
@@ -45,29 +46,34 @@ private func decodedFrames(of url: URL) async throws -> (frames: [[UInt8]], tags
     let extensions = CMFormatDescriptionGetExtensions(description) as? [String: Any] ?? [:]
     let tags = [kCVImageBufferColorPrimariesKey, kCVImageBufferTransferFunctionKey, kCVImageBufferYCbCrMatrixKey]
         .map { "\(extensions[$0 as String] ?? "none")" }
-    let reader = try AVAssetReader(asset: asset)
-    let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
-        kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
-    ])
-    reader.add(output)
-    #expect(reader.startReading())
-    var frames: [[UInt8]] = []
-    while let sample = output.copyNextSampleBuffer() {
-        guard let buffer = CMSampleBufferGetImageBuffer(sample) else { continue }
-        CVPixelBufferLockBaseAddress(buffer, .readOnly)
-        var bytes: [UInt8] = []
-        for plane in 0..<CVPixelBufferGetPlaneCount(buffer) {
-            let base = CVPixelBufferGetBaseAddressOfPlane(buffer, plane)!.assumingMemoryBound(to: UInt8.self)
-            let rowBytes = CVPixelBufferGetBytesPerRowOfPlane(buffer, plane)
-            let width = CVPixelBufferGetWidthOfPlane(buffer, plane) * (plane == 0 ? 1 : 2)
-            for row in 0..<CVPixelBufferGetHeightOfPlane(buffer, plane) {
-                bytes.append(contentsOf: UnsafeBufferPointer(start: base + row * rowBytes, count: width))
+    nonisolated(unsafe) let track2 = track
+    let decoded = try await MovieInfo.offThePool { () -> [[UInt8]]? in
+        let reader = try AVAssetReader(asset: asset)
+        let output = AVAssetReaderTrackOutput(track: track2, outputSettings: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+        ])
+        reader.add(output)
+        guard reader.startReading() else { return nil }
+        var frames: [[UInt8]] = []
+        while let sample = output.copyNextSampleBuffer() {
+            guard let buffer = CMSampleBufferGetImageBuffer(sample) else { continue }
+            CVPixelBufferLockBaseAddress(buffer, .readOnly)
+            var bytes: [UInt8] = []
+            for plane in 0..<CVPixelBufferGetPlaneCount(buffer) {
+                let base = CVPixelBufferGetBaseAddressOfPlane(buffer, plane)!.assumingMemoryBound(to: UInt8.self)
+                let rowBytes = CVPixelBufferGetBytesPerRowOfPlane(buffer, plane)
+                let width = CVPixelBufferGetWidthOfPlane(buffer, plane) * (plane == 0 ? 1 : 2)
+                for row in 0..<CVPixelBufferGetHeightOfPlane(buffer, plane) {
+                    bytes.append(contentsOf: UnsafeBufferPointer(start: base + row * rowBytes, count: width))
+                }
             }
+            CVPixelBufferUnlockBaseAddress(buffer, .readOnly)
+            frames.append(bytes)
         }
-        CVPixelBufferUnlockBaseAddress(buffer, .readOnly)
-        frames.append(bytes)
+        return frames
     }
-    return (frames, tags)
+    #expect(decoded != nil, "the reader started")
+    return (decoded ?? [], tags)
 }
 
 /// Writes `pictures` as a 30 fps movie in `directory`, waiting for the encoder so none is dropped.
@@ -77,7 +83,7 @@ private func writeMovie(_ pictures: [CVPixelBuffer], size: PixelSize, name: Stri
     let writer = RecordingWriter(configuration: configuration, freeSpace: FakeFreeSpace(.max), readinessOverride: nil)
     try writer.start(at: .zero)
     for (index, picture) in pictures.enumerated() {
-        while !writer.canAcceptFrame { try await Task.sleep(for: .milliseconds(2)) }
+        #expect(await waitUntil { writer.canAcceptFrame }, "the encoder took the last frame")
         #expect(writer.append(frame: picture, at: CMTime(value: CMTimeValue(index), timescale: 30)) == .written)
     }
     let result = await writer.finish()

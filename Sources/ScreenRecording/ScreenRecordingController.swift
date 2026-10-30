@@ -458,6 +458,7 @@ public final class ScreenRecordingController: ToolController {
             }
             if let capture = factory.video(for: source, canvas: canvas, showsCursor: options.showCursor) { video[.source(source.id)] = capture }
         }
+        if layout.recordsWebPageAudio, let capture = factory.webPageAudio() { audio[.webPages] = capture }
         for source in layout.audioSources {
             if let capture = factory.audio(for: source) { audio[.source(source.id)] = capture }
         }
@@ -615,6 +616,7 @@ public final class ScreenRecordingController: ToolController {
     private func title(of id: AudioTrackID) -> String {
         switch id {
         case .minecraft: "Minecraft\u{2019}s"
+        case .webPages: layout.webPageAddresses.count == 1 ? "The web page\u{2019}s" : "The web pages\u{2019}"
         case .source(let sourceID): "\(layout.audioSources.first { $0.id == sourceID }?.name ?? "A source")\u{2019}s"
         case .feed(let name): "\(name)\u{2019}s"
         }
@@ -1222,7 +1224,7 @@ public final class ScreenRecordingController: ToolController {
     private static func sourceSet(_ layout: RecordingLayout) -> [String] {
         layout.videoSources.map { "\($0.id)\($0.kind)" }.sorted()
             + layout.audioSources.map { "\($0.id)\($0.kind)" }.sorted()
-            + ["\(layout.includesMinecraftAudio)"]
+            + ["\(layout.includesMinecraftAudio)", "web:\(layout.recordsWebPageAudio)"]
     }
 
     private func captureAffecting(_ options: RecordingOptions) -> String {

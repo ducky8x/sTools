@@ -60,6 +60,13 @@ enum WriterFixture {
             audioTrackNames: audio)
     }
 
+    /// Waits until the encoder can take another frame, or the writer has no file open (it stopped, or hasn't begun the
+    /// next part), so a test feeds frames without dropping any. Bounded on awake time, not by a count of pauses: an
+    /// encoder that a busy Mac slows down is waited for, not given up on.
+    static func waitForEncoder(_ writer: RecordingWriter) async {
+        _ = await waitUntil { writer.canAcceptFrame || writer.currentFileURL == nil }
+    }
+
     /// Feeds `frameCount` frames (and matching audio) at the nominal rate, waiting for the encoder instead
     /// of dropping, so the counts are exact. Time starts at `origin`.
     static func feed(
@@ -72,11 +79,7 @@ enum WriterFixture {
     ) async {
         for index in firstIndex..<(firstIndex + frameCount) {
             let time = origin + CMTime(value: CMTimeValue(index), timescale: CMTimeScale(fps))
-            var waited = 0
-            while !writer.canAcceptFrame, writer.currentFileURL != nil, waited < 5000 {
-                try? await Task.sleep(for: .milliseconds(1))
-                waited += 1
-            }
+            await waitForEncoder(writer)
             if writer.append(frame: makeFrame(index: index), at: time) == .stopped { return }
             for track in 0..<audioTracks {
                 writer.append(audio: makeAudio(track: track, start: time, frames: 48_000 / fps))
