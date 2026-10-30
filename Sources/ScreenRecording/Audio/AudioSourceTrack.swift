@@ -15,14 +15,18 @@ public struct AudioSourceTrack: Equatable, Sendable {
         self.volume = volume
     }
 
-    /// The tracks after the mix, in file order: Minecraft (when included), then the layout's audio sources, then
-    /// sTools' own in-process feeds named in `feeds` (the ones that want recording, such as *Timer alarm*), each mixed
-    /// at volume 1. Titles are the source and feed names, trimmed; an empty name becomes "Audio" and a repeated title
-    /// gets " 2", " 3", ... so every track is distinguishable in a player's track menu.
+    /// The tracks after the mix, in file order: Minecraft (when included), the web pages' sound (when a web page is on
+    /// the canvas and its sound is on), then the layout's audio sources, then sTools' own in-process feeds named in
+    /// `feeds` (the ones that want recording, such as *Timer alarm*), each mixed at volume 1. Titles are the source and
+    /// feed names, trimmed; an empty name becomes "Audio" and a repeated title gets " 2", " 3", ... so every track is
+    /// distinguishable in a player's track menu.
     public static func tracks(for layout: RecordingLayout, feeds: [String] = []) -> [AudioSourceTrack] {
         var tracks: [AudioSourceTrack] = []
         if layout.includesMinecraftAudio {
             tracks.append(AudioSourceTrack(id: .minecraft, title: minecraftTitle, volume: layout.minecraftAudioVolume))
+        }
+        if layout.recordsWebPageAudio {
+            tracks.append(AudioSourceTrack(id: .webPages, title: layout.webPageAudioTitle, volume: layout.webPageAudioVolume))
         }
         for source in layout.audioSources {
             let trimmed = source.name.trimmingCharacters(in: .whitespacesAndNewlines)

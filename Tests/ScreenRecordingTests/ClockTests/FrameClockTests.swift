@@ -190,19 +190,28 @@ import os
         #expect(hub.stats(for: key).coalesced == 2)
     }
 
-    @Test func realTimerProducesIncreasingTicksAtRoughlyTheRate() async throws {
+    /// A real timer drives the clock: it keeps ticking, in order, never faster than its rate, and stops when told to.
+    /// How many ticks a busy Mac lets a timer deliver in half a second is not the clock's to promise, so the test runs
+    /// until fifteen ticks are in, however long that takes, and bounds the count from above by the slots that went by
+    /// on the host clock, which no load can change.
+    @Test func realTimerProducesIncreasingTicksNeverFasterThanTheRate() async throws {
         let queue = DispatchQueue(label: "test.frameclock")
         let rec = TickRecorder()
         let fc = FrameClock(framesPerSecond: 60, driver: DispatchTickDriver(queue: queue), onTick: { rec.record($0) })
+        let began = HostMediaClock().now()
         fc.start()
-        try await Task.sleep(for: .milliseconds(500))
+        let kept = await waitUntil { rec.all.count >= 15 }
         fc.stop()
+        let ended = HostMediaClock().now()
         queue.sync {}
+        #expect(kept, "the timer kept ticking")
         let ticks = rec.all
-        #expect(ticks.count >= 15 && ticks.count <= 32)
+        let elapsed = CMTimeGetSeconds(CMTimeSubtract(ended, began))
+        // Tick n is due n/60 s after the start, so none comes before its slot: the last index is within the elapsed time.
+        #expect(Double(ticks.count) <= elapsed * 60 + 2, "\(ticks.count) ticks in \(elapsed) s")
         #expect(zip(ticks, ticks.dropFirst()).allSatisfy { $1.index > $0.index })
         let count = ticks.count
         try await Task.sleep(for: .milliseconds(100))
-        #expect(rec.all.count == count)
+        #expect(rec.all.count == count, "no tick after the stop")
     }
 }
