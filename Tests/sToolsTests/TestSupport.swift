@@ -201,7 +201,7 @@ func fakeInstance(pid: Int32 = 100, version: String = "1.16.1", launched: TimeIn
 /// sleeps, so a sleep in the middle of a test (an unattended run in Deep Idle with dark wakes) used up the whole bound
 /// at once, and the wait gave up right after wake although what it waited for came a moment later.
 @MainActor
-func waitUntil(timeout: Duration = .seconds(3), _ condition: @MainActor () -> Bool) async -> Bool {
+func waitUntil(timeout: Duration = .seconds(20), _ condition: @MainActor () -> Bool) async -> Bool {
     let clock = SuspendingClock()
     let deadline = clock.now + timeout
     while !condition() {
