@@ -195,7 +195,9 @@ struct TimerAdvancedSection: View {
     }
 
     /// What the cancel gesture does, under its row (spec 5.6.2): either gesture switches Timer Overlay off, and the
-    /// next press switches it back on. Wording from ducky's M9 review (B138-B140).
+    /// next press switches it back on. With None no gesture does, so the line says the key never will and points to the
+    /// switch. Wording from ducky's M9 review (B138, B139); None's is B140b, set at ducky's request because B140's
+    /// ("Only the double click gesture will turn off the Timer Overlay.") isn't true there (revision 42).
     static func cancelGestureNote(for gesture: TimerOverlaySettings.CancelGesture) -> String {
         let back = "Press again to turn it on and start."
         return switch gesture {
@@ -204,7 +206,7 @@ struct TimerAdvancedSection: View {
         case .hold:
             "Hold the key for \(points(PressPolicy.holdDuration)) s to switch Timer Overlay off. \(back)"
         case .off:
-            "Only the double click gesture will turn off the Timer Overlay."
+            "The key will never turn off the Timer Overlay. Use its switch."
         }
     }
 

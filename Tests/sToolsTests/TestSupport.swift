@@ -149,6 +149,9 @@ final class Harness {
         prober = FakeProber(accessibility: accessibility)
         source = StaticMinecraftWindowSource(instances: instances)
         store = SettingsStore(directory: directory, debounce: .milliseconds(10))
+        // Also fire while holding Shift or Control is off here, so what the fake registrar holds is the list itself; the
+        // tests of that option turn it on (`HotkeyHeldModifierAppTests`).
+        store.save(HotkeyHeldModifierSettings(alsoFiresWithShiftOrControl: false))
         if prologueCompleted { store.save(AppState(prologueCompleted: true)) }
         if let hotkeys { store.save(hotkeys) }
         var fakes: [ToolID: FakeController] = [:]

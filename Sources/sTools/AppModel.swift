@@ -78,6 +78,7 @@ final class AppModel {
     @ObservationIgnored lazy var hotkeys: HotkeyCenter = HotkeyCenter(
         store: services.settings, registrar: hotkeyRegistrar,
         toolStates: { [weak self] in self?.hotkeyToolStates() ?? [:] },
+        menuShortcuts: GoCommand.menuShortcuts,
         handler: { [weak self] events in self?.handleHotkeyPress(events) })
     /// Tells Hotkeys which app is in front, for Where hotkeys work (spec 6.1). Only the real app has one; a center
     /// nobody tells acts as if sTools were in front.

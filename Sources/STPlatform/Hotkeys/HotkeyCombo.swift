@@ -51,12 +51,30 @@ public struct HotkeyCombo: Codable, Hashable, Sendable {
         self.init(keyCode: keyCode, modifiers: Modifiers(rawValue: modifierRawValue))
     }
 
+    /// The key that types `character` ("1", ",", "[": a digit or punctuation key, named as `keyName` names it) with
+    /// `modifiers`, which is how the app names its menu shortcuts. Nil for a character no supported key carries.
+    public init?(character: Character, modifiers: Modifiers) {
+        guard let keyCode = Self.keys.first(where: { $0.value.name == String(character) })?.key else { return nil }
+        self.init(keyCode: keyCode, modifiers: modifiers)
+    }
+
     private enum CodingKeys: String, CodingKey { case keyCode, modifiers }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.init(keyCode: try container.decode(UInt16.self, forKey: .keyCode),
                   modifiers: try container.decode(Modifiers.self, forKey: .modifiers))
+    }
+
+    // MARK: Held modifiers
+
+    /// The same key with ⇧ and/or ⌃ added to what is held, in the order ⇧, ⌃, ⇧⌃: the combinations a hotkey that also
+    /// fires while holding Shift or Control registers too, because macOS matches modifiers exactly (spec 6.1). One that
+    /// holds ⇧ gains only ⌃, one that holds ⌃ only ⇧, and one that holds both has none.
+    public var shiftAndControlVariants: [HotkeyCombo] {
+        let missing: [Modifiers] = [.shift, .control].filter { !modifiers.contains($0) }
+        let added: [Modifiers] = missing.count == 2 ? [.shift, .control, [.shift, .control]] : missing
+        return added.map { HotkeyCombo(keyCode: keyCode, modifiers: modifiers.union($0)) }
     }
 
     // MARK: Display
