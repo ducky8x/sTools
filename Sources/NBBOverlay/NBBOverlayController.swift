@@ -53,6 +53,8 @@ public final class NBBOverlayController: ToolController {
     @ObservationIgnored private(set) var drawCount = 0
     /// How many times what the overlay watches (Minecraft's window, the copies) changed and the watch handled it. For tests.
     @ObservationIgnored private(set) var watchRounds = 0
+    /// Whether the watch is armed: at most one, however often the tool is switched on (`watchForUpdates()`).
+    @ObservationIgnored private var isWatchingForUpdates = false
     /// Called once new content is built into the panel and the panel is shown. For tests that time an update.
     @ObservationIgnored var didDraw: (@MainActor () -> Void)?
     /// What the panel shows now, so a refresh that changes nothing it draws (Minecraft gaining or losing focus,
@@ -213,24 +215,31 @@ public final class NBBOverlayController: ToolController {
         observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.refreshIfEnabled() }
         })
-        watchForUpdates()
+        if !isWatchingForUpdates { watchForUpdates() }
     }
 
     /// `services.minecraft` and `copies` are `@Observable`; this re-arms itself after every change so a Minecraft
     /// display change or another copy redraws the panel. Ninjabrain Bot's results don't come this way: an observation's
     /// change comes before the value is set, so acting on it takes one more main-actor hop. A stream's value
     /// (`connection.onChange`) and a window read (`showWindow`) redraw the panel directly instead.
+    ///
+    /// There is one watch at a time: switching the tool on while the last one is still armed keeps that one, and a watch
+    /// whose change comes after the tool was switched off ends there instead of arming again (Crosshair's does the same).
     private func watchForUpdates() {
+        isWatchingForUpdates = true
         withObservationTracking {
             _ = services.minecraft.active
             _ = copies.copies
             _ = copies.choice
         } onChange: { [weak self] in
-            Task { @MainActor in
-                self?.watchRounds += 1
-                self?.syncWindowReading()
-                self?.refreshIfEnabled()
-                self?.watchForUpdates()
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                isWatchingForUpdates = false
+                guard isEnabled else { return }
+                watchRounds += 1
+                syncWindowReading()
+                refreshIfEnabled()
+                watchForUpdates()
             }
         }
     }
