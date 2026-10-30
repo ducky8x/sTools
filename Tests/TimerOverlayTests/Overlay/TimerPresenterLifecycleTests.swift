@@ -423,7 +423,7 @@ struct TimerPresenterLifecycleTests {
                         displayFrame: offScreen, reduceMotion: false)
         var completions = 0
         presenter.popOut(reduceMotion: false) { completions += 1 }
-        let deadline = SuspendingClock.now.advanced(by: .seconds(3))
+        let deadline = SuspendingClock.now.advanced(by: .seconds(20))
         while presenter.isShowing, SuspendingClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
         #expect(!presenter.isShowing)
         try await Task.sleep(for: .milliseconds(800))

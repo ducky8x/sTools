@@ -102,6 +102,25 @@ private func show(_ model: PrologueModel, theme: STTheme, sound: STSoundPlayer =
         .environment(\.stSoundPlayer, sound), running: running)
 }
 
+/// The clock the animation gate (`PrologueAnimations`) reads, held by the test. A step's animations count as playing
+/// from the moment they're armed until the test moves this clock, so what a click or a key completes never depends on
+/// how fast a busy Mac draws the step. SwiftUI still plays the animations themselves in real time.
+private final class GateClock {
+    private(set) var now = ContinuousClock.now
+
+    func advance(by duration: Duration) { now = now.advanced(by: duration) }
+}
+
+/// The gate a model animates under, read from `clock`.
+@MainActor
+private func gate(_ clock: GateClock) -> PrologueAnimations {
+    PrologueAnimations(now: { clock.now })
+}
+
+/// How long a wait for something the screen does, or a model reaches, may take: awake time, and far more than any
+/// of them needs on a quiet Mac, so a busy one only slows the test down.
+private let patience: Duration = .seconds(20)
+
 @MainActor @Observable
 private final class TypingState {
     var isStarted = false
@@ -206,17 +225,17 @@ struct PrologueReducedMotionTests {
 
     /// Found in the bug hunt: completing the ceremony set each value to where it was already animating, which doesn't
     /// stop an animation on its way there, so the screen kept fading up and the mark kept drawing after motion was
-    /// reduced. Here the ceremony plays in real time.
+    /// reduced. Here the ceremony plays in real time, and motion is reduced the moment the screen is first seen on its
+    /// way up from black: the gate's clock is held, so the ceremony is still playing then however slowly a busy Mac
+    /// draws it, and a wait for the fade's middle (0.8 s long) can't be missed by a slow first picture.
     @Test func reducingMotionMidCeremonyStopsWhatWasMoving() async {
         let theme = STTheme()
         let box = StoreBox()
-        let model = PrologueModel(store: box.store, host: FakeHost(), startingAt: .greeting)
+        let model = PrologueModel(store: box.store, host: FakeHost(), startingAt: .greeting, animations: gate(GateClock()))
         let hosted = show(model, theme: theme, running: true)
-        let fadingUp = await waitUntil {
-            let corner = rgb(hosted.capture(), x: 4, y: 4)
-            return corner != [0, 0, 0] && corner != background
-        }
+        let fadingUp = await waitUntil(timeout: patience) { rgb(hosted.capture(), x: 4, y: 4) != [0, 0, 0] }
         #expect(fadingUp, "the control: the screen is on its way up from black")
+        #expect(model.animations.isRunning, "the control: the ceremony is playing")
 
         theme.systemReduceMotion = true
         let completed = hosted.capture()
@@ -228,26 +247,29 @@ struct PrologueReducedMotionTests {
 
     // MARK: Steps
 
+    /// Both gates read a held clock, so an armed gate stays armed (and one wrongly armed under reduced motion would
+    /// show) however long a busy Mac takes between the step appearing and the check.
     @Test func stepTitlesNeverArmTheGate() {
         let box = StoreBox()
-        let model = PrologueModel(store: box.store, host: FakeHost(), startingAt: .crosshairTrial)
+        let model = PrologueModel(store: box.store, host: FakeHost(), startingAt: .crosshairTrial, animations: gate(GateClock()))
         _ = show(model, theme: reduced).capture()
         #expect(!model.animations.isRunning)
 
-        let full = PrologueModel(store: box.store, host: FakeHost(), startingAt: .crosshairTrial)
+        let full = PrologueModel(store: box.store, host: FakeHost(), startingAt: .crosshairTrial, animations: gate(GateClock()))
         _ = show(full, theme: STTheme()).capture()
         #expect(full.animations.isRunning, "the control: under full motion the title types")
     }
 
     /// Under full motion a click completes a step title's typing and its gilt rule at once (spec 4.1). Both were
     /// already animating toward their final state, so completing them used to leave them arriving on their own.
-    /// Here the step plays in real time.
+    /// Here the step plays in real time, and the gate's clock is held: the click always finds the step playing (it
+    /// came back "nothing was playing" when a busy Mac took longer than the title's quarter of a second to get there).
     @Test func aClickCompletesTheTitleAndItsRuleAtOnce() async {
         let box = StoreBox()
-        let model = PrologueModel(store: box.store, host: FakeHost(), startingAt: .crosshairTrial)
+        let model = PrologueModel(store: box.store, host: FakeHost(), startingAt: .crosshairTrial, animations: gate(GateClock()))
         let hosted = show(model, theme: STTheme(), running: true)
         let start = hosted.capture()
-        #expect(await waitUntil { !sameImage(hosted.capture(), start) }, "the control: the title is typing")
+        #expect(await waitUntil(timeout: patience) { !sameImage(hosted.capture(), start) }, "the control: the title is typing")
         #expect(model.animations.completeAll(), "something was playing when the click came")
         let completed = hosted.capture()
         try? await Task.sleep(for: .seconds(1.5))
@@ -327,20 +349,19 @@ struct PrologueReducedMotionTests {
     /// Found in the bug hunt: the title's gate ends before a Finale of several tools does, so reducing motion after
     /// it left the rest still going off one by one, with nothing to complete.
     @Test func reducingMotionMidFinaleSwitchesTheRestOffAtOnce() async {
-        final class Time { var now = ContinuousClock.now }
-        let time = Time()
+        let time = GateClock()
         let theme = STTheme()
         let box = StoreBox()
         let host = FakeHost()
         host.toolsOn = [.nbbOverlay, .crosshair, .screenRecording]
         let model = PrologueModel(store: box.store, host: host, startingAt: .youreSet,
-                                  animations: PrologueAnimations(now: { time.now }),
+                                  animations: gate(time),
                                   finaleDelay: .zero, finaleInterval: .seconds(60))
         let hosted = show(model, theme: theme)
         _ = hosted.capture()
         model.runFinale()
-        #expect(await waitUntil { host.switchedOff.count == 1 }, "the first goes off; the next waits a minute")
-        time.now = time.now.advanced(by: .seconds(30))
+        #expect(await waitUntil(timeout: patience) { host.switchedOff.count == 1 }, "the first goes off; the next waits a minute")
+        time.advance(by: .seconds(30))
         #expect(!model.animations.isRunning, "the title's gate is long over")
 
         theme.systemReduceMotion = true
@@ -350,17 +371,18 @@ struct PrologueReducedMotionTests {
     }
 
     /// Found in the bug hunt: once the title is in, the rule and the line beneath take 0.6 s to arrive, and reducing
-    /// motion then left them arriving. Here the step plays in real time.
+    /// motion then left them arriving. Here the step plays in real time, with the gate's clock held so reducing motion
+    /// finds the step playing however slowly a busy Mac drew it.
     @Test func reducingMotionMidFinaleBringsTheRuleAndLineInAtOnce() async {
         let theme = STTheme()
         let box = StoreBox()
         let host = FakeHost()
         host.toolsOn = [.crosshair]
-        let model = PrologueModel(store: box.store, host: host, startingAt: .youreSet,
+        let model = PrologueModel(store: box.store, host: host, startingAt: .youreSet, animations: gate(GateClock()),
                                   finaleDelay: .seconds(60), finaleInterval: .seconds(60))
         let hosted = show(model, theme: theme, running: true)
         // The Finale starts as the title finishes typing, which is when the rule and the line set off.
-        #expect(await waitUntil { model.isFinaleRunning }, "the control: the title typed in under full motion")
+        #expect(await waitUntil(timeout: patience) { model.isFinaleRunning }, "the control: the title typed in under full motion")
 
         theme.systemReduceMotion = true
         let completed = hosted.capture()

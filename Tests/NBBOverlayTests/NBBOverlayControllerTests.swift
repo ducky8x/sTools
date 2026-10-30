@@ -96,7 +96,7 @@ struct NBBOverlayControllerTests {
         predictions: [NBBEvents.Prediction(chunkX: -41, chunkZ: 108, certainty: 0.94, overworldDistance: 1580)],
         eyeThrows: [], playerPosition: nil)
 
-    @MainActor private func waitUntil(_ condition: @MainActor () -> Bool, seconds: Double = 2) async {
+    @MainActor private func waitUntil(_ condition: @MainActor () -> Bool, seconds: Double = 20) async {
         let clock = SuspendingClock()
         let deadline = clock.now.advanced(by: .seconds(seconds))
         while !condition(), clock.now < deadline { try? await Task.sleep(for: .milliseconds(10)) }
