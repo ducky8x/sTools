@@ -882,6 +882,12 @@ struct KeyRebinderHotkeyTests {
         let caution = HotkeyNote(tone: .caution, text: "Minecraft uses F3 for Debug screen. While hotkeys are on, it never gets F3.")
         let held = HotkeyNote(
             tone: .note, text: "F3 won\u{2019}t fire while you hold Shift (Sneak) or Control (Sprint), Minecraft\u{2019}s default.")
+        // Also fire while holding Shift or Control is on by default, and a hotkey that fires with them held has nothing to
+        // say about them: only the caution stays.
+        #expect(center.alsoFiresWithShiftOrControl)
+        #expect(controller.notes(for: HotkeyFixtures.combo("f3")) == [caution])
+        #expect(center.notes(for: HotkeyFixtures.combo("f3")).prefix(1) == [caution])
+        center.alsoFiresWithShiftOrControl = false
         #expect(controller.notes(for: HotkeyFixtures.combo("f3")) == [caution, held])
         #expect(center.notes(for: HotkeyFixtures.combo("f3")).prefix(2) == [caution, held])
         #expect(controller.notes(for: HotkeyFixtures.combo("f18", [.control, .shift])).isEmpty)

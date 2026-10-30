@@ -5,20 +5,26 @@ import Foundation
 import Testing
 @testable import ScreenRecording
 
-/// The presentation times of a movie's video samples, in seconds, in file order.
+/// The presentation times of a movie's video samples, in seconds, in file order. The read runs off the Swift
+/// concurrency pool (`MovieInfo.offThePool`).
 func videoSampleTimes(of url: URL) async throws -> [Double] {
     let asset = AVURLAsset(url: url)
     let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
-    let reader = try AVAssetReader(asset: asset)
-    let output = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
-    output.alwaysCopiesSampleData = false
-    reader.add(output)
-    #expect(reader.startReading())
-    var times: [Double] = []
-    while let sample = output.copyNextSampleBuffer() {
-        if CMSampleBufferGetNumSamples(sample) > 0 { times.append(CMSampleBufferGetPresentationTimeStamp(sample).seconds) }
+    nonisolated(unsafe) let track2 = track
+    let times = try await MovieInfo.offThePool { () -> [Double]? in
+        let reader = try AVAssetReader(asset: asset)
+        let output = AVAssetReaderTrackOutput(track: track2, outputSettings: nil)
+        output.alwaysCopiesSampleData = false
+        reader.add(output)
+        guard reader.startReading() else { return nil }
+        var times: [Double] = []
+        while let sample = output.copyNextSampleBuffer() {
+            if CMSampleBufferGetNumSamples(sample) > 0 { times.append(CMSampleBufferGetPresentationTimeStamp(sample).seconds) }
+        }
+        return times
     }
-    return times
+    #expect(times != nil, "the reader started")
+    return times ?? []
 }
 
 /// A tick whose sources brought nothing new writes the last picture again instead of drawing it again, and Minecraft
@@ -50,8 +56,8 @@ struct RecordingPictureTests {
         for i in 0..<ticks {
             beforeTick(i)
             clock.set(10 + Double(i) / 30 + 0.001)
+            #expect(await waitUntil { session.canAcceptFrame }, "the encoder took the last frame")
             driver.fire()
-            try await Task.sleep(for: .milliseconds(4))
         }
         let result = await session.stop()
         await rig.stop()
@@ -192,8 +198,8 @@ struct RecordingPictureTests {
         for i in 0..<6 {
             base.push(.frame(VideoFrame(pixelBuffer: WriterFixture.makeFrame(index: i, size: tall), hostTime: .seconds(10 + Double(i) / 30))))
             clock.set(10 + Double(i) / 30 + 0.001)
+            #expect(await waitUntil { session.canAcceptFrame }, "the encoder took the last frame")
             driver.fire()
-            try await Task.sleep(for: .milliseconds(4))
         }
         _ = await session.stop()
         await rig.stop()

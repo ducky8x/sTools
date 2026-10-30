@@ -32,4 +32,12 @@ public protocol CaptureFactory {
     func audio(for source: AudioSource) -> (any AudioCapture)?
     /// Minecraft's own sound.
     func minecraftAudio(processID: Int32) -> (any AudioCapture)?
+    /// The sound of the web pages sTools shows, all together: nothing of another app's, nothing sTools plays itself
+    /// (spec 5.4.1). One capture for the layout, however many web pages it has.
+    func webPageAudio() -> (any AudioCapture)?
+}
+
+extension CaptureFactory {
+    /// A factory that captures no web page sound.
+    public func webPageAudio() -> (any AudioCapture)? { nil }
 }

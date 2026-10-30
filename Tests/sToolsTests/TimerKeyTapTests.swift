@@ -236,11 +236,12 @@ struct TimerKeyLogTests {
         let keys = try Keyboard(uptimeZero: 7_321)
         keys.tap(at: 0)
         keys.tap(at: 0.25)
-        // The unified log can take a moment to hand back what was just written.
-        let deadline = SuspendingClock.now + .seconds(15)
+        // The unified log can take a moment to hand back what was just written, and each read is a synchronous call
+        // that takes seconds on a busy Mac: it runs off the main actor, which every other test in this run needs.
+        let deadline = SuspendingClock.now + .seconds(30)
         var lines: [String] = []
         repeat {
-            lines = try OSLogLineReader().recentLines(since: since, limit: 10_000)
+            lines = try await Task.detached { try OSLogLineReader().recentLines(since: since, limit: 10_000) }.value
             if lines.contains(where: { $0.contains("Timer Overlay on \u{2192} off") }) { break }
             try await Task.sleep(for: .milliseconds(50))
         } while SuspendingClock.now < deadline

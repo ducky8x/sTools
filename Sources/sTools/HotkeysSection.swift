@@ -5,7 +5,8 @@ import SwiftUI
 
 /// Home ▸ Hotkeys (spec 6.1), near the top of Home: Where hotkeys work and the key sets, each with every option in view
 /// and the sets with what the current one gives each tool, the list of hotkeys (key and actions at a glance), Add
-/// Hotkey…, an add/edit editor for each, and Advanced (spec 2.4) with the press confirmation. While hotkeys are off,
+/// Hotkey…, an add/edit editor for each, and Advanced (spec 2.4) with the press confirmation and Also fire while holding
+/// Shift or Control (each hotkey works while someone sneaks or sprints, spec 6.1). While hotkeys are off,
 /// one strip says so with Turn On; while on, the master switch turns them off. Any key works, alone or with modifiers.
 /// What the Key Rebinder knows (which key on the keyboard sends a hotkey's key, what Minecraft uses it for) arrives
 /// through `model.hotkeys.advisor`; without one, those lines are simply left out.
@@ -94,14 +95,30 @@ struct HotkeysSection: View {
         if hotkeys.isEnabled {
             STAdvancedDisclosure(isExpanded: $advancedIsOpen) {
                 VStack(alignment: .leading, spacing: 0) {
-                    STSettingsRow("Show a confirmation", showsRule: false) {
+                    STSettingsRow("Show a confirmation") {
                         STSwitch(isOn: confirmationBinding, label: "Show a confirmation")
+                    }
+                    // Each hotkey also fires with Shift or Control held (spec 6.1): on by default, kept apart from the list.
+                    STSettingsRow(Self.alsoFireLabel, showsRule: false) {
+                        STSwitch(isOn: alsoFireBinding, label: Self.alsoFireLabel)
+                    }
+                    if hotkeys.alsoFiresWithShiftOrControl {
+                        HotkeysCaption(Self.alsoFireNote)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.bottom, 12)
                     }
                 }
             }
             .padding(.top, 14)
         }
     }
+
+    /// Advanced's option for the keys a hotkey also fires with: its name, the spec's.
+    static let alsoFireLabel = "Also fire while holding Shift or Control"
+
+    /// What the option leaves out, where it matters: some combinations aren't free to take. ⇧⌘3 is macOS's screenshot,
+    /// and the Go menu's ⌃⌘0–⌃⌘6 are sTools' while it is in front.
+    static let alsoFireNote = "Skips a combination that another hotkey or macOS already uses, such as \u{21E7}\u{2318}3, and sTools\u{2019} own menu shortcuts while it is in front."
 
     /// The strip's line while hotkeys are off (the same for either place hotkeys work).
     static func offMessage(hasHotkeys: Bool, scope: HotkeyScope) -> String {
@@ -201,6 +218,10 @@ struct HotkeysSection: View {
 
     private var confirmationBinding: Binding<Bool> {
         Binding(get: { model.hotkeys.showsConfirmation }, set: { model.hotkeys.showsConfirmation = $0 })
+    }
+
+    private var alsoFireBinding: Binding<Bool> {
+        Binding(get: { model.hotkeys.alsoFiresWithShiftOrControl }, set: { model.hotkeys.alsoFiresWithShiftOrControl = $0 })
     }
 }
 

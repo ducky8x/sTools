@@ -68,6 +68,9 @@ final class AppModel {
     @ObservationIgnored var confirmTurningOnHotkeys: @MainActor () -> Bool = AppModel.askToTurnOnHotkeys
     /// Follows macOS's Reduce motion into the theme. Only the real app has one; tests set the theme themselves.
     @ObservationIgnored var systemMotion: SystemMotionWatcher?
+    /// Where Copy Diagnostics reads the log from. The unified log answers through a synchronous call that can take
+    /// seconds on a busy Mac, with the main actor waiting; tests replace it.
+    @ObservationIgnored var logReader: any LogLineReading = OSLogLineReader()
 
     /// Home ▸ Hotkeys (spec 6.1). Built lazily so its `toolStates`/`handler` closures can capture
     /// `self` — they only run on an actual key press, well after `init` returns.
@@ -75,6 +78,7 @@ final class AppModel {
     @ObservationIgnored lazy var hotkeys: HotkeyCenter = HotkeyCenter(
         store: services.settings, registrar: hotkeyRegistrar,
         toolStates: { [weak self] in self?.hotkeyToolStates() ?? [:] },
+        menuShortcuts: GoCommand.menuShortcuts,
         handler: { [weak self] events in self?.handleHotkeyPress(events) })
     /// Tells Hotkeys which app is in front, for Where hotkeys work (spec 6.1). Only the real app has one; a center
     /// nobody tells acts as if sTools were in front.

@@ -45,6 +45,7 @@ extension AppModel {
         UpdateSettings.name: UpdateSettings.version,
         AppState.name: AppState.version,
         HotkeySettings.name: HotkeySettings.version,
+        HotkeyHeldModifierSettings.name: HotkeyHeldModifierSettings.version,
         CrosshairSettings.name: CrosshairSettings.version,
         BackdropSettings.name: BackdropSettings.version,
         NBBOverlaySettings.name: NBBOverlaySettings.version,
@@ -113,9 +114,10 @@ extension AppModel {
             minecraft: minecraft.active != nil ? "Detected: \(minecraft.active?.version ?? "unknown version")" : "Not running",
             enabledTools: enabledTools,
             settingsFiles: SettingsFileInfo.list(in: settings.directory),
-            logReader: OSLogLineReader(),
+            logReader: logReader,
             hotkeys: DiagnosticsHotkeys(
-                isEnabled: hotkeys.isEnabled, scope: hotkeys.scope.title, keySet: HotkeyKeySet.name(of: hotkeys.keySet)))
+                isEnabled: hotkeys.isEnabled, scope: hotkeys.scope.title, keySet: HotkeyKeySet.name(of: hotkeys.keySet),
+                alsoFiresWithShiftOrControl: hotkeys.alsoFiresWithShiftOrControl))
         report.copy(to: clipboard)
     }
 

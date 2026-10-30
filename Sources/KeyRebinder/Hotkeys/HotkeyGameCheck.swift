@@ -152,11 +152,15 @@ public enum HotkeyGameCheck {
 
     /// Names the modifiers Minecraft binds that `combo` lacks: while one of them is held, the hotkey doesn't fire,
     /// because Carbon matches modifiers exactly. "F18 won’t fire while you hold Shift (Sneak) or Control
-    /// (Sprint)." Nil when the combination has every one of them, or Minecraft binds none.
+    /// (Sprint)." Nil when the combination has every one of them, or Minecraft binds none. `covered` are the
+    /// modifiers the hotkey also fires with, which it doesn't wait for: with Also fire while holding Shift or Control
+    /// on (spec 6.1) that is ⇧ and ⌃, so the note stays only for another modifier Minecraft binds, ⌥ or ⌘.
     public static func heldModifierNote(
-        for combo: HotkeyCombo, minecraftKeybinds: [MinecraftKeybind]?, table: KeyTable = .shared
+        for combo: HotkeyCombo, minecraftKeybinds: [MinecraftKeybind]?, alsoFiringWith covered: HotkeyCombo.Modifiers = [],
+        table: KeyTable = .shared
     ) -> String? {
-        let missing = boundModifiers(minecraftKeybinds ?? defaultKeybinds, table: table).filter { !combo.modifiers.contains($0.flag) }
+        let missing = boundModifiers(minecraftKeybinds ?? defaultKeybinds, table: table)
+            .filter { !combo.modifiers.contains($0.flag) && !covered.contains($0.flag) }
         guard !missing.isEmpty else { return nil }
         let held = missing.map { "\($0.name) (\($0.actions.joined(separator: ", ")))" }
         var text = "\(combo.displayString) won\u{2019}t fire while you hold \(joined(held, last: "or"))"
