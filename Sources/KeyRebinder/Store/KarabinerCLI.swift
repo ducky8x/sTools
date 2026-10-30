@@ -16,9 +16,9 @@ extension KarabinerCLIError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .commandFailed(let status, let message):
-            message.isEmpty ? "Karabiner's command line tool failed (exit \(status))." : "Karabiner's command line tool failed (exit \(status)): \(message)"
+            message.isEmpty ? "Karabiner\u{2019}s command line tool failed (exit \(status))." : "Karabiner\u{2019}s command line tool failed (exit \(status)): \(message)"
         case .unexpectedOutput(let output):
-            "Karabiner's command line tool printed something unexpected: \(output)"
+            "Karabiner\u{2019}s command line tool printed something unexpected: \(output)"
         case .profileNotFound(let name):
             "Karabiner-Elements has no profile named \"\(name)\"."
         case .invalidLintPath(let reason):

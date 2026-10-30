@@ -312,7 +312,7 @@ struct RecordingSoundSection: View {
                                  in: 0...150, label: "Minecraft volume", valueText: { "\(Int($0))%" })
                     }
                     STSwitch(isOn: Binding(get: { controller.layout.includesMinecraftAudio },
-                                           set: { on in controller.updateLayout { $0.includesMinecraftAudio = on } }), label: "Record Minecraft's sound")
+                                           set: { on in controller.updateLayout { $0.includesMinecraftAudio = on } }), label: "Record Minecraft\u{2019}s sound")
                 }
             }
             // One row for every web page on the canvas: WebKit plays their sound in one process, so it is one track.

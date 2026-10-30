@@ -30,7 +30,7 @@ enum CrosshairImageImport {
             }
             try FileManager.default.copyItem(at: url, to: destination)
         } catch {
-            return .failure(ImportError(message: "sTools couldn't copy that image."))
+            return .failure(ImportError(message: "sTools couldn\u{2019}t copy that image."))
         }
         return .success("Images/\(name)")
     }

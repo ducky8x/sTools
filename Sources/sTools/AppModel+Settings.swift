@@ -93,7 +93,7 @@ extension AppModel {
     static var resetAllToolsMessage: String {
         let titles = ToolID.allCases.map(\.title)
         let tools = titles.dropLast().joined(separator: ", ") + " and " + (titles.last ?? "")
-        return "This sets the settings of \(tools) back to their defaults. Screen Recording's sources and layout and "
+        return "This sets the settings of \(tools) back to their defaults. Screen Recording\u{2019}s sources and layout and "
             + "your Karabiner-Elements rebinds stay as they are. General, Appearance and Hotkeys are untouched "
             + "\u{2014} use Reset sTools below for those."
     }
