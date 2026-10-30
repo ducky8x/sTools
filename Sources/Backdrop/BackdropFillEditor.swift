@@ -15,6 +15,8 @@ struct BackdropFillEditor: View {
     var importError: String?
     /// Why the chosen GIF or video can't be used or played, if it can't.
     var animationError: String?
+    /// Whether the chosen file is a GIF or a video, once that is known.
+    var animationKind: BackdropAnimationFile.Kind?
 
     private static let kindOptions: [STSegmentedOption<BackdropSettings.FillKind>] = [
         .init(.color, "Color"), .init(.linearGradient, "Linear"), .init(.radialGradient, "Radial"), .init(.image, "Image"),
@@ -63,6 +65,7 @@ struct BackdropFillEditor: View {
                     Text(animationError).stStyle(.caption).foregroundStyle(STColor.danger)
                 }
                 STNoteLine(Self.animationNote)
+                if let cost = Self.costNote(for: animationKind) { STNoteLine(cost) }
                 fitRows
             }
         }
@@ -81,8 +84,18 @@ struct BackdropFillEditor: View {
         }
     }
 
-    /// Under the Animated fill's rows (spec 5.2.3, 9.3): what it does, and what it costs.
-    static let animationNote = "Plays in a loop with no sound, and stops while the backdrop is hidden. The preview shows the first frame."
+    /// Under the Animated fill's rows (spec 5.2.3): what it does.
+    static let animationNote = "Loops with no sound and stops while the backdrop is hidden. The preview shows the first frame."
+
+    /// Next to the setting, what the chosen file costs (spec 9.3). It depends on the file, so the line says how, once the
+    /// file is known to be a video or a GIF; it gives no figure, which would hold for one Mac and one file only.
+    static func costNote(for kind: BackdropAnimationFile.Kind?) -> String? {
+        switch kind {
+        case .video: "A video is decoded by the Mac\u{2019}s video hardware, so it costs little."
+        case .gif: "A GIF is decoded by the CPU, so the bigger it is, the more it costs."
+        case nil: nil
+        }
+    }
 
     private func chooseAnimation() {
         let panel = NSOpenPanel()

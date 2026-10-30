@@ -98,6 +98,8 @@ public final class BackdropController: ToolController {
 
     /// Why an animation can't be played, by the name it's stored under: the page says so.
     private(set) var animationProblems: [String: String] = [:]
+    /// What each animation turned out to be when its first frame was read, by the name it's stored under.
+    private(set) var animationKinds: [String: BackdropAnimationFile.Kind] = [:]
     private var mainAnimationImportError: String?
     private var animationImportErrorsByDisplay: [UInt32: String] = [:]
     /// Counts the first frames that have come in, so the page draws them.
@@ -204,6 +206,13 @@ public final class BackdropController: ToolController {
         return animationProblems[name]
     }
 
+    /// Whether a fill's animation is a GIF or a video, once its first frame has been read (the page asks for that by
+    /// drawing the fill's preview).
+    func animationKind(for fill: BackdropSettings.Fill) -> BackdropAnimationFile.Kind? {
+        guard fill.kind == .animated, let name = fill.animationName else { return nil }
+        return animationKinds[name]
+    }
+
     /// Imports a GIF or video for the main fill (Minecraft's display) and makes the fill Animated. The file is checked and
     /// copied off the main actor; a file that can't be played leaves the fill as it was and sets `animationImportError`.
     public func importAnimation(from url: URL) async {
@@ -254,6 +263,7 @@ public final class BackdropController: ToolController {
         switch result {
         case .success(let info):
             images[name] = info.poster
+            animationKinds[name] = info.kind
             animationProblems[name] = nil
         case .failure:
             images[name] = .some(nil)
@@ -270,6 +280,7 @@ public final class BackdropController: ToolController {
         for name in before.subtracting(after) {
             images[name] = nil
             animationProblems[name] = nil
+            animationKinds[name] = nil
             let url = animationURL(name)
             Task.detached(priority: .utility) { try? FileManager.default.removeItem(at: url) }
         }

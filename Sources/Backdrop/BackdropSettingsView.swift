@@ -30,7 +30,8 @@ public struct BackdropSettingsView: View {
                     onImportAnimation: { url in Task { await controller.importAnimation(from: url) } },
                     image: controller.image(for: controller.settings.fill),
                     importError: controller.imageImportError,
-                    animationError: controller.animationImportError ?? controller.animationProblem(for: controller.settings.fill))
+                    animationError: controller.animationImportError ?? controller.animationProblem(for: controller.settings.fill),
+                    animationKind: controller.animationKind(for: controller.settings.fill))
             }
 
             if !otherDisplays.isEmpty {
@@ -109,7 +110,8 @@ private struct BackdropOtherDisplayRow: View {
                         image: controller.image(for: controller.settings.fill(for: display.id)),
                         importError: controller.imageImportError(for: display.id),
                         animationError: controller.animationImportError(for: display.id)
-                            ?? controller.animationProblem(for: controller.settings.fill(for: display.id)))
+                            ?? controller.animationProblem(for: controller.settings.fill(for: display.id)),
+                        animationKind: controller.animationKind(for: controller.settings.fill(for: display.id)))
                 }
                 .padding(.leading, 12)
             }

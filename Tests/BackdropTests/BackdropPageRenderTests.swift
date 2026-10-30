@@ -153,6 +153,26 @@ struct BackdropPageRenderTests {
         #expect(count(STColor.danger.rgb, in: broken, tolerance: 30) > 50, "the line is drawn in the danger color")
     }
 
+    @Test func theCostNoteDependsOnWhatTheFileTurnsOutToBe() {
+        #expect(BackdropFillEditor.costNote(for: .video) == "A video is decoded by the Mac\u{2019}s video hardware, so it costs little.")
+        #expect(BackdropFillEditor.costNote(for: .gif) == "A GIF is decoded by the CPU, so the bigger it is, the more it costs.")
+        #expect(BackdropFillEditor.costNote(for: nil) == nil, "nothing is said about a file that isn't known yet")
+        #expect(BackdropFillEditor.animationNote == "Loops with no sound and stops while the backdrop is hidden. The preview shows the first frame.")
+    }
+
+    @Test func theCostNoteAppearsOnThePageOnceTheFileIsKnown() async throws {
+        let rig = AnimatedRig()
+        await chooseGIF(rig)
+        let fill = rig.controller.settings.fill
+        #expect(rig.controller.animationKind(for: fill) == nil, "the first frame hasn't been read yet")
+        let before = PageStage(controller: rig.controller)
+        let heightBefore = before.host.bounds.height
+        #expect(await waitUntil { rig.controller.animationKind(for: fill) == .gif })
+        let after = PageStage(controller: rig.controller)
+        save(after.capture(), as: "backdrop-animated-fill-gif")
+        #expect(after.host.bounds.height > heightBefore, "a line was added under the Animation row")
+    }
+
     @Test func anAnimatedFillWithNoFileYetShowsOnlyItsBackground() async throws {
         let rig = AnimatedRig()
         rig.controller.settings.fill.kind = .animated

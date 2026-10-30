@@ -171,6 +171,7 @@ struct BackdropAnimatedImportTests {
         let poster = try #require(rig.controller.image(for: fill))
         #expect(TestMedia.color(of: poster) == .green)
         #expect(poster.width == 40 && poster.height == 20)
+        #expect(rig.controller.animationKind(for: fill) == .gif, "and the page learns it's a GIF")
     }
 
     @Test func theFirstFrameOfAVideoComesInToo() async throws {
@@ -181,6 +182,7 @@ struct BackdropAnimatedImportTests {
         #expect(await waitUntil { rig.controller.image(for: fill) != nil })
         let poster = try #require(rig.controller.image(for: fill))
         #expect(TestMedia.color(of: poster, x: 64, y: 48).isClose(to: .blue, tolerance: 48))
+        #expect(rig.controller.animationKind(for: fill) == .video)
     }
 
     @Test func askingForTheFirstFrameAgainWhileItLoadsStartsNothingNew() async throws {
