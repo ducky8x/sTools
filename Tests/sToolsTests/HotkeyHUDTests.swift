@@ -37,10 +37,14 @@ struct HotkeyHUDTests {
         #expect(hud.panel.sharingType == NSWindow.SharingType.none)
     }
 
+    // Both tests below move the HUD's clock by hand, so neither depends on how long a real wait takes.
+
     @Test(.enabled(if: hasDisplay))
-    func showsLowOnTheDisplayLeavesRecordingsAloneAndFadesAway() async throws {
+    func showsLowOnTheDisplayLeavesRecordingsAloneAndFadesAway() async {
         let display = offScreenDisplay
-        let hud = HotkeyHUD(theme: STTheme(), hold: .milliseconds(150), fadeInDuration: 0.01, fadeOutDuration: 0.05)
+        let clock = ManualClock()
+        let hud = HotkeyHUD(theme: STTheme(), hold: .milliseconds(150), fadeInDuration: 0.01, fadeOutDuration: 0.05,
+                            clock: clock)
         hud.present("Crosshair on \u{00B7} NBB Overlay on", sealed: true, on: display)
         defer { hud.panel.hide() }
 
@@ -54,20 +58,33 @@ struct HotkeyHUDTests {
         #expect(frame.maxY < display.frame.midY)
         #expect(abs(frame.midX - display.frame.midX) <= 1)
 
-        #expect(await waitUntil { !hud.isShowing })
+        #expect(await clock.waitForWakes(.milliseconds(150)), "the hold waits on the clock")
+        clock.advance(by: .milliseconds(150))
+        #expect(await clock.waitForWakes(.milliseconds(200)), "the fade-out wait is on the clock too")
+        #expect(hud.isShowing, "fading out, not gone")
+        clock.advance(by: .milliseconds(50))
+        #expect(await waitUntil(timeout: .seconds(60)) { !hud.isShowing })
     }
 
     @Test(.enabled(if: hasDisplay))
-    func aNewPressStartsItOver() async throws {
+    func aNewPressStartsItOver() async {
         let display = offScreenDisplay
-        let hud = HotkeyHUD(theme: STTheme(), hold: .milliseconds(300), fadeInDuration: 0.01, fadeOutDuration: 0.05)
+        let clock = ManualClock()
+        let hud = HotkeyHUD(theme: STTheme(), hold: .milliseconds(300), fadeInDuration: 0.01, fadeOutDuration: 0.05,
+                            clock: clock)
         hud.present("Crosshair on", sealed: true, on: display)
         defer { hud.panel.hide() }
-        try await Task.sleep(for: .milliseconds(200))
+        #expect(await clock.waitForWakes(.milliseconds(300)), "the hold waits on the clock")
+        clock.advance(by: .milliseconds(200))
         hud.present("Crosshair off", sealed: true, on: display)
+        #expect(await clock.waitForWakes(.milliseconds(500)), "the first hold is gone; the second counts from its own press")
+
         // Past the first press's hold and fade: the second press keeps it up.
-        try await Task.sleep(for: .milliseconds(200))
+        clock.advance(by: .milliseconds(200))
         #expect(hud.isShowing)
-        #expect(await waitUntil { !hud.isShowing })
+        clock.advance(by: .milliseconds(100))
+        #expect(await clock.waitForWakes(.milliseconds(550)), "the second hold ends and its fade-out wait begins")
+        clock.advance(by: .milliseconds(50))
+        #expect(await waitUntil(timeout: .seconds(60)) { !hud.isShowing })
     }
 }
