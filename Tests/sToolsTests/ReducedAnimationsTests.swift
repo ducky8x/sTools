@@ -29,6 +29,9 @@ private final class Still {
 
     init<V: View>(_ view: V, size: CGSize = CGSize(width: 760, height: 560)) {
         _ = NSApplication.shared
+        // The app registers the bundled fonts at launch. Here a window's text stays in the system font until another test
+        // registers them (the Timer Overlay's text does), and two renders in one test can fall on either side of that.
+        _ = STFont.register()
         host = NSHostingView(rootView: AnyView(view))
         host.frame = CGRect(origin: .zero, size: size)
         host.appearance = NSAppearance(named: .darkAqua)
