@@ -27,8 +27,26 @@ private final class Still {
     let host: NSHostingView<AnyView>
     let window: NSWindow
 
+    /// Done once, before the first window. AppKit answers the first ask for the scroller style with the overlay default and
+    /// hears the Mac's a few milliseconds later, on a later turn of the run loop. A window built before then is laid out for
+    /// overlay scrollers and keeps that width once the style turns to legacy, 17 pt wider than every window built after it.
+    /// If the style doesn't change (a Mac that prefers overlay scrollers, or a process that has heard the answer already),
+    /// the wait runs out.
+    private static let scrollerStyleIsKnown: Void = {
+        let asked = NSScroller.preferredScrollerStyle
+        let clock = SuspendingClock()
+        let deadline = clock.now.advanced(by: .milliseconds(100))
+        while NSScroller.preferredScrollerStyle == asked, clock.now < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.001))
+        }
+    }()
+
     init<V: View>(_ view: V, size: CGSize = CGSize(width: 760, height: 560)) {
         _ = NSApplication.shared
+        _ = Self.scrollerStyleIsKnown
+        // The app registers the bundled fonts at launch. Here a window's text stays in the system font until another test
+        // registers them (the Timer Overlay's text does), and two renders in one test can fall on either side of that.
+        _ = STFont.register()
         host = NSHostingView(rootView: AnyView(view))
         host.frame = CGRect(origin: .zero, size: size)
         host.appearance = NSAppearance(named: .darkAqua)
