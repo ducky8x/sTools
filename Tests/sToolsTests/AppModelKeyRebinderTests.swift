@@ -70,7 +70,8 @@ struct AppModelKeyRebinderTests {
         harness.model.hotkeys.add(combo: f20, actions: [.toggle(.nbbOverlay)])
         // What Home ▸ Hotkeys runs when it appears: it reads karabiner.json, and never runs karabiner_cli.
         await harness.model.hotkeys.advisor?.prepareAdvice()
-        #expect(keyRebinder.config != nil)
+        #expect(keyRebinder.hasLoadedConfig)
+        #expect(keyRebinder.config == nil, "with the page closed, the advice keeps no parsed file")
         #expect(harness.model.hotkeys.advisor?.placement(of: f20) == HotkeyPlacement(text: "On Caps Lock", canShow: true))
         #expect(harness.model.showHotkeyOnKeyboard(f20))
         #expect(keyRebinder.selectedKey == .key("caps_lock"))

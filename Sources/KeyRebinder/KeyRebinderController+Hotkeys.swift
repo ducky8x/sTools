@@ -363,10 +363,13 @@ extension KeyRebinderController: HotkeyAdvising {
     }
 
     /// Reads `karabiner.json` and Minecraft's keybinds again. Never runs `karabiner_cli`; the profiles have a read of
-    /// their own (`refreshProfiles()`).
+    /// their own (`refreshProfiles()`). With the page closed it keeps what the advice needs, the keys (`derived`) and the
+    /// keybinds, and lets go of the parsed file, as the page does when it closes; the page reads the file again when it
+    /// opens. While the page shows, the file stays: the page draws from it.
     public func prepareAdvice() async {
         await reloadConfig()
         loadMinecraftKeybinds()
         recompute()
+        if !isShowingPage { releaseLoadedFile() }
     }
 }

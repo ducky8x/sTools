@@ -271,11 +271,12 @@ public final class KeyRebinderController {
         recompute()
     }
 
-    /// Lets go of the parsed `karabiner.json` when the page closes. The controller lives as long as the app, and the
-    /// tree costs about four times the file's size in memory (several MB for a file with many rules). What the keys and
-    /// the page's sections show is in `derived` and the profile names, which stay, so the page comes back the way it
-    /// was and reads the file again as it does on every visit. Nothing is let go while an edit waits for confirmation:
-    /// its preview and the file are what the page is showing.
+    /// Lets go of the parsed `karabiner.json` when the page closes, and after Home's advice read while it is closed
+    /// (`prepareAdvice()`). The controller lives as long as the app, and the tree costs about four times the file's size
+    /// in memory (several MB for a file with many rules). What the keys and the page's sections show is in `derived` and
+    /// the profile names, which stay, so the page comes back the way it was and reads the file again as it does on every
+    /// visit. Nothing is let go while an edit waits for confirmation: its preview and the file are what the page is
+    /// showing.
     public func releaseLoadedFile() {
         releaseCount += 1
         guard pendingEdit == nil, config != nil else { return }
@@ -305,6 +306,10 @@ public final class KeyRebinderController {
         watcher = nil
         reloadTask?.cancel()
     }
+
+    /// Whether the page is showing: it watches Karabiner's folder from when it appears until it closes, and nothing else
+    /// does.
+    var isShowingPage: Bool { watcher != nil }
 
     /// Karabiner's save is several file operations; reload once they settle.
     private func scheduleReload() {
