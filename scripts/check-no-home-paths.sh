@@ -37,8 +37,6 @@
 
 set -euo pipefail
 
-readonly XCODE_BETA="/Applications/Xcode-beta.app/Contents/Developer"
-
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly ROOT
 readonly SOURCE="$ROOT/scripts/check-no-home-paths.swift"
@@ -65,9 +63,9 @@ case "${1:-}" in
         ;;
 esac
 
-if [[ -z "${DEVELOPER_DIR:-}" && -d "$XCODE_BETA" ]]; then
-    export DEVELOPER_DIR="$XCODE_BETA"
-fi
+# shellcheck source=lib/developer-dir.sh
+source "$ROOT/scripts/lib/developer-dir.sh"
+use_full_xcode
 [[ -f "$SOURCE" ]] || broken "scripts/check-no-home-paths.swift is missing"
 
 CACHE="$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null || true)"
