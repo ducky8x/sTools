@@ -99,7 +99,8 @@ struct HomeKeyRebinderTile: View {
             ScrollView(.vertical) {
                 STFlowLayout(spacing: 6) {
                     ForEach(profiles, id: \.self) { name in
-                        HomeProfileChip(name: name, isCurrent: name == current) {
+                        HomeProfileChip(name: name, shown: HomeProfileChip.shownName(of: name, among: profiles),
+                                        isCurrent: name == current) {
                             sound.play(.click)
                             Task {
                                 let switched = await choose(name)
@@ -172,10 +173,12 @@ struct HomeKeyRebinderTile: View {
     }
 }
 
-/// One Karabiner-Elements profile on Home: a chip, filled while it's the current profile. A long name is cut off at
-/// `widest`, and its help tag and VoiceOver have it whole.
+/// One Karabiner-Elements profile on Home: a chip, filled while it's the current profile. A long name is cut to fit
+/// `widest` so that it stays apart from the others (`shownName`), and its help tag and VoiceOver have it whole.
 struct HomeProfileChip: View {
     let name: String
+    /// The name as the chip shows it, from `shownName(of:among:)`.
+    let shown: String
     let isCurrent: Bool
     let choose: () -> Void
 
@@ -183,12 +186,39 @@ struct HomeProfileChip: View {
 
     /// The widest a chip's name gets, in points at a text scale of 1.
     static let widest: CGFloat = 112
+    /// About how many characters of a name fit in `widest`, in the chips' small capitals.
+    static let room = 14
+
+    /// The name as its chip shows it. A name too long for its chip that starts like another profile's for most of the
+    /// chip's room would be cut to the same few words as that one, so it starts after an ellipsis, a word before where the
+    /// two differ ("…number 2 with a long name"). Any other name is shown whole and cut in the middle if it must be, which
+    /// keeps its end in view.
+    static func shownName(of name: String, among names: [String]) -> String {
+        guard name.count > room else { return name }
+        let shared = names.filter { $0 != name }.map { name.commonPrefix(with: $0).count }.max() ?? 0
+        guard shared >= room - 3 else { return name }
+        let characters = Array(name)
+        // Back to the start of the word where the names differ, then one word further, for context.
+        var start = min(shared, characters.count)
+        while start > 0, characters[start - 1] != " " { start -= 1 }
+        if start > 0 {
+            start -= 1
+            while start > 0, characters[start - 1] != " " { start -= 1 }
+        }
+        return "\u{2026}" + String(characters[start...])
+    }
+
+    /// Where a shown name is cut when it still doesn't fit: one that starts after an ellipsis at its end, any other in its
+    /// middle.
+    static func truncation(of shown: String) -> Text.TruncationMode {
+        shown.hasPrefix("\u{2026}") ? .tail : .middle
+    }
 
     var body: some View {
         Button(action: choose) {
-            Text(name)
+            Text(shown)
                 .lineLimit(1)
-                .truncationMode(.tail)
+                .truncationMode(Self.truncation(of: shown))
                 .frame(maxWidth: Self.widest * theme.textScale)
                 .fixedSize()
         }

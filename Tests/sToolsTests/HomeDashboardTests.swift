@@ -307,6 +307,27 @@ struct HomeKeyRebinderTileTests {
         #expect(HomeKeyRebinderTile(model: Harness(withKeyRebinder: true).model).setupNote == "Looking for Karabiner-Elements\u{2026}")
     }
 
+    /// Names cut to fit their chip stay apart. One that shares a long beginning with another profile's starts from where
+    /// the two differ; any other keeps its end in view. The help tag and VoiceOver have the whole name.
+    @Test func cutNamesStayApart() {
+        let room = HomeProfileChip.room
+        let numbered = (1...3).map { "Practice profile number \($0) with a long name" }
+        let shown = numbered.map { HomeProfileChip.shownName(of: $0, among: numbered) }
+        #expect(Set(shown.map { String($0.prefix(room)) }).count == numbered.count, "\(shown)")
+        #expect(shown.allSatisfy { $0.hasPrefix("\u{2026}") })
+        #expect(shown[0].contains("number 1"))
+
+        let speedruns = ["Minecraft speedrun practice", "Minecraft speedrun ranked"]
+        let cut = speedruns.map { HomeProfileChip.shownName(of: $0, among: speedruns) }
+        #expect(cut[0] != cut[1] && String(cut[0].prefix(room)) != String(cut[1].prefix(room)), "\(cut)")
+
+        // A name that fits, or shares no long beginning, is shown whole and cut in the middle only if it must be.
+        let plain = ["Default profile", "Speedrun", "A long name that nothing else starts like"]
+        #expect(plain.map { HomeProfileChip.shownName(of: $0, among: plain) } == plain)
+        #expect(HomeProfileChip.truncation(of: "\u{2026}number 1 with a long name") == .tail)
+        #expect(HomeProfileChip.truncation(of: "Default profile") == .middle)
+    }
+
     /// Many long profile names make the tile no taller than its neighbor: they truncate, in one row that scrolls.
     @Test func manyLongProfilesDontBreakTheTile() async throws {
         let profiles = (1...14).map { "A profile with a very long name, number \($0)" }
