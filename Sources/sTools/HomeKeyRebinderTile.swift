@@ -18,6 +18,9 @@ struct HomeKeyRebinderTile: View {
     @State private var isHovering = false
     /// Why the last click didn't switch the profile, until the next click.
     @State private var switchError: String?
+    /// The chips' height and the room they're shown in, to fade the last row out while there are more to scroll to.
+    @State private var chipsHeight: CGFloat = 0
+    @State private var chipsRoom: CGFloat = 0
 
     private var keyRebinder: KeyRebinderController? { model.keyRebinder }
     private let tool = ToolID.keyRebinder
@@ -109,9 +112,18 @@ struct HomeKeyRebinderTile: View {
                 // Room for a chip's edge and its focus ring, which the scroll view would otherwise cut off.
                 .padding(Self.chipInset)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { chipsHeight = $0 }
             }
             .scrollIndicators(.never)
             .scrollBounceBehavior(.basedOnSize)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { chipsRoom = $0 }
+            // More profiles than fit: the last row fades out, so it reads as more to scroll to and not as cut off.
+            .mask {
+                LinearGradient(stops: [.init(color: .black, location: 0),
+                                       .init(color: .black, location: chipsHeight > chipsRoom + 1 ? 0.62 : 1),
+                                       .init(color: chipsHeight > chipsRoom + 1 ? .clear : .black, location: 1)],
+                               startPoint: .top, endPoint: .bottom)
+            }
             // The inset reaches out past the area's edges, so the chips line up with the status line above them.
             .padding(-Self.chipInset)
             .onAppear { if let current { proxy.scrollTo(current) } }
