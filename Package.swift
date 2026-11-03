@@ -44,6 +44,9 @@ let package = Package(
                     linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@loader_path/../../.."])]),
     ]
     + tools.map { name in
-        .testTarget(name: "\(name)Tests", dependencies: [.byName(name: name), "STDesign", "STPlatform"])
+        // The Key Rebinder's tests read their fixture files from the source folder (`FixtureLoader`, through #filePath), so
+        // the files stay out of the test bundle.
+        .testTarget(name: "\(name)Tests", dependencies: [.byName(name: name), "STDesign", "STPlatform"],
+                    exclude: name == "KeyRebinder" ? ["Fixtures"] : [])
     }
 )
