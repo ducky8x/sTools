@@ -18,7 +18,7 @@ private func karabinerJSON(_ rebinds: [(from: String, to: String)]) -> String {
 }
 
 /// The app wires its one hotkey list into the Key Rebinder (spec 5.5.2, 5.5.3, 6.1), which then shows and edits it
-/// on the keys and advises Home on it.
+/// on the keys and advises the Hotkeys page on it.
 @MainActor
 @Suite("AppModel and the Key Rebinder")
 struct AppModelKeyRebinderTests {
@@ -68,7 +68,7 @@ struct AppModelKeyRebinderTests {
         keyRebinder.chooseLayout(shape: .ansi, formFactor: .laptop)
         harness.model.hotkeys.isEnabled = true
         harness.model.hotkeys.add(combo: f20, actions: [.toggle(.nbbOverlay)])
-        // What Home ▸ Hotkeys runs when it appears: it reads karabiner.json, and never runs karabiner_cli.
+        // What the Hotkeys page runs when it appears: it reads karabiner.json, and never runs karabiner_cli.
         await harness.model.hotkeys.advisor?.prepareAdvice()
         #expect(keyRebinder.hasLoadedConfig)
         #expect(keyRebinder.config == nil, "with the page closed, the advice keeps no parsed file")
@@ -96,13 +96,13 @@ struct KeyRebinderTrialTests {
         ).representation(using: .png, properties: [:])
     }
 
-    @Test func openHotkeysOpensHomeOnThePageAndIsLeftOutOfTheTrial() throws {
+    @Test func openHotkeysOpensTheHotkeysPageAndIsLeftOutOfTheTrial() throws {
         let harness = Harness(withKeyRebinder: true)
         harness.model.navigate(to: .tool(.keyRebinder))
         #expect(ToolContent(model: harness.model, tool: .keyRebinder, isTrial: true).openHotkeys == nil)
         let open = try #require(ToolContent(model: harness.model, tool: .keyRebinder).openHotkeys)
         open()
-        #expect(harness.model.route == .home)
+        #expect(harness.model.route == .hotkeys)
     }
 
     /// With hotkeys on, F3 alone wears a ring and has a finding with its red dot, its panel lists it, and Pad 1 is

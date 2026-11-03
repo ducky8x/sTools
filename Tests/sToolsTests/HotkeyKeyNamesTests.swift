@@ -2,9 +2,9 @@ import STDesign
 import STPlatform
 import Testing
 
-/// STDesign can't import STPlatform, so the recorder (`STShortcutKeys`) and hotkeys (`HotkeyCombo`) each keep a
-/// key table. Every key code must read the same in both, or Home would show one name while recording and another
-/// in the list, and a key one table knows would be unusable through the other.
+/// STDesign can't import STPlatform, so the recorder (`STShortcutKeys`) and hotkeys (`HotkeyCombo`) each keep a key
+/// table. Every key code must read the same in both, or the Hotkeys page would show one name while recording and
+/// another in the list, and a key one table knows would be unusable through the other.
 @Suite("Hotkey key names")
 struct HotkeyKeyNamesTests {
     @Test func theRecorderAndHotkeysNameEveryKeyTheSame() {

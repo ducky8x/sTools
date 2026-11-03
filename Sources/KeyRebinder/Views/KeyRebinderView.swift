@@ -15,8 +15,8 @@ public struct KeyRebinderView: View {
     ///   - showsHotkeys: whether the page shows sTools hotkeys (spec 5.5.2, 5.5.3): rings on keys, the key panel's
     ///     Hotkeys part, hotkey findings and their dots, the tester's hotkey sentence, Advanced ▸ Show hotkeys.
     ///     False in the Prologue's trial.
-    ///   - openHotkeys: opens Home ▸ Hotkeys, from the key panel's Change… and a key a rule drives; nil leaves those
-    ///     buttons out.
+    ///   - openHotkeys: opens the app's Hotkeys page, from the key panel's Change… and a key a rule drives; nil leaves
+    ///     those buttons out.
     public init(controller: KeyRebinderController, showsHotkeys: Bool = true, openHotkeys: (() -> Void)? = nil) {
         self.controller = controller
         self.showsHotkeys = showsHotkeys
@@ -34,7 +34,7 @@ public struct KeyRebinderView: View {
     /// keyboard can be drawn big enough to use.
     private static let columnWidth: CGFloat = 640
 
-    /// The id of the selected key's panel, for the app to scroll to it (Home's Show on Keyboard).
+    /// The id of the selected key's panel, for the app to scroll to it (Show on Keyboard on the Hotkeys page).
     public nonisolated static let keyPanelScrollID = "keyRebinder.keyPanel"
 
     public var body: some View {

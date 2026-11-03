@@ -156,11 +156,11 @@ final class Harness {
     /// Karabiner-Elements is that scripted one instead, which answers with its profiles.
     ///
     /// `hotkeys` is the `hotkeys.json` the launch finds: an existing, empty list by default; nil for a new install,
-    /// which starts with ⌘1–⌘5.
+    /// which starts with ⌘1–⌘5. `displays` are the displays the app sees, `harnessDisplay` alone by default.
     init(accessibility: PermissionStatus = .granted, instances: [MinecraftInstance] = [],
          theme: STTheme = STTheme(), usesRealControllers: Bool = false, hotkeyRegistrar: any HotkeyRegistering = FakeHotkeyRegistrar(),
          prologueCompleted: Bool = true, withKeyRebinder: Bool = false, karabiner: HarnessKarabiner? = nil,
-         hotkeys: HotkeySettings? = HotkeySettings()) {
+         hotkeys: HotkeySettings? = HotkeySettings(), displays: [DisplayInfo] = [harnessDisplay]) {
         self.hotkeyRegistrar = hotkeyRegistrar
         directory = FileManager.default.temporaryDirectory.appending(path: "sTools-app-\(UUID().uuidString)")
         karabinerConfigURL = directory.appending(path: "karabiner", directoryHint: .isDirectory).appending(path: "karabiner.json")
@@ -179,7 +179,7 @@ final class Harness {
         controllers = fakes
         let opened = opened
         let permissions = PermissionCenter(prober: prober, openURL: { opened.urls.append($0) })
-        let services = ToolServices(settings: store, displays: DisplayDirectory(screenProvider: { [harnessDisplay] }),
+        let services = ToolServices(settings: store, displays: DisplayDirectory(screenProvider: { displays }),
                                     minecraft: MinecraftLocator(source: source), permissions: permissions)
         timer = timerFakes.makeController(services: services, theme: theme)
         var all: [ToolID: any ToolController] = usesRealControllers

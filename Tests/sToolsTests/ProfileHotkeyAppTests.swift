@@ -14,6 +14,7 @@ final class HarnessKarabiner: CommandRunner, Sendable {
         var current: String
         var running = true
         var selects: [String] = []
+        var calls: [[String]] = []
     }
 
     private let state: Mutex<State>
@@ -32,6 +33,12 @@ final class HarnessKarabiner: CommandRunner, Sendable {
     var selects: [String] { state.withLock { $0.selects } }
     var current: String { state.withLock { $0.current } }
 
+    /// Every command it was given, each with its arguments.
+    var calls: [[String]] { state.withLock { $0.calls } }
+
+    /// How many times the command `first` ("--version") ran.
+    func count(_ first: String) -> Int { calls.filter { $0.first == first }.count }
+
     func rename(_ old: String, to new: String) {
         state.withLock { state in
             state.names = state.names.map { $0 == old ? new : $0 }
@@ -46,6 +53,7 @@ final class HarnessKarabiner: CommandRunner, Sendable {
 
     func run(_ executable: URL, _ args: [String]) async throws -> CommandResult {
         state.withLock { state in
+            state.calls.append(args)
             guard state.running else { return CommandResult(stdout: "", stderr: "not running", status: 1) }
             switch args.first {
             case "--version": return CommandResult(stdout: "16.3.0\n")

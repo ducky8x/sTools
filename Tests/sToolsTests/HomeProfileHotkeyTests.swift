@@ -10,7 +10,7 @@ private let f7 = HotkeyCombo(keyCode: 98, modifiers: [])
 private let ctrlOptC = HotkeyCombo(keyCode: 8, modifiers: [.control, .option])
 private let minecraft = HotkeyAction.profile(.select("Minecraft"))
 
-/// "⌘1 Crosshair", as Home lists a hotkey.
+/// "⌘1 Crosshair", as the Hotkeys page lists a hotkey.
 @MainActor
 private func listing(_ hotkeys: HotkeyCenter) -> [String] {
     hotkeys.bindings.map { "\($0.combo.displayString) \(HotkeyWording.summary($0.actions))" }
@@ -33,10 +33,10 @@ private final class ProfilesAdvisor: HotkeyAdvising {
 
 private let ready = HotkeyProfiles(state: .ready, names: ["Default profile", "Minecraft", "Typing"], current: "Default profile")
 
-/// Home ▸ Hotkeys with Karabiner profiles (spec 6.1): the editor saves the profile row's choice with the chips', a profile
-/// has one key of its own, and a row says when its profile can't be switched to.
+/// The Hotkeys page with Karabiner profiles (spec 6.1): the editor saves the profile row's choice with the chips', a
+/// profile has one key of its own, and a row says when its profile can't be switched to.
 @MainActor
-@Suite("Home profile hotkeys")
+@Suite("Hotkeys page profile hotkeys")
 struct HomeProfileHotkeyTests {
     @Test func theEditorSavesTheProfileAfterTheTools() {
         let harness = Harness(hotkeys: nil)

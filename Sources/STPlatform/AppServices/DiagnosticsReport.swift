@@ -117,8 +117,8 @@ public struct SettingsFileInfo: Sendable, Equatable {
     }
 }
 
-/// How hotkeys are set, for the report's header: the master switch, Where hotkeys work, the key set the tools' own
-/// keys follow and whether each hotkey also fires with Shift or Control held, each in the words Home uses.
+/// How hotkeys are set, for the report's header: the master switch, Where hotkeys work, the key set the tools' own keys
+/// follow and whether each hotkey also fires with Shift or Control held, each in the words the Hotkeys page uses.
 public struct DiagnosticsHotkeys: Sendable, Equatable {
     public var isEnabled: Bool
     /// Where hotkeys work, by its name in the chooser (`HotkeyScope.title`).

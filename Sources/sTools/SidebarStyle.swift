@@ -56,3 +56,39 @@ struct SidebarHover: ViewModifier {
             .onHover { isHovering = $0 }
     }
 }
+
+extension View {
+    /// A sidebar name on the spec's 22 pt line (spec 3.2) instead of Bodoni Moda's own, which is 27 pt at 18 pt. The name
+    /// keeps its size and sits centered on the shorter line, so every row fits a window of the default height.
+    func sidebarNameLine(scale: Double) -> some View {
+        fixedSize(horizontal: false, vertical: true)
+            .frame(height: STTextStyle.sidebarName.metrics.scaled(by: scale).lineHeight)
+    }
+}
+
+/// How tightly the sidebar sets its rows. From the window's default height up they keep their full spacing; in a
+/// shorter window they sit closer, so every row fits down to the 500 pt minimum at the default text size. Larger text
+/// that still doesn't fit scrolls.
+enum SidebarDensity: Sendable {
+    case regular, compact
+
+    /// The density for a window `height` points tall.
+    static func forWindow(height: CGFloat) -> SidebarDensity {
+        height >= 560 ? .regular : .compact
+    }
+
+    /// Above and below the name of Home, Hotkeys and Settings.
+    var navPadding: CGFloat { self == .regular ? 7 : 4 }
+    /// Above a tool's name and below its status.
+    var toolPadding: CGFloat { self == .regular ? 6 : 3 }
+    /// Under the wordmark.
+    var wordmarkGap: CGFloat { self == .regular ? 8 : 2 }
+    /// Between Hotkeys and the first tool, and the least between the last tool and Settings.
+    var groupGap: CGFloat { self == .regular ? 8 : 4 }
+    /// Under Settings.
+    var bottomPadding: CGFloat { self == .regular ? 12 : 8 }
+}
+
+extension EnvironmentValues {
+    @Entry var sidebarDensity: SidebarDensity = .regular
+}

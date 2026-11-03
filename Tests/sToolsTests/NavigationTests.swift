@@ -67,15 +67,16 @@ struct NavigationHistoryTests {
 
 @Suite("Go menu")
 struct GoCommandTests {
-    @Test func menuListsHomeToolsSettingsThenBackAndForward() {
+    @Test func menuListsHomeHotkeysToolsSettingsThenBackAndForward() {
         #expect(GoCommand.menu == [
-            .home, .tool(.crosshair), .tool(.timerOverlay), .tool(.nbbOverlay), .tool(.screenRecording),
+            .home, .hotkeys, .tool(.crosshair), .tool(.timerOverlay), .tool(.nbbOverlay), .tool(.screenRecording),
             .tool(.windowBackdrop), .tool(.keyRebinder), .settings, .back, .forward,
         ])
     }
 
     @Test func destinationsMapToRoutes() {
         #expect(GoCommand.home.route == .home)
+        #expect(GoCommand.hotkeys.route == .hotkeys)
         #expect(GoCommand.settings.route == .settings)
         for tool in ToolID.allCases { #expect(GoCommand.tool(tool).route == .tool(tool)) }
         #expect(GoCommand.back.route == nil)
@@ -84,6 +85,7 @@ struct GoCommandTests {
 
     @Test func shortcutsFollowTheSpec() {
         #expect(GoCommand.home.shortcutKey == "0")
+        #expect(GoCommand.hotkeys.shortcutKey == "h")
         #expect(GoCommand.tool(.crosshair).shortcutKey == "1")
         #expect(GoCommand.tool(.timerOverlay).shortcutKey == "2")
         #expect(GoCommand.tool(.nbbOverlay).shortcutKey == "3")
@@ -103,12 +105,21 @@ struct GoCommandTests {
     /// Hotkeys fire with sTools in front, so the pages hold ⌃⌘: ⌘1–⌘5 belong to the key set.
     @Test func thePagesHoldControlAndCommand() {
         #expect(GoCommand.menu.map(\.shortcutDisplay)
-            == ["⌃⌘0", "⌃⌘1", "⌃⌘2", "⌃⌘3", "⌃⌘4", "⌃⌘5", "⌃⌘6", "⌘,", "⌘[", "⌘]"])
+            == ["⌃⌘0", "⌃⌘H", "⌃⌘1", "⌃⌘2", "⌃⌘3", "⌃⌘4", "⌃⌘5", "⌃⌘6", "⌘,", "⌘[", "⌘]"])
+    }
+
+    /// The Hotkeys page holds ⌃⌘ like the other pages, on H for Hotkeys: no digit, so no key set's, and no shortcut of
+    /// macOS's. Its ⌘H is macOS's Hide, which no hotkey can have, so the menu takes no hotkey's Control variant.
+    @Test func theHotkeysPageIsControlCommandH() {
+        #expect(GoCommand.hotkeys.shortcutHoldsControl)
+        #expect(GoCommand.hotkeys.shortcutCombo == HotkeyCombo(keyCode: 4, modifiers: [.control, .command]))
+        #expect(GoCommand.hotkeys.shortcutCombo?.isValid == true)
+        #expect(HotkeyCombo(keyCode: 4, modifiers: .command).issue == .reserved("Hide app"))
     }
 
     /// No Go menu shortcut is a key any key set gives, so a press always reaches the one it means.
     @Test func noShortcutClashesWithAKeySet() {
-        let keyCodes: [Character: UInt16] = ["0": 29, "1": 18, "2": 19, "3": 20, "4": 21, "5": 23, "6": 22,
+        let keyCodes: [Character: UInt16] = ["0": 29, "h": 4, "1": 18, "2": 19, "3": 20, "4": 21, "5": 23, "6": 22,
                                              ",": 43, "[": 33, "]": 30]
         let keySetCombos = Set(HotkeyKeySet.allCases.flatMap(\.combos))
         for command in GoCommand.menu {
@@ -122,8 +133,14 @@ struct GoCommandTests {
         }
     }
 
+    /// The Hotkeys page's line under its title.
+    @Test func theHotkeysPageSaysWhatHotkeysDo() {
+        #expect(HotkeysPage.tagline == "Keys that switch tools, start the timer and record.")
+    }
+
     @Test func titlesNameTheDestination() {
         #expect(GoCommand.home.title == "Home")
+        #expect(GoCommand.hotkeys.title == "Hotkeys")
         #expect(GoCommand.tool(.crosshair).title == "Crosshair")
         #expect(GoCommand.settings.title == "Settings")
         #expect(GoCommand.back.title == "Back")
@@ -168,13 +185,11 @@ struct ToolIDTests {
         #expect(Set(ToolID.allCases.map(\.rawValue)) == Set(savedByAnEarlierOrder))
     }
 
-    /// Lists of tools in the app's words follow the sidebar: Home's Accessibility warning and the Prologue's "Used by"
-    /// for Accessibility name every tool that needs it (rule R10), in sidebar order.
+    /// Lists of tools in the app's words follow the sidebar: the Prologue's "Used by" for Accessibility names every tool
+    /// that needs it (rule R10), in sidebar order.
     @Test func toolListsInWordsFollowTheSidebar() {
         let needAccessibility = ToolID.allCases.filter(\.requiresAccessibility).map(\.title)
         #expect(needAccessibility == ["Crosshair", "Timer Overlay", "NBB Overlay", "Screen Recording", "Window Backdrop"])
-        #expect(HomePage.accessibilityWarning
-            == "Allow Accessibility to turn on Crosshair, Timer Overlay, NBB Overlay, Screen Recording and Window Backdrop.")
         #expect(PermissionStepView.Copy.usedBy(.accessibility)
             == needAccessibility.joined(separator: ", "))
     }

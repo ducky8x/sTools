@@ -10,7 +10,7 @@ private let f6 = HotkeyCombo(keyCode: 97, modifiers: [])
 private let f7 = HotkeyCombo(keyCode: 98, modifiers: [])
 private let f8 = HotkeyCombo(keyCode: 100, modifiers: [])
 
-/// Home ▸ Hotkeys ▸ Key set: one key per tool, in sidebar order, and a new install's ⌘1–⌘5.
+/// Hotkeys ▸ Key set: one key per tool, in sidebar order, and a new install's ⌘1–⌘5.
 @MainActor
 @Suite("Key set chooser")
 struct HotkeyKeySetChooserTests {
@@ -67,8 +67,8 @@ struct HotkeyKeySetChooserTests {
         #expect(harness.model.hotkeys.keySet == nil, "a key set by hand on Crosshair's page: Custom")
     }
 
-    /// Every key set is in view on Home at once, in the order the arrow keys cycle through them, and so is each place
-    /// hotkeys can work: neither waits behind a menu.
+    /// Every key set is in view on the Hotkeys page at once, in the order the arrow keys cycle through them, and so is
+    /// each place hotkeys can work: neither waits behind a menu.
     @Test func everyChoiceIsInViewOnHome() {
         #expect(HotkeysSection.keySetOptions.map(\.title) == ["⌘1–⌘5", "⌃1–⌃5", "⌥1–⌥5", "None"])
         #expect(HotkeysSection.keySetOptions.map(\.value) == HotkeyKeySet.allCases.map(Optional.some))

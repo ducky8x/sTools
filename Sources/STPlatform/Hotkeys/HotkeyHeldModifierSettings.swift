@@ -1,6 +1,6 @@
 import Foundation
 
-/// Home ▸ Hotkeys ▸ Advanced ▸ Also fire while holding Shift or Control (spec 6.1): on by default, so each hotkey also
+/// Hotkeys ▸ Advanced ▸ Also fire while holding Shift or Control (spec 6.1): on by default, so each hotkey also
 /// works while someone sneaks or sprints in Minecraft.
 ///
 /// Stored as its own document, `hotkeyHeldModifiers.json`, apart from `hotkeys.json`: the saved hotkey list is never

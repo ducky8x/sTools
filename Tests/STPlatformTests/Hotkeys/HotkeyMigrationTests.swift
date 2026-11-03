@@ -40,7 +40,7 @@ private func file(version: Int = 1, _ entries: [String], isEnabled: Bool = true,
     #"{"version":\#(version),"value":{"isEnabled":\#(isEnabled)\#(extra),"bindings":[\#(entries.joined(separator: ","))]}}"#
 }
 
-/// "⌘1 Crosshair", as Home lists a hotkey.
+/// "⌘1 Crosshair", as the Hotkeys page lists a hotkey.
 private func listing(_ bindings: [HotkeyBinding]) -> [String] {
     bindings.map { "\($0.combo.displayString) \(HotkeyWording.summary($0.actions))" }
 }
@@ -288,9 +288,9 @@ struct HotkeyMigrationTests {
     // MARK: Screen Recording's two former keys become one
 
     /// Builds with two Screen Recording actions could leave a key for each, "Toggle Screen Recording" and "Start/stop
-    /// recording". Both are the one action now, so a list keeps one key for it, whatever the file's version: Home never
-    /// lists Screen Recording twice. Without a key set's key among them, the first in the list stays, with its id and
-    /// its place; every other hotkey stays as it is.
+    /// recording". Both are the one action now, so a list keeps one key for it, whatever the file's version: the
+    /// Hotkeys page never lists Screen Recording twice. Without a key set's key among them, the first in the list
+    /// stays, with its id and its place; every other hotkey stays as it is.
     @Test func aKeyForEachFormerScreenRecordingActionBecomesOne() throws {
         let toggleKey = entry(recordingID, keyCode: 15, modifiers: 2048, ["toggle.screenRecording"]) // ⌥R
         let crosshairKey = entry(crosshairID, keyCode: 8, modifiers: 6144, ["toggle.crosshair", "toggle.nbbOverlay"]) // ⌃⌥C
@@ -369,7 +369,8 @@ struct HotkeyMigrationTests {
         #expect(HotkeyKeySet.current(in: settings.bindings) == .command)
     }
 
-    /// The center writes the one key back with the rest of the move to version 2, so the file holds what Home shows.
+    /// The center writes the one key back with the rest of the move to version 2, so the file holds what the Hotkeys
+    /// page shows.
     @Test func theCenterWritesTheOneScreenRecordingKeyBack() async throws {
         let entries = [entry(recordingID, keyCode: 15, modifiers: 2048, ["toggle.screenRecording"]),
                        entry(secondRecordingID, keyCode: 22, ["startStopRecording"])]

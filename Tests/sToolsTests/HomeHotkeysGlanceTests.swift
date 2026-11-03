@@ -7,9 +7,9 @@ import Testing
 
 private let pad1 = HotkeyCombo(keyCode: 83, modifiers: [])
 
-/// Home ▸ Hotkeys sits near the top of Home and shows its list whether hotkeys are on or off.
+/// The Hotkeys page shows its list whether hotkeys are on or off.
 @MainActor
-@Suite("Home hotkeys at a glance")
+@Suite("Hotkeys page at a glance")
 struct HomeHotkeysGlanceTests {
     @Test func whileOffOneStripSaysSoAndTheListStillShows() {
         #expect(HotkeysSection.offMessage(hasHotkeys: false, scope: .sToolsAndMinecraft)

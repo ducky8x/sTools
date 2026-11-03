@@ -28,7 +28,7 @@
 sTools is one native app with six tools: a crosshair, a countdown timer, Ninjabrain Bot’s answer drawn over the game, a screen recorder, a backdrop behind the game and an editor for your Karabiner-Elements rebinds. Its overlays are click-through and never take focus from Minecraft. The app is always dark, in serif type with gold accents.
 
 <p align="center">
-  <img src="docs/images/key-rebinder.png" alt="The Key Rebinder page: the sidebar with the six tools, and a drawn keyboard and mouse with Caps Lock rebound to F3 in gold, Minecraft’s keybinds in small capitals under the keys, gold rings on the keys of sTools hotkeys and red dots where the checker found a problem">
+  <img src="docs/images/key-rebinder.png" alt="The Key Rebinder page: the sidebar with Home, Hotkeys and the six tools, and a drawn keyboard and mouse with Caps Lock rebound to F3 in gold, Minecraft’s keybinds in small capitals under the keys, gold rings on the keys of sTools hotkeys and red dots where the checker found a problem">
 </p>
 
 ## The tools
@@ -42,9 +42,10 @@ sTools is one native app with six tools: a crosshair, a countdown timer, Ninjabr
 | 5 | Window Backdrop | Hides everything behind the Minecraft window with a color, gradient, image, GIF or video. | Accessibility |
 | 6 | Key Rebinder | Shows and edits your rebinds on a drawn keyboard and mouse. | Karabiner-Elements 16+, to edit |
 
-Each tool has a page with its settings, the rarely needed ones under **Advanced**. Switch tools on and off from the sidebar or from their pages. Around them:
+Each tool has a page with its settings, the rarely needed ones under **Advanced**. Switch tools on and off from the sidebar, from Home or from their pages. Around them:
 
-- **Hotkeys.** Your own keys, alone or with ⌃ ⌥ ⇧ ⌘, switch tools on and off, start the timer and start or stop a recording. A new install has ⌘1–⌘5, one per tool in sidebar order. They work only while sTools or Minecraft is in front, so a browser keeps its own ⌘1, and by default they still fire with Shift or Control held, as when you sneak or sprint.
+- **Home.** Every tool at a glance, in sidebar order, with its status, its switch and its key, which you can set right there. Minecraft, Ninjabrain Bot and Karabiner-Elements are drawn as small pictures that light up gold when they’re ready, and one click switches Karabiner-Elements to another profile.
+- **Hotkeys.** Your own keys, alone or with ⌃ ⌥ ⇧ ⌘, switch tools on and off, start the timer, start or stop a recording, and switch Karabiner-Elements to a given profile or the next one. A new install has ⌘1–⌘5, one per tool in sidebar order. They work only while sTools or Minecraft is in front, so a browser keeps its own ⌘1, and by default they still fire with Shift or Control held, as when you sneak or sprint. Set a tool’s key on Home or on its page, a profile’s on Home’s Key Rebinder tile, and everything else on the Hotkeys page.
 - **The Prologue.** On first launch it walks you through each permission, Ninjabrain Bot and Karabiner-Elements, then has you try every tool. Help ▸ Replay Introduction runs it again.
 - **Settings.** Open at login, sounds, Reduce animations, text size, accent color, update options, export and import of everything as one file, resetting, and Copy Diagnostics for bug reports.
 
@@ -81,7 +82,7 @@ sTools is a Swift package (tools version 6.0, Swift 6 language mode, macOS 15) w
 
 | Module | What’s in it |
 |--------|--------------|
-| `sTools` | The app: window, sidebar, Home and its hotkeys section, Settings, menus, the Dock tile, the updater, and `AppModel`, which wires the rest together |
+| `sTools` | The app: window, sidebar, Home, the Hotkeys page, Settings, menus, the Dock tile, the updater, and `AppModel`, which wires the rest together |
 | `STDesign` | Colors, type (the bundled fonts), motion, sounds and the shared controls |
 | `STPlatform` | What every tool shares: Minecraft detection, displays, `OverlayPanel`, permissions, settings storage, hotkeys, logging, diagnostics |
 | `Crosshair` | Crosshair geometry, rendering and page |
@@ -103,6 +104,8 @@ Swift 6’s strict concurrency checking is on everywhere. The UI, the controller
 `AppModel` (`@MainActor`, `@Observable`) is built once. It creates the shared services (`ToolServices`: the settings store, the display directory, the Minecraft locator and the permission center), the five switchable tool controllers and the Key Rebinder’s, the hotkey center, the updater and the Prologue, and keeps each tool’s on/off state and the navigation history. A controller adopts `ToolController` (`isEnabled` and `setEnabled`) and the shell needs nothing more from it, so the app’s tests swap in fakes. Every tool starts off; Settings ▸ General ▸ Advanced can bring back the ones that were on at quit. A tool that needs Accessibility can’t be switched on without it, and one that’s on switches off when the grant is revoked.
 
 `ToolID.allCases` is the one place the sidebar order is written. The sidebar, its numbers, the Go menu, Home, the key sets and the Prologue’s lists all read it. While the main window is closed it holds no pages at all (the root view draws nothing), so their views, layers and caches are released while the tools keep running.
+
+Home checks Karabiner-Elements, through `karabiner_cli`, and Ninjabrain Bot, with one request to its API while the NBB Overlay is off, as it appears and when sTools comes to the front. Nothing checks on a timer, and nothing runs for Home while another page shows. Its Key Rebinder tile switches profiles through the switch the profile hotkeys use, so it loads no `karabiner.json` while the Key Rebinder’s page is closed.
 
 ### Overlays
 
@@ -200,7 +203,9 @@ The key list (`Resources/KeyTable.json`) is generated by `scripts/generate-key-t
 
 By default hotkeys work only while sTools or Minecraft is in front. Rather than listen everywhere and ignore presses, `HotkeyFrontAppWatcher` takes the registrations away when another app comes to the front, so that app gets its keys untouched (a browser’s ⌘1 still switches tabs), and puts them back when sTools or Minecraft returns. `NSWorkspace` activation notifications and the locator’s instances drive it, never a timer. Recognizing Minecraft needs Accessibility, so without it hotkeys work only in sTools unless Where hotkeys work is set to Everywhere. Hotkeys also pause while sTools listens for raw keys: a field recording a key, text being typed, the Key Rebinder’s tester.
 
-macOS matches a hotkey’s modifiers exactly, so a bare ⌘1 stops working while you hold Shift to sneak or Control to sprint. Home ▸ Hotkeys ▸ Advanced ▸ Also fire while holding Shift or Control, on by default, makes `HotkeyCenter` register each hotkey’s key again with ⇧, ⌃ or both added to the modifiers it holds. A variant’s press is its hotkey’s own press, and a hotkey and its variants count as one key: while one is held, a press of another is a repeat. A variant is left out when the combination is taken (by another hotkey, or by an earlier hotkey’s variant) and when macOS keeps it (the screenshot shortcuts, ⌘Tab and the rest of `HotkeyCombo.reservedCombos`, plus ⌃⇧⌘3 and ⌃⇧⌘4) or refuses it. While sTools is in front, it is also left out when it is one of sTools’ own menu shortcuts: the Go menu’s ⌃⌘0–⌃⌘6 for Home and the tools, ⌘, for Settings, ⌘[ for Back and ⌘] for Forward. So a hotkey on ⌘1 also fires with Control held in the game, but not in sTools, where ⌃⌘1 opens a page. Variants exist only in what is registered: `hotkeys.json` never changes, and the option is a document of its own, `hotkeyHeldModifiers.json`, which isn’t written until you change it.
+macOS matches a hotkey’s modifiers exactly, so a bare ⌘1 stops working while you hold Shift to sneak or Control to sprint. Hotkeys ▸ Advanced ▸ Also fire while holding Shift or Control, on by default, makes `HotkeyCenter` register each hotkey’s key again with ⇧, ⌃ or both added to the modifiers it holds. A variant’s press is its hotkey’s own press, and a hotkey and its variants count as one key: while one is held, a press of another is a repeat. A variant is left out when the combination is taken (by another hotkey, or by an earlier hotkey’s variant) and when macOS keeps it (the screenshot shortcuts, ⌘Tab and the rest of `HotkeyCombo.reservedCombos`, plus ⌃⇧⌘3 and ⌃⇧⌘4) or refuses it. While sTools is in front, it is also left out when it is one of sTools’ own menu shortcuts: the Go menu’s ⌃⌘0–⌃⌘6 for Home and the tools, ⌃⌘H for Hotkeys, ⌘, for Settings, ⌘[ for Back and ⌘] for Forward. So a hotkey on ⌘1 also fires with Control held in the game, but not in sTools, where ⌃⌘1 opens a page. Variants exist only in what is registered: `hotkeys.json` never changes, and the option is a document of its own, `hotkeyHeldModifiers.json`, which isn’t written until you change it.
+
+A profile hotkey keeps only the profile’s name in the list. Its press goes through the Key Rebinder’s own profile switch (`switchProfile(for:)`), which asks `karabiner_cli` for Karabiner-Elements’ state and profiles again each time.
 
 The list lives in `hotkeys.json` and decodes leniently, so one bad entry never costs the rest. Its migrations never move a saved list; only an empty one gets ⌘1–⌘5.
 

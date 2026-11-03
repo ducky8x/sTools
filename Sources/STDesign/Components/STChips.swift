@@ -49,11 +49,16 @@ enum STChipsLogic {
     }
 }
 
-/// One chip's look: today's capsule, plus the house press dip and gold focus ring.
-private struct STChipStyle: ButtonStyle {
+/// One chip's look: today's capsule, plus the house press dip and gold focus ring. A selected chip is filled with the
+/// accent. `STChips` draws its chips with it, and so does any single-choice row of chips (Home's Karabiner profiles).
+public struct STChipStyle: ButtonStyle {
     let isSelected: Bool
 
-    func makeBody(configuration: Configuration) -> some View {
+    public init(isSelected: Bool) {
+        self.isSelected = isSelected
+    }
+
+    public func makeBody(configuration: Configuration) -> some View {
         STChipBody(isSelected: isSelected, configuration: configuration)
     }
 }
@@ -88,8 +93,9 @@ private struct STChipBody: View {
 }
 
 /// Lays its subviews out left to right at their ideal sizes, wrapping onto a new row before one that would
-/// overflow the proposed width. An item wider than the row sits alone on its own row. Rows are top-aligned, and
-/// the layout is as wide as its widest row.
+/// overflow the proposed width. An item wider than the row sits alone on its own row and is offered the row's width,
+/// so text in it can truncate there instead of running past the edge. Rows are top-aligned, and the layout is as wide
+/// as its widest row.
 public struct STFlowLayout: Layout {
     /// The gap between neighbors and between rows.
     public var spacing: CGFloat
@@ -99,13 +105,15 @@ public struct STFlowLayout: Layout {
     }
 
     public func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        STFlowLayoutMath.arrange(sizes(of: subviews), width: proposal.width ?? .infinity, spacing: spacing).size
+        let width = proposal.width ?? .infinity
+        return STFlowLayoutMath.arrange(sizes(of: subviews, width: width), width: width, spacing: spacing).size
     }
 
     public func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         // Arranged for the same proposal as `sizeThatFits`, so the rows match the size the parent was told.
-        let sizes = sizes(of: subviews)
-        let arrangement = STFlowLayoutMath.arrange(sizes, width: proposal.width ?? .infinity, spacing: spacing)
+        let width = proposal.width ?? .infinity
+        let sizes = sizes(of: subviews, width: width)
+        let arrangement = STFlowLayoutMath.arrange(sizes, width: width, spacing: spacing)
         for (index, subview) in subviews.enumerated() {
             let origin = arrangement.origins[index]
             subview.place(at: CGPoint(x: bounds.minX + origin.x, y: bounds.minY + origin.y),
@@ -113,8 +121,13 @@ public struct STFlowLayout: Layout {
         }
     }
 
-    private func sizes(of subviews: Subviews) -> [CGSize] {
-        subviews.map { $0.sizeThatFits(.unspecified) }
+    /// Each item's ideal size, or for one wider than a row, its size at the row's width.
+    private func sizes(of subviews: Subviews, width: CGFloat) -> [CGSize] {
+        subviews.map { subview in
+            let ideal = subview.sizeThatFits(.unspecified)
+            guard ideal.width > width else { return ideal }
+            return subview.sizeThatFits(ProposedViewSize(width: width, height: nil))
+        }
     }
 }
 

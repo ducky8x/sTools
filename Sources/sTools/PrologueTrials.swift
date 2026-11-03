@@ -111,7 +111,7 @@ enum TrialCopy {
         static let place = "Drag it into place"
         static let placeDetail = "Turn on \u{201C}Move by dragging,\u{201D} then drag the timer."
         static let key = "Set its hotkey"
-        static let keyDetail = "It starts the timer. Change it later in Home \u{25B8} Hotkeys."
+        static let keyDetail = "It starts the timer. Change it later in Hotkeys."
     }
 
     enum Backdrop {

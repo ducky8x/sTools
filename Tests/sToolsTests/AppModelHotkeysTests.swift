@@ -234,9 +234,9 @@ struct AppModelHotkeysTests {
     }
 }
 
-/// What a Home row says below its first line comes from the Key Rebinder's advice (spec 6.1).
+/// What a row of the Hotkeys page says below its first line comes from the Key Rebinder's advice (spec 6.1).
 @MainActor
-@Suite("Home hotkey rows")
+@Suite("Hotkeys page rows")
 struct HomeHotkeyRowTests {
     @Test func withoutTheKeyRebinderARowSaysNothingMore() throws {
         let harness = Harness(accessibility: .granted)
@@ -284,7 +284,7 @@ struct HomeHotkeyRowTests {
         #expect(HotkeyBindingRow.showOnKeyboardLabel(for: pad1) == "Show Keypad 1 on keyboard")
     }
 
-    /// Home ▸ Hotkeys loads the Key Rebinder's advice (karabiner.json and Minecraft's keybinds) when it appears with
+    /// The Hotkeys page loads the Key Rebinder's advice (karabiner.json and Minecraft's keybinds) when it appears with
     /// hotkeys on and when they are switched on; with hotkeys off it loads nothing.
     @Test func theSectionLoadsTheAdviceWhileHotkeysAreOn() async {
         let harness = Harness(accessibility: .granted)
@@ -311,7 +311,7 @@ struct HomeHotkeyRowTests {
 }
 
 @MainActor
-@Suite("Home hotkeys rendering")
+@Suite("Hotkeys page rendering")
 struct HomeHotkeysRenderTests {
     private let size = CGSize(width: 640, height: 720)
 
@@ -372,34 +372,47 @@ struct HomeHotkeysRenderTests {
         let before = render(harness)
         harness.model.hotkeys.setPaused(true, for: .recordingKey)
         let typing = render(harness)
-        // Nothing on Home depends on a pause any more.
+        // Nothing on the Hotkeys page depends on a pause any more.
         #expect(before.representation(using: .png, properties: [:]) == typing.representation(using: .png, properties: [:]))
     }
 }
 
-/// The Key Rebinder's Open Hotkeys lands on Home's Hotkeys section, not the top of Home, even with Home open.
+/// The Key Rebinder's Open Hotkeys and Change… open the Hotkeys page, wherever they're pressed from.
 @MainActor
 @Suite("Open Hotkeys")
 struct OpenHotkeysTests {
-    @Test func opensHomeAtItsHotkeys() {
+    @Test func opensTheHotkeysPage() {
         let harness = Harness(accessibility: .granted)
         harness.model.navigate(to: .tool(.keyRebinder))
         harness.model.openHotkeys()
-        #expect(harness.model.route == .home)
-        #expect(harness.model.pendingPageAnchor == .hotkeys)
+        #expect(harness.model.route == .hotkeys)
+        #expect(harness.model.pendingPageAnchor == nil, "the page opens at its top")
     }
 
-    @Test func scrollsHomeEvenWhenItIsAlreadyOpen() {
+    @Test func opensItFromHomeToo() {
         let harness = Harness(accessibility: .granted)
         #expect(harness.model.route == .home)
         harness.model.openHotkeys()
-        #expect(harness.model.pendingPageAnchor == .hotkeys)
+        #expect(harness.model.route == .hotkeys)
     }
 
     @Test func theKeyRebindersButtonOpensHotkeysAndTheTrialHasNone() {
         let harness = Harness(accessibility: .granted)
         ToolContent(model: harness.model, tool: .keyRebinder).openHotkeys?()
-        #expect(harness.model.pendingPageAnchor == .hotkeys)
+        #expect(harness.model.route == .hotkeys)
         #expect(ToolContent(model: harness.model, tool: .keyRebinder, isTrial: true).openHotkeys == nil)
+    }
+
+    /// Show on Keyboard leaves the Hotkeys page for the Key Rebinder, and Back comes back to the Hotkeys page.
+    @Test func backFromShowOnKeyboardReturnsToTheHotkeysPage() {
+        let harness = Harness(accessibility: .granted)
+        let advisor = FakeKeyboardAdvisor()
+        advisor.selectsKey = true
+        harness.model.hotkeys.advisor = advisor
+        harness.model.navigate(to: .hotkeys)
+        #expect(harness.model.showHotkeyOnKeyboard(pad1))
+        #expect(harness.model.route == .tool(.keyRebinder))
+        harness.model.perform(.back)
+        #expect(harness.model.route == .hotkeys)
     }
 }

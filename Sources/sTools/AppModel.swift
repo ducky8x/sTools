@@ -61,6 +61,12 @@ final class AppModel {
         await KarabinerStatus(probes: .live(cli: KarabinerCLI(runner: ProcessCommandRunner(timeout: .seconds(2))))).evaluate()
     }
     @ObservationIgnored var lastKarabinerRequirement: KarabinerRequirement?
+    /// Whether Ninjabrain Bot's API answered Home's last look, taken while the NBB Overlay is off; nil until Home has
+    /// looked. While the overlay runs, Home reads the overlay's own link instead.
+    var ninjabrainAnswers: Bool?
+    /// Where Home hears sTools come to the front. Tests give it a center of their own, so what they post reaches no other
+    /// test's views.
+    @ObservationIgnored var appNotifications: NotificationCenter = .default
     /// What the Prologue's trials have seen so far; fresh each time the introduction starts.
     @ObservationIgnored var trials = TrialSession()
     /// Asks before the Timer trial's Start-timer key turns hotkeys on (plan decision 14); true to turn them on. Tests replace it, so no
@@ -72,7 +78,7 @@ final class AppModel {
     /// seconds on a busy Mac, with the main actor waiting; tests replace it.
     @ObservationIgnored var logReader: any LogLineReading = OSLogLineReader()
 
-    /// Home ▸ Hotkeys (spec 6.1). Built lazily so its `toolStates`/`handler` closures can capture
+    /// The hotkeys (spec 6.1). Built lazily so its `toolStates`/`handler` closures can capture
     /// `self` — they only run on an actual key press, well after `init` returns.
     @ObservationIgnored private let hotkeyRegistrar: any HotkeyRegistering
     @ObservationIgnored lazy var hotkeys: HotkeyCenter = HotkeyCenter(

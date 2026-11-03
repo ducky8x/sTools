@@ -48,8 +48,8 @@ struct TrialToolControls: View {
 }
 
 /// The Timer trial's own Hotkey row for the Start-timer key (spec 5.6.9), named as the Timer page's Hotkey row is. The
-/// trials leave out the page's row, so the key is recorded right here as a Home \u{25B8} Hotkeys hotkey whose only
-/// action starts the timer.
+/// trials leave out the page's row, so the key is recorded right here as a hotkey of the Hotkeys page whose only action
+/// starts the timer.
 struct TrialStartTimerKeyRow: View {
     let model: AppModel
 
@@ -90,7 +90,7 @@ enum TrialStartTimerKey {
         model.hotkeys.setOwnHotkey(combo, for: .startTimer)
     }
 
-    /// Why the recorder refuses `combo`, with the same rules as Home's editor. Nil when it's fine.
+    /// Why the recorder refuses `combo`, with the same rules as the Hotkeys page's editor. Nil when it's fine.
     static func refusal(for combo: HotkeyCombo, in center: HotkeyCenter) -> String? {
         guard let conflict = center.conflict(for: combo, excluding: own(in: center.bindings)?.id), conflict != .noActions else {
             return nil

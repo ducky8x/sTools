@@ -1,6 +1,6 @@
 import Foundation
 
-/// Home ▸ Hotkeys ▸ Key set (spec 6.1): one hotkey per tool, in sidebar order, each doing that tool's main action.
+/// Hotkeys ▸ Key set (spec 6.1): one hotkey per tool, in sidebar order, each doing that tool's main action.
 ///
 /// A set owns one hotkey per tool, the tool's own hotkey: the first whose only action is the tool's main action (the
 /// hotkey a tool page's Hotkey row sets). Picking a set changes only those and lists them first, in sidebar order;
@@ -108,9 +108,9 @@ public enum HotkeyKeySet: String, CaseIterable, Hashable, Sendable {
         return Self.ordered(result)
     }
 
-    /// The order Home lists hotkeys in once a key set or a tool page has set a tool's key: the tools' own hotkeys first,
-    /// in sidebar order (⌘1 to ⌘5 down the page), then every other hotkey in its order. Only own hotkeys move, so a
-    /// list already in this order comes back unchanged.
+    /// The order the Hotkeys page lists hotkeys in once a key set or a tool page has set a tool's key: the tools' own
+    /// hotkeys first, in sidebar order (⌘1 to ⌘5 down the page), then every other hotkey in its order. Only own hotkeys
+    /// move, so a list already in this order comes back unchanged.
     public static func ordered(_ bindings: [HotkeyBinding]) -> [HotkeyBinding] {
         let own = toolActions.compactMap { ownBinding(for: $0, in: bindings) }
         let ownIDs = Set(own.map(\.id))

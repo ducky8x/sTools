@@ -119,7 +119,7 @@ struct HotkeyMatrixTests {
     // MARK: Shift or Control held
 
     /// macOS matches a hotkey's modifiers exactly, so with Shift held to sneak or Control to sprint a bare key no longer
-    /// fires. Also fire while holding Shift or Control (Home ▸ Hotkeys ▸ Advanced, on by default) registers the key with
+    /// fires. Also fire while holding Shift or Control (Hotkeys ▸ Advanced, on by default) registers the key with
     /// ⇧, ⌃ and ⇧⌃ added as well, under ids of their own; a press of any of them is the hotkey's. Whether macOS accepts
     /// and delivers them on this Mac is a hand check in the M8 plan.
     @Test func aBareKeyAlsoFiresWhileShiftOrControlIsHeld() {

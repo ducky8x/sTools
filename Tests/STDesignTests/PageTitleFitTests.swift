@@ -188,7 +188,7 @@ struct PageTitleFitTests {
         #expect(same(plain, fitted), "\(title) at \(textScale)x in the default window is not drawn as it was")
     }
 
-    /// With no control beside it, as on Home and Settings, the title has the whole row.
+    /// With no control beside it, as on Settings and on Home in a wide window, the title has the whole row.
     @Test(arguments: ["Home", "Settings"], [1.0, 1.3])
     func aTitleWithNothingBesideItIsDrawnAsItAlwaysWas(title: String, textScale: Double) {
         let plain = bitmap(PlainHeader(title: title, tagline: Self.tagline) { EmptyView() }, column: narrowestColumn, textScale: textScale)

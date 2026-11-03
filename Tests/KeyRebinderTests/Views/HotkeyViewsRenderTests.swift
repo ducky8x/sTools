@@ -277,7 +277,7 @@ struct KeyPanelHotkeyTests {
         #expect(KeyHotkeysBlock.content(for: .key("caps_lock"), controller: controller) == .unavailable(
             reason: "macOS can\u{2019}t use Caps Lock alone as a hotkey.", spare: .key("f20"), isRuleDriven: false))
         #expect(KeyHotkeysBlock.content(for: .key("tab"), controller: controller) == .unavailable(
-            reason: "A rule drives Tab, so sTools can\u{2019}t tell which key apps get. Add its hotkey in Home by pressing the key.",
+            reason: "A rule drives Tab, so sTools can\u{2019}t tell which key apps get. Add its hotkey on the Hotkeys page by pressing the key.",
             spare: nil, isRuleDriven: true))
         #expect(KeyHotkeysBlock.content(for: .pointing("button1"), controller: controller) == .unavailable(
             reason: "Left and right click can\u{2019}t be hotkeys.", spare: nil, isRuleDriven: false))

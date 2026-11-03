@@ -26,10 +26,10 @@ extension HotkeyAction {
     }
 }
 
-/// The words both hotkey editors use (Home ▸ Hotkeys and the Key Rebinder's key panel), so they always match.
+/// The words both hotkey editors use (the Hotkeys page and the Key Rebinder's key panel), so they always match.
 /// Plain placeholder wording until M9.
 public enum HotkeyWording {
-    /// The name of a hotkey editor's action chips, the same in both editors (Home ▸ Hotkeys and the Key Rebinder's
+    /// The name of a hotkey editor's action chips, the same in both editors (the Hotkeys page and the Key Rebinder's
     /// key panel), shown beside them in the key panel and read by VoiceOver in both. Placeholder wording for M9.
     public static let actionChipsLabel = "Does"
 
@@ -80,9 +80,9 @@ public enum HotkeyWording {
         }
     }
 
-    /// Why a hotkey can't work. A duplicate reads "Already used above" in Home's list (`inList`), where the hotkey
-    /// that owns the combination is a row above, and "Already used by another hotkey" anywhere else. A refusal of
-    /// a combination without ⌘ or ⌃ asks for one, as some macOS versions need it (15.0 and 15.1 reportedly refused
+    /// Why a hotkey can't work. A duplicate reads "Already used above" in the Hotkeys page's list (`inList`), where the
+    /// hotkey that owns the combination is a row above, and "Already used by another hotkey" anywhere else. A refusal
+    /// of a combination without ⌘ or ⌃ asks for one, as some macOS versions need it (15.0 and 15.1 reportedly refused
     /// ⌥-only hotkeys).
     public static func conflictText(_ conflict: HotkeyConflict, combo: HotkeyCombo, inList: Bool) -> String {
         switch conflict {
@@ -93,9 +93,9 @@ public enum HotkeyWording {
         }
     }
 
-    /// The problem to show beside a hotkey, or nil when there is none: it is registered, off with the master
-    /// switch, or unknown. `inList` has no default: only Home's list may say "above" (`conflictText`), so every
-    /// caller says where the note shows.
+    /// The problem to show beside a hotkey, or nil when there is none: it is registered, off with the master switch, or
+    /// unknown. `inList` has no default: only the Hotkeys page's list may say "above" (`conflictText`), so every caller
+    /// says where the note shows.
     public static func statusNote(_ status: HotkeyStatus?, combo: HotkeyCombo, inList: Bool) -> String? {
         guard case .conflict(let conflict) = status else { return nil }
         return conflictText(conflict, combo: combo, inList: inList)

@@ -25,7 +25,7 @@ private let f6 = combo(97)
 private let f7 = combo(98)
 private let ctrlOptC = combo(8, [.control, .option])
 
-/// "⌘1 Crosshair", as Home lists a hotkey.
+/// "⌘1 Crosshair", as the Hotkeys page lists a hotkey.
 private func listing(_ bindings: [HotkeyBinding]) -> [String] {
     bindings.map { "\($0.combo.displayString) \(HotkeyWording.summary($0.actions))" }
 }

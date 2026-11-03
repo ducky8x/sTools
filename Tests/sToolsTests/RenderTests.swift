@@ -23,6 +23,12 @@ struct RenderTests {
         check(renderBitmap(window(harness), size: windowSize))
     }
 
+    @Test func hotkeysRenders() {
+        let harness = Harness(usesRealControllers: true)
+        harness.model.navigate(to: .hotkeys)
+        check(renderBitmap(window(harness), size: windowSize))
+    }
+
     @Test func settingsRenders() {
         let harness = Harness(usesRealControllers: true)
         harness.model.navigate(to: .settings)
@@ -71,7 +77,7 @@ struct RenderTests {
 
     @Test func pageAreaRendersEveryRoute() {
         let harness = Harness(usesRealControllers: true)
-        for route in [Route.home, .settings] + ToolID.allCases.map(Route.tool) {
+        for route in [Route.home, .hotkeys, .settings] + ToolID.allCases.map(Route.tool) {
             harness.model.navigate(to: route)
             let rep = renderBitmap(PageArea(model: harness.model).environment(\.stTheme, harness.model.theme),
                                    size: CGSize(width: 520, height: 560))

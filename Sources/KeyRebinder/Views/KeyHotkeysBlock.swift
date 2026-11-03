@@ -2,7 +2,7 @@ import STDesign
 import STPlatform
 import SwiftUI
 
-/// The key panel's Hotkeys part (spec 5.5.3, 6.1): where hotkeys work and the key set, as Home ▸ Hotkeys sets them,
+/// The key panel's Hotkeys part (spec 5.5.3, 6.1): where hotkeys work and the key set, as the Hotkeys page sets them,
 /// the sTools hotkeys on what the selected key sends after Karabiner, an inline editor that adds or changes one with
 /// Hold and Does chips and a Karabiner profile row, and, for a key that can't carry hotkeys, why not and the spare key
 /// it could become. Hotkeys live in `hotkeys.json`, never in `karabiner.json`, so all of this works without
@@ -12,12 +12,12 @@ import SwiftUI
 struct KeyHotkeysBlock: View {
     /// What the block shows for a key.
     enum Content: Equatable {
-        /// Home ▸ Hotkeys' master switch is off.
+        /// The Hotkeys page's master switch is off.
         case off
         /// The key sends the virtual key `keyCode`, which hotkeys can listen for.
         case carries(keyCode: UInt16)
         /// The key can't carry hotkeys: why not, the spare key Use F20 would put in Becomes (nil when it isn't
-        /// offered), and whether a rule drives the key, so Home has to record its hotkey by pressing it.
+        /// offered), and whether a rule drives the key, so the Hotkeys page has to record its hotkey by pressing it.
         case unavailable(reason: String, spare: KarabinerEvent?, isRuleDriven: Bool)
     }
 
@@ -25,7 +25,7 @@ struct KeyHotkeysBlock: View {
     let key: KarabinerEvent
     /// The panel's Becomes. Use F20 only puts the spare key there; nothing is written until the panel's Save.
     @Binding var chosen: KarabinerEvent?
-    /// Opens Home ▸ Hotkeys: Change… beside where hotkeys work, and Open Hotkeys for a key a rule drives. Nil leaves
+    /// Opens the Hotkeys page: Change… beside where hotkeys work, and Open Hotkeys for a key a rule drives. Nil leaves
     /// both out.
     let openHotkeys: (() -> Void)?
 
@@ -169,7 +169,8 @@ struct KeyHotkeysBlock: View {
                     .padding(.top, 10)
             }
         }
-        // Home's question, for a second key for a tool's action alone: Replace gives the tool's own key this one.
+        // The Hotkeys page's question, for a second key for a tool's action alone: Replace gives the tool's own key
+        // this one.
         .confirmationDialog(
             replacing.map { HotkeyWording.replaceOwnKeyQuestion($0.own, with: $0.combo) } ?? "",
             isPresented: replaceQuestionIsShown, titleVisibility: .visible, presenting: replacing,
@@ -184,7 +185,7 @@ struct KeyHotkeysBlock: View {
         Binding(get: { replacing != nil }, set: { if !$0 { replacing = nil } })
     }
 
-    /// Where sTools hotkeys work and the key set, as Home ▸ Hotkeys sets them, with Change… to go there (left out in
+    /// Where sTools hotkeys work and the key set, as the Hotkeys page sets them, with Change… to go there (left out in
     /// the Prologue's trial, which has no `openHotkeys`).
     private func whereLine(_ line: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {

@@ -6,7 +6,7 @@ private let f6 = HotkeyCombo(keyCode: 97, modifiers: [])
 private let f7 = HotkeyCombo(keyCode: 98, modifiers: [])
 private let ctrlOptC = HotkeyCombo(keyCode: 8, modifiers: [.control, .option])
 
-/// "⌘1 Crosshair", as Home lists a hotkey.
+/// "⌘1 Crosshair", as the Hotkeys page lists a hotkey.
 @MainActor
 private func listing(_ hotkeys: HotkeyCenter) -> [String] {
     hotkeys.bindings.map { "\($0.combo.displayString) \(HotkeyWording.summary($0.actions))" }
@@ -25,13 +25,13 @@ private final class EditorFixture {
     }
 }
 
-/// Home ▸ Hotkeys' editor, behind Add Hotkey… and each row's Edit (spec 6.1): what Save and Replace do to the list.
+/// The Hotkeys page's editor, behind Add Hotkey… and each row's Edit (spec 6.1): what Save and Replace do to the list.
 @MainActor
-@Suite("Home hotkey editor")
+@Suite("Hotkeys page editor")
 struct HotkeyEditorTests {
 
     /// Add Hotkey… for a tool's action alone, while the tool has its key: Save changes nothing and asks, and Replace
-    /// gives the tool's key the new one, so Home still lists one Crosshair row, in Crosshair's place.
+    /// gives the tool's key the new one, so the Hotkeys page still lists one Crosshair row, in Crosshair's place.
     @Test func addingASecondKeyForAToolAsksAndReplaceKeepsOneRow() throws {
         let fixture = EditorFixture()
         let hotkeys = fixture.hotkeys

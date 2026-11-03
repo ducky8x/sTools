@@ -524,8 +524,9 @@ struct KeyRebinderHotkeyTests {
         #expect(center.bindings.count == 1)
     }
 
-    /// A tool has one key of its own (spec 6.1), as on Home: a second hotkey for a tool's action alone saves nothing
-    /// until the key panel's question is answered with Replace, which gives the tool's own key what this key sends.
+    /// A tool has one key of its own (spec 6.1), as on the Hotkeys page: a second hotkey for a tool's action alone
+    /// saves nothing until the key panel's question is answered with Replace, which gives the tool's own key what this
+    /// key sends.
     @Test func aSecondKeyForAToolIsSavedOnlyAsAReplacement() async throws {
         let harness = try await make()
         defer { harness.remove() }
@@ -701,7 +702,7 @@ struct KeyRebinderHotkeyTests {
         }
         #expect(controller.spareKeyOffer(for: .key("caps_lock")) == nil)
         #expect(controller.hotkeyUnavailableText(for: .key("caps_lock"))
-            == "A rule drives Caps Lock, so sTools can\u{2019}t tell which key apps get. Add its hotkey in Home by pressing the key.")
+            == "A rule drives Caps Lock, so sTools can\u{2019}t tell which key apps get. Add its hotkey on the Hotkeys page by pressing the key.")
         // Minecraft sneaks on Left Shift by default.
         #expect(controller.spareKeyOffer(for: .key("left_shift")) == nil)
         #expect(controller.hotkeyUnavailableText(for: .key("left_shift"))
@@ -809,8 +810,8 @@ struct KeyRebinderHotkeyTests {
         center.add(combo: HotkeyFixtures.combo("f18", .shift), actions: [.toggle(.nbbOverlay)])
         #expect(await eventually { controller.hotkeys(on: .key("caps_lock")).count == 2 })
         #expect(controller.rebindHotkeyNotes(for: .key("caps_lock"), becoming: nil).isEmpty)
-        // Without the other key, both are stranded. They're named in Home's order: the tools' own keys in sidebar
-        // order, so Crosshair's comes first, though it was added second.
+        // Without the other key, both are stranded. They're named in the Hotkeys page's order: the tools' own keys in
+        // sidebar order, so Crosshair's comes first, though it was added second.
         let alone = try await make(profileP([("caps_lock", "f18")]))
         defer { alone.remove() }
         alone.center?.add(combo: HotkeyFixtures.combo("f18"), actions: [.toggle(.nbbOverlay)])
@@ -844,8 +845,8 @@ struct KeyRebinderHotkeyTests {
             == "Karabiner turns Caps Lock into F18, so its hotkeys listen for F18 while Karabiner-Elements runs. The F18 key fires them too.")
     }
 
-    /// The key panel's Hotkeys part says where sTools hotkeys work and which key set the tools follow, as Home ▸
-    /// Hotkeys sets them; without a hotkey list there's nothing to say.
+    /// The key panel's Hotkeys part says where sTools hotkeys work and which key set the tools follow, as the
+    /// Hotkeys page sets them; without a hotkey list there's nothing to say.
     @Test func theKeyPanelSaysWhereHotkeysWork() async throws {
         let harness = try await make()
         defer { harness.remove() }
@@ -861,7 +862,7 @@ struct KeyRebinderHotkeyTests {
     }
 
     /// Without Accessibility sTools can't tell when Minecraft is in front, so the key panel says hotkeys work only in
-    /// sTools, as Home does; Everywhere doesn't need Accessibility.
+    /// sTools, as the Hotkeys page does; Everywhere doesn't need Accessibility.
     @Test func withoutAccessibilityTheKeyPanelSaysOnlyInSTools() async throws {
         let harness = try await make(accessibility: .denied)
         defer { harness.remove() }
@@ -872,7 +873,7 @@ struct KeyRebinderHotkeyTests {
         #expect(harness.controller.hotkeyWhereLine == "Hotkeys work in every app · Key set: None")
     }
 
-    // MARK: Advice for Home
+    // MARK: Advice for the Hotkeys page
 
     @Test func notesGiveTheGameCautionAndTheHeldModifierNote() async throws {
         let harness = try await make()

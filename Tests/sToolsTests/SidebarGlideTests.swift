@@ -141,14 +141,14 @@ struct SidebarGlideTests {
         }
     }
 
-    @Test func homeToSettingsThroughThePlayerCrossesEveryTool() {
+    @Test func homeToSettingsThroughThePlayerCrossesHotkeysAndEveryTool() {
         let rig = Rig()
         rig.player.glide(from: .home, to: .settings)
         #expect(rig.sound.glides == [.glideLong])
-        #expect(rig.clock.waiting.count == ToolID.allCases.count)
+        #expect(rig.clock.waiting.count == ToolID.allCases.count + 1)
         rig.clock.advance(by: 1)
-        #expect(rig.sound.detentTimes.count == ToolID.allCases.count)
-        #expect(rig.taps.count == ToolID.allCases.count)
+        #expect(rig.sound.detentTimes.count == ToolID.allCases.count + 1)
+        #expect(rig.taps.count == ToolID.allCases.count + 1)
         #expect(rig.sound.detentTimes == rig.sound.detentTimes.sorted())
         #expect(rig.player.pendingCount == 0, "nothing is held once the glide is over")
     }
@@ -188,7 +188,7 @@ struct SidebarGlideTests {
         rig.player.glide(from: .home, to: .settings)
         rig.clock.advance(by: 0.08)
         let firedBefore = rig.sound.detentTimes.count
-        #expect(firedBefore > 0 && firedBefore < ToolID.allCases.count)
+        #expect(firedBefore > 0 && firedBefore < ToolID.allCases.count + 1)
         let oldTimers = rig.clock.waiting
 
         rig.player.glide(from: .settings, to: .tool(.nbbOverlay))
@@ -216,7 +216,7 @@ struct SidebarGlideTests {
         rig.clock.advance(by: 2)
         rig.player.glide(from: .tool(.nbbOverlay), to: .home)
         rig.clock.advance(by: 2)
-        #expect(rig.sound.detentTimes.count == 4, "two rows each way")
+        #expect(rig.sound.detentTimes.count == 6, "Hotkeys, Crosshair and Timer Overlay each way")
     }
 
     @Test func reducedMotionPlaysOnlyABriefGlide() {
@@ -274,7 +274,7 @@ struct SidebarGlideNavigationTests {
         harness.model.navigate(to: .settings)
         clock.advance(by: 1)
         #expect(sound.glides == [.glideLong])
-        #expect(sound.detentTimes.count == ToolID.allCases.count)
+        #expect(sound.detentTimes.count == ToolID.allCases.count + 1, "Hotkeys and every tool")
         #expect(!sound.sounds.contains(.page))
     }
 
@@ -283,7 +283,7 @@ struct SidebarGlideNavigationTests {
         harness.model.perform(.tool(.nbbOverlay))
         clock.advance(by: 1)
         #expect(sound.glides == [.glideMedium])
-        #expect(sound.detentTimes.count == 2)
+        #expect(sound.detentTimes.count == 3, "Hotkeys, Crosshair and Timer Overlay")
         harness.model.perform(.tool(.nbbOverlay))
         #expect(sound.glides.count == 1, "the page already open plays nothing")
     }
@@ -297,7 +297,7 @@ struct SidebarGlideNavigationTests {
         harness.model.perform(.forward)
         clock.advance(by: 1)
         #expect(sound.glides == [.glideMedium, .glideMedium, .glideMedium])
-        #expect(sound.detentTimes.count == 3, "Crosshair each way")
+        #expect(sound.detentTimes.count == 6, "Hotkeys and Crosshair each way")
         #expect(!sound.sounds.contains(.page))
     }
 
@@ -323,5 +323,35 @@ struct SidebarRowCenterTests {
         let ordered = SidebarGlide.order.compactMap { centers[$0] }
         #expect(ordered.count == SidebarGlide.order.count, "every row reported")
         #expect(ordered == ordered.sorted() && Set(ordered).count == ordered.count, "top to bottom")
+        #expect(SidebarGlide.order.prefix(3) == [.home, .hotkeys, .tool(.crosshair)], "Hotkeys right under Home")
+    }
+
+    /// Before the sidebar has laid out, the glide's guess is the sidebar's own layout at the default size.
+    @Test func theEstimateIsTheLayoutAtTheDefaultSize() throws {
+        _ = STFont.register()
+        let harness = Harness()
+        _ = renderBitmap(SidebarView(model: harness.model).environment(\.stTheme, harness.model.theme),
+                         size: CGSize(width: 236, height: 560))
+        let measured = harness.model.sidebarGlide.layout
+        let home = try #require(measured.centers[.home])
+        for route in SidebarGlide.order {
+            let center = try #require(measured.centers[route], "\(route)")
+            #expect(abs(center - home - SidebarLayout().center(of: route)) < 1, "\(route)")
+        }
+    }
+
+    /// Every row fits from the window's 500 pt minimum up, at the default text size: Settings ends inside the window.
+    /// Below the default height the rows sit closer together.
+    @Test(arguments: [CGFloat(500), 530, 560, 700])
+    func everyRowFitsTheWindow(height: CGFloat) throws {
+        _ = STFont.register()
+        let harness = Harness()
+        _ = renderBitmap(SidebarView(model: harness.model).environment(\.stTheme, harness.model.theme),
+                         size: CGSize(width: 236, height: height))
+        let density = SidebarDensity.forWindow(height: height)
+        #expect(density == (height < 560 ? .compact : .regular))
+        let settings = try #require(harness.model.sidebarGlide.layout.centers[.settings])
+        let settingsHalf = (STTextStyle.sidebarName.metrics.lineHeight + 2 * density.navPadding) / 2
+        #expect(SidebarView.lightsBand + settings + settingsHalf <= height, "Settings ends inside the window")
     }
 }
