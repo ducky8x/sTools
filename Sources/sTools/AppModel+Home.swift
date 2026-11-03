@@ -2,9 +2,10 @@ import NBBOverlay
 import STPlatform
 
 extension AppModel {
-    /// Home's checks (spec 3.5): Karabiner-Elements and its profiles through `karabiner_cli`, and, while the NBB Overlay is
-    /// off, one look at Ninjabrain Bot's API. Home runs them as it appears and as sTools comes to the front, and nothing
-    /// runs them on a timer. Minecraft, Accessibility and a running NBB Overlay report on their own.
+    /// Home's checks (spec 3.5): Karabiner-Elements and its profiles, read through `karabiner_cli` by the Key Rebinder's one
+    /// read of them (`refreshProfiles()`, which profile hotkeys use too), and, while the NBB Overlay is off, one look at
+    /// Ninjabrain Bot's API. Home runs them as it appears and as sTools comes to the front, and nothing runs them on a
+    /// timer. Minecraft, Accessibility and a running NBB Overlay report on their own.
     func refreshHomeStatuses() async {
         async let karabiner: Void = refreshKarabinerForHome()
         async let ninjabrainBot: Void = refreshNinjabrainBotForHome()
@@ -12,7 +13,7 @@ extension AppModel {
     }
 
     private func refreshKarabinerForHome() async {
-        await keyRebinder?.refreshStatus()
+        await keyRebinder?.refreshProfiles()
     }
 
     private func refreshNinjabrainBotForHome() async {
@@ -39,8 +40,8 @@ extension AppModel {
             return HomeLamps.ninjabrainBot(overlayIsOn: overlay != nil, reachable: overlay?.isReachable ?? false,
                                            readsWindow: overlay?.readsWindow ?? false, answers: ninjabrainAnswers)
         case .karabiner:
-            let requirement = keyRebinder?.requirement
-            return HomeLamps.karabiner(requirement, profile: requirement == .ready ? keyRebinder?.currentProfile : nil)
+            let profiles = keyRebinder?.profiles
+            return HomeLamps.karabiner(keyRebinder?.requirement, profile: profiles?.state == .ready ? profiles?.current : nil)
         }
     }
 }

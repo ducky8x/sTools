@@ -271,32 +271,33 @@ struct HomeToolTileTests {
 @MainActor
 @Suite("Home dashboard: Key Rebinder profiles", .serialized)
 struct HomeKeyRebinderTileTests {
-    /// One click switches Karabiner-Elements to a profile, through the page's own path, and leaves no parsed
-    /// `karabiner.json` behind.
+    /// One click switches Karabiner-Elements to a profile, through the profile hotkeys' own switch
+    /// (`switchProfile(for:)`), and leaves no parsed `karabiner.json` behind. The tile reads the profiles through the Key
+    /// Rebinder's one read (`profiles`, `refreshProfiles()`).
     @Test func oneClickSwitchesTheProfile() async throws {
         let cli = HarnessKarabiner(profiles: ["Default profile", "Speedrun", "Typing"])
         let harness = Harness(karabiner: cli)
-        // The page's switch reads the file again after it; the scripted Karabiner-Elements writes none of its own.
-        try Data(#"{ "profiles": [{ "name": "Default profile", "selected": true }, { "name": "Speedrun" }, { "name": "Typing" }] }"#.utf8)
-            .write(to: harness.karabinerConfigURL)
         let keyRebinder = try #require(harness.model.keyRebinder)
         await harness.model.refreshHomeStatuses()
         let tile = HomeKeyRebinderTile(model: harness.model)
+        #expect(tile.profiles == keyRebinder.profiles.names)
         #expect(tile.profiles == ["Default profile", "Speedrun", "Typing"])
         #expect(tile.current == "Default profile")
         #expect(keyRebinder.config == nil, "Home's check keeps no file")
 
-        #expect(await tile.choose("Speedrun"))
-        #expect(cli.selects.contains("Speedrun"))
+        #expect(await tile.choose("Speedrun") == .switched(to: "Speedrun"))
+        #expect(cli.selects == ["Speedrun"])
         #expect(tile.current == "Speedrun")
-        #expect(keyRebinder.config == nil, "the file is let go again with the page closed")
+        #expect(keyRebinder.config == nil, "nothing is loaded with the page closed")
         #expect(harness.model.homeLamp(.karabiner).state == .lit)
 
-        // A profile Karabiner-Elements doesn't have doesn't switch, and the tile says why in Karabiner's words.
-        #expect(await !tile.choose("Gone"))
+        // A profile Karabiner-Elements doesn't have doesn't switch, and the tile says why in the confirmation's words.
+        let gone = await tile.choose("Gone")
+        #expect(gone == .missing("Gone"))
         #expect(tile.current == "Speedrun")
-        #expect(HomeKeyRebinderTile.switchFailure("Gone", reason: nil) == "Karabiner-Elements didn\u{2019}t switch to Gone.")
-        #expect(HomeKeyRebinderTile.switchFailure("Gone", reason: keyRebinder.errorMessage) == keyRebinder.errorMessage)
+        #expect(HomeKeyRebinderTile.failure(gone) == "No profile named \u{201C}Gone\u{201D}")
+        #expect(HomeKeyRebinderTile.failure(.switched(to: "Typing")) == nil)
+        #expect(HomeKeyRebinderTile.failure(.alreadyCurrent("Typing")) == nil)
     }
 
     /// Until Karabiner-Elements is ready the tile says why in a line, in the Prologue's words, and offers no profiles.

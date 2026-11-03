@@ -1,15 +1,16 @@
 import KeyRebinder
 import STDesign
+import STPlatform
 import SwiftUI
 
 /// The Key Rebinder on Home: its number, name and status like every tile, and Karabiner-Elements' profiles as chips with
-/// the current one filled. One click switches Karabiner-Elements to a profile, through the page's own path
-/// (`KeyRebinderController.selectProfile`). The chips wrap under the status into the room the tile has; a long name is
-/// cut off, whole in its help tag and for VoiceOver, and profiles past the tile's room scroll. Until Karabiner-Elements
-/// is ready a line says why, and the tile opens the page where it's set up. Clicking the tile opens the Key Rebinder.
+/// the current one filled. One click switches Karabiner-Elements to a profile through the switch profile hotkeys use
+/// (`KeyRebinderController.switchProfile(for:)`), which loads nothing while the page is closed. The chips wrap under the
+/// status into the room the tile has; a long name is cut to stay apart from the others, whole in its help tag and for
+/// VoiceOver, and profiles past the tile's room scroll. Until a profile can be switched to a line says why, and the
+/// tile opens the page where Karabiner-Elements is set up. Clicking the tile opens the Key Rebinder.
 ///
-/// The profiles come from `profiles`, `current` and `setupNote`, and Home's check refreshes them
-/// (`AppModel.refreshHomeStatuses`), so another source of profiles takes those three and that one call.
+/// The profiles are the Key Rebinder's one read of them (`profiles`, refreshed by `refreshProfiles()` as Home appears).
 struct HomeKeyRebinderTile: View {
     let model: AppModel
 
@@ -102,10 +103,7 @@ struct HomeKeyRebinderTile: View {
                         HomeProfileChip(name: name, shown: HomeProfileChip.shownName(of: name, among: profiles),
                                         isCurrent: name == current) {
                             sound.play(.click)
-                            Task {
-                                let switched = await choose(name)
-                                switchError = switched ? nil : Self.switchFailure(name, reason: keyRebinder?.errorMessage)
-                            }
+                            Task { switchError = Self.failure(await choose(name)) }
                         }
                         .id(name)
                     }
@@ -130,46 +128,48 @@ struct HomeKeyRebinderTile: View {
             .onAppear { if let current { proxy.scrollTo(current) } }
             .onChange(of: current) { _, now in if let now { proxy.scrollTo(now) } }
         }
-        .disabled(keyRebinder.map { $0.isBusy || !$0.canSwitchProfile } ?? true)
+        .disabled(keyRebinder.map { $0.isBusy || $0.profiles.state != .ready } ?? true)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Karabiner profiles")
     }
 
-    /// Karabiner-Elements' profiles while it's ready; none otherwise.
+    /// Karabiner-Elements' profiles while one can be switched to; none otherwise.
     var profiles: [String] {
-        guard let keyRebinder, keyRebinder.requirement == .ready else { return [] }
-        return keyRebinder.profileNames
+        guard let profiles = keyRebinder?.profiles, profiles.state == .ready else { return [] }
+        return profiles.names
     }
 
-    var current: String? { keyRebinder?.currentProfile }
+    var current: String? { keyRebinder?.profiles.current }
 
-    /// Why there are no profiles to pick, in the words of the introduction's Karabiner-Elements step; nil while
-    /// Karabiner-Elements is ready, and without a Key Rebinder.
+    /// Why no profile can be switched to, as a profile hotkey's row says it; nil while one can, and without a Key Rebinder.
     var setupNote: String? {
         guard let keyRebinder else { return nil }
-        guard let requirement = keyRebinder.requirement else { return "Looking for Karabiner-Elements\u{2026}" }
-        return requirement.isReady ? nil : PrologueCopy.karabinerDetail(requirement)
+        switch keyRebinder.profiles.state {
+        case .unknown: return "Looking for Karabiner-Elements\u{2026}"
+        case .ready: return nil
+        case .unavailable(let problem): return HotkeyWording.profileProblem(problem) + "."
+        }
     }
 
-    /// The fix, as the Key Rebinder's page words it, for the note's help tag.
+    /// How to fix it, as the Key Rebinder's page words it, for the note's help tag; nil when there's nothing to fix.
     var setupHelp: String? {
         guard let requirement = keyRebinder?.requirement, !requirement.isReady else { return nil }
         return requirement.fixText
     }
 
-    /// Switches Karabiner-Elements to `name`, as the page's profile menu does, then lets the parsed `karabiner.json` go
-    /// again unless the Key Rebinder's page has opened meanwhile: Home keeps none of it. True once `name` is current.
+    /// Switches Karabiner-Elements to `name` through the switch profile hotkeys use, and says what it did. With the
+    /// Key Rebinder's page closed it loads no `karabiner.json`.
     @discardableResult
-    func choose(_ name: String) async -> Bool {
-        guard let keyRebinder else { return false }
-        await keyRebinder.selectProfile(name)
-        if model.route != .tool(.keyRebinder) { keyRebinder.releaseLoadedFile() }
-        return keyRebinder.currentProfile == name
+    func choose(_ name: String) async -> HotkeyProfileSwitch {
+        guard let keyRebinder else { return .unavailable(.notInstalled) }
+        return await keyRebinder.switchProfile(for: .select(name))
     }
 
-    /// What the tile says when a click didn't switch to `name`: Karabiner-Elements' own reason when it gave one.
-    static func switchFailure(_ name: String, reason: String?) -> String {
-        reason ?? "Karabiner-Elements didn\u{2019}t switch to \(name)."
+    /// What the tile says when a click didn't switch the profile, in the words of a profile hotkey's confirmation; nil
+    /// when it switched, or the profile was already in use.
+    static func failure(_ outcome: HotkeyProfileSwitch) -> String? {
+        if case .alreadyCurrent = outcome { return nil }
+        return outcome.changedProfile ? nil : HotkeyConfirmation.phrase(.profile(outcome))
     }
 }
 
