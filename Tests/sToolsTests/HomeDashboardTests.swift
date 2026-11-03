@@ -87,7 +87,7 @@ struct HomePageTests {
         let crowded = (1...12).map { "Profile with a rather long name \($0)" }
         for profiles in [nil, crowded] {
             let harness = Harness(accessibility: .denied, instances: [fakeInstance(pid: 1), fakeInstance(pid: 2, launched: 2)],
-                                  withKeyRebinder: true, karabinerProfiles: profiles)
+                                  withKeyRebinder: true, karabiner: profiles.map { HarnessKarabiner(profiles: $0) })
             #expect(!harness.model.hotkeys.isEnabled)
             let height = naturalHeight(harness, window: size)
             #expect(height <= size.height, "\(Int(size.width)) × \(Int(size.height)): \(height) pt")
@@ -104,8 +104,8 @@ struct HomePageTests {
     /// Home checks Karabiner-Elements and Ninjabrain Bot as it appears and as sTools comes to the front, and at no other
     /// time: nothing polls, and nothing runs while another page shows.
     @Test func homeChecksOnAppearAndActivationAndNeverPolls() async throws {
-        let harness = Harness(withKeyRebinder: true, karabinerProfiles: ["Default profile", "Speedrun"])
-        let cli = try #require(harness.karabinerCLI)
+        let cli = HarnessKarabiner(profiles: ["Default profile", "Speedrun"])
+        let harness = Harness(karabiner: cli)
         let notifications = NotificationCenter()
         harness.model.appNotifications = notifications
         final class Counter { var pings = 0 }
@@ -115,21 +115,21 @@ struct HomePageTests {
             return true
         }
         let window = Offscreen(RootView(model: harness.model), size: CGSize(width: 760, height: 560))
-        #expect(await waitUntil { cli.count("--version") == 1 && counter.pings == 1 })
+        #expect(await waitUntil { cli.count("--list-profile-names") == 1 && counter.pings == 1 })
         #expect(harness.model.ninjabrainAnswers == true)
         try await Task.sleep(for: .milliseconds(600))
         window.settle()
-        #expect(cli.count("--version") == 1 && counter.pings == 1, "no polling")
+        #expect(cli.count("--list-profile-names") == 1 && counter.pings == 1, "no polling")
 
         notifications.post(name: NSApplication.didBecomeActiveNotification, object: nil)
-        #expect(await waitUntil { cli.count("--version") == 2 && counter.pings == 2 })
+        #expect(await waitUntil { cli.count("--list-profile-names") == 2 && counter.pings == 2 })
 
         harness.model.navigate(to: .settings)
         window.settle()
         notifications.post(name: NSApplication.didBecomeActiveNotification, object: nil)
         try await Task.sleep(for: .milliseconds(300))
         window.settle()
-        #expect(cli.count("--version") == 2 && counter.pings == 2, "Home isn't showing")
+        #expect(cli.count("--list-profile-names") == 2 && counter.pings == 2, "Home isn't showing")
         #expect(!cli.calls.contains { $0.first == "--list-connected-devices" }, "Home asks for no devices")
     }
 
@@ -274,8 +274,11 @@ struct HomeKeyRebinderTileTests {
     /// One click switches Karabiner-Elements to a profile, through the page's own path, and leaves no parsed
     /// `karabiner.json` behind.
     @Test func oneClickSwitchesTheProfile() async throws {
-        let harness = Harness(withKeyRebinder: true, karabinerProfiles: ["Default profile", "Speedrun", "Typing"])
-        let cli = try #require(harness.karabinerCLI)
+        let cli = HarnessKarabiner(profiles: ["Default profile", "Speedrun", "Typing"])
+        let harness = Harness(karabiner: cli)
+        // The page's switch reads the file again after it; the scripted Karabiner-Elements writes none of its own.
+        try Data(#"{ "profiles": [{ "name": "Default profile", "selected": true }, { "name": "Speedrun" }, { "name": "Typing" }] }"#.utf8)
+            .write(to: harness.karabinerConfigURL)
         let keyRebinder = try #require(harness.model.keyRebinder)
         await harness.model.refreshHomeStatuses()
         let tile = HomeKeyRebinderTile(model: harness.model)
@@ -284,7 +287,7 @@ struct HomeKeyRebinderTileTests {
         #expect(keyRebinder.config == nil, "Home's check keeps no file")
 
         #expect(await tile.choose("Speedrun"))
-        #expect(cli.calls.contains(["--select-profile", "Speedrun"]))
+        #expect(cli.selects.contains("Speedrun"))
         #expect(tile.current == "Speedrun")
         #expect(keyRebinder.config == nil, "the file is let go again with the page closed")
         #expect(harness.model.homeLamp(.karabiner).state == .lit)
@@ -331,7 +334,7 @@ struct HomeKeyRebinderTileTests {
     /// Many long profile names make the tile no taller than its neighbor: they truncate, in one row that scrolls.
     @Test func manyLongProfilesDontBreakTheTile() async throws {
         let profiles = (1...14).map { "A profile with a very long name, number \($0)" }
-        let harness = Harness(withKeyRebinder: true, karabinerProfiles: profiles)
+        let harness = Harness(karabiner: HarnessKarabiner(profiles: profiles))
         await harness.model.refreshHomeStatuses()
         func height<V: View>(_ view: V) -> CGFloat {
             NSHostingView(rootView: view.frame(width: 220).fixedSize(horizontal: false, vertical: true)

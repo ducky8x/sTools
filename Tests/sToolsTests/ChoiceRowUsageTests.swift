@@ -36,12 +36,16 @@ struct ChoiceRowUsageTests {
         }
     }
 
-    /// The label of the row opened on `line`: `STSettingsRow("Look", …` is ("STSettingsRow", "Look").
+    /// The label of the row opened on `line`: `STSettingsRow("Look", …` is ("STSettingsRow", "Look"), and a label that
+    /// isn't written out, `STChoiceRow(HotkeyWording.profileChoiceLabel, …`, is the expression that names it.
     private static func row(opening line: String) -> (kind: String, label: String)? {
         for kind in ["STSettingsRow", "STChoiceRow"] {
-            guard let start = line.range(of: "\(kind)(\"") else { continue }
-            let label = line[start.upperBound...].prefix { $0 != "\"" }
-            return (kind, String(label))
+            if let start = line.range(of: "\(kind)(\"") {
+                return (kind, String(line[start.upperBound...].prefix { $0 != "\"" }))
+            }
+            if let start = line.range(of: "\(kind)(") {
+                return (kind, String(line[start.upperBound...].prefix { $0 != "," && $0 != ")" }))
+            }
         }
         return nil
     }

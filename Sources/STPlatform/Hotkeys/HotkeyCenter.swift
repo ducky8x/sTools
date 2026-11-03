@@ -12,6 +12,9 @@ public enum HotkeyEvent: Equatable, Sendable {
     /// The key of a press that sent `startTimer` is up again, for the timer's hold-to-cancel (spec 5.6.7). When
     /// that hotkey is unregistered while its key is down, `HotkeyCenter` sends it itself.
     case startTimerReleased
+    /// Switch the Key Rebinder's Karabiner profile (spec 6.1): to the one named, or to the next. The app carries it out
+    /// through the Key Rebinder, which runs Karabiner-Elements' command-line tool, so it comes last in its press.
+    case switchProfile(HotkeyProfileAction)
 }
 
 /// Why a binding is not active.
@@ -148,7 +151,8 @@ public final class HotkeyCenter {
     ///   - menuShortcuts: The combinations sTools' own menus use, which no hotkey's Shift or Control variant takes while
     ///     sTools is the app in front.
     ///   - handler: Receives each press's events together, in order: one per tool change, then one for
-    ///     recording, then one for Start timer. One call per press, so the app can confirm the press once.
+    ///     recording, then one for Start timer, then one for a Karabiner profile. One call per press, so the app can
+    ///     confirm the press once.
     ///     A release that ends a Start-timer press comes in a call of its own, `[.startTimerReleased]`.
     public init(store: SettingsStore,
                 registrar: any HotkeyRegistering,
@@ -313,7 +317,7 @@ public final class HotkeyCenter {
         guard let index = settings.bindings.firstIndex(where: { $0.id == id }) else { return }
         var bindings = settings.bindings
         if let combo { bindings[index].combo = combo }
-        if let actions { bindings[index].actions = actions.uniqued }
+        if let actions { bindings[index].actions = actions.uniquedWithOneProfile }
         settings.bindings = HotkeyKeySet.ordered(bindings)
         commit()
     }
@@ -360,11 +364,11 @@ public final class HotkeyCenter {
     // MARK: One key of its own per tool
 
     /// The tool's own hotkey that saving `actions` would duplicate, so the editor asks before it does: when `actions`
-    /// is one tool's action alone (every action is one tool's), another hotkey already has it alone, and the hotkey
-    /// being saved (`id`, nil for a new one) doesn't already. A tool has one key of its own (spec 6.1), so Replace
-    /// gives that hotkey the new key (`replaceOwnHotkey(for:with:removing:)`) instead of adding a second. Nil when
-    /// saving needs no question: several actions, a tool without a key of its own, the tool's own hotkey edited, or a
-    /// second key an older list kept for the tool.
+    /// is one action alone, another hotkey already has it alone, and the hotkey being saved (`id`, nil for a new one)
+    /// doesn't already. A tool has one key of its own (spec 6.1), so Replace gives that hotkey the new key
+    /// (`replaceOwnHotkey(for:with:removing:)`) instead of adding a second. The same goes for a profile action alone:
+    /// switching to a profile, or Next profile, has one key of its own. Nil when saving needs no question: several
+    /// actions, an action without a key of its own, the own hotkey edited, or a second key an older list kept.
     public func ownHotkeyReplaced(bySaving actions: [HotkeyAction], editing id: UUID?) -> HotkeyBinding? {
         let actions = actions.uniqued
         guard actions.count == 1 else { return nil }
@@ -389,6 +393,27 @@ public final class HotkeyCenter {
         }
         settings.bindings = HotkeyKeySet.ordered(bindings)
         commit()
+    }
+
+    // MARK: Karabiner profiles
+
+    /// The profile's own hotkey: the first whose only action is switching to the Karabiner profile `name` (spec 6.1),
+    /// which a page listing the profiles shows and sets, as a tool's page does its tool's own hotkey. Nil when it has none.
+    public func profileHotkey(for name: String) -> HotkeyBinding? {
+        HotkeyKeySet.ownBinding(for: .profile(.select(name)), in: settings.bindings)
+    }
+
+    /// Every hotkey that switches to the profile `name`, in list order: its own (`profileHotkey(for:)`) and those that do
+    /// other things too.
+    public func hotkeys(switchingTo name: String) -> [HotkeyBinding] {
+        settings.bindings.filter { $0.profileAction == .select(name) }
+    }
+
+    /// Gives the profile `name` its own hotkey on `combo`, moves it there, or removes it (nil), in one change, as a tool
+    /// page's Hotkey row does (`setOwnHotkey(_:for:)`). A new one goes at the end of the list. Callers check
+    /// `conflict(for:excluding:)` first.
+    public func setProfileHotkey(_ combo: HotkeyCombo?, for name: String) {
+        setOwnHotkey(combo, for: .profile(.select(name)))
     }
 
     /// Why `combo` could not be added right now, ignoring the binding `id` (pass it when editing that
@@ -578,6 +603,7 @@ public final class HotkeyCenter {
         var events = outcome.toolChanges.map { HotkeyEvent.setTool($0.tool, isOn: $0.isOn) }
         if outcome.togglesRecording { events.append(.toggleRecording) }
         if outcome.startsTimer { events.append(.startTimer) }
+        if let profile = outcome.profile { events.append(.switchProfile(profile)) }
         log.notice("\(key, privacy: .public) down: counted, \(Self.describe(events), privacy: .public)")
         guard !events.isEmpty else { return }
         send(events, stampedAt: stamped)
@@ -641,6 +667,7 @@ public final class HotkeyCenter {
             case .toggleRecording: "Screen Recording"
             case .startTimer: "Start timer"
             case .startTimerReleased: "Start timer released"
+            case .switchProfile(let profile): HotkeyAction.profile(profile).title
             }
         }.joined(separator: ", ")
     }

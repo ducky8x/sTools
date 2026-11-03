@@ -1,8 +1,8 @@
 import Foundation
 
 /// Advice about a hotkey from a module STPlatform can't see: the Key Rebinder knows the keyboard, Karabiner's
-/// rebinds and Minecraft's keybinds. `HotkeyCenter.advisor` holds it, so Home shows the Key Rebinder's advice
-/// without importing its types, and both hotkey editors get the same words from `HotkeyCenter.notes(for:)`.
+/// rebinds and profiles, and Minecraft's keybinds. `HotkeyCenter.advisor` holds it, so Home shows the Key Rebinder's
+/// advice without importing its types, and both hotkey editors get the same words from `HotkeyCenter.notes(for:)`.
 @MainActor
 public protocol HotkeyAdvising: AnyObject {
     /// What to know about `combo` beyond what STPlatform says itself: a caution when Minecraft uses its key, and
@@ -19,6 +19,21 @@ public protocol HotkeyAdvising: AnyObject {
 
     /// Loads what the advice reads (karabiner.json, Minecraft's keybinds). Never runs `karabiner_cli`.
     func prepareAdvice() async
+
+    /// The Karabiner profiles a hotkey can switch to, as last read (spec 6.1): what the editors offer and what a hotkey's
+    /// row says about its profile. `.unknown` until they are read.
+    var profiles: HotkeyProfiles { get }
+
+    /// Reads Karabiner-Elements' state and its profiles again, without loading karabiner.json into memory, for the
+    /// editors and the rows while the Key Rebinder's page may be closed.
+    func refreshProfiles() async
+}
+
+extension HotkeyAdvising {
+    /// An advisor that knows no profiles: as without a Key Rebinder.
+    public var profiles: HotkeyProfiles { .withoutKeyRebinder }
+
+    public func refreshProfiles() async {}
 }
 
 /// One line of advice about a hotkey. Notes never block saving.

@@ -30,6 +30,9 @@ enum HotkeyConfirmation {
         case recordingAwaitingDecision
         /// Nothing started: Screen Recording needs the Screen & System Audio Recording permission.
         case recordingNeedsPermission
+        /// What a profile hotkey did to Karabiner-Elements' profile, once the Key Rebinder has switched it or found why
+        /// it can't (spec 6.1).
+        case profile(HotkeyProfileSwitch)
     }
 
     /// Whether the press changed anything. Only then does the seal stamp: a gold check beside
@@ -40,6 +43,7 @@ enum HotkeyConfirmation {
             case .tool, .recordingStarted, .recordingCountdown, .recordingStopped, .recordingCanceled: true
             case .needsAccessibility, .recordingStarting, .recordingCouldNotStart, .recordingFinishing,
                  .recordingAwaitingDecision, .recordingNeedsPermission: false
+            case .profile(let outcome): outcome.changedProfile
             }
         }
     }
@@ -62,6 +66,21 @@ enum HotkeyConfirmation {
         case .recordingFinishing: "Still finishing the last recording"
         case .recordingAwaitingDecision: "Save or Delete the last recording first"
         case .recordingNeedsPermission: "Screen Recording needs Screen & System Audio Recording"
+        case .profile(let outcome): profilePhrase(outcome)
+        }
+    }
+
+    /// A profile hotkey's line: the profile it switched to, or why the profile stayed as it was. The reasons a hotkey's
+    /// row gives (`HotkeyWording`) read the same here.
+    private static func profilePhrase(_ outcome: HotkeyProfileSwitch) -> String {
+        switch outcome {
+        case .switched(let name): "Switched to \(name)"
+        case .alreadyCurrent(let name): "Already using \(name)"
+        case .onlyProfile(let name): "\(name) is the only profile"
+        case .missing(let name): HotkeyWording.missingProfile(name)
+        case .unavailable(let problem): HotkeyWording.profileProblem(problem)
+        case .busy: "The Key Rebinder is saving, so the profile stays"
+        case .failed(let name): "Couldn\u{2019}t switch to \(name)"
         }
     }
 

@@ -987,7 +987,8 @@ struct KeyRebinderHotkeyTests {
         try Data("key_key.hotbar.1:key.keyboard.f13\n".utf8).write(to: options)
 
         await controller.prepareAdvice()
-        #expect(controller.config != nil)
+        #expect(controller.hasLoadedConfig)
+        #expect(controller.config == nil, "with the page closed, the advice keeps no parsed file")
         #expect(controller.currentProfile == "P")
         #expect(controller.minecraftKeybinds != nil)
         #expect(harness.runner.calls.isEmpty)

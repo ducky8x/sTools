@@ -295,6 +295,15 @@ struct HotkeyBindingRow: View {
                 Rectangle().fill(STColor.rule).frame(height: 1).accessibilityHidden(true)
             }
         }
+        // A hotkey that switches Karabiner's profile says when its profile is gone or none can be switched to, so the
+        // profiles are read when its row appears and each time sTools comes back to the front.
+        .task(id: binding.profileAction) {
+            if binding.profileAction != nil { await model.hotkeys.advisor?.refreshProfiles() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            guard binding.profileAction != nil else { return }
+            Task { await model.hotkeys.advisor?.refreshProfiles() }
+        }
     }
 
     /// The row's first line. VoiceOver reads it as one element ("Option F18: Crosshair and NBB Overlay. Refused
@@ -325,8 +334,13 @@ struct HotkeyBindingRow: View {
         }
     }
 
-    private var statusNote: String? {
-        HotkeyWording.statusNote(model.hotkeys.status(of: binding.id), combo: binding.combo, inList: true)
+    private var statusNote: String? { Self.statusNote(for: binding, in: model.hotkeys) }
+
+    /// What keeps `binding` from working, for its row and VoiceOver: its key (`HotkeyStatus`), else its Karabiner profile
+    /// ("No profile named “Minecraft”", "Karabiner-Elements isn’t running"), as the Key Rebinder last read them.
+    static func statusNote(for binding: HotkeyBinding, in hotkeys: HotkeyCenter) -> String? {
+        let profiles = hotkeys.advisor?.profiles ?? .withoutKeyRebinder
+        return HotkeyWording.statusNote(hotkeys.status(of: binding.id), for: binding, profiles: profiles, inList: true)
     }
 
     private var spokenName: String { HotkeyWording.spokenName(for: binding.combo) }
@@ -338,16 +352,20 @@ struct HotkeyBindingRow: View {
     }
 }
 
-/// Adds or edits one hotkey: record any key or combination, read what it would take away, pick its actions. A tool
-/// has one key of its own (spec 6.1), so a save that would add a second key for a tool's action alone asks first, and
-/// Replace gives the tool's own key the new one instead.
+/// Adds or edits one hotkey: record any key or combination, read what it would take away, pick its actions and,
+/// under them, a Karabiner profile to switch to. A tool has one key of its own (spec 6.1), and so does a profile, so a
+/// save that would add a second key for one action alone asks first, and Replace gives the action's own key the new one
+/// instead.
 struct HotkeyEditor: View {
     let model: AppModel
     let existing: HotkeyBinding?
     let onDone: () -> Void
 
     @State private var shortcut: STShortcut?
+    /// The tools' actions, one chip each.
     @State private var actions: Set<HotkeyAction>
+    /// The Karabiner profile row's choice: nil for None.
+    @State private var profile: HotkeyProfileAction?
     /// The tool's own hotkey a save would duplicate, with the key it would get instead: the question's subject.
     @State private var replacing: Replacement?
 
@@ -370,7 +388,8 @@ struct HotkeyEditor: View {
         self.existing = existing
         self.onDone = onDone
         _shortcut = State(initialValue: existing?.combo.asSTShortcut)
-        _actions = State(initialValue: existing.map { Set($0.actions) } ?? [])
+        _actions = State(initialValue: Set(existing?.actions.filter { $0.profileAction == nil } ?? []))
+        _profile = State(initialValue: existing?.profileAction)
     }
 
     var body: some View {
@@ -391,10 +410,11 @@ struct HotkeyEditor: View {
                 STChips(selection: $actions, options: HotkeyAction.allCases.map { STSegmentedOption($0, $0.title) },
                         label: HotkeyWording.actionChipsLabel)
             }
+            HotkeyProfileRow(selection: $profile, profiles: model.hotkeys.advisor?.profiles ?? .withoutKeyRebinder)
             HStack(spacing: 14) {
                 Button("Save Hotkey") { save() }
                     .buttonStyle(STButtonStyle(.primary))
-                    .disabled(shortcut == nil || actions.isEmpty)
+                    .disabled(shortcut == nil || chosen.isEmpty)
                 if existing != nil {
                     Button("Delete") { delete() }
                         .buttonStyle(STButtonStyle(.secondary))
@@ -409,13 +429,20 @@ struct HotkeyEditor: View {
                 Button("Cancel", role: .cancel) {}
             },
             message: { replacement in Text(HotkeyWording.replaceOwnKeyWarning(replacement.own, with: replacement.combo)) })
+        // The profile row lists Karabiner's profiles as they are now, read without loading karabiner.json.
+        .task { await model.hotkeys.advisor?.refreshProfiles() }
     }
 
-    /// Saves `combo` and `actions` (kept in the chips' order) on `existing`, or as a new hotkey, unless that would add
-    /// a second key for one tool's action alone: then nothing changes, and the tool's own hotkey comes back for the
-    /// question (`HotkeyCenter.ownHotkeyReplaced(bySaving:editing:)`).
+    /// Everything the hotkey would do: the chips' actions and the profile row's choice.
+    private var chosen: Set<HotkeyAction> {
+        profile.map { actions.union([.profile($0)]) } ?? actions
+    }
+
+    /// Saves `combo` and `actions` (kept in the editors' order: the chips', then a profile) on `existing`, or as a new
+    /// hotkey, unless that would add a second key for one action alone: then nothing changes, and that action's own
+    /// hotkey comes back for the question (`HotkeyCenter.ownHotkeyReplaced(bySaving:editing:)`).
     static func save(_ combo: HotkeyCombo, actions: Set<HotkeyAction>, existing: HotkeyBinding?, in hotkeys: HotkeyCenter) -> SaveResult {
-        let ordered = HotkeyAction.allCases.filter(actions.contains)
+        let ordered = HotkeyAction.pickerOrder(actions)
         if let own = hotkeys.ownHotkeyReplaced(bySaving: ordered, editing: existing?.id) { return .asksToReplace(own) }
         if let existing {
             hotkeys.update(existing.id, combo: combo, actions: ordered)
@@ -447,7 +474,7 @@ struct HotkeyEditor: View {
     private func save() {
         guard let shortcut else { return }
         let combo = shortcut.hotkeyCombo
-        switch Self.save(combo, actions: actions, existing: existing, in: model.hotkeys) {
+        switch Self.save(combo, actions: chosen, existing: existing, in: model.hotkeys) {
         case .saved: onDone()
         case .asksToReplace(let own): replacing = Replacement(own: own, combo: combo)
         }

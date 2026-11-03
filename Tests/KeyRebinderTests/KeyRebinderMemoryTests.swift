@@ -12,11 +12,18 @@ import Testing
 // controller (which lives as long as the app too) kept the tree.
 
 private final class ScriptedCLI: CommandRunner, @unchecked Sendable {
+    /// The profiles it lists; "P" is the one in use.
+    let profiles: [String]
+
+    init(profiles: [String] = ["P"]) { self.profiles = profiles }
+
     func run(_ executable: URL, _ args: [String]) async throws -> CommandResult {
         switch args.first {
         case "--version": CommandResult(stdout: "16.3.0\n")
-        case "--list-profile-names", "--show-current-profile-name": CommandResult(stdout: "P\n")
+        case "--list-profile-names": CommandResult(stdout: profiles.map { $0 + "\n" }.joined())
+        case "--show-current-profile-name": CommandResult(stdout: "P\n")
         case "--list-connected-devices": CommandResult(stdout: "[]")
+        case "--select-profile": CommandResult(stdout: "")
         default: CommandResult(stdout: "", stderr: "unknown command", status: 1)
         }
     }
@@ -61,13 +68,15 @@ private final class Rig {
     let configURL: URL
     let controller: KeyRebinderController
 
-    init(rules: Int = 3) throws {
+    /// - Parameter profiles: the profiles Karabiner-Elements' command-line tool lists, "P" first and in use.
+    init(rules: Int = 3, profiles: [String] = ["P"]) throws {
         directory = FileManager.default.temporaryDirectory.appending(path: "stools-memory-\(UUID().uuidString)", directoryHint: .isDirectory)
         let karabiner = directory.appending(path: "karabiner", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: karabiner, withIntermediateDirectories: true)
         configURL = karabiner.appending(path: "karabiner.json")
         try Data(configText(rules: rules).utf8).write(to: configURL)
-        let cli = KarabinerCLI(runner: ScriptedCLI(), cliURL: directory.appending(path: "karabiner_cli"), fileExists: { _ in true })
+        let cli = KarabinerCLI(runner: ScriptedCLI(profiles: profiles), cliURL: directory.appending(path: "karabiner_cli"),
+                               fileExists: { _ in true })
         let probes = KarabinerProbes(appBundleExists: { true }, cliVersion: { "16.3.0" }, configReadable: { true })
         let settings = SettingsStore(directory: directory.appending(path: "settings", directoryHint: .isDirectory))
         let services = ToolServices(
@@ -232,6 +241,53 @@ struct KeyRebinderMemoryTests {
         #expect(closed.visited < 500_000, "the walk gave up, so it proves nothing")
     }
 
+    /// A profile hotkey pressed while the page is closed switches through Karabiner-Elements' command-line tool and brings
+    /// no parsed file back, and neither does the read of the profiles the hotkey editors ask for.
+    @Test func profileHotkeysWithThePageClosedHoldNoFile() async throws {
+        let rig = try Rig(rules: 300, profiles: ["P", "Q"])
+        await rig.controller.refresh()
+        #expect(holdings(of: rig.controller).json > 100_000, "the control: the page's file is held while it is open")
+        rig.controller.releaseLoadedFile()
+
+        await rig.controller.refreshProfiles()
+        #expect(rig.controller.profiles.names == ["P", "Q"])
+        #expect(await rig.controller.switchProfile(for: .select("Q")) == .switched(to: "Q"))
+        let closed = holdings(of: rig.controller)
+        #expect(closed.json < 2_000, "\(closed.json) bytes of parsed JSON are reachable from the controller after the press")
+        #expect(closed.visited < 500_000, "the walk gave up, so it proves nothing")
+    }
+
+    // MARK: Home's advice
+
+    /// Home ▸ Hotkeys reads karabiner.json for its advice (which key sends a hotkey's key) when it appears and each time
+    /// sTools comes back to the front. With the page closed, it keeps what the advice needs, the keys (`derived`) and
+    /// Minecraft's keybinds, and lets go of the parsed file, as the page does when it closes.
+    @Test func homesAdviceReadHoldsNoFileWhileThePageIsClosed() async throws {
+        let rig = try Rig(rules: 300)
+        await rig.controller.prepareAdvice()
+        #expect(rig.controller.hasLoadedConfig, "the advice read nothing")
+        #expect(rig.controller.derived.rebinds.map(\.from) == [.key("caps_lock")], "the advice lost the keys")
+        let held = holdings(of: rig.controller)
+        #expect(held.json < 2_000, "\(held.json) bytes of parsed JSON are reachable from the controller after Home's advice read")
+        #expect(held.visited < 500_000, "the walk gave up, so it proves nothing")
+    }
+
+    /// After an advice read let go of the file, the page loads and edits as before: it reads the file when it opens, shows
+    /// the same keys and writes an edit at once, since the store compares with the file it just read.
+    @Test func thePageLoadsAndEditsAfterAnAdviceRead() async throws {
+        let rig = try Rig()
+        let controller = rig.controller
+        await controller.prepareAdvice()
+        #expect(controller.config == nil)
+        await controller.refresh()
+        #expect(controller.config != nil, "the page didn't read the file")
+        #expect(controller.derived.rebinds.map(\.from) == [.key("caps_lock")])
+        await controller.setRebind(.key("a"), to: .key("b"))
+        #expect(controller.errorMessage == nil)
+        #expect(controller.pendingEdit == nil, "the edit was held back as if someone else had changed the file")
+        #expect(controller.derived.rebinds.map(\.from).contains(.key("a")))
+    }
+
     /// The store used to keep the file it last read, tree and bytes, to compare digests with, and only ever read the
     /// digest. Everything it holds between calls is the digests, a few dozen bytes.
     @Test func theStoreKeepsOnlyTheDigestOfTheFileItRead() async throws {
@@ -298,6 +354,35 @@ struct KeyRebinderMemoryTests {
         window.contentView = nil
         _ = await eventually { weakHost == nil }
         #expect(weakHost == nil, "the hosting view outlived its window")
+    }
+
+    /// While the page shows, an advice read (sTools coming back to the front with Home's hotkeys on, say) leaves the page
+    /// its file, and the page edits as before. Once the page closes, an advice read keeps none.
+    @Test func anAdviceReadLeavesThePageItsFile() async throws {
+        let rig = try Rig()
+        let controller = rig.controller
+        let page = PageSwitch()
+        STFont.register()
+        let host = NSHostingView(rootView: SwitchingRoot(page: page, controller: controller))
+        host.frame = CGRect(x: 0, y: 0, width: 1200, height: 900)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        defer { window.contentView = nil }
+
+        page.showsRebinder = true
+        #expect(await eventually { controller.config != nil && controller.canEdit }, "the page never loaded the file")
+        await controller.prepareAdvice()
+        #expect(controller.config != nil, "an advice read took the open page's file")
+        await controller.setRebind(.key("a"), to: .key("b"))
+        #expect(controller.errorMessage == nil)
+        #expect(controller.pendingEdit == nil)
+
+        page.showsRebinder = false
+        #expect(await eventually { controller.config == nil }, "the page kept its file after it closed")
+        await controller.prepareAdvice()
+        #expect(controller.config == nil, "an advice read with the page closed kept the file")
+        #expect(controller.derived.rebinds.map(\.from).contains(.key("a")), "the advice doesn't show the edit")
     }
 }
 
