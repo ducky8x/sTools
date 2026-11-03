@@ -25,7 +25,7 @@ private final class EditorFixture {
     }
 }
 
-/// Home ▸ Hotkeys' editor, behind Add Hotkey… and each row's Edit (spec 6.1): what Save and Replace do to the list.
+/// The Hotkeys page's editor, behind Add Hotkey… and each row's Edit (spec 6.1): what Save and Replace do to the list.
 @MainActor
 @Suite("Home hotkey editor")
 struct HotkeyEditorTests {

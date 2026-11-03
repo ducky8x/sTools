@@ -7,7 +7,7 @@ import Testing
 @testable import sTools
 
 // Also fire while holding Shift or Control (spec 6.1, revision 45) in the app: the Go menu's shortcuts are the ones no
-// variant takes, the option sits in Home ▸ Hotkeys ▸ Advanced, and it is its own setting that export, import, Reset and
+// variant takes, the option sits in Hotkeys ▸ Advanced, and it is its own setting that export, import, Reset and
 // Copy Diagnostics carry. The app tests' harness starts with the option off (so the fake registrar holds just the list);
 // each test here turns it on.
 
@@ -58,7 +58,7 @@ struct HotkeyHeldModifierAppTests {
         #expect(hotkeys.bindings.map(\.combo) == HotkeyKeySet.command.combos)
     }
 
-    // MARK: Home ▸ Hotkeys ▸ Advanced
+    // MARK: Hotkeys ▸ Advanced
 
     @Test func theOptionIsNamedAsTheSpecNamesIt() {
         #expect(HotkeysSection.alsoFireLabel == "Also fire while holding Shift or Control")

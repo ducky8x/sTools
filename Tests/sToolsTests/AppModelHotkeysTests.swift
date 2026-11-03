@@ -284,7 +284,7 @@ struct HomeHotkeyRowTests {
         #expect(HotkeyBindingRow.showOnKeyboardLabel(for: pad1) == "Show Keypad 1 on keyboard")
     }
 
-    /// Home ▸ Hotkeys loads the Key Rebinder's advice (karabiner.json and Minecraft's keybinds) when it appears with
+    /// The Hotkeys page loads the Key Rebinder's advice (karabiner.json and Minecraft's keybinds) when it appears with
     /// hotkeys on and when they are switched on; with hotkeys off it loads nothing.
     @Test func theSectionLoadsTheAdviceWhileHotkeysAreOn() async {
         let harness = Harness(accessibility: .granted)
