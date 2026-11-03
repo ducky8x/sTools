@@ -257,6 +257,37 @@ struct KeyRebinderMemoryTests {
         #expect(closed.visited < 500_000, "the walk gave up, so it proves nothing")
     }
 
+    // MARK: Home's advice
+
+    /// Home ▸ Hotkeys reads karabiner.json for its advice (which key sends a hotkey's key) when it appears and each time
+    /// sTools comes back to the front. With the page closed, it keeps what the advice needs, the keys (`derived`) and
+    /// Minecraft's keybinds, and lets go of the parsed file, as the page does when it closes.
+    @Test func homesAdviceReadHoldsNoFileWhileThePageIsClosed() async throws {
+        let rig = try Rig(rules: 300)
+        await rig.controller.prepareAdvice()
+        #expect(rig.controller.hasLoadedConfig, "the advice read nothing")
+        #expect(rig.controller.derived.rebinds.map(\.from) == [.key("caps_lock")], "the advice lost the keys")
+        let held = holdings(of: rig.controller)
+        #expect(held.json < 2_000, "\(held.json) bytes of parsed JSON are reachable from the controller after Home's advice read")
+        #expect(held.visited < 500_000, "the walk gave up, so it proves nothing")
+    }
+
+    /// After an advice read let go of the file, the page loads and edits as before: it reads the file when it opens, shows
+    /// the same keys and writes an edit at once, since the store compares with the file it just read.
+    @Test func thePageLoadsAndEditsAfterAnAdviceRead() async throws {
+        let rig = try Rig()
+        let controller = rig.controller
+        await controller.prepareAdvice()
+        #expect(controller.config == nil)
+        await controller.refresh()
+        #expect(controller.config != nil, "the page didn't read the file")
+        #expect(controller.derived.rebinds.map(\.from) == [.key("caps_lock")])
+        await controller.setRebind(.key("a"), to: .key("b"))
+        #expect(controller.errorMessage == nil)
+        #expect(controller.pendingEdit == nil, "the edit was held back as if someone else had changed the file")
+        #expect(controller.derived.rebinds.map(\.from).contains(.key("a")))
+    }
+
     /// The store used to keep the file it last read, tree and bytes, to compare digests with, and only ever read the
     /// digest. Everything it holds between calls is the digests, a few dozen bytes.
     @Test func theStoreKeepsOnlyTheDigestOfTheFileItRead() async throws {
@@ -323,6 +354,35 @@ struct KeyRebinderMemoryTests {
         window.contentView = nil
         _ = await eventually { weakHost == nil }
         #expect(weakHost == nil, "the hosting view outlived its window")
+    }
+
+    /// While the page shows, an advice read (sTools coming back to the front with Home's hotkeys on, say) leaves the page
+    /// its file, and the page edits as before. Once the page closes, an advice read keeps none.
+    @Test func anAdviceReadLeavesThePageItsFile() async throws {
+        let rig = try Rig()
+        let controller = rig.controller
+        let page = PageSwitch()
+        STFont.register()
+        let host = NSHostingView(rootView: SwitchingRoot(page: page, controller: controller))
+        host.frame = CGRect(x: 0, y: 0, width: 1200, height: 900)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        defer { window.contentView = nil }
+
+        page.showsRebinder = true
+        #expect(await eventually { controller.config != nil && controller.canEdit }, "the page never loaded the file")
+        await controller.prepareAdvice()
+        #expect(controller.config != nil, "an advice read took the open page's file")
+        await controller.setRebind(.key("a"), to: .key("b"))
+        #expect(controller.errorMessage == nil)
+        #expect(controller.pendingEdit == nil)
+
+        page.showsRebinder = false
+        #expect(await eventually { controller.config == nil }, "the page kept its file after it closed")
+        await controller.prepareAdvice()
+        #expect(controller.config == nil, "an advice read with the page closed kept the file")
+        #expect(controller.derived.rebinds.map(\.from).contains(.key("a")), "the advice doesn't show the edit")
     }
 }
 
