@@ -30,10 +30,11 @@ struct KeyCapActivityTests {
 // MARK: - How it looks
 
 @MainActor
-private func renderCap(_ shortcut: STShortcut?, isDimmed: Bool = false, problem: String? = nil,
-                       theme: STTheme = STTheme()) -> Data? {
-    let size = CGSize(width: 140, height: 40)
-    let root = STKeyCapRecorder(shortcut: .constant(shortcut), label: "Crosshair hotkey", isDimmed: isDimmed, problem: problem)
+private func renderCap(_ shortcut: STShortcut?, isDimmed: Bool = false, problem: String? = nil, revealsClear: Bool = true,
+                       width: CGFloat = 140, theme: STTheme = STTheme()) -> Data? {
+    let size = CGSize(width: width, height: 40)
+    let root = STKeyCapRecorder(shortcut: .constant(shortcut), label: "Crosshair hotkey", isDimmed: isDimmed, problem: problem,
+                                revealsClear: revealsClear)
         .padding(8)
         .frame(width: size.width, height: size.height, alignment: .leading)
         .environment(\.stTheme, theme)
@@ -58,6 +59,33 @@ struct KeyCapRenderTests {
         let dimmed = try #require(renderCap(commandOne, isDimmed: true))
         let broken = try #require(renderCap(commandOne, problem: "Refused by macOS"))
         #expect(Set([set, unset, dimmed, broken]).count == 4)
+    }
+
+    /// Beside a tile that isn't hovered the × waits for the pointer; without a key there is nothing to clear either way.
+    @Test func theClearControlCanWaitForThePointer() throws {
+        let theme = STTheme(motionMode: .reduced)
+        #expect(try #require(renderCap(commandOne, revealsClear: false, theme: theme))
+            != (try #require(renderCap(commandOne, revealsClear: true, theme: theme))))
+        #expect(try #require(renderCap(nil, revealsClear: false, theme: theme))
+            == (try #require(renderCap(nil, revealsClear: true, theme: theme))))
+    }
+
+    /// Where there's no room for Add Key the empty cap keeps its plus at the cap's least width (34 pt), rather than
+    /// stretching to its room with the words cut off.
+    @Test func anEmptyCapShortensInsteadOfCuttingOff() throws {
+        let png = try #require(renderCap(nil, width: 64, theme: STTheme(motionMode: .reduced)))
+        let rep = try #require(NSBitmapImageRep(data: png))
+        let scale = rep.pixelsWide / 64
+        // The window's last column is the background; everything right of the 8 pt padding, the 34 pt cap and a little
+        // to spare matches it.
+        let background = rep.colorAt(x: rep.pixelsWide - 1, y: 0)
+        var inked = 0
+        for x in (8 + 34 + 4) * scale..<rep.pixelsWide {
+            for y in 0..<rep.pixelsHigh where rep.colorAt(x: x, y: y) != background {
+                inked += 1
+            }
+        }
+        #expect(inked == 0, "\(inked) pixels past the cap")
     }
 
     @Test func rendersUnderReducedMotionAndIncreasedContrast() throws {

@@ -21,7 +21,7 @@ public enum STKeyCapActivity: Equatable, Sendable {
 /// While it listens it lights in the accent and shows the modifiers held so far; any known key, alone or with ⌃ ⌥ ⇧ ⌘,
 /// commits, Esc cancels and Delete clears, as in `STShortcutRecorder`, whose rules and key monitor it shares. A click
 /// anywhere else, or another app coming to the front, cancels. Without a key it reads Add Key on a dashed cap. Beside a
-/// set key, a small × clears it.
+/// set key, a small × clears it: always, or with `revealsClear` false only while the pointer is over the cap or the ×.
 ///
 /// `validate` refuses a key with a short reason; the cap keeps listening, turns red and reports the reason through
 /// `activity`, so the view around it can show it. `isDimmed` draws the cap quieter (hotkeys are off, so the key does
@@ -34,6 +34,7 @@ public struct STKeyCapRecorder: View {
     private let spokenKey: String?
     private let isDimmed: Bool
     private let problem: String?
+    private let revealsClear: Bool
     private let validate: (STShortcut) -> String?
 
     @Environment(\.stTheme) private var theme
@@ -43,9 +44,10 @@ public struct STKeyCapRecorder: View {
     @State private var model = STShortcutRecorderModel()
     @State private var monitor = STShortcutKeyMonitor()
     @State private var isHovering = false
+    @State private var isHoveringRow = false
 
     public init(shortcut: Binding<STShortcut?>, label: String, spokenKey: String? = nil, isDimmed: Bool = false,
-                problem: String? = nil, activity: Binding<STKeyCapActivity> = .constant(.idle),
+                problem: String? = nil, revealsClear: Bool = true, activity: Binding<STKeyCapActivity> = .constant(.idle),
                 validate: ((STShortcut) -> String?)? = nil) {
         _shortcut = shortcut
         _activity = activity
@@ -53,17 +55,21 @@ public struct STKeyCapRecorder: View {
         self.spokenKey = spokenKey
         self.isDimmed = isDimmed
         self.problem = problem
+        self.revealsClear = revealsClear
         self.validate = validate ?? STShortcutRecorderLogic.basicRejection
     }
 
     public var body: some View {
         HStack(spacing: 4 * theme.textScale) {
             cap
-            if shortcut != nil && !model.isRecording {
+            // VoiceOver clears through the cap's own action, so a hidden × costs it nothing.
+            if shortcut != nil && !model.isRecording && (revealsClear || isHoveringRow) {
                 clearButton
             }
         }
+        .onHover { isHoveringRow = $0 }
         .stAnimation(STMotion.quick, value: model.isRecording)
+        .stAnimation(STMotion.quick, value: revealsClear || isHoveringRow)
         .onChange(of: model) { _, current in
             let now = STKeyCapActivity(current)
             if activity != now { activity = now }
@@ -136,11 +142,13 @@ public struct STKeyCapRecorder: View {
                 .font(keyFont)
                 .foregroundStyle(problem != nil ? STColor.danger : (isDimmed ? theme.inkTertiary : STColor.ink))
         } else {
-            HStack(spacing: 4 * theme.textScale) {
-                Image(systemName: "plus")
-                    .font(.system(size: 9 * theme.textScale, weight: .bold))
-                    .accessibilityHidden(true)
-                Text("Add Key").stStyle(.label)
+            // Add Key where there's room for it, else the plus alone; the help tag and VoiceOver say the rest.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 4 * theme.textScale) {
+                    plus
+                    Text("Add Key").stStyle(.label).fixedSize()
+                }
+                plus
             }
             .foregroundStyle(isHovering ? theme.accent : theme.inkSecondary)
         }
@@ -163,6 +171,12 @@ public struct STKeyCapRecorder: View {
     }
 
     private var keyFont: Font { STFont.figures(13 * theme.textScale, weight: .medium) }
+
+    private var plus: some View {
+        Image(systemName: "plus")
+            .font(.system(size: 9 * theme.textScale, weight: .bold))
+            .accessibilityHidden(true)
+    }
 
     private var clearButton: some View {
         Button(action: clear) {

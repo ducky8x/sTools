@@ -49,11 +49,16 @@ enum STChipsLogic {
     }
 }
 
-/// One chip's look: today's capsule, plus the house press dip and gold focus ring.
-private struct STChipStyle: ButtonStyle {
+/// One chip's look: today's capsule, plus the house press dip and gold focus ring. A selected chip is filled with the
+/// accent. `STChips` draws its chips with it, and so does any single-choice row of chips (Home's Karabiner profiles).
+public struct STChipStyle: ButtonStyle {
     let isSelected: Bool
 
-    func makeBody(configuration: Configuration) -> some View {
+    public init(isSelected: Bool) {
+        self.isSelected = isSelected
+    }
+
+    public func makeBody(configuration: Configuration) -> some View {
         STChipBody(isSelected: isSelected, configuration: configuration)
     }
 }
