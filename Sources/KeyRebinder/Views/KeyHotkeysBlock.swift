@@ -4,10 +4,11 @@ import SwiftUI
 
 /// The key panel's Hotkeys part (spec 5.5.3, 6.1): where hotkeys work and the key set, as Home ▸ Hotkeys sets them,
 /// the sTools hotkeys on what the selected key sends after Karabiner, an inline editor that adds or changes one with
-/// Hold and Does chips, and, for a key that can't carry hotkeys, why not and the spare key it could become. Hotkeys
-/// live in `hotkeys.json`, never in `karabiner.json`, so all of this works without Karabiner-Elements; only Use F20
-/// needs it. The panel gives the block a new identity (`identity(of:controller:)`) per key and per key code the key
-/// sends, so selecting another key, or a rebind of this one, closes the editor unsaved.
+/// Hold and Does chips and a Karabiner profile row, and, for a key that can't carry hotkeys, why not and the spare key
+/// it could become. Hotkeys live in `hotkeys.json`, never in `karabiner.json`, so all of this works without
+/// Karabiner-Elements; only Use F20 and switching profiles need it. The panel gives the block a new identity
+/// (`identity(of:controller:)`) per key and per key code the key sends, so selecting another key, or a rebind of this
+/// one, closes the editor unsaved.
 struct KeyHotkeysBlock: View {
     /// What the block shows for a key.
     enum Content: Equatable {
@@ -203,7 +204,7 @@ struct KeyHotkeysBlock: View {
     /// One hotkey: its combination, what it does and what's wrong with it, then Edit. VoiceOver reads the first
     /// three as one sentence ("Option F18: Crosshair and NBB Overlay. Refused by macOS.").
     private func row(_ hotkey: HotkeyBinding) -> some View {
-        let problem = HotkeyWording.statusNote(controller.hotkeyCenter?.status(of: hotkey.id), combo: hotkey.combo, inList: false)
+        let problem = Self.problem(of: hotkey, controller: controller)
         let name = HotkeyWording.spokenName(for: hotkey.combo)
         return HStack(alignment: .firstTextBaseline, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -227,6 +228,13 @@ struct KeyHotkeysBlock: View {
         .overlay(alignment: .bottom) { Rectangle().fill(STColor.rule).frame(height: 1).accessibilityHidden(true) }
     }
 
+    /// What's wrong with `hotkey`, for its row: its key's problem, else its Karabiner profile's ("No profile named
+    /// “Minecraft”", "Karabiner-Elements isn’t running"). Nil when nothing is.
+    static func problem(of hotkey: HotkeyBinding, controller: KeyRebinderController) -> String? {
+        HotkeyWording.statusNote(controller.hotkeyCenter?.status(of: hotkey.id), for: hotkey, profiles: controller.profiles,
+                                 inList: false)
+    }
+
     /// "Option F18: Crosshair and NBB Overlay. Refused by macOS."
     static func spokenDescription(name: String, actions: [HotkeyAction], problem: String?) -> String {
         let summary = HotkeyWording.spokenSummary(actions)
@@ -236,9 +244,9 @@ struct KeyHotkeysBlock: View {
 
     // MARK: The editor
 
-    /// Adds a hotkey on `keyCode`, or changes `existing`: the combination, Hold and Does chips, what blocks saving,
-    /// the notes (which never block), then Save Hotkey (secondary: the rebind's Save stays the panel's one primary
-    /// button), Delete and Cancel. While a karabiner.json change waits, only Cancel works.
+    /// Adds a hotkey on `keyCode`, or changes `existing`: the combination, Hold and Does chips, the Karabiner profile row,
+    /// what blocks saving, the notes (which never block), then Save Hotkey (secondary: the rebind's Save stays the panel's
+    /// one primary button), Delete and Cancel. While a karabiner.json change waits, only Cancel works.
     private func editor(on keyCode: UInt16, existing: HotkeyBinding?) -> some View {
         let draft = draft ?? HotkeyDraft()
         let combo = draft.combo(on: keyCode)
@@ -259,6 +267,7 @@ struct KeyHotkeysBlock: View {
                     STChips(selection: doesSelection, options: HotkeyAction.allCases.map { STSegmentedOption($0, $0.title) },
                             label: HotkeyWording.actionChipsLabel)
                 }
+                KeyHotkeyProfileRow(selection: profileSelection, profiles: controller.profiles)
             }
             .disabled(!controls.edits)
             if let problem {
@@ -289,6 +298,8 @@ struct KeyHotkeysBlock: View {
                     .disabled(!controls.cancels)
             }
         }
+        // The profile row lists Karabiner's profiles as they are now.
+        .task { await controller.refreshProfiles() }
     }
 
     private var holdSelection: Binding<Set<HotkeyCombo.Modifiers>> {
@@ -299,15 +310,19 @@ struct KeyHotkeysBlock: View {
         Binding(get: { draft?.does ?? [] }, set: { draft?.does = $0 })
     }
 
+    private var profileSelection: Binding<HotkeyProfileAction?> {
+        Binding(get: { draft?.profile }, set: { draft?.profile = $0 })
+    }
+
     /// Saves the draft: a new hotkey, or the one it changes while that is still on this key (never one the key
-    /// stopped sending, which would move it). A second key for a tool's action alone asks first (`replacing`), and
-    /// Replace saves it with `replacingOwnHotkey`, giving the tool's own hotkey this key.
+    /// stopped sending, which would move it). A second key for one action alone, a tool's or a profile's, asks first
+    /// (`replacing`), and Replace saves it with `replacingOwnHotkey`, giving that action's own hotkey this key.
     private func save(replacingOwnHotkey: Bool = false) {
         guard let draft, Self.editorPlace(for: draft, among: controller.hotkeys(on: key)) != nil else {
             self.draft = nil
             return
         }
-        let actions = HotkeyAction.allCases.filter(draft.does.contains)
+        let actions = draft.actions
         if !replacingOwnHotkey, let keyCode = controller.hotkeyTarget(for: key).keyCode,
            let own = controller.ownHotkeyReplaced(bySaving: actions, editing: draft.editing) {
             replacing = Replacement(own: own, combo: draft.combo(on: keyCode))
@@ -347,7 +362,7 @@ struct KeyHotkeysBlock: View {
 }
 
 /// What the Hotkeys part's editor holds until Save Hotkey: the hotkey it changes (nil adds one), the modifiers to
-/// hold and the actions.
+/// hold, the tools' actions and the Karabiner profile.
 struct HotkeyDraft: Equatable {
     /// The four modifiers, one chip each, in macOS's order (⌃⌥⇧⌘). None chosen means the key alone.
     static var holdChoices: [STSegmentedOption<HotkeyCombo.Modifiers>] {
@@ -360,16 +375,25 @@ struct HotkeyDraft: Equatable {
     /// The hotkey being changed; nil adds a new one.
     var editing: UUID?
     var hold: Set<HotkeyCombo.Modifiers> = []
+    /// The tools' actions, one Does chip each.
     var does: Set<HotkeyAction> = []
+    /// The profile row's choice: nil for None.
+    var profile: HotkeyProfileAction?
 
     /// A new hotkey: the key alone, and no action yet.
     init() {}
 
-    /// Changing `binding`: its modifiers and actions.
+    /// Changing `binding`: its modifiers, actions and profile.
     init(_ binding: HotkeyBinding) {
         editing = binding.id
         hold = Set(Self.holdChoices.map(\.value).filter(binding.combo.modifiers.contains))
-        does = Set(binding.actions)
+        does = Set(binding.actions.filter { $0.profileAction == nil })
+        profile = binding.profileAction
+    }
+
+    /// Everything the hotkey would do, in the editors' order: the chips' actions, then the profile.
+    var actions: [HotkeyAction] {
+        HotkeyAction.pickerOrder(Array(does) + (profile.map { [.profile($0)] } ?? []))
     }
 
     /// The modifiers chosen, together.
@@ -389,9 +413,9 @@ struct HotkeyDraft: Equatable {
         return center.conflict(for: combo, excluding: editing).map { HotkeyWording.conflictText($0, combo: combo, inList: false) }
     }
 
-    /// Save Hotkey needs an action and no problem.
+    /// Save Hotkey needs an action, a profile counting as one, and no problem.
     @MainActor
     func canSave(on keyCode: UInt16, in center: HotkeyCenter) -> Bool {
-        !does.isEmpty && problem(on: keyCode, in: center) == nil
+        !actions.isEmpty && problem(on: keyCode, in: center) == nil
     }
 }
