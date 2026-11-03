@@ -12,11 +12,18 @@ import Testing
 // controller (which lives as long as the app too) kept the tree.
 
 private final class ScriptedCLI: CommandRunner, @unchecked Sendable {
+    /// The profiles it lists; "P" is the one in use.
+    let profiles: [String]
+
+    init(profiles: [String] = ["P"]) { self.profiles = profiles }
+
     func run(_ executable: URL, _ args: [String]) async throws -> CommandResult {
         switch args.first {
         case "--version": CommandResult(stdout: "16.3.0\n")
-        case "--list-profile-names", "--show-current-profile-name": CommandResult(stdout: "P\n")
+        case "--list-profile-names": CommandResult(stdout: profiles.map { $0 + "\n" }.joined())
+        case "--show-current-profile-name": CommandResult(stdout: "P\n")
         case "--list-connected-devices": CommandResult(stdout: "[]")
+        case "--select-profile": CommandResult(stdout: "")
         default: CommandResult(stdout: "", stderr: "unknown command", status: 1)
         }
     }
@@ -61,13 +68,15 @@ private final class Rig {
     let configURL: URL
     let controller: KeyRebinderController
 
-    init(rules: Int = 3) throws {
+    /// - Parameter profiles: the profiles Karabiner-Elements' command-line tool lists, "P" first and in use.
+    init(rules: Int = 3, profiles: [String] = ["P"]) throws {
         directory = FileManager.default.temporaryDirectory.appending(path: "stools-memory-\(UUID().uuidString)", directoryHint: .isDirectory)
         let karabiner = directory.appending(path: "karabiner", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: karabiner, withIntermediateDirectories: true)
         configURL = karabiner.appending(path: "karabiner.json")
         try Data(configText(rules: rules).utf8).write(to: configURL)
-        let cli = KarabinerCLI(runner: ScriptedCLI(), cliURL: directory.appending(path: "karabiner_cli"), fileExists: { _ in true })
+        let cli = KarabinerCLI(runner: ScriptedCLI(profiles: profiles), cliURL: directory.appending(path: "karabiner_cli"),
+                               fileExists: { _ in true })
         let probes = KarabinerProbes(appBundleExists: { true }, cliVersion: { "16.3.0" }, configReadable: { true })
         let settings = SettingsStore(directory: directory.appending(path: "settings", directoryHint: .isDirectory))
         let services = ToolServices(
@@ -229,6 +238,22 @@ struct KeyRebinderMemoryTests {
         rig.controller.releaseLoadedFile()
         let closed = holdings(of: rig.controller)
         #expect(closed.json < 2_000, "\(closed.json) bytes of parsed JSON are still reachable from the controller after the page closed")
+        #expect(closed.visited < 500_000, "the walk gave up, so it proves nothing")
+    }
+
+    /// A profile hotkey pressed while the page is closed switches through Karabiner-Elements' command-line tool and brings
+    /// no parsed file back, and neither does the read of the profiles the hotkey editors ask for.
+    @Test func profileHotkeysWithThePageClosedHoldNoFile() async throws {
+        let rig = try Rig(rules: 300, profiles: ["P", "Q"])
+        await rig.controller.refresh()
+        #expect(holdings(of: rig.controller).json > 100_000, "the control: the page's file is held while it is open")
+        rig.controller.releaseLoadedFile()
+
+        await rig.controller.refreshProfiles()
+        #expect(rig.controller.profiles.names == ["P", "Q"])
+        #expect(await rig.controller.switchProfile(for: .select("Q")) == .switched(to: "Q"))
+        let closed = holdings(of: rig.controller)
+        #expect(closed.json < 2_000, "\(closed.json) bytes of parsed JSON are reachable from the controller after the press")
         #expect(closed.visited < 500_000, "the walk gave up, so it proves nothing")
     }
 

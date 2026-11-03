@@ -51,14 +51,14 @@ public final class KeyRebinderController {
         }
     }
 
-    public private(set) var requirement: KarabinerRequirement?
+    public internal(set) var requirement: KarabinerRequirement?
     public private(set) var karabinerVersion: String?
     public private(set) var config: KarabinerConfig?
     /// Why the file could not be read, when it couldn't.
     public private(set) var configProblem: String?
-    public private(set) var configIsSymbolicLink = false
-    public private(set) var profileNames: [String] = []
-    public private(set) var currentProfile: String?
+    public internal(set) var configIsSymbolicLink = false
+    public internal(set) var profileNames: [String] = []
+    public internal(set) var currentProfile: String?
     public private(set) var devices: [ConnectedDevice] = []
     /// nil when no `options.txt` could be read (or the setting is off).
     public private(set) var minecraftKeybinds: [MinecraftKeybind]?
@@ -66,7 +66,7 @@ public final class KeyRebinderController {
     public private(set) var optionsProblem: String?
     public private(set) var pendingEdit: PendingEdit?
     public private(set) var errorMessage: String?
-    public private(set) var isBusy = false
+    public internal(set) var isBusy = false
     public private(set) var derived = Derived()
 
     public var selectedKey: KarabinerEvent?
@@ -107,13 +107,20 @@ public final class KeyRebinderController {
     }
 
     @ObservationIgnored let services: ToolServices
-    @ObservationIgnored private let configURL: URL
+    @ObservationIgnored let configURL: URL
     @ObservationIgnored private let backupsDirectory: URL
-    @ObservationIgnored private let cli: KarabinerCLI
-    @ObservationIgnored private let probes: KarabinerProbes
+    @ObservationIgnored let cli: KarabinerCLI
+    @ObservationIgnored let probes: KarabinerProbes
     @ObservationIgnored private var store: KarabinerConfigStore
     @ObservationIgnored private var watcher: DirectoryWatcher?
     @ObservationIgnored private var reloadTask: Task<Void, Never>?
+    /// The read of Karabiner-Elements' profiles under way, which other reads join (`refreshProfiles()`).
+    @ObservationIgnored var profileRead: Task<Void, Never>?
+    /// The last profile hotkey's switch, which the next one waits for, so presses switch in turn (`switchProfile(for:)`).
+    @ObservationIgnored var profileSwitch: Task<HotkeyProfileSwitch, Never>?
+    /// Goes up as each switch of profile starts and again as it ends, so a read of the profiles that overlapped one
+    /// doesn't put back the profile it replaced (`refreshProfiles()`).
+    @ObservationIgnored var profileSwitches = 0
 
     public convenience init(services: ToolServices) {
         let cli = KarabinerCLI(runner: ProcessCommandRunner())
@@ -230,7 +237,7 @@ public final class KeyRebinderController {
     public func refresh() async {
         requirement = await KarabinerStatus(probes: probes).evaluate()
         karabinerVersion = requirement == .ready ? try? await cli.version() : nil
-        configIsSymbolicLink = (try? FileManager.default.destinationOfSymbolicLink(atPath: configURL.path)) != nil
+        configIsSymbolicLink = configFileIsSymbolicLink
         await reloadConfig()
         if requirement == .ready {
             if let names = try? await cli.listProfileNames() { profileNames = names }
@@ -506,6 +513,11 @@ public final class KeyRebinderController {
         await perform("Edit a rule") { try RebindEditor.replaceRule(in: $0, profile: profile, at: index, with: rule) }
     }
 
+    /// Whether `karabiner.json` is a symbolic link now, which sTools reads and never writes (spec 5.5.3).
+    var configFileIsSymbolicLink: Bool {
+        (try? FileManager.default.destinationOfSymbolicLink(atPath: configURL.path)) != nil
+    }
+
     // MARK: Profiles (spec 5.5.6)
 
     public func selectProfile(_ name: String) async {
@@ -513,14 +525,22 @@ public final class KeyRebinderController {
         isBusy = true
         defer { isBusy = false }
         do {
-            try await cli.selectProfile(name)
-            currentProfile = name
-            selectedKey = nil
+            try await select(name)
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
         }
         await reloadConfig()
+    }
+
+    /// The switch itself, for the profile menu and profile hotkeys alike: Karabiner-Elements' command-line tool selects
+    /// the profile and writes karabiner.json, and the page follows it.
+    func select(_ name: String) async throws {
+        profileSwitches += 1
+        defer { profileSwitches += 1 }
+        try await cli.selectProfile(name)
+        currentProfile = name
+        selectedKey = nil
     }
 
     public func createProfile(named name: String, duplicatingCurrent: Bool) async {

@@ -10,13 +10,19 @@ extension HotkeyAction {
         case .toggle(.crosshair): "Crosshair"
         case .startStopRecording: "Screen Recording"
         case .startTimer: "Start timer"
+        case .profile(.select(let name)): "Switch to \(name)"
+        case .profile(.next): HotkeyWording.nextProfileTitle
         }
     }
 
     /// The tool the action belongs to, by name, for what's said about the tool's own key: Start timer is Timer
-    /// Overlay's. The same names as the sidebar's.
+    /// Overlay's, and the profile actions are the Key Rebinder's. The same names as the sidebar's.
     public var toolTitle: String {
-        self == .startTimer ? "Timer Overlay" : title
+        switch self {
+        case .startTimer: "Timer Overlay"
+        case .profile: "Key Rebinder"
+        default: title
+        }
     }
 }
 
@@ -42,17 +48,28 @@ public enum HotkeyWording {
     }
 
     /// The question before `combo` replaces a tool's own key instead of becoming a second one
-    /// (`HotkeyCenter.ownHotkeyReplaced(bySaving:editing:)`): "Use F6 for Crosshair?".
+    /// (`HotkeyCenter.ownHotkeyReplaced(bySaving:editing:)`): "Use F6 for Crosshair?". A profile has one key of its own
+    /// too: "Use F6 to switch to Minecraft?", "Use F6 for Next profile?".
     public static func replaceOwnKeyQuestion(_ own: HotkeyBinding, with combo: HotkeyCombo) -> String {
-        "Use \(combo.displayString) for \(own.actions.first?.toolTitle ?? "")?"
+        let key = combo.displayString
+        return switch own.actions.first {
+        case .profile(.select(let name))?: "Use \(key) to switch to \(name)?"
+        case .profile(.next)?: "Use \(key) for \(nextProfileTitle)?"
+        case let action: "Use \(key) for \(action?.toolTitle ?? "")?"
+        }
     }
 
     /// What Replace does, under the question: "This replaces Crosshair’s key ⌘1 with F6. Other hotkeys don’t
-    /// change."
+    /// change.", "This replaces F6, the key that switches to Minecraft, with F7. Other hotkeys don’t change."
     public static func replaceOwnKeyWarning(_ own: HotkeyBinding, with combo: HotkeyCombo) -> String {
-        let tool = own.actions.first?.toolTitle ?? ""
-        return "This replaces \(tool)\u{2019}s key \(own.combo.displayString) with \(combo.displayString). "
-            + "Other hotkeys don\u{2019}t change."
+        let old = own.combo.displayString
+        let new = combo.displayString
+        let replaces = switch own.actions.first {
+        case .profile(.select(let name))?: "This replaces \(old), the key that switches to \(name), with \(new)."
+        case .profile(.next)?: "This replaces \(nextProfileTitle)\u{2019}s key \(old) with \(new)."
+        case let action: "This replaces \(action?.toolTitle ?? "")\u{2019}s key \(old) with \(new)."
+        }
+        return replaces + " Other hotkeys don\u{2019}t change."
     }
 
     /// Why a combination can't be a hotkey: "Unsupported key", "Reserved: Spotlight".
