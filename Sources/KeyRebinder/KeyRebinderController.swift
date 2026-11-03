@@ -143,6 +143,13 @@ public final class KeyRebinderController {
         requirement == .ready && hasLoadedConfig && currentProfile != nil && !configIsSymbolicLink
     }
 
+    /// Whether another profile can be made current (spec 5.5.6): Karabiner-Elements is ready, it has a current profile and
+    /// `karabiner.json` isn't a link sTools leaves alone. Switching runs `karabiner_cli`, so unlike editing it needs no
+    /// parsed file: Home switches with the page closed.
+    public var canSwitchProfile: Bool {
+        requirement == .ready && currentProfile != nil && !configIsSymbolicLink
+    }
+
     /// Every key and button the user has: the chosen keyboard plus mouse buttons 1–8.
     public var physicalKeys: [KarabinerEvent] {
         (layout?.keys.map(\.event) ?? []) + MouseLayout.buttons.map(\.event)
@@ -241,6 +248,19 @@ public final class KeyRebinderController {
         }
         loadMinecraftKeybinds()
         recompute()
+    }
+
+    /// Home's look at Karabiner-Elements (spec 3.5): whether it's ready, and its profiles with the current one, asked of
+    /// `karabiner_cli`. Unlike `refresh()` it keeps nothing of `karabiner.json` (the status check parses the file only to
+    /// see that it can, and lets it go) and asks for no devices. Home runs it as it appears and as sTools comes to the
+    /// front, never on a timer.
+    public func refreshStatus() async {
+        let found = await KarabinerStatus(probes: probes).evaluate()
+        requirement = found
+        configIsSymbolicLink = (try? FileManager.default.destinationOfSymbolicLink(atPath: configURL.path)) != nil
+        guard found == .ready else { return }
+        if let names = try? await cli.listProfileNames() { profileNames = names }
+        if let current = try? await cli.currentProfileName(), profileNames.contains(current) { currentProfile = current }
     }
 
     /// Reads `karabiner.json` again (profiles from the file; the CLI's answer wins in `refresh`).
@@ -508,8 +528,10 @@ public final class KeyRebinderController {
 
     // MARK: Profiles (spec 5.5.6)
 
+    /// Makes `name` Karabiner-Elements' current profile, then reads the file again so the keys follow it. The page's
+    /// menu and Home both switch through here.
     public func selectProfile(_ name: String) async {
-        guard canEdit, name != currentProfile else { return }
+        guard canSwitchProfile, name != currentProfile else { return }
         isBusy = true
         defer { isBusy = false }
         do {

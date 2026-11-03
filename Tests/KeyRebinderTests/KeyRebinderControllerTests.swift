@@ -226,6 +226,58 @@ struct KeyRebinderControllerTests {
         #expect(RebindEditor.profileNames(in: try harness.onDisk()) == ["Default profile", "Any%"])
     }
 
+    /// Home's check (spec 3.5): Karabiner-Elements' status and its profiles, from the command line tool alone. It keeps
+    /// nothing of `karabiner.json` and asks for no devices.
+    @Test func homesCheckAsksTheCommandLineToolAndKeepsNoFile() async throws {
+        let harness = try Harness()
+        defer { harness.remove() }
+        let controller = harness.controller
+        await controller.refreshStatus()
+        #expect(controller.requirement == .ready)
+        #expect(controller.profileNames == ["Default profile", "Speedrun"])
+        #expect(controller.currentProfile == "Default profile")
+        #expect(controller.config == nil, "the parsed file isn't kept")
+        #expect(!controller.hasLoadedConfig)
+        #expect(!harness.runner.calls.contains { $0.first == "--list-connected-devices" })
+        #expect(controller.canSwitchProfile)
+    }
+
+    @Test func homesCheckSaysWhatIsMissingAndAsksNoMore() async throws {
+        let harness = try Harness(ready: false)
+        defer { harness.remove() }
+        await harness.controller.refreshStatus()
+        #expect(harness.controller.requirement == .notRunning)
+        #expect(harness.controller.profileNames.isEmpty)
+        #expect(!harness.runner.calls.contains { $0.first == "--list-profile-names" })
+        #expect(!harness.controller.canSwitchProfile)
+    }
+
+    /// Home switches profiles with the Key Rebinder's page closed, through the page's own `selectProfile`, and lets the
+    /// file go again afterwards; the keys it shows follow the new profile.
+    @Test func aProfileSwitchesWithThePageClosed() async throws {
+        let harness = try Harness()
+        defer { harness.remove() }
+        let controller = harness.controller
+        await controller.refreshStatus()
+        await controller.selectProfile("Speedrun")
+        #expect(harness.runner.calls.contains(["--select-profile", "Speedrun"]))
+        #expect(controller.currentProfile == "Speedrun")
+        #expect(controller.errorMessage == nil)
+        controller.releaseLoadedFile()
+        #expect(controller.config == nil)
+        #expect(controller.binding(for: .key("left_option")) == nil, "Speedrun has no rebinds")
+    }
+
+    @Test func noProfileSwitchesWhileKarabinerIsntReadyOrTheFileIsALink() async throws {
+        for harness in [try Harness(ready: false), try Harness(symlink: true)] {
+            defer { harness.remove() }
+            await harness.controller.refreshStatus()
+            #expect(!harness.controller.canSwitchProfile)
+            await harness.controller.selectProfile("Speedrun")
+            #expect(!harness.runner.calls.contains { $0.first == "--select-profile" })
+        }
+    }
+
     @Test func findingsNeedALayoutAndFollowTheCheckerSettings() async throws {
         let config = """
         { "profiles": [{ "name": "P", "selected": true, "simple_modifications": [
