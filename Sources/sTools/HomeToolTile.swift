@@ -141,7 +141,7 @@ struct HomeToolTile: View {
     private var keyHelp: String {
         guard let own = ownKey else { return "Click to give \(tool.title) a key." }
         var lines: [String] = []
-        if let keyProblem { lines.append(keyProblem) }
+        if let keyProblem { lines.append(Self.sentence(keyProblem)) }
         if !hotkeys.isEnabled { lines.append("Hotkeys are off, so this key does nothing yet.") }
         switch tool {
         case .timerOverlay:
@@ -164,19 +164,31 @@ struct HomeToolTile: View {
         enum Tone: Equatable { case quiet, accent, danger }
         var text: String
         var tone: Tone
+
+        /// While a key cap listens, how to finish; after it refused a key, why. Nil while nothing listens.
+        static func recording(_ activity: STKeyCapActivity) -> StatusLine? {
+            switch activity {
+            case .idle: nil
+            case .listening: StatusLine(text: "Esc cancels, Delete clears", tone: .accent)
+            case .refused(let reason): StatusLine(text: reason, tone: .danger)
+            }
+        }
+
+        /// A tool's live status, lit while the tool is on.
+        static func status(_ status: ToolStatus) -> StatusLine {
+            StatusLine(text: status.label, tone: status.isLit ? .accent : .quiet)
+        }
     }
 
     /// The tool's live status; while the key cap listens, how to finish; and why it refused a key.
     func statusLine(_ activity: STKeyCapActivity) -> StatusLine {
-        switch activity {
-        case .idle:
-            let status = model.status(of: tool)
-            return StatusLine(text: status.label, tone: status.isLit ? .accent : .quiet)
-        case .listening:
-            return StatusLine(text: "Esc cancels, Delete clears", tone: .accent)
-        case .refused(let reason):
-            return StatusLine(text: reason, tone: .danger)
-        }
+        StatusLine.recording(activity) ?? StatusLine.status(model.status(of: tool))
+    }
+
+    /// `text` as a sentence in a help tag: a hotkey's problem note ("Already used by another hotkey") gets its period.
+    static func sentence(_ text: String) -> String {
+        guard let last = text.last, !".?!".contains(last) else { return text }
+        return text + "."
     }
 
     // MARK: VoiceOver

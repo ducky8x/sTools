@@ -80,14 +80,21 @@ struct HomePageTests {
 
     /// Everything fits without scrolling from the 680 × 500 minimum up at the default text size, in the states that
     /// take the most room: Accessibility missing, hotkeys off (their line shows), two Minecrafts open, and Karabiner
-    /// either missing or ready with many long profile names.
+    /// either missing or ready with many long profile names, each with a key, and a key for Next profile.
     @Test(arguments: [CGSize(width: 680, height: 500), CGSize(width: 760, height: 560), CGSize(width: 1000, height: 700),
                       CGSize(width: 1440, height: 900)])
-    func everythingFitsTheWindow(size: CGSize) {
+    func everythingFitsTheWindow(size: CGSize) async {
         let crowded = (1...12).map { "Profile with a rather long name \($0)" }
         for profiles in [nil, crowded] {
             let harness = Harness(accessibility: .denied, instances: [fakeInstance(pid: 1), fakeInstance(pid: 2, launched: 2)],
                                   withKeyRebinder: true, karabiner: profiles.map { HarnessKarabiner(profiles: $0) })
+            await harness.model.refreshHomeStatuses()
+            // ⌃⌥A to ⌃⌥L, one for each profile.
+            let letters: [UInt16] = [0, 11, 8, 2, 14, 3, 5, 4, 34, 38, 40, 37]
+            for (name, letter) in zip(profiles ?? [], letters) {
+                harness.model.hotkeys.setProfileHotkey(HotkeyCombo(keyCode: letter, modifiers: [.control, .option]), for: name)
+            }
+            if profiles != nil { ToolHotkey.set(pad1, for: .profile(.next), in: harness.model.hotkeys) }
             #expect(!harness.model.hotkeys.isEnabled)
             let height = naturalHeight(harness, window: size)
             #expect(height <= size.height, "\(Int(size.width)) × \(Int(size.height)): \(height) pt")
@@ -330,6 +337,14 @@ struct HomeKeyRebinderTileTests {
         #expect(plain.map { HomeProfileChip.shownName(of: $0, among: plain) } == plain)
         #expect(HomeProfileChip.truncation(of: "\u{2026}number 1 with a long name") == .tail)
         #expect(HomeProfileChip.truncation(of: "Default profile") == .middle)
+
+        // In a row too narrow for that, the cut starts at the word where the names differ, without the one before it.
+        let tens = (1...12).map { "Practice profile number \($0) with a long name" }
+        let tight = tens.map { HomeProfileChip.shownName(of: $0, among: tens, wordsBefore: 0) }
+        #expect(tight[0] == "\u{2026}1 with a long name")
+        #expect(tight[9] == "\u{2026}10 with a long name")
+        #expect(Set(tight.map { String($0.prefix(4)) }).count == tens.count, "\(tight)")
+        #expect(plain.map { HomeProfileChip.shownName(of: $0, among: plain, wordsBefore: 0) } == plain)
     }
 
     /// Many long profile names make the tile no taller than its neighbor: they truncate, in one row that scrolls.
@@ -341,10 +356,132 @@ struct HomeKeyRebinderTileTests {
             NSHostingView(rootView: view.frame(width: 220).fixedSize(horizontal: false, vertical: true)
                 .environment(\.stTheme, harness.model.theme)).fittingSize.height
         }
+        for (index, name) in profiles.enumerated() {
+            harness.model.hotkeys.setProfileHotkey(HotkeyCombo(keyCode: 122, modifiers: index.isMultiple(of: 2) ? .control : .option),
+                                                   for: name)
+        }
+        ToolHotkey.set(pad1, for: .profile(.next), in: harness.model.hotkeys)
         let rebinder = height(HomeKeyRebinderTile(model: harness.model))
         let backdrop = height(HomeToolTile(model: harness.model, tool: .windowBackdrop))
         #expect(rebinder <= backdrop + 4, "\(rebinder) pt beside \(backdrop) pt")
         #expect(HomeProfileChip.widest < 220)
+    }
+
+    /// The tile's key cap, bottom left like every tile's, is Next profile's own key: set, changed and cleared in place
+    /// with the tool pages' refusals and words, whether hotkeys are on or off.
+    @Test func theKeyCapSetsNextProfilesKey() async throws {
+        let harness = Harness(karabiner: HarnessKarabiner(profiles: ["Default profile", "Speedrun"]))
+        await harness.model.refreshHomeStatuses()
+        let hotkeys = harness.model.hotkeys
+        ToolHotkey.set(commandOne, for: .toggle(.crosshair), in: hotkeys)
+        let tile = HomeKeyRebinderTile(model: harness.model)
+        #expect(tile.showsNextKey)
+        #expect(tile.nextKey.wrappedValue == nil)
+        #expect(tile.nextKeyLabel == "Next profile hotkey")
+
+        tile.nextKey.wrappedValue = pad1.asSTShortcut
+        let own = try #require(ToolHotkey.own(for: .profile(.next), in: hotkeys.bindings))
+        #expect(own.combo == pad1)
+        #expect(tile.nextKey.wrappedValue == pad1.asSTShortcut)
+        #expect(tile.nextSpokenKey == HotkeyWording.spokenName(for: pad1))
+
+        #expect(tile.nextKeyRefusal(for: commandOne.asSTShortcut) == "Already used by another hotkey")
+        #expect(tile.nextKeyRefusal(for: commandQ.asSTShortcut) == "Reserved: Quit")
+        #expect(tile.nextKeyRefusal(for: pad1.asSTShortcut) == nil, "its own key")
+        #expect(tile.nextKeyRefusal(for: commandOne.asSTShortcut)
+            == ToolHotkey.refusal(for: commandOne, action: .profile(.next), in: hotkeys))
+
+        tile.nextKey.wrappedValue = nil
+        #expect(ToolHotkey.own(for: .profile(.next), in: hotkeys.bindings) == nil)
+        #expect(hotkeys.bindings.count == 1, "the Crosshair's key stays")
+    }
+
+    /// Until a profile can be switched to there's nothing for Next profile to do, so its cap waits, unless it already
+    /// has a key: a key that's set stays in view.
+    @Test func theNextProfileCapWaitsForKarabinerUnlessItHasAKey() async {
+        let harness = Harness(withKeyRebinder: true)
+        await harness.model.refreshHomeStatuses()
+        let tile = HomeKeyRebinderTile(model: harness.model)
+        #expect(!tile.showsNextKey)
+        ToolHotkey.set(pad1, for: .profile(.next), in: harness.model.hotkeys)
+        #expect(tile.showsNextKey)
+        #expect(!HomeKeyRebinderTile(model: Harness().model).showsNextKey, "no Key Rebinder, no cap")
+    }
+
+    /// Each chip shows its profile's own key, and its menu's Set Key… and Remove Key set it through the profile's own
+    /// hotkey, refusing what the tool pages refuse. Other hotkeys that switch to it, and the list's order, stay.
+    @Test func aChipShowsAndSetsItsProfilesKey() async throws {
+        let harness = Harness(karabiner: HarnessKarabiner(profiles: ["Default profile", "Speedrun", "Typing"]))
+        await harness.model.refreshHomeStatuses()
+        let hotkeys = harness.model.hotkeys
+        ToolHotkey.set(commandOne, for: .toggle(.crosshair), in: hotkeys)
+        let shared = hotkeys.add(combo: HotkeyCombo(keyCode: 97, modifiers: []),
+                                 actions: [.toggle(.crosshair), .profile(.select("Speedrun"))])
+        let tile = HomeKeyRebinderTile(model: harness.model)
+        #expect(tile.profileKey(for: "Speedrun") == nil, "a shared hotkey isn't the profile's own key")
+
+        let controlF6 = HotkeyCombo(keyCode: 97, modifiers: .control)
+        tile.setKey(controlF6.asSTShortcut, for: "Speedrun")
+        #expect(hotkeys.profileHotkey(for: "Speedrun")?.combo == controlF6)
+        #expect(tile.profileKey(for: "Speedrun")?.combo == controlF6)
+        #expect(tile.profileKey(for: "Typing") == nil)
+        #expect(hotkeys.bindings.first?.actions == [.toggle(.crosshair)], "the list's order stays")
+        #expect(hotkeys.bindings.contains { $0.id == shared })
+
+        #expect(tile.refusal(for: commandOne.asSTShortcut, profile: "Typing") == "Already used by another hotkey")
+        #expect(tile.refusal(for: controlF6.asSTShortcut, profile: "Typing") == "Already used by another hotkey")
+        #expect(tile.refusal(for: controlF6.asSTShortcut, profile: "Speedrun") == nil, "its own key")
+        #expect(tile.refusal(for: commandQ.asSTShortcut, profile: "Typing")
+            == ToolHotkey.refusal(for: commandQ, action: .profile(.select("Typing")), in: hotkeys))
+
+        tile.setKey(nil, for: "Speedrun")
+        #expect(hotkeys.profileHotkey(for: "Speedrun") == nil)
+        #expect(hotkeys.hotkeys(switchingTo: "Speedrun").map(\.id) == [shared], "the shared hotkey stays")
+    }
+
+    /// A profile's key that doesn't work says so in the tool pages' words, in the chip's help and to VoiceOver.
+    @Test func aProfileKeyThatDoesntWorkSaysSo() async throws {
+        let harness = Harness(karabiner: HarnessKarabiner(profiles: ["Default profile", "Speedrun"]))
+        await harness.model.refreshHomeStatuses()
+        let hotkeys = harness.model.hotkeys
+        hotkeys.isEnabled = true
+        ToolHotkey.set(pad1, for: .toggle(.crosshair), in: hotkeys)
+        hotkeys.setProfileHotkey(pad1, for: "Speedrun")
+        let tile = HomeKeyRebinderTile(model: harness.model)
+        let own = try #require(hotkeys.profileHotkey(for: "Speedrun"))
+        let problem = try #require(tile.keyProblem(for: "Speedrun"))
+        #expect(problem == HotkeyWording.statusNote(hotkeys.status(of: own.id), combo: pad1, inList: false))
+        #expect(tile.chipHelp(for: "Speedrun").contains(problem))
+        #expect(tile.spokenKey(for: "Speedrun").contains(problem))
+        #expect(tile.keyProblem(for: "Default profile") == nil)
+    }
+
+    /// The help tag and VoiceOver have the whole name, the key and how to change it; without a key, how to add one.
+    @Test func aChipSaysItsKeyAndHowToSetIt() async throws {
+        let harness = Harness(karabiner: HarnessKarabiner(profiles: ["Default profile", "Speedrun"]))
+        await harness.model.refreshHomeStatuses()
+        let tile = HomeKeyRebinderTile(model: harness.model)
+        #expect(tile.chipHelp(for: "Speedrun") == "Speedrun. Control-click to give it a key.")
+        #expect(tile.spokenKey(for: "Speedrun") == "No key")
+        harness.model.hotkeys.setProfileHotkey(commandOne, for: "Speedrun")
+        #expect(tile.chipHelp(for: "Speedrun").hasPrefix("Speedrun. \u{2318}1 switches to it."))
+        #expect(tile.chipHelp(for: "Speedrun").hasSuffix("Control-click to change its key."))
+        #expect(tile.spokenKey(for: "Speedrun") == "Command 1")
+    }
+
+    /// While the key cap or a chip listens, the line under the name says how to finish, and why a key was refused; a
+    /// profile that didn't switch says why; otherwise it's the tool's status.
+    @Test func theStatusLineFollowsTheKeyBeingSet() async {
+        let harness = Harness(karabiner: HarnessKarabiner())
+        await harness.model.refreshHomeStatuses()
+        let tile = HomeKeyRebinderTile(model: harness.model)
+        typealias Line = HomeToolTile.StatusLine
+        #expect(tile.statusLine(.idle) == Line(text: "ALWAYS AVAILABLE", tone: .quiet))
+        #expect(tile.statusLine(.listening) == Line(text: "Esc cancels, Delete clears", tone: .accent))
+        #expect(tile.statusLine(.refused("Reserved: Quit")) == Line(text: "Reserved: Quit", tone: .danger))
+        let gone = "No profile named \u{201C}Gone\u{201D}"
+        #expect(tile.statusLine(.idle, switchError: gone) == Line(text: gone, tone: .danger))
+        #expect(tile.statusLine(.listening, switchError: gone) == Line(text: "Esc cancels, Delete clears", tone: .accent))
     }
 }
 
