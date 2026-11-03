@@ -7,7 +7,7 @@ public enum HotkeyMark: Hashable, Sendable {
     /// Every hotkey on the key is registered (live, or paused while sTools listens for keys).
     case working
     /// At least one isn't working: macOS refused it, another hotkey already uses its combination, macOS keeps the
-    /// combination, or it has no actions.
+    /// combination, it has no actions, or its Karabiner profile can't be switched to.
     case broken
 }
 
@@ -82,8 +82,9 @@ extension KeyRebinderController {
     public func hotkeyMark(for key: KarabinerEvent) -> HotkeyMark? {
         let hotkeys = hotkeys(on: key)
         guard !hotkeys.isEmpty, let center = hotkeyCenter else { return nil }
+        let profiles = profiles
         let isBroken = hotkeys.contains { hotkey in
-            if case .conflict = center.status(of: hotkey.id) { true } else { false }
+            HotkeyWording.statusNote(center.status(of: hotkey.id), for: hotkey, profiles: profiles, inList: false) != nil
         }
         return isBroken ? .broken : .working
     }
@@ -95,11 +96,12 @@ extension KeyRebinderController {
         let hotkeys = hotkeys(on: key)
         guard !hotkeys.isEmpty, let center = hotkeyCenter else { return nil }
         let isOne = hotkeys.count == 1
+        let profiles = profiles
         let items = hotkeys.map { hotkey in
             var item = HotkeyWording.spokenName(for: hotkey.combo)
             let actions = HotkeyWording.spokenSummary(hotkey.actions)
             if !actions.isEmpty { item += (isOne ? ": " : ", ") + actions }
-            if let problem = HotkeyWording.statusNote(center.status(of: hotkey.id), combo: hotkey.combo, inList: false) {
+            if let problem = HotkeyWording.statusNote(center.status(of: hotkey.id), for: hotkey, profiles: profiles, inList: false) {
                 item += ", not working: " + (problem.hasSuffix(".") ? String(problem.dropLast()) : problem)
             }
             return item
@@ -198,11 +200,11 @@ extension KeyRebinderController {
     // MARK: Editing
 
     /// Saves a hotkey on what `key` sends now with `modifiers` held: a new one, or the hotkey `editing`, which keeps
-    /// its id. Actions are kept in the pickers' order (`HotkeyAction.allCases`). Returns the hotkey's id, or nil when
-    /// nothing was saved: no hotkey list, a key that can't carry hotkeys, no action, a combination that is reserved or
-    /// already used by another hotkey, or a second key for a tool's action alone (`ownHotkeyReplaced(bySaving:editing:)`),
-    /// which the panel asks about first. With `replacingOwnHotkey`, that tool's own hotkey gets this key instead, as
-    /// on Home (spec 6.1), and its id comes back.
+    /// its id. Actions are kept in the pickers' order (`HotkeyAction.pickerOrder`: the tools' in sidebar order, then a
+    /// Karabiner profile). Returns the hotkey's id, or nil when nothing was saved: no hotkey list, a key that can't carry
+    /// hotkeys, no action, a combination that is reserved or already used by another hotkey, or a second key for one
+    /// action alone (`ownHotkeyReplaced(bySaving:editing:)`), which the panel asks about first. With
+    /// `replacingOwnHotkey`, that action's own hotkey gets this key instead, as on Home (spec 6.1), and its id comes back.
     @discardableResult
     public func saveHotkey(
         on key: KarabinerEvent, editing id: UUID?, modifiers: HotkeyCombo.Modifiers, actions: [HotkeyAction],
@@ -211,7 +213,7 @@ extension KeyRebinderController {
         guard let center = hotkeyCenter, let keyCode = hotkeyTarget(for: key).keyCode, !actions.isEmpty else { return nil }
         let combo = HotkeyCombo(keyCode: keyCode, modifiers: modifiers)
         guard center.conflict(for: combo, excluding: id) == nil else { return nil }
-        let ordered = HotkeyAction.allCases.filter(actions.contains)
+        let ordered = HotkeyAction.pickerOrder(actions)
         let editing = id.flatMap { id in center.bindings.contains { $0.id == id } ? id : nil }
         if let own = center.ownHotkeyReplaced(bySaving: ordered, editing: editing) {
             guard replacingOwnHotkey, let action = own.actions.first else { return nil }
@@ -360,7 +362,8 @@ extension KeyRebinderController: HotkeyAdvising {
         return true
     }
 
-    /// Reads `karabiner.json` and Minecraft's keybinds again. Never runs `karabiner_cli`.
+    /// Reads `karabiner.json` and Minecraft's keybinds again. Never runs `karabiner_cli`; the profiles have a read of
+    /// their own (`refreshProfiles()`).
     public func prepareAdvice() async {
         await reloadConfig()
         loadMinecraftKeybinds()

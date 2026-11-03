@@ -5,7 +5,7 @@ import Foundation
 /// karabiner.json, so they are there while its page is closed, and hands them over as `HotkeyAdvising.profiles`.
 public struct HotkeyProfiles: Equatable, Sendable {
     /// Why no profile can be switched to now.
-    public enum Problem: Equatable, Sendable {
+    public enum Problem: Hashable, Sendable {
         /// Karabiner-Elements isn't installed.
         case notInstalled
         /// Its command-line tool doesn't answer.
@@ -76,7 +76,7 @@ public enum HotkeyProfileIssue: Equatable, Sendable {
 }
 
 /// What one press of a profile hotkey did (spec 6.1), as the Key Rebinder reports it for the confirmation over the game.
-public enum HotkeyProfileSwitch: Equatable, Sendable {
+public enum HotkeyProfileSwitch: Hashable, Sendable {
     /// Karabiner-Elements uses this profile now.
     case switched(to: String)
     /// It already used this profile, so nothing changed.
