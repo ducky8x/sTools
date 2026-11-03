@@ -102,6 +102,32 @@ struct ChipsRenderTests {
     }
 }
 
+@MainActor
+private final class SizeBox {
+    var size: CGSize = .zero
+}
+
+/// An item wider than the row is offered the row's width, so a long name truncates inside it instead of running past
+/// the edge.
+@Suite("STFlowLayout sizing")
+@MainActor
+struct FlowLayoutSizingTests {
+    @Test func anOverWideItemIsOfferedTheRowsWidth() {
+        let box = SizeBox()
+        let flow = STFlowLayout(spacing: 6) {
+            Text("A profile with a very long name that cannot fit").lineLimit(1)
+            Text("Short")
+        }
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { box.size = $0 }
+        let host = hostingView(flow.frame(width: 120, alignment: .topLeading).fixedSize(horizontal: false, vertical: true))
+        host.frame = CGRect(x: 0, y: 0, width: 120, height: 200)
+        host.layoutSubtreeIfNeeded()
+        #expect(box.size.width > 0)
+        #expect(box.size.width <= 120, "\(box.size)")
+        #expect(box.size.height > 20, "the short item still wraps onto a row of its own: \(box.size)")
+    }
+}
+
 /// Both hotkey editors show "Does" beside their action chips (Home's and the Key Rebinder's key panel), as text you
 /// can see; the chips name their group with it for VoiceOver.
 @Suite("STLabeledChips rendering")

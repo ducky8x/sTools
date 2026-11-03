@@ -84,6 +84,9 @@ public struct STKeyCapRecorder: View {
             .lineLimit(1)
             .padding(.horizontal, 9 * theme.textScale)
             .frame(minWidth: 34 * theme.textScale, minHeight: 24 * theme.textScale)
+            // A key, or the prompt while it listens, keeps its whole width even where neighbors take the room first;
+            // only the empty cap shortens, to its plus.
+            .fixedSize(horizontal: shortcut != nil || model.isRecording, vertical: false)
             .background {
                 if shortcut == nil && !model.isRecording {
                     shape.fill(Color.clear)

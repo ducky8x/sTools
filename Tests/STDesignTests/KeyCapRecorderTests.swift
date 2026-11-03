@@ -92,6 +92,26 @@ struct KeyCapRenderTests {
         let theme = STTheme(motionMode: .reduced, increaseContrast: true)
         #expect(try #require(renderCap(commandOne, theme: theme)) != (try #require(renderCap(nil, theme: theme))))
     }
+
+    /// Offered less room than its key needs, beside controls that take the room first, a cap keeps its whole key
+    /// rather than shrinking to an ellipsis.
+    @Test func aSqueezedCapKeepsItsWholeKey() {
+        final class Width { var value: CGFloat = 0 }
+        let width = Width()
+        let long = STShortcut(keyCode: 111, modifiers: [.control, .option, .shift])
+        let row = HStack(spacing: 8) {
+            // The × waits for the pointer, so the width is the cap's alone.
+            STKeyCapRecorder(shortcut: .constant(long), label: "Next profile hotkey", revealsClear: false)
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width.value = $0 }
+            Color.clear.frame(maxWidth: .infinity, maxHeight: 10).layoutPriority(1)
+        }
+        .environment(\.stSoundPlayer, STSoundPlayer.silent)
+        let host = hostingView(row.frame(width: 120))
+        host.frame = CGRect(x: 0, y: 0, width: 120, height: 40)
+        host.layoutSubtreeIfNeeded()
+        // ⌃⌥⇧F12 is far wider than the cap's least width of 34 pt.
+        #expect(width.value > 60, "\(width.value) pt")
+    }
 }
 
 // MARK: - Clicking and keys
