@@ -104,7 +104,7 @@ struct HotkeyProfileWordingTests {
     @Test func aChoiceKarabinerDoesntListStaysInView() {
         let choice = HotkeyProfileChoice(profiles: ready, selection: .select("Speedrun"))
         #expect(choice.options.map(\.title) == ["None", "Next profile", "Default profile", "Minecraft", "Typing", "Speedrun"])
-        #expect(choice.note == "No profile named \u{201C}Speedrun\u{201D} now, so a press changes nothing.")
+        #expect(choice.note == HotkeyNote(tone: .caution, text: "No profile named \u{201C}Speedrun\u{201D} now, so a press changes nothing."))
     }
 
     /// While no profile can be switched to, the row says why in place of the options, unless the hotkey has a profile
@@ -115,20 +115,20 @@ struct HotkeyProfileWordingTests {
             let profiles = HotkeyProfiles(state: .unavailable(problem), names: ["Minecraft"], current: "Minecraft")
             let empty = HotkeyProfileChoice(profiles: profiles, selection: nil)
             #expect(empty.options.isEmpty, "\(problem)")
-            #expect(empty.note == HotkeyWording.profileProblem(problem) + ", so hotkeys can\u{2019}t switch profiles.")
+            #expect(empty.note == HotkeyNote(tone: .note, text: HotkeyWording.profileProblem(problem) + ", so hotkeys can\u{2019}t switch profiles."))
             let kept = HotkeyProfileChoice(profiles: profiles, selection: .select("Minecraft"))
             #expect(kept.options.map(\.title) == ["None", "Minecraft"], "\(problem)")
-            #expect(kept.note == empty.note)
+            #expect(kept.note == HotkeyNote(tone: .caution, text: empty.note?.text ?? ""), "the hotkey's own choice does nothing now")
             #expect(HotkeyProfileChoice(profiles: profiles, selection: .next).options.map(\.title) == ["None", "Next profile"])
         }
-        #expect(HotkeyProfileChoice(profiles: HotkeyProfiles(state: .unavailable(.notRunning)), selection: nil).note
+        #expect(HotkeyProfileChoice(profiles: HotkeyProfiles(state: .unavailable(.notRunning)), selection: nil).note?.text
             == "Karabiner-Elements isn\u{2019}t running, so hotkeys can\u{2019}t switch profiles.")
     }
 
     @Test func untilTheProfilesAreReadTheRowSaysSo() {
         let choice = HotkeyProfileChoice(profiles: .unknown, selection: nil)
         #expect(choice.options.isEmpty)
-        #expect(choice.note == "Reading Karabiner-Elements\u{2019} profiles\u{2026}")
+        #expect(choice.note == HotkeyNote(tone: .note, text: "Reading Karabiner-Elements\u{2019} profiles\u{2026}"))
         #expect(HotkeyProfileChoice(profiles: .unknown, selection: .next).options.map(\.title) == ["None", "Next profile"])
     }
 }

@@ -62,9 +62,9 @@ public struct HotkeyProfileChoice: Equatable, Sendable {
 
     /// The options in view; none when there is nothing to choose.
     public let options: [Option]
-    /// One line about the choice: why no profile can be switched to, or that the chosen one isn't there now. Nil when
-    /// there is nothing to say.
-    public let note: String?
+    /// One line about the choice, or nil when there is nothing to say: why no profile can be switched to, a caution when
+    /// that leaves the hotkey's own choice doing nothing, and one when the chosen profile isn't there now.
+    public let note: HotkeyNote?
 
     /// - Parameter selection: the editor's choice, nil for None.
     public init(profiles: HotkeyProfiles, selection: HotkeyProfileAction?) {
@@ -78,12 +78,13 @@ public struct HotkeyProfileChoice: Equatable, Sendable {
 
         switch profiles.state {
         case .unknown:
-            note = "Reading Karabiner-Elements\u{2019} profiles\u{2026}"
+            note = HotkeyNote(tone: .note, text: "Reading Karabiner-Elements\u{2019} profiles\u{2026}")
         case .unavailable(let problem):
-            note = HotkeyWording.profileProblem(problem) + ", so hotkeys can\u{2019}t switch profiles."
+            note = HotkeyNote(tone: selection == nil ? .note : .caution,
+                              text: HotkeyWording.profileProblem(problem) + ", so hotkeys can\u{2019}t switch profiles.")
         case .ready:
             if case .select(let name)? = selection, !profiles.names.contains(name) {
-                note = HotkeyWording.missingProfile(name) + " now, so a press changes nothing."
+                note = HotkeyNote(tone: .caution, text: HotkeyWording.missingProfile(name) + " now, so a press changes nothing.")
             } else {
                 note = nil
             }
