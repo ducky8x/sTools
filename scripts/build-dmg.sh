@@ -17,7 +17,7 @@
 #                  Never inside the repository or any of its worktrees: shared builds live in ~/Projects/App Outputs.
 #
 # Environment:
-#   DEVELOPER_DIR  Defaults to the Xcode beta when it is installed.
+#   DEVELOPER_DIR  Defaults to the Xcode beta when it is installed, else Xcode (scripts/lib/developer-dir.sh).
 #   TMPDIR         Where the work folder goes (default: the per-user temporary folder). Must be outside the home
 #                  folder.
 #   STOOLS_HDIUTIL_LIMIT
@@ -66,7 +66,6 @@ set -euo pipefail
 # The normal DMG's names; --dev (below) changes them to the dev build's.
 VOLUME_NAME="sTools"
 APP_NAME="sTools.app"
-readonly XCODE_BETA="/Applications/Xcode-beta.app/Contents/Developer"
 readonly IDENTITY_NAME="ducky8x"
 readonly OUTPUTS="$HOME/Projects/App Outputs"
 
@@ -143,9 +142,9 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
-if [[ -z "${DEVELOPER_DIR:-}" && -d "$XCODE_BETA" ]]; then
-    export DEVELOPER_DIR="$XCODE_BETA"
-fi
+# shellcheck source=lib/developer-dir.sh
+source "$ROOT/scripts/lib/developer-dir.sh"
+use_full_xcode
 
 # The dev DMG: its own names, its own icon, and the flag the window script takes (empty, so left out, without --dev).
 WINDOW_FLAGS=""

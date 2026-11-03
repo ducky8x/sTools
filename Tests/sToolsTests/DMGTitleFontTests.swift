@@ -37,16 +37,19 @@ struct DMGTitleFontTests {
         #expect(FileManager.default.fileExists(atPath: file.path))
     }
 
-    /// Compiles the script and draws the background, as `scripts/build-dmg.sh` does: it must still fit its text.
+    /// Compiles the script and draws the background, as `scripts/build-dmg.sh` does: it must still fit its text. The
+    /// compiler is the one the script would choose (`scripts/lib/developer-dir.sh`): the Xcode beta when it is installed,
+    /// else Xcode, else the one `xcode-select` chose.
     @Test func theBackgroundStillDrawsAndItsTextStillFits() async throws {
         let folder = FileManager.default.temporaryDirectory.appending(path: "sTools-dmg-title-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
-        let environment = ["HOME": folder.path, "PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "TMPDIR": folder.path + "/",
-                           "DEVELOPER_DIR": "/Applications/Xcode-beta.app/Contents/Developer"]
+        let environment = ["HOME": folder.path, "PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "TMPDIR": folder.path + "/"]
         let tool = folder.appending(path: "dmg-window")
-        let compiled = try await runScript(URL(filePath: "/usr/bin/xcrun"), ["swiftc", "-o", tool.path, Self.window.path],
-                                           environment: environment, timeout: .seconds(600))
+        let compile = #"set -euo pipefail; source "$1"; use_full_xcode; exec /usr/bin/xcrun swiftc -o "$2" "$3""#
+        let compiled = try await runScript(
+            URL(filePath: "/bin/bash"), ["-c", compile, "bash", DeveloperDirTests.library.path, tool.path, Self.window.path],
+            environment: environment, timeout: .seconds(600))
         try #require(compiled.status == 0, "\(compiled.output)")
         let output = folder.appending(path: "background")
         let drawn = try await runScript(tool, ["background", output.path, "--version", "0.2.0"],

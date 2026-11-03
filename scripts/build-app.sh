@@ -26,7 +26,7 @@
 #   VERSION       CFBundleShortVersionString (default 0.2.0)
 #   BUILD_NUMBER  CFBundleVersion (default: the number of commits on HEAD plus 1000, or 1001 outside a git checkout;
 #                 scripts/lib/build-number.sh says why)
-#   DEVELOPER_DIR Defaults to the Xcode beta when it is installed.
+#   DEVELOPER_DIR Defaults to the Xcode beta when it is installed, else Xcode (scripts/lib/developer-dir.sh).
 #
 # Updates (spec 6.3): Sparkle.framework, which the build produces from the SwiftPM dependency, goes into
 # Contents/Frameworks without its headers, and the executable finds it through @executable_path/../Frameworks; rpaths
@@ -55,7 +55,6 @@
 set -euo pipefail
 
 readonly IDENTITY_NAME="ducky8x"
-readonly XCODE_BETA="/Applications/Xcode-beta.app/Contents/Developer"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly ROOT
@@ -199,9 +198,9 @@ if [[ -n "$KEYCHAIN" ]]; then
     KEYCHAIN="$(cd "$(dirname "$KEYCHAIN")" && pwd -P)/$(basename "$KEYCHAIN")"
 fi
 
-if [[ -z "${DEVELOPER_DIR:-}" && -d "$XCODE_BETA" ]]; then
-    export DEVELOPER_DIR="$XCODE_BETA"
-fi
+# shellcheck source=lib/developer-dir.sh
+source "$ROOT/scripts/lib/developer-dir.sh"
+use_full_xcode
 
 VERSION="${VERSION:-0.2.0}"
 BUILD_NUMBER="$(build_number "$ROOT")"

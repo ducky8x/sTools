@@ -35,13 +35,13 @@
 # Sparkle's own "Install and Relaunch" button is not pressed (that needs a click); the automatic install on quit is
 # what is tested, then the installed app is started again.
 #
-# Environment: DEVELOPER_DIR defaults to the Xcode beta when it is installed.
+# Environment: DEVELOPER_DIR defaults to the Xcode beta when it is installed, else Xcode
+# (scripts/lib/developer-dir.sh).
 
 set -euo pipefail
 
 readonly IDENTITY_NAME="ducky8x"
 readonly TEST_ID="com.ducky8x.sTools.smoketest"
-readonly XCODE_BETA="/Applications/Xcode-beta.app/Contents/Developer"
 readonly LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -78,9 +78,9 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
-if [[ -z "${DEVELOPER_DIR:-}" && -d "$XCODE_BETA" ]]; then
-    export DEVELOPER_DIR="$XCODE_BETA"
-fi
+# shellcheck source=lib/developer-dir.sh
+source "$ROOT/scripts/lib/developer-dir.sh"
+use_full_xcode
 
 [[ -d "$APP_IN/Contents/Frameworks/Sparkle.framework" ]] ||
     fail "$(masked <<< "$APP_IN") is not a packaged sTools with Sparkle; build one with scripts/build-app.sh release"
