@@ -2,7 +2,7 @@ import STDesign
 import STPlatform
 import SwiftUI
 
-/// Home: the hotkeys first, then an at-a-glance status of every tool and dependency.
+/// Home: an at-a-glance status of every tool and dependency.
 struct HomePage: View {
     /// The strip shown while Accessibility isn't allowed: every tool that needs it (rule R10), in sidebar order.
     nonisolated static var accessibilityWarning: String {
@@ -14,10 +14,8 @@ struct HomePage: View {
     let model: AppModel
 
     var body: some View {
-        PageContainer(anchor: Binding(get: { model.pendingPageAnchor }, set: { model.pendingPageAnchor = $0 }), accepts: [.hotkeys]) {
-            STPageHeader(title: "Home", tagline: "Hotkeys, tool statuses, and dependencies") { EmptyView() }
-            HotkeysSection(model: model)
-                .id(PageAnchor.hotkeys)
+        PageContainer {
+            STPageHeader(title: "Home", tagline: "Tool statuses and dependencies") { EmptyView() }
             PageSectionTitle("Tools").padding(.top, 28).padding(.bottom, 4)
             ForEach(ToolID.allCases) { tool in
                 HomeToolRow(model: model, tool: tool)

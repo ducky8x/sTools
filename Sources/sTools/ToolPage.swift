@@ -54,8 +54,8 @@ struct ToolContent: View {
     let tool: ToolID
     var isTrial = false
 
-    /// The Key Rebinder's Open Hotkeys, on a key a rule drives: Home, where that key's hotkey is recorded by
-    /// pressing it. Nil in the trial.
+    /// The Key Rebinder's Change… and Open Hotkeys (on a key a rule drives): the Hotkeys page, where a key's hotkey is
+    /// recorded by pressing it. Nil in the trial.
     var openHotkeys: (() -> Void)? {
         guard !isTrial else { return nil }
         return { [model] in model.openHotkeys() }

@@ -68,7 +68,7 @@ struct AppModelKeyRebinderTests {
         keyRebinder.chooseLayout(shape: .ansi, formFactor: .laptop)
         harness.model.hotkeys.isEnabled = true
         harness.model.hotkeys.add(combo: f20, actions: [.toggle(.nbbOverlay)])
-        // What Home ▸ Hotkeys runs when it appears: it reads karabiner.json, and never runs karabiner_cli.
+        // What the Hotkeys page runs when it appears: it reads karabiner.json, and never runs karabiner_cli.
         await harness.model.hotkeys.advisor?.prepareAdvice()
         #expect(keyRebinder.config != nil)
         #expect(harness.model.hotkeys.advisor?.placement(of: f20) == HotkeyPlacement(text: "On Caps Lock", canShow: true))
@@ -95,13 +95,13 @@ struct KeyRebinderTrialTests {
         ).representation(using: .png, properties: [:])
     }
 
-    @Test func openHotkeysOpensHomeOnThePageAndIsLeftOutOfTheTrial() throws {
+    @Test func openHotkeysOpensTheHotkeysPageAndIsLeftOutOfTheTrial() throws {
         let harness = Harness(withKeyRebinder: true)
         harness.model.navigate(to: .tool(.keyRebinder))
         #expect(ToolContent(model: harness.model, tool: .keyRebinder, isTrial: true).openHotkeys == nil)
         let open = try #require(ToolContent(model: harness.model, tool: .keyRebinder).openHotkeys)
         open()
-        #expect(harness.model.route == .home)
+        #expect(harness.model.route == .hotkeys)
     }
 
     /// With hotkeys on, F3 alone wears a ring and has a finding with its red dot, its panel lists it, and Pad 1 is

@@ -18,7 +18,7 @@ extension ToolID {
 
     /// The tool's one hotkey action (spec 6.1): the toggle of the three overlay tools, Screen Recording's start/stop,
     /// Timer Overlay's Start timer. Nil for the Key Rebinder, which sets hotkeys on its keys instead. A key set's hotkey
-    /// for the tool does this action too (Home ▸ Hotkeys ▸ Key set, `HotkeyKeySet.toolActions`).
+    /// for the tool does this action too (Hotkeys ▸ Key set, `HotkeyKeySet.toolActions`).
     var hotkeyAction: HotkeyAction? {
         switch self {
         case .screenRecording: .startStopRecording
@@ -29,7 +29,7 @@ extension ToolID {
 }
 
 /// A tool's own hotkey in the app's one list (`HotkeyCenter`, spec 6.1): the first hotkey whose only action is the
-/// tool's action (`ToolID.hotkeyAction`). The tool page's Hotkey row sets, changes and clears it; Home ▸ Hotkeys and
+/// tool's action (`ToolID.hotkeyAction`). The tool page's Hotkey row sets, changes and clears it; the Hotkeys page and
 /// the Key Rebinder show the same hotkey.
 @MainActor
 enum ToolHotkey {
@@ -71,7 +71,7 @@ enum ToolHotkey {
 /// starts and stops Screen Recording, or starts the timer), set, changed or cleared right here by pressing a key
 /// (Delete clears, Esc cancels). Under it, Timer Overlay's and Screen Recording's one line on what the key does, what's
 /// wrong with that key, the notes both hotkey editors show, the other hotkeys that do the tool's action, where hotkeys
-/// work and the key set with Change… (Home ▸ Hotkeys), and, while hotkeys are off, Turn On.
+/// work and the key set with Change… (the Hotkeys page), and, while hotkeys are off, Turn On.
 struct ToolHotkeyRow: View {
     let model: AppModel
     let tool: ToolID
@@ -136,8 +136,8 @@ struct ToolHotkeyRow: View {
         return HotkeyWording.statusNote(hotkeys.status(of: own.id), combo: own.combo, inList: false)
     }
 
-    /// Where hotkeys work and the key set the tools follow, as Home ▸ Hotkeys sets them: "Hotkeys work in sTools and
-    /// Minecraft · Key set: ⌘1–⌘5", or only in sTools while Accessibility is missing, as Home says.
+    /// Where hotkeys work and the key set the tools follow, as the Hotkeys page sets them: "Hotkeys work in sTools and
+    /// Minecraft · Key set: ⌘1–⌘5", or only in sTools while Accessibility is missing, as that page says.
     var whereLine: String {
         HotkeyWording.whereAndKeySet(scope: hotkeys.scope, keySet: hotkeys.keySet,
                                      accessibilityGranted: model.accessibilityGranted)
@@ -164,7 +164,7 @@ struct ToolHotkeyRow: View {
             : "Starts a recording; press again to stop and save it under its date and time. Stopping switches Screen Recording off."
     }
 
-    /// Change…: Home ▸ Hotkeys, where both are set.
+    /// Change…: the Hotkeys page, where both are set.
     func changeWhereHotkeysWork() { model.openHotkeys() }
 
     private var shortcutBinding: Binding<STShortcut?> {

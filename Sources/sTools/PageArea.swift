@@ -26,6 +26,7 @@ struct PageArea: View {
     @ViewBuilder private var page: some View {
         switch model.route {
         case .home: HomePage(model: model)
+        case .hotkeys: HotkeysPage(model: model)
         case .settings: SettingsPage(model: model)
         case .tool(let tool): ToolPage(model: model, tool: tool)
         }

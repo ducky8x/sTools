@@ -26,6 +26,7 @@ struct HotkeyHeldModifierAppTests {
         for digit in "0123456" {
             #expect(shortcuts.contains(combo(digit, [.control, .command])), "⌃⌘\(digit)")
         }
+        #expect(shortcuts.contains(combo("H", [.control, .command])), "⌃⌘H, the Hotkeys page")
         #expect(shortcuts.isSuperset(of: [combo(",", .command), combo("[", .command), combo("]", .command)]))
         #expect(GoCommand.home.shortcutCombo?.displayString == "⌃⌘0")
         #expect(GoCommand.tool(.nbbOverlay).shortcutCombo?.displayString == "⌃⌘3")

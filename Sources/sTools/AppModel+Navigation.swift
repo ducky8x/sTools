@@ -15,10 +15,9 @@ extension AppModel {
         sidebarGlide.glide(from: from, to: route)
     }
 
-    /// Opens Home scrolled to its Hotkeys section (the Key Rebinder's Open Hotkeys), even when Home is already open.
+    /// Opens the Hotkeys page: the tool pages' Change…, and the Key Rebinder's Change… and Open Hotkeys.
     func openHotkeys() {
-        pendingPageAnchor = .hotkeys
-        navigate(to: .home)
+        navigate(to: .hotkeys)
     }
 
     /// Why the Timer trial asks before setting its hotkey, named as the Timer page's Hotkey row is.

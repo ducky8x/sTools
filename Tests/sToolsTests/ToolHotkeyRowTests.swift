@@ -154,8 +154,8 @@ struct ToolHotkeyRowTests {
         }
     }
 
-    /// Under the key, the row says where hotkeys work and which key set the tools follow, with Change… to Home ▸
-    /// Hotkeys, so neither is set only where Home shows it.
+    /// Under the key, the row says where hotkeys work and which key set the tools follow, with Change… to the Hotkeys
+    /// page, so neither is set only where that page shows it.
     @Test func theRowSaysWhereHotkeysWorkAndTheKeySet() throws {
         let harness = Harness(accessibility: .granted, hotkeys: nil)
         let hotkeys = harness.model.hotkeys
@@ -170,8 +170,7 @@ struct ToolHotkeyRowTests {
 
         harness.model.navigate(to: .tool(.crosshair))
         row.changeWhereHotkeysWork()
-        #expect(harness.model.route == .home)
-        #expect(harness.model.pendingPageAnchor == .hotkeys)
+        #expect(harness.model.route == .hotkeys)
     }
 
     /// Without Accessibility sTools can't tell when Minecraft is in front, so the row says hotkeys work only in

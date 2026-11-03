@@ -5,31 +5,27 @@ import SwiftUI
 /// A page of the main window.
 enum Route: Hashable, Sendable {
     case home
+    case hotkeys
     case tool(ToolID)
     case settings
 }
 
 /// A place inside a page that navigation can scroll to.
 enum PageAnchor: Hashable, Sendable {
-    /// Home ▸ Hotkeys.
-    case hotkeys
-    /// The Key Rebinder's panel for the selected key, after Home's Show on Keyboard.
+    /// The Key Rebinder's panel for the selected key, after the Hotkeys page's Show on Keyboard.
     case keyRebinderKeyPanel
 
-    /// The id the view is marked with: the anchor itself, or, for a view inside another module that can't see this
-    /// type, the id that module gives it.
+    /// The id the view is marked with: for a view inside another module that can't see this type, the id that module
+    /// gives it.
     var scrollID: AnyHashable {
         switch self {
-        case .hotkeys: AnyHashable(self)
         case .keyRebinderKeyPanel: AnyHashable(KeyRebinderView.keyPanelScrollID)
         }
     }
 
-    /// Where the view lands: a section starts at the top; the key panel sits mid-view, so the selected key on the
-    /// keyboard above it stays in sight.
+    /// Where the view lands: the key panel sits mid-view, so the selected key on the keyboard above it stays in sight.
     var scrollAnchor: UnitPoint {
         switch self {
-        case .hotkeys: .top
         case .keyRebinderKeyPanel: .center
         }
     }
@@ -80,15 +76,16 @@ struct NavigationHistory: Equatable, Sendable {
 
 /// An item of the Go menu.
 enum GoCommand: Hashable, Sendable {
-    case home, tool(ToolID), settings, back, forward
+    case home, hotkeys, tool(ToolID), settings, back, forward
 
-    /// Every item, in menu order.
-    static let menu: [GoCommand] = [.home] + ToolID.allCases.map(GoCommand.tool) + [.settings, .back, .forward]
+    /// Every item, in menu order: the sidebar's, then Back and Forward.
+    static let menu: [GoCommand] = [.home, .hotkeys] + ToolID.allCases.map(GoCommand.tool) + [.settings, .back, .forward]
 
     /// The page this command opens; `nil` for Back and Forward.
     var route: Route? {
         switch self {
         case .home: .home
+        case .hotkeys: .hotkeys
         case .tool(let tool): .tool(tool)
         case .settings: .settings
         case .back, .forward: nil
@@ -98,6 +95,7 @@ enum GoCommand: Hashable, Sendable {
     var title: String {
         switch self {
         case .home: "Home"
+        case .hotkeys: "Hotkeys"
         case .tool(let tool): tool.title
         case .settings: "Settings"
         case .back: "Back"
@@ -105,23 +103,27 @@ enum GoCommand: Hashable, Sendable {
         }
     }
 
-    /// Whether the shortcut holds Control as well as Command. The pages do (⌃⌘0 Home, ⌃⌘1–⌃⌘6 the tools): hotkeys
-    /// fire with sTools in front, and a key set's ⌘1–⌘5 would take ⌘ with a digit. Settings, Back and Forward keep
-    /// their usual ⌘, ⌘[ and ⌘].
+    /// Whether the shortcut holds Control as well as Command. The pages do (⌃⌘0 Home, ⌃⌘H Hotkeys, ⌃⌘1–⌃⌘6 the
+    /// tools): hotkeys fire with sTools in front, and a key set's ⌘1–⌘5 would take ⌘ with a digit. Settings, Back and
+    /// Forward keep their usual ⌘, ⌘[ and ⌘].
     var shortcutHoldsControl: Bool {
         switch self {
-        case .home, .tool: true
+        case .home, .hotkeys, .tool: true
         case .settings, .back, .forward: false
         }
     }
 
-    /// The shortcut as the menu shows it: "⌃⌘3", "⌘,".
-    var shortcutDisplay: String { (shortcutHoldsControl ? "⌃⌘" : "⌘") + String(shortcutKey) }
+    /// The shortcut as the menu shows it: "⌃⌘3", "⌃⌘H", "⌘,".
+    var shortcutDisplay: String { (shortcutHoldsControl ? "⌃⌘" : "⌘") + String(shortcutKey).uppercased() }
 
-    /// The key pressed with Command (and Control, `shortcutHoldsControl`).
+    /// The key pressed with Command (and Control, `shortcutHoldsControl`), as the menu takes it: a letter in lowercase,
+    /// since an uppercase one would ask for Shift as well. Hotkeys is H for Hotkeys, not a digit, so no key set has it;
+    /// macOS keeps no ⌃⌘H, and its ⌘H, Hide, is a combination no hotkey can have, so the menu takes no hotkey's Control
+    /// variant.
     var shortcutKey: Character {
         switch self {
         case .home: "0"
+        case .hotkeys: "h"
         case .tool(let tool): Character(String(tool.number))
         case .settings: ","
         case .back: "["

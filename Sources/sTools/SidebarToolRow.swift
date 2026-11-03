@@ -7,6 +7,7 @@ struct SidebarToolRow: View {
     let tool: ToolID
     let namespace: Namespace.ID
     @Environment(\.stTheme) private var theme
+    @Environment(\.sidebarDensity) private var density
 
     private var route: Route { .tool(tool) }
     private var isSelected: Bool { model.route == route }
@@ -43,10 +44,9 @@ struct SidebarToolRow: View {
     /// the middle of their line.
     private var switchTop: CGFloat {
         let line = STTextStyle.sidebarName.metrics.scaled(by: theme.textScale).lineHeight
-        return Self.labelTopPadding + max(0, (line - Self.switchHeight) / 2) - Self.opticalLift
+        return density.toolPadding + max(0, (line - Self.switchHeight) / 2) - Self.opticalLift
     }
 
-    private static let labelTopPadding: CGFloat = 7
     /// STSwitch's track height.
     private static let switchHeight: CGFloat = 22
     private static let opticalLift: CGFloat = 2
@@ -63,6 +63,7 @@ struct SidebarToolRow: View {
                     .foregroundStyle(STColor.ink)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
+                    .sidebarNameLine(scale: theme.textScale)
             }
             .padding(.trailing, 56)
             Text(status.label)
@@ -72,7 +73,7 @@ struct SidebarToolRow: View {
                 .padding(.leading, 22 * theme.textScale)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, Self.labelTopPadding)
+        .padding(.vertical, density.toolPadding)
         .padding(.leading, 16)
         .contentShape(Rectangle())
     }

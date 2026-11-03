@@ -31,9 +31,10 @@ struct TitlePage: Sendable, CustomTestStringConvertible {
 /// A profile name well past what the Key Rebinder's menu button has room for.
 private let longProfile = "Minecraft speedrun practice"
 
-/// Home, Settings and the six tools, each with what its title row holds; the Key Rebinder with Karabiner's own first
+/// Home, Hotkeys, Settings and the six tools, each with what its title row holds; the Key Rebinder with Karabiner's own first
 /// profile and with a long name as well as none.
-private let pages: [TitlePage] = [TitlePage(title: "Home", beside: .nothing), TitlePage(title: "Settings", beside: .nothing)]
+private let pages: [TitlePage] = [TitlePage(title: "Home", beside: .nothing), TitlePage(title: "Hotkeys", beside: .nothing),
+                                  TitlePage(title: "Settings", beside: .nothing)]
     + ToolID.allCases.map { TitlePage(title: $0.title, beside: $0.hasSwitch ? .switchControl : .profileMenu(nil)) }
     + [TitlePage(title: ToolID.keyRebinder.title, beside: .profileMenu("Default profile")),
        TitlePage(title: ToolID.keyRebinder.title, beside: .profileMenu(longProfile))]

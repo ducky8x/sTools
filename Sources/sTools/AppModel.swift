@@ -72,7 +72,7 @@ final class AppModel {
     /// seconds on a busy Mac, with the main actor waiting; tests replace it.
     @ObservationIgnored var logReader: any LogLineReading = OSLogLineReader()
 
-    /// Home ▸ Hotkeys (spec 6.1). Built lazily so its `toolStates`/`handler` closures can capture
+    /// The hotkeys (spec 6.1). Built lazily so its `toolStates`/`handler` closures can capture
     /// `self` — they only run on an actual key press, well after `init` returns.
     @ObservationIgnored private let hotkeyRegistrar: any HotkeyRegistering
     @ObservationIgnored lazy var hotkeys: HotkeyCenter = HotkeyCenter(

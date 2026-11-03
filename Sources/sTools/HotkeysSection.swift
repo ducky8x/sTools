@@ -3,7 +3,7 @@ import STDesign
 import STPlatform
 import SwiftUI
 
-/// Home ▸ Hotkeys (spec 6.1), near the top of Home: Where hotkeys work and the key sets, each with every option in view
+/// The Hotkeys page under its header (spec 6.1): Where hotkeys work and the key sets, each with every option in view
 /// and the sets with what the current one gives each tool, the list of hotkeys (key and actions at a glance), Add
 /// Hotkey…, an add/edit editor for each, and Advanced (spec 2.4) with the press confirmation and Also fire while holding
 /// Shift or Control (each hotkey works while someone sneaks or sprints, spec 6.1). While hotkeys are off,
@@ -27,7 +27,6 @@ struct HotkeysSection: View {
     private var hotkeys: HotkeyCenter { model.hotkeys }
 
     var body: some View {
-        PageSectionTitle("Hotkeys").padding(.top, 28).padding(.bottom, 4)
         // One way to turn hotkeys on while they're off; once on, the switch turns them off again.
         Group {
             if hotkeys.isEnabled {

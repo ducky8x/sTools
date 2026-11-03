@@ -217,7 +217,7 @@ struct PrologueTrialsTests {
         #expect(items.first { $0.id == "test" }?.unavailableReason == TrialCopy.needsAccessibility)
     }
 
-    /// The trial's own recorder saves the key as a Home ▸ Hotkeys hotkey; while Hotkeys are off it asks first.
+    /// The trial's own recorder saves the key as a hotkey on the Hotkeys page; while Hotkeys are off it asks first.
     @Test func aStartTimerKeyIsAHotkeyAndAsksWhileHotkeysAreOff() throws {
         let harness = Harness()
         harness.model.beginPrologue(at: .timerTrial)
@@ -279,6 +279,7 @@ struct PrologueTrialsTests {
         let content = harness.model.trialContent(.timerOverlay)
         let item = content.items().first { $0.id == "key" }
         #expect(item?.title == "Set its hotkey")
+        #expect(item?.detail == "It starts the timer. Change it later in Hotkeys.")
         #expect(item?.isOptional == true)
         #expect(TrialStartTimerKeyRow.Copy.title == "Hotkey")
         #expect(TrialStartTimerKeyRow.Copy.recorderLabel == "Timer Overlay hotkey")

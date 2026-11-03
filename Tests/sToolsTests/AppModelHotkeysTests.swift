@@ -377,29 +377,42 @@ struct HomeHotkeysRenderTests {
     }
 }
 
-/// The Key Rebinder's Open Hotkeys lands on Home's Hotkeys section, not the top of Home, even with Home open.
+/// The Key Rebinder's Open Hotkeys and Change… open the Hotkeys page, wherever they're pressed from.
 @MainActor
 @Suite("Open Hotkeys")
 struct OpenHotkeysTests {
-    @Test func opensHomeAtItsHotkeys() {
+    @Test func opensTheHotkeysPage() {
         let harness = Harness(accessibility: .granted)
         harness.model.navigate(to: .tool(.keyRebinder))
         harness.model.openHotkeys()
-        #expect(harness.model.route == .home)
-        #expect(harness.model.pendingPageAnchor == .hotkeys)
+        #expect(harness.model.route == .hotkeys)
+        #expect(harness.model.pendingPageAnchor == nil, "the page opens at its top")
     }
 
-    @Test func scrollsHomeEvenWhenItIsAlreadyOpen() {
+    @Test func opensItFromHomeToo() {
         let harness = Harness(accessibility: .granted)
         #expect(harness.model.route == .home)
         harness.model.openHotkeys()
-        #expect(harness.model.pendingPageAnchor == .hotkeys)
+        #expect(harness.model.route == .hotkeys)
     }
 
     @Test func theKeyRebindersButtonOpensHotkeysAndTheTrialHasNone() {
         let harness = Harness(accessibility: .granted)
         ToolContent(model: harness.model, tool: .keyRebinder).openHotkeys?()
-        #expect(harness.model.pendingPageAnchor == .hotkeys)
+        #expect(harness.model.route == .hotkeys)
         #expect(ToolContent(model: harness.model, tool: .keyRebinder, isTrial: true).openHotkeys == nil)
+    }
+
+    /// Show on Keyboard leaves the Hotkeys page for the Key Rebinder, and Back comes back to the Hotkeys page.
+    @Test func backFromShowOnKeyboardReturnsToTheHotkeysPage() {
+        let harness = Harness(accessibility: .granted)
+        let advisor = FakeKeyboardAdvisor()
+        advisor.selectsKey = true
+        harness.model.hotkeys.advisor = advisor
+        harness.model.navigate(to: .hotkeys)
+        #expect(harness.model.showHotkeyOnKeyboard(pad1))
+        #expect(harness.model.route == .tool(.keyRebinder))
+        harness.model.perform(.back)
+        #expect(harness.model.route == .hotkeys)
     }
 }
