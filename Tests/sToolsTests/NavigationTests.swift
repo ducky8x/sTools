@@ -185,13 +185,11 @@ struct ToolIDTests {
         #expect(Set(ToolID.allCases.map(\.rawValue)) == Set(savedByAnEarlierOrder))
     }
 
-    /// Lists of tools in the app's words follow the sidebar: Home's Accessibility warning and the Prologue's "Used by"
-    /// for Accessibility name every tool that needs it (rule R10), in sidebar order.
+    /// Lists of tools in the app's words follow the sidebar: the Prologue's "Used by" for Accessibility names every tool
+    /// that needs it (rule R10), in sidebar order.
     @Test func toolListsInWordsFollowTheSidebar() {
         let needAccessibility = ToolID.allCases.filter(\.requiresAccessibility).map(\.title)
         #expect(needAccessibility == ["Crosshair", "Timer Overlay", "NBB Overlay", "Screen Recording", "Window Backdrop"])
-        #expect(HomePage.accessibilityWarning
-            == "Allow Accessibility to turn on Crosshair, Timer Overlay, NBB Overlay, Screen Recording and Window Backdrop.")
         #expect(PermissionStepView.Copy.usedBy(.accessibility)
             == needAccessibility.joined(separator: ", "))
     }

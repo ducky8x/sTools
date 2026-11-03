@@ -61,6 +61,12 @@ final class AppModel {
         await KarabinerStatus(probes: .live(cli: KarabinerCLI(runner: ProcessCommandRunner(timeout: .seconds(2))))).evaluate()
     }
     @ObservationIgnored var lastKarabinerRequirement: KarabinerRequirement?
+    /// Whether Ninjabrain Bot's API answered Home's last look, taken while the NBB Overlay is off; nil until Home has
+    /// looked. While the overlay runs, Home reads the overlay's own link instead.
+    var ninjabrainAnswers: Bool?
+    /// Where Home hears sTools come to the front. Tests give it a center of their own, so what they post reaches no other
+    /// test's views.
+    @ObservationIgnored var appNotifications: NotificationCenter = .default
     /// What the Prologue's trials have seen so far; fresh each time the introduction starts.
     @ObservationIgnored var trials = TrialSession()
     /// Asks before the Timer trial's Start-timer key turns hotkeys on (plan decision 14); true to turn them on. Tests replace it, so no

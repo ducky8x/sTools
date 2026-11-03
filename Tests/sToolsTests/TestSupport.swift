@@ -100,6 +100,49 @@ struct FailingCommandRunner: CommandRunner {
     }
 }
 
+/// A `karabiner_cli` that answers like a ready Karabiner-Elements holding `profiles`, the first one current, and keeps
+/// every command it was given. `--select-profile` makes its profile current. Nothing real runs.
+final class ScriptedKarabinerCLI: CommandRunner, @unchecked Sendable {
+    private struct State {
+        var profiles: [String]
+        var current: String
+        var calls: [[String]] = []
+    }
+
+    private let state: Mutex<State>
+
+    init(profiles: [String]) {
+        state = Mutex(State(profiles: profiles, current: profiles.first ?? ""))
+    }
+
+    var calls: [[String]] { state.withLock { $0.calls } }
+    var current: String { state.withLock { $0.current } }
+
+    /// How many times the command `first` (such as "--version") ran.
+    func count(_ first: String) -> Int { calls.filter { $0.first == first }.count }
+
+    func run(_ executable: URL, _ args: [String]) async throws -> CommandResult {
+        state.withLock { state in
+            state.calls.append(args)
+            switch args.first {
+            case "--version":
+                return CommandResult(stdout: "16.3.0\n")
+            case "--list-profile-names":
+                return CommandResult(stdout: state.profiles.joined(separator: "\n") + "\n")
+            case "--show-current-profile-name":
+                return CommandResult(stdout: state.current + "\n")
+            case "--select-profile" where args.count == 2 && state.profiles.contains(args[1]):
+                state.current = args[1]
+                return CommandResult(stdout: "")
+            case "--list-connected-devices":
+                return CommandResult(stdout: "[]")
+            default:
+                return CommandResult(stdout: "", stderr: "unknown command", status: 1)
+            }
+        }
+    }
+}
+
 /// URLs the permission center asked the system to open.
 @MainActor
 final class OpenedURLs {
@@ -149,16 +192,21 @@ final class Harness {
     /// The Key Rebinder's `karabiner.json` (with `withKeyRebinder`), in the harness's folder. Its folder exists;
     /// the file doesn't until a test writes it.
     let karabinerConfigURL: URL
+    /// The scripted `karabiner_cli` of a ready Karabiner-Elements (`karabinerProfiles`); nil otherwise.
+    let karabinerCLI: ScriptedKarabinerCLI?
 
     /// `prologueCompleted: false` launches as a first launch, with the introduction showing. `withKeyRebinder`
     /// adds a Key Rebinder over the harness's folder, connected like the app's: Karabiner-Elements reads as not
-    /// installed and `karabiner_cli` never runs, so nothing touches `~/.config/karabiner`.
+    /// installed and `karabiner_cli` never runs, so nothing touches `~/.config/karabiner`. With `karabinerProfiles`
+    /// as well, Karabiner-Elements reads as ready with those profiles, the first current, through a scripted
+    /// `karabiner_cli` (`karabinerCLI`), and `karabiner.json` holds them, each with no rebinds.
     ///
     /// `hotkeys` is the `hotkeys.json` the launch finds: an existing, empty list by default; nil for a new install,
-    /// which starts with ⌘1–⌘5.
+    /// which starts with ⌘1–⌘5. `displays` are the displays the app sees, `harnessDisplay` alone by default.
     init(accessibility: PermissionStatus = .granted, instances: [MinecraftInstance] = [],
          theme: STTheme = STTheme(), usesRealControllers: Bool = false, hotkeyRegistrar: any HotkeyRegistering = FakeHotkeyRegistrar(),
-         prologueCompleted: Bool = true, withKeyRebinder: Bool = false, hotkeys: HotkeySettings? = HotkeySettings()) {
+         prologueCompleted: Bool = true, withKeyRebinder: Bool = false, karabinerProfiles: [String]? = nil,
+         hotkeys: HotkeySettings? = HotkeySettings(), displays: [DisplayInfo] = [harnessDisplay]) {
         self.hotkeyRegistrar = hotkeyRegistrar
         directory = FileManager.default.temporaryDirectory.appending(path: "sTools-app-\(UUID().uuidString)")
         karabinerConfigURL = directory.appending(path: "karabiner", directoryHint: .isDirectory).appending(path: "karabiner.json")
@@ -177,7 +225,7 @@ final class Harness {
         controllers = fakes
         let opened = opened
         let permissions = PermissionCenter(prober: prober, openURL: { opened.urls.append($0) })
-        let services = ToolServices(settings: store, displays: DisplayDirectory(screenProvider: { [harnessDisplay] }),
+        let services = ToolServices(settings: store, displays: DisplayDirectory(screenProvider: { displays }),
                                     minecraft: MinecraftLocator(source: source), permissions: permissions)
         timer = timerFakes.makeController(services: services, theme: theme)
         var all: [ToolID: any ToolController] = usesRealControllers
@@ -188,13 +236,28 @@ final class Harness {
             : fakes.mapValues { $0 as any ToolController }
         all[.timerOverlay] = timer
         var keyRebinder: KeyRebinderController?
+        karabinerCLI = karabinerProfiles.map(ScriptedKarabinerCLI.init(profiles:))
         if withKeyRebinder {
             try? FileManager.default.createDirectory(at: karabinerConfigURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            keyRebinder = KeyRebinderController(
-                services: services, configURL: karabinerConfigURL,
-                backupsDirectory: directory.appending(path: "Karabiner Backups", directoryHint: .isDirectory),
-                cli: KarabinerCLI(runner: FailingCommandRunner(), cliURL: directory.appending(path: "no-karabiner_cli")),
-                probes: KarabinerProbes(appBundleExists: { false }, cliVersion: { nil }, configReadable: { false }))
+            if let karabinerCLI, let karabinerProfiles {
+                let profiles = karabinerProfiles.enumerated().map { index, name in
+                    #"{ "name": "\#(name)", "selected": \#(index == 0), "simple_modifications": [] }"#
+                }
+                try? Data(#"{ "profiles": [\#(profiles.joined(separator: ", "))] }"#.utf8).write(to: karabinerConfigURL)
+                let cli = KarabinerCLI(runner: karabinerCLI, cliURL: directory.appending(path: "karabiner_cli"))
+                let configURL = karabinerConfigURL
+                keyRebinder = KeyRebinderController(
+                    services: services, configURL: configURL,
+                    backupsDirectory: directory.appending(path: "Karabiner Backups", directoryHint: .isDirectory), cli: cli,
+                    probes: KarabinerProbes(appBundleExists: { true }, cliVersion: { try? await cli.version() },
+                                            configReadable: { FileManager.default.fileExists(atPath: configURL.path) }))
+            } else {
+                keyRebinder = KeyRebinderController(
+                    services: services, configURL: karabinerConfigURL,
+                    backupsDirectory: directory.appending(path: "Karabiner Backups", directoryHint: .isDirectory),
+                    cli: KarabinerCLI(runner: FailingCommandRunner(), cliURL: directory.appending(path: "no-karabiner_cli")),
+                    probes: KarabinerProbes(appBundleExists: { false }, cliVersion: { nil }, configReadable: { false }))
+            }
         }
         model = AppModel(services: services, theme: theme, sound: .silent, controllers: all, keyRebinder: keyRebinder,
                          hotkeyRegistrar: hotkeyRegistrar, hotkeyHUD: hotkeyHUD, loginItem: FakeLoginItem())

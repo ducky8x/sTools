@@ -90,24 +90,33 @@ extension AppModel: PrologueHost {
 enum PrologueCopy {
     static let karabinerDownload = URL(string: "https://karabiner-elements.pqrs.org/")!
 
-    static let ninjabrainReady = CompanionStatus(isReady: true, detail: "Ninjabrain Bot answers at localhost:52533.")
-    static let ninjabrainMissing = CompanionStatus(
-        isReady: false, detail: "Ninjabrain Bot isn\u{2019}t answering yet. Open it and turn on its API.")
+    /// Ninjabrain Bot's API answered; Home says the same while the NBB Overlay is off.
+    static let ninjabrainAnswers = "Ninjabrain Bot answers at localhost:52533."
+    /// Ninjabrain Bot's API didn't answer; Home says the same.
+    static let ninjabrainSilent = "Ninjabrain Bot isn\u{2019}t answering yet. Open it and turn on its API."
+
+    static let ninjabrainReady = CompanionStatus(isReady: true, detail: ninjabrainAnswers)
+    static let ninjabrainMissing = CompanionStatus(isReady: false, detail: ninjabrainSilent)
 
     static func karabiner(_ requirement: KarabinerRequirement) -> CompanionStatus {
         switch requirement {
         case .ready:
-            CompanionStatus(isReady: true, detail: "Installed and running.")
-        case .notInstalled:
-            CompanionStatus(isReady: false, detail: "Karabiner-Elements isn\u{2019}t installed.", actionTitle: "Get Karabiner-Elements\u{2026}")
-        case .notRunning:
-            CompanionStatus(isReady: false, detail: "Karabiner-Elements is installed but not running.", actionTitle: "Open Karabiner-Elements")
-        case .versionTooOld(let found):
-            CompanionStatus(isReady: false, detail: "Karabiner-Elements \(found) is too old. Update to 16.0 or later.",
-                            actionTitle: "Get Karabiner-Elements\u{2026}")
-        case .configUnreadable:
-            CompanionStatus(isReady: false, detail: "Open Karabiner-Elements once.",
-                            actionTitle: "Open Karabiner-Elements")
+            CompanionStatus(isReady: true, detail: karabinerDetail(requirement))
+        case .notInstalled, .versionTooOld:
+            CompanionStatus(isReady: false, detail: karabinerDetail(requirement), actionTitle: "Get Karabiner-Elements\u{2026}")
+        case .notRunning, .configUnreadable:
+            CompanionStatus(isReady: false, detail: karabinerDetail(requirement), actionTitle: "Open Karabiner-Elements")
+        }
+    }
+
+    /// Karabiner-Elements' state in a sentence, as the step and Home's Key Rebinder tile say it.
+    static func karabinerDetail(_ requirement: KarabinerRequirement) -> String {
+        switch requirement {
+        case .ready: "Installed and running."
+        case .notInstalled: "Karabiner-Elements isn\u{2019}t installed."
+        case .notRunning: "Karabiner-Elements is installed but not running."
+        case .versionTooOld(let found): "Karabiner-Elements \(found) is too old. Update to 16.0 or later."
+        case .configUnreadable: "Open Karabiner-Elements once."
         }
     }
 }

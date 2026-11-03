@@ -16,6 +16,8 @@ enum TitleBeside: Sendable, Equatable {
     case switchControl
     /// The Key Rebinder's profile menu, showing this profile (`nil`: Karabiner has none).
     case profileMenu(String?)
+    /// Home's status visuals, in the strip they make where the window is too narrow for their column.
+    case homeVisuals
 }
 
 struct TitlePage: Sendable, CustomTestStringConvertible {
@@ -31,9 +33,9 @@ struct TitlePage: Sendable, CustomTestStringConvertible {
 /// A profile name well past what the Key Rebinder's menu button has room for.
 private let longProfile = "Minecraft speedrun practice"
 
-/// Home, Hotkeys, Settings and the six tools, each with what its title row holds; the Key Rebinder with Karabiner's own first
-/// profile and with a long name as well as none.
-private let pages: [TitlePage] = [TitlePage(title: "Home", beside: .nothing), TitlePage(title: "Hotkeys", beside: .nothing),
+/// Home with its status visuals beside it, Hotkeys, Settings and the six tools, each with what its title row holds; the Key
+/// Rebinder with Karabiner's own first profile and with a long name as well as none.
+private let pages: [TitlePage] = [TitlePage(title: "Home", beside: .homeVisuals), TitlePage(title: "Hotkeys", beside: .nothing),
                                   TitlePage(title: "Settings", beside: .nothing)]
     + ToolID.allCases.map { TitlePage(title: $0.title, beside: $0.hasSwitch ? .switchControl : .profileMenu(nil)) }
     + [TitlePage(title: ToolID.keyRebinder.title, beside: .profileMenu("Default profile")),
@@ -77,6 +79,9 @@ struct PageTitleFitTests {
             return (AnyView(EmptyView()), nil)
         case .switchControl:
             return (AnyView(STSwitch(isOn: .constant(false), label: page.title)), nil)
+        case .homeVisuals:
+            let harness = Harness()
+            return (AnyView(HomeLampStrip(model: harness.model)), harness)
         case .profileMenu(let profile):
             let harness = Harness(withKeyRebinder: true)
             let controller = try #require(harness.model.keyRebinder)

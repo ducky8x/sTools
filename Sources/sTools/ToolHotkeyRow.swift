@@ -29,8 +29,8 @@ extension ToolID {
 }
 
 /// A tool's own hotkey in the app's one list (`HotkeyCenter`, spec 6.1): the first hotkey whose only action is the
-/// tool's action (`ToolID.hotkeyAction`). The tool page's Hotkey row sets, changes and clears it; the Hotkeys page and
-/// the Key Rebinder show the same hotkey.
+/// tool's action (`ToolID.hotkeyAction`). The tool page's Hotkey row and the tool's tile on Home set, change and clear
+/// it; the Hotkeys page and the Key Rebinder show the same hotkey.
 @MainActor
 enum ToolHotkey {
     static func own(for action: HotkeyAction, in bindings: [HotkeyBinding]) -> HotkeyBinding? {
