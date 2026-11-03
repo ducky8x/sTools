@@ -79,6 +79,10 @@ extension AppModel {
             let wasOn = isOn(.timerOverlay)
             timer.release(secondsAgo: hotkeys.keyEventAge)
             return timerSwitchedOff(timer, wasOn: wasOn)
+        case .switchProfile:
+            // A profile switch waits for Karabiner-Elements' command-line tool, so the press carries it out and is
+            // confirmed once it is done (`handleHotkeyPress`).
+            return nil
         }
     }
 

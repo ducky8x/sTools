@@ -4,14 +4,20 @@ import Foundation
 public struct HotkeyBinding: Codable, Hashable, Identifiable, Sendable {
     public var id: UUID
     public var combo: HotkeyCombo
-    /// A set that remembers the order the user picked. Repeats are dropped on creation and on load.
-    /// A binding with no actions is kept (the user may be mid-edit) but never registered.
+    /// A set that remembers the order the user picked. Repeats are dropped on creation and on load, and so is every
+    /// profile action after the first (`uniquedWithOneProfile`). A binding with no actions is kept (the user may be
+    /// mid-edit) but never registered.
     public var actions: [HotkeyAction]
 
     public init(id: UUID = UUID(), combo: HotkeyCombo, actions: [HotkeyAction]) {
         self.id = id
         self.combo = combo
-        self.actions = actions.uniqued
+        self.actions = actions.uniquedWithOneProfile
+    }
+
+    /// The hotkey's one profile action, if it has one: the profile a press switches to, or Next profile.
+    public var profileAction: HotkeyProfileAction? {
+        actions.lazy.compactMap(\.profileAction).first
     }
 
     private enum CodingKeys: String, CodingKey { case id, combo, actions }
