@@ -42,7 +42,8 @@
 #   6. Checks the release on GitHub (not a draft or a pre-release, both files attached, the Latest one) and, when the
 #      repository is public, reads the feed at the address sTools uses (scripts/check-appcast.sh --live).
 #
-# Only ducky runs it. Environment: DEVELOPER_DIR defaults to the Xcode beta when it is installed.
+# Only ducky runs it. Environment: DEVELOPER_DIR defaults to the Xcode beta when it is installed, else Xcode
+# (scripts/lib/developer-dir.sh).
 # STOOLS_PUBLISH_WAIT_SECONDS (default 5) scales the waits between the final checks; the tests set it to 0.
 
 set -euo pipefail
@@ -50,7 +51,6 @@ set -euo pipefail
 readonly OWNER="ducky8x"
 readonly REPO="$OWNER/sTools"
 readonly ACCOUNT="sTools"
-readonly XCODE_BETA="/Applications/Xcode-beta.app/Contents/Developer"
 readonly MARKER="<!-- New versions go right below this line"
 readonly FEED_URL="https://github.com/$REPO/releases/latest/download/appcast.xml"
 
@@ -130,9 +130,9 @@ fi
 WAIT_SECONDS="${STOOLS_PUBLISH_WAIT_SECONDS:-5}"
 [[ "$WAIT_SECONDS" =~ ^[0-9]+$ ]] || WAIT_SECONDS=5
 
-if [[ -z "${DEVELOPER_DIR:-}" && -d "$XCODE_BETA" ]]; then
-    export DEVELOPER_DIR="$XCODE_BETA"
-fi
+# shellcheck source=lib/developer-dir.sh
+source "$ROOT/scripts/lib/developer-dir.sh"
+use_full_xcode
 
 TAG="v$VERSION"
 SUFFIX=""

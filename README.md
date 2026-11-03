@@ -327,7 +327,7 @@ Settings live in `~/Library/Application Support/sTools`, and recordings go to `~
 You need Xcode’s toolchain; the Command Line Tools alone lack Swift Testing’s macros. Run these from the repository root:
 
 ```sh
-export DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer   # or your Xcode
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer   # or your Xcode beta
 
 swift build                          # compile every module
 swift test                           # run the tests

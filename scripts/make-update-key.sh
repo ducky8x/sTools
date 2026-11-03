@@ -17,12 +17,11 @@
 # appears; unlock it (log in, or open Keychain Access) and run it again.
 #
 # Environment:
-#   DEVELOPER_DIR  Defaults to the Xcode beta when it is installed.
+#   DEVELOPER_DIR  Defaults to the Xcode beta when it is installed, else Xcode (scripts/lib/developer-dir.sh).
 
 set -euo pipefail
 
 readonly ACCOUNT="sTools"
-readonly XCODE_BETA="/Applications/Xcode-beta.app/Contents/Developer"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly ROOT
@@ -43,9 +42,9 @@ case "${1:-}" in
     *) fail "unknown argument \"$1\"" ;;
 esac
 
-if [[ -z "${DEVELOPER_DIR:-}" && -d "$XCODE_BETA" ]]; then
-    export DEVELOPER_DIR="$XCODE_BETA"
-fi
+# shellcheck source=lib/developer-dir.sh
+source "$ROOT/scripts/lib/developer-dir.sh"
+use_full_xcode
 
 # Sparkle's tools come with the SwiftPM dependency.
 if [[ ! -x "$GENERATE_KEYS" ]]; then

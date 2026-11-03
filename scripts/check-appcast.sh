@@ -20,11 +20,9 @@
 # Objective-C tool compiled into a temporary folder each run.
 #
 # Environment:
-#   DEVELOPER_DIR  Defaults to the Xcode beta when it is installed.
+#   DEVELOPER_DIR  Defaults to the Xcode beta when it is installed, else Xcode (scripts/lib/developer-dir.sh).
 
 set -euo pipefail
-
-readonly XCODE_BETA="/Applications/Xcode-beta.app/Contents/Developer"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly ROOT
@@ -79,9 +77,9 @@ SOURCES=0
 [[ "$LIVE" -eq 0 ]] || SOURCES=$((SOURCES + 1))
 [[ "$SOURCES" -eq 1 ]] || { usage; fail "give exactly one feed: a file, --url <address> or --live"; }
 
-if [[ -z "${DEVELOPER_DIR:-}" && -d "$XCODE_BETA" ]]; then
-    export DEVELOPER_DIR="$XCODE_BETA"
-fi
+# shellcheck source=lib/developer-dir.sh
+source "$ROOT/scripts/lib/developer-dir.sh"
+use_full_xcode
 
 WORK="$(mktemp -d -t sTools-appcast)"
 trap 'rm -rf "$WORK"' EXIT
