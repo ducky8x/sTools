@@ -46,13 +46,13 @@ enum ToolHotkey {
     }
 
     /// Sets the tool's own hotkey to `combo`: changes its key, or adds it in its sidebar place among the tools' own
-    /// hotkeys, which Home lists first. Nil clears it.
+    /// hotkeys, which the Hotkeys page lists first. Nil clears it.
     static func set(_ combo: HotkeyCombo?, for action: HotkeyAction, in center: HotkeyCenter) {
         center.setOwnHotkey(combo, for: action)
     }
 
-    /// Why the row refuses `combo` while recording, with the same rules as Home's editor: another hotkey has it, macOS
-    /// keeps it, or sTools doesn't know the key. Nil when it's fine.
+    /// Why the row refuses `combo` while recording, with the same rules as the Hotkeys page's editor: another hotkey
+    /// has it, macOS keeps it, or sTools doesn't know the key. Nil when it's fine.
     static func refusal(for combo: HotkeyCombo, action: HotkeyAction, in center: HotkeyCenter) -> String? {
         let own = own(for: action, in: center.bindings)
         guard let conflict = center.conflict(for: combo, excluding: own?.id), conflict != .noActions else { return nil }
@@ -129,8 +129,8 @@ struct ToolHotkeyRow: View {
         }
     }
 
-    /// What's wrong with the tool's own key, in red under the row; nil when nothing is. A page isn't Home's list, so a
-    /// key another hotkey has gets the words for outside it: nothing on a tool page is "above".
+    /// What's wrong with the tool's own key, in red under the row; nil when nothing is. A tool page isn't the Hotkeys
+    /// page's list, so a key another hotkey has gets the words for outside it: nothing on a tool page is "above".
     var problemNote: String? {
         guard let own = ToolHotkey.own(for: action, in: hotkeys.bindings) else { return nil }
         return HotkeyWording.statusNote(hotkeys.status(of: own.id), combo: own.combo, inList: false)

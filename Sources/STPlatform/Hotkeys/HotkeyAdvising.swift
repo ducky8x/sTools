@@ -1,16 +1,17 @@
 import Foundation
 
-/// Advice about a hotkey from a module STPlatform can't see: the Key Rebinder knows the keyboard, Karabiner's
-/// rebinds and profiles, and Minecraft's keybinds. `HotkeyCenter.advisor` holds it, so Home shows the Key Rebinder's
-/// advice without importing its types, and both hotkey editors get the same words from `HotkeyCenter.notes(for:)`.
+/// Advice about a hotkey from a module STPlatform can't see: the Key Rebinder knows the keyboard, Karabiner's rebinds
+/// and profiles, and Minecraft's keybinds. `HotkeyCenter.advisor` holds it, so the Hotkeys page shows the Key
+/// Rebinder's advice without importing its types, and both hotkey editors get the same words from
+/// `HotkeyCenter.notes(for:)`.
 @MainActor
 public protocol HotkeyAdvising: AnyObject {
     /// What to know about `combo` beyond what STPlatform says itself: a caution when Minecraft uses its key, and
     /// notes such as the modifiers that keep it from firing. Any order; `HotkeyCenter.notes(for:)` sorts them.
     func notes(for combo: HotkeyCombo) -> [HotkeyNote]
 
-    /// Where `combo`'s key comes from on the chosen keyboard, for the caption under a Home row. Nil when there is
-    /// nothing to place it on (no keyboard chosen yet).
+    /// Where `combo`'s key comes from on the chosen keyboard, for the caption under a row of the Hotkeys page. Nil when
+    /// there is nothing to place it on (no keyboard chosen yet).
     func placement(of combo: HotkeyCombo) -> HotkeyPlacement?
 
     /// Selects the first drawn key that sends `combo`'s key, ready for the Key Rebinder page to show it.

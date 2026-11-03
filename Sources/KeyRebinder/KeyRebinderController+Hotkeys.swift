@@ -12,8 +12,8 @@ public enum HotkeyMark: Hashable, Sendable {
 }
 
 /// sTools hotkeys on the keys (spec 5.5.2, 5.5.3, 6.1). The Key Rebinder shows and edits the app's one hotkey list
-/// (`HotkeyCenter`, stored in `hotkeys.json`) one key at a time, and advises Home on it (`HotkeyAdvising`). A hotkey
-/// listens for the key macOS receives after Karabiner, so a key carries the hotkeys of what it sends now.
+/// (`HotkeyCenter`, stored in `hotkeys.json`) one key at a time, and advises the Hotkeys page on it (`HotkeyAdvising`).
+/// A hotkey listens for the key macOS receives after Karabiner, so a key carries the hotkeys of what it sends now.
 ///
 /// Nothing here writes `karabiner.json`, runs `karabiner_cli` or waits for Karabiner-Elements, and nothing is gated by
 /// `canEdit` or `isBusy`: hotkeys on keys work without Karabiner, where every key sends itself. Every text is plain
@@ -49,17 +49,17 @@ extension KeyRebinderController {
     /// Whether the page shows sTools hotkeys at all: a hotkey list is connected and Advanced ▸ Show hotkeys is on.
     public var showsHotkeyLayer: Bool { hotkeyCenter != nil && settings.showsHotkeys }
 
-    /// Home ▸ Hotkeys' master switch.
+    /// The Hotkeys page's master switch.
     public var hotkeysAreOn: Bool { hotkeyCenter?.isEnabled == true }
 
-    /// Switches Home ▸ Hotkeys' master switch on (the key panel's Turn On).
+    /// Switches the Hotkeys page's master switch on (the key panel's Turn On).
     public func turnHotkeysOn() {
         hotkeyCenter?.isEnabled = true
     }
 
-    /// What Home ▸ Hotkeys has set for every hotkey, for the key panel's Hotkeys part: "Hotkeys work in sTools and
-    /// Minecraft · Key set: ⌘1–⌘5", or only in sTools while Accessibility is missing, as Home says. Nil without a
-    /// hotkey list.
+    /// What the Hotkeys page has set for every hotkey, for the key panel's Hotkeys part: "Hotkeys work in sTools and
+    /// Minecraft · Key set: ⌘1–⌘5", or only in sTools while Accessibility is missing, as the Hotkeys page says. Nil
+    /// without a hotkey list.
     public var hotkeyWhereLine: String? {
         let accessibilityGranted = services.permissions.status(.accessibility) == .granted
         return hotkeyCenter.map {
@@ -153,7 +153,7 @@ extension KeyRebinderController {
         case .severalKeys:
             text = "\(name) sends several keys at once, through a simple rebind."
         case .ruleDriven:
-            return "A rule drives \(name), so sTools can\u{2019}t tell which key apps get. Add its hotkey in Home by pressing the key."
+            return "A rule drives \(name), so sTools can\u{2019}t tell which key apps get. Add its hotkey on the Hotkeys page by pressing the key."
         case .unsupported(let sends):
             text = "\(name) sends \(KeyNames.name(for: sends)), which can\u{2019}t be a hotkey."
         }
@@ -201,10 +201,11 @@ extension KeyRebinderController {
 
     /// Saves a hotkey on what `key` sends now with `modifiers` held: a new one, or the hotkey `editing`, which keeps
     /// its id. Actions are kept in the pickers' order (`HotkeyAction.pickerOrder`: the tools' in sidebar order, then a
-    /// Karabiner profile). Returns the hotkey's id, or nil when nothing was saved: no hotkey list, a key that can't carry
-    /// hotkeys, no action, a combination that is reserved or already used by another hotkey, or a second key for one
-    /// action alone (`ownHotkeyReplaced(bySaving:editing:)`), which the panel asks about first. With
-    /// `replacingOwnHotkey`, that action's own hotkey gets this key instead, as on Home (spec 6.1), and its id comes back.
+    /// Karabiner profile). Returns the hotkey's id, or nil when nothing was saved: no hotkey list, a key that can't
+    /// carry hotkeys, no action, a combination that is reserved or already used by another hotkey, or a second key for
+    /// one action alone (`ownHotkeyReplaced(bySaving:editing:)`), which the panel asks about first. With
+    /// `replacingOwnHotkey`, that action's own hotkey gets this key instead, as on the Hotkeys page (spec 6.1), and its
+    /// id comes back.
     @discardableResult
     public func saveHotkey(
         on key: KarabinerEvent, editing id: UUID?, modifiers: HotkeyCombo.Modifiers, actions: [HotkeyAction],
@@ -315,7 +316,7 @@ extension KeyRebinderController {
     }
 }
 
-// MARK: - Advice for Home
+// MARK: - Advice for the Hotkeys page
 
 extension KeyRebinderController: HotkeyAdvising {
     /// The Minecraft caution for `combo` and the note naming the held modifiers that keep it from firing, from
@@ -336,9 +337,9 @@ extension KeyRebinderController: HotkeyAdvising {
         return notes
     }
 
-    /// Which keys on the chosen keyboard send `combo`'s key, for the caption under a Home row: "On Caps Lock", "On
-    /// Caps Lock and Mouse Button 4", no text when the key simply sends itself, or "No key on your keyboard sends
-    /// F20" (", unless a rule does" when a drawn key is rule-driven). Nil before a keyboard is chosen.
+    /// Which keys on the chosen keyboard send `combo`'s key, for the caption under a row of the Hotkeys page: "On Caps
+    /// Lock", "On Caps Lock and Mouse Button 4", no text when the key simply sends itself, or "No key on your keyboard
+    /// sends F20" (", unless a rule does" when a drawn key is rule-driven). Nil before a keyboard is chosen.
     public func placement(of combo: HotkeyCombo) -> HotkeyPlacement? {
         guard layout != nil, HotkeyCombo.isSupported(keyCode: combo.keyCode) else { return nil }
         let sources = HotkeyKeys.sources(ofKeyCode: combo.keyCode, physicalKeys: physicalKeys, bindings: derived.bindings)

@@ -18,7 +18,7 @@ private func karabinerJSON(_ rebinds: [(from: String, to: String)]) -> String {
 }
 
 /// The app wires its one hotkey list into the Key Rebinder (spec 5.5.2, 5.5.3, 6.1), which then shows and edits it
-/// on the keys and advises Home on it.
+/// on the keys and advises the Hotkeys page on it.
 @MainActor
 @Suite("AppModel and the Key Rebinder")
 struct AppModelKeyRebinderTests {

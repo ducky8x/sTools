@@ -1,6 +1,6 @@
 import Foundation
 
-/// Home ▸ Hotkeys ▸ Where hotkeys work (spec 6.1). The raw value is the stored name.
+/// Hotkeys ▸ Where hotkeys work (spec 6.1). The raw value is the stored name.
 public enum HotkeyScope: String, Codable, CaseIterable, Hashable, Sendable {
     /// Only while sTools or a Minecraft instance is the app in front (the default). In every other app nothing is
     /// registered, so the keys reach that app untouched: a browser's ⌘1 still switches tabs.

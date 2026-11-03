@@ -1,8 +1,8 @@
 import Foundation
 
-/// The six tools, in sidebar order: the one place that order is written down (spec 3.5). The sidebar, its glide,
-/// the Go menu, Home's tool rows, the Prologue's tool lists and everything else that follows the sidebar read it from
-/// here (`allCases`). The hotkey actions keep the same order in STPlatform, which can't see this type
+/// The six tools, in sidebar order: the one place that order is written down (spec 3.5). The sidebar, its glide, the Go
+/// menu, Home's tiles, the Prologue's tool lists and everything else that follows the sidebar read it from here
+/// (`allCases`). The hotkey actions keep the same order in STPlatform, which can't see this type
 /// (`HotkeyAction.allCases`); a test checks the two agree.
 enum ToolID: String, CaseIterable, Identifiable, Hashable, Sendable {
     case crosshair, timerOverlay, nbbOverlay, screenRecording, windowBackdrop, keyRebinder

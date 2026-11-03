@@ -128,8 +128,8 @@ struct FlowLayoutSizingTests {
     }
 }
 
-/// Both hotkey editors show "Does" beside their action chips (Home's and the Key Rebinder's key panel), as text you
-/// can see; the chips name their group with it for VoiceOver.
+/// Both hotkey editors show "Does" beside their action chips (the Hotkeys page's and the Key Rebinder's key panel), as
+/// text you can see; the chips name their group with it for VoiceOver.
 @Suite("STLabeledChips rendering")
 @MainActor
 struct LabeledChipsRenderTests {

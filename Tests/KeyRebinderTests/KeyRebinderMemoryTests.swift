@@ -257,18 +257,18 @@ struct KeyRebinderMemoryTests {
         #expect(closed.visited < 500_000, "the walk gave up, so it proves nothing")
     }
 
-    // MARK: Home's advice
+    // MARK: The Hotkeys page's advice
 
-    /// Home ▸ Hotkeys reads karabiner.json for its advice (which key sends a hotkey's key) when it appears and each time
-    /// sTools comes back to the front. With the page closed, it keeps what the advice needs, the keys (`derived`) and
-    /// Minecraft's keybinds, and lets go of the parsed file, as the page does when it closes.
+    /// The Hotkeys page reads karabiner.json for its advice (which key sends a hotkey's key) when it appears and each
+    /// time sTools comes back to the front. With the page closed, it keeps what the advice needs, the keys (`derived`)
+    /// and Minecraft's keybinds, and lets go of the parsed file, as the page does when it closes.
     @Test func homesAdviceReadHoldsNoFileWhileThePageIsClosed() async throws {
         let rig = try Rig(rules: 300)
         await rig.controller.prepareAdvice()
         #expect(rig.controller.hasLoadedConfig, "the advice read nothing")
         #expect(rig.controller.derived.rebinds.map(\.from) == [.key("caps_lock")], "the advice lost the keys")
         let held = holdings(of: rig.controller)
-        #expect(held.json < 2_000, "\(held.json) bytes of parsed JSON are reachable from the controller after Home's advice read")
+        #expect(held.json < 2_000, "\(held.json) bytes of parsed JSON are reachable from the controller after the Hotkeys page's advice read")
         #expect(held.visited < 500_000, "the walk gave up, so it proves nothing")
     }
 
@@ -356,7 +356,7 @@ struct KeyRebinderMemoryTests {
         #expect(weakHost == nil, "the hosting view outlived its window")
     }
 
-    /// While the page shows, an advice read (sTools coming back to the front with Home's hotkeys on, say) leaves the page
+    /// While the page shows, an advice read (sTools coming back to the front with hotkeys on, say) leaves the page
     /// its file, and the page edits as before. Once the page closes, an advice read keeps none.
     @Test func anAdviceReadLeavesThePageItsFile() async throws {
         let rig = try Rig()

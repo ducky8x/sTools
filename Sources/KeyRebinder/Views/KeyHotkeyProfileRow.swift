@@ -3,8 +3,8 @@ import STPlatform
 import SwiftUI
 
 /// The key panel's Karabiner profile row, under the Does chips (spec 6.1): None, Next profile and each profile by name,
-/// in Karabiner's order, all in view, one chosen. When there is nothing to choose, one line says why in its place. Home's
-/// hotkey editor has the same row, from the same `HotkeyProfileChoice`.
+/// in Karabiner's order, all in view, one chosen. When there is nothing to choose, one line says why in its place. The
+/// Hotkeys page's editor has the same row, from the same `HotkeyProfileChoice`.
 struct KeyHotkeyProfileRow: View {
     @Binding var selection: HotkeyProfileAction?
     let profiles: HotkeyProfiles

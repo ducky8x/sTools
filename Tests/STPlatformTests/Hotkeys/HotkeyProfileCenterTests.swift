@@ -35,7 +35,7 @@ private final class ProfileCenterHarness {
                               handler: { [unowned self] in presses.append($0) })
     }
 
-    /// "⌘1 Crosshair", as Home lists a hotkey.
+    /// "⌘1 Crosshair", as the Hotkeys page lists a hotkey.
     var listing: [String] { center.bindings.map { "\($0.combo.displayString) \(HotkeyWording.summary($0.actions))" } }
 
     isolated deinit { try? FileManager.default.removeItem(at: directory) }

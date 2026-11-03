@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import STPlatform
 
-// Home ▸ Hotkeys ▸ Advanced ▸ Also fire while holding Shift or Control (spec 6.1, revision 45). macOS matches a hotkey's
+// Hotkeys ▸ Advanced ▸ Also fire while holding Shift or Control (spec 6.1, revision 45). macOS matches a hotkey's
 // modifiers exactly, so with the option on each hotkey also registers with Shift, Control and both added, and a press of
 // any of them is the hotkey's own. Nothing here registers a real hotkey: the registrar is a fake that records what it is
 // asked for.

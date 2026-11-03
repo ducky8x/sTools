@@ -8,7 +8,7 @@ struct KeyEditorPanel: View {
     /// Whether the panel shows sTools hotkeys: their findings, the Becomes captions about them and the Hotkeys
     /// part. False in the Prologue's trial.
     let showsHotkeys: Bool
-    /// Opens Home ▸ Hotkeys, from a key a rule drives; nil leaves Open Hotkeys out.
+    /// Opens the Hotkeys page, from a key a rule drives; nil leaves Open Hotkeys out.
     let openHotkeys: (() -> Void)?
     let openRule: (Int) -> Void
     /// Opens the Hotkeys part's editor with these choices on whichever key the panel shows. Tests and previews only;

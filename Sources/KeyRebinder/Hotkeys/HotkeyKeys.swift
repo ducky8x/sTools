@@ -27,7 +27,7 @@ public enum HotkeyKeys {
     }
 
     /// Places each hotkey on every physical key that sends its key. A hotkey on a key no hotkey can use (a corrupt
-    /// entry) is left out: it can never be placed, and Home already flags it.
+    /// entry) is left out: it can never be placed, and the Hotkeys page already flags it.
     public static func index(
         _ hotkeys: [HotkeyBinding], physicalKeys: [KarabinerEvent], bindings: [KarabinerEvent: EffectiveBinding],
         table: KeyTable = .shared

@@ -234,9 +234,9 @@ struct AppModelHotkeysTests {
     }
 }
 
-/// What a Home row says below its first line comes from the Key Rebinder's advice (spec 6.1).
+/// What a row of the Hotkeys page says below its first line comes from the Key Rebinder's advice (spec 6.1).
 @MainActor
-@Suite("Home hotkey rows")
+@Suite("Hotkeys page rows")
 struct HomeHotkeyRowTests {
     @Test func withoutTheKeyRebinderARowSaysNothingMore() throws {
         let harness = Harness(accessibility: .granted)
@@ -311,7 +311,7 @@ struct HomeHotkeyRowTests {
 }
 
 @MainActor
-@Suite("Home hotkeys rendering")
+@Suite("Hotkeys page rendering")
 struct HomeHotkeysRenderTests {
     private let size = CGSize(width: 640, height: 720)
 
@@ -372,7 +372,7 @@ struct HomeHotkeysRenderTests {
         let before = render(harness)
         harness.model.hotkeys.setPaused(true, for: .recordingKey)
         let typing = render(harness)
-        // Nothing on Home depends on a pause any more.
+        // Nothing on the Hotkeys page depends on a pause any more.
         #expect(before.representation(using: .png, properties: [:]) == typing.representation(using: .png, properties: [:]))
     }
 }

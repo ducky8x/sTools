@@ -493,7 +493,7 @@ struct HotkeyEditor: View {
 }
 
 private extension View {
-    /// A caption that finishes a row of Home ▸ Hotkeys: the row's rule under it.
+    /// A caption that finishes a row of the Hotkeys page: the row's rule under it.
     func hotkeysCaptionRow() -> some View {
         padding(.bottom, 12)
             .frame(maxWidth: .infinity, alignment: .leading)

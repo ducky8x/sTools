@@ -69,7 +69,8 @@ struct ToolHotkeyRowTests {
         #expect(ToolHotkey.sharedText(for: .startStopRecording, in: [own]) == nil)
     }
 
-    /// Setting, changing and clearing the key edit one hotkey in the list Home shows, and it registers like any other.
+    /// Setting, changing and clearing the key edit one hotkey in the list the Hotkeys page shows, and it registers like
+    /// any other.
     @Test func setChangeAndClearEditTheToolsOwnHotkey() throws {
         let harness = Harness(accessibility: .granted)
         let fake = try #require(harness.hotkeyRegistrar as? FakeHotkeyRegistrar)
@@ -114,7 +115,8 @@ struct ToolHotkeyRowTests {
         #expect(ToolHotkey.own(for: .toggle(.crosshair), in: hotkeys.bindings)?.combo == pad1)
     }
 
-    /// The same rules as Home's editor: a key another hotkey has, or one macOS keeps, is refused; its own key isn't.
+    /// The same rules as the Hotkeys page's editor: a key another hotkey has, or one macOS keeps, is refused; its own
+    /// key isn't.
     @Test func theRowRefusesWhatHomeRefuses() {
         let harness = Harness(accessibility: .granted)
         let hotkeys = harness.model.hotkeys
@@ -128,8 +130,9 @@ struct ToolHotkeyRowTests {
         #expect(ToolHotkey.refusal(for: f13, action: .toggle(.crosshair), in: hotkeys) == nil)
     }
 
-    /// A tool's own key that an earlier hotkey already has gets the red note in the words for outside Home's list:
-    /// a tool page has no rows above it, so the note never says "above". Timer Overlay's row is the same row.
+    /// A tool's own key that an earlier hotkey already has gets the red note in the words for outside the Hotkeys
+    /// page's list: a tool page has no rows above it, so the note never says "above". Timer Overlay's row is the same
+    /// row.
     @Test func aConflictNoteOnAToolPageNeverSaysAbove() throws {
         let harness = Harness(accessibility: .granted)
         let hotkeys = harness.model.hotkeys
@@ -174,7 +177,7 @@ struct ToolHotkeyRowTests {
     }
 
     /// Without Accessibility sTools can't tell when Minecraft is in front, so the row says hotkeys work only in
-    /// sTools, as Home does, and says In sTools and Minecraft again once Accessibility is allowed.
+    /// sTools, as the Hotkeys page does, and says In sTools and Minecraft again once Accessibility is allowed.
     @Test func withoutAccessibilityTheRowSaysOnlyInSTools() throws {
         let harness = Harness(accessibility: .denied, hotkeys: nil)
         let row = try #require(ToolHotkeyRow(model: harness.model, tool: .crosshair))

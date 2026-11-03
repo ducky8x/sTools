@@ -18,8 +18,9 @@ extension AppModel {
         Dictionary(uniqueKeysWithValues: HotkeyTool.allCases.map { ($0, isOn(Self.toolID(for: $0))) })
     }
 
-    /// Home's "Show on Keyboard": asks the Key Rebinder to select the drawn key that sends `combo`'s key, then
-    /// opens its page scrolled to that key's panel. False, with the page left as it was, when there is no Key Rebinder or no drawn key sends it.
+    /// The Hotkeys page's "Show on Keyboard": asks the Key Rebinder to select the drawn key that sends `combo`'s key,
+    /// then opens its page scrolled to that key's panel. False, with the page left as it was, when there is no Key
+    /// Rebinder or no drawn key sends it.
     @discardableResult
     func showHotkeyOnKeyboard(_ combo: HotkeyCombo) -> Bool {
         guard hotkeys.advisor?.selectKey(for: combo) == true else { return false }
@@ -54,10 +55,10 @@ extension AppModel {
         return .profile(await keyRebinder.switchProfile(for: action))
     }
 
-    /// Confirms what a press did, or what it led to once that happened (a start the key made writing its first
-    /// frame): the stamp sound, and unless Home ▸ Hotkeys ▸ Advanced turns it off, the seal with a line of what changed
-    /// on Minecraft's display, which VoiceOver announces. Something that changed nothing (a tool needs Accessibility, a
-    /// recording that is only starting) gets a plain click and its line without the seal.
+    /// Confirms what a press did, or what it led to once that happened (a start the key made writing its first frame):
+    /// the stamp sound, and unless Hotkeys ▸ Advanced turns it off, the seal with a line of what changed on Minecraft's
+    /// display, which VoiceOver announces. Something that changed nothing (a tool needs Accessibility, a recording that
+    /// is only starting) gets a plain click and its line without the seal.
     func confirm(_ effects: [HotkeyConfirmation.Effect]) {
         guard !effects.isEmpty else { return }
         let changed = HotkeyConfirmation.changedSomething(effects)

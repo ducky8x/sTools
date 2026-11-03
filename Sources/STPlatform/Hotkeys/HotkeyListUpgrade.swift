@@ -114,11 +114,11 @@ enum HotkeyListUpgrade {
 
     /// `bindings` with one hotkey whose only action is Screen Recording's. Builds with two Screen Recording actions,
     /// "Toggle Screen Recording" and "Start/stop recording", could leave a key for each; both read as the one action
-    /// now (`HotkeyAction`'s decoding), so without this Home would list Screen Recording twice. The one that stays is
-    /// the first on the key a key set gives Screen Recording (⌘4, ⌃4 or ⌥4) or the removed F13–F17 set gave it (F16),
-    /// so a list that follows a key set keeps following it, else the first on the key an earlier build's key set gave
-    /// it (⌘5, ⌃5, ⌥5 or F17), else the first in the list; it keeps its id, key and place. Hotkeys that record
-    /// together with other things, and every other hotkey, stay as they are. Applied to every list that loads
+    /// now (`HotkeyAction`'s decoding), so without this the Hotkeys page would list Screen Recording twice. The one
+    /// that stays is the first on the key a key set gives Screen Recording (⌘4, ⌃4 or ⌥4) or the removed F13–F17 set
+    /// gave it (F16), so a list that follows a key set keeps following it, else the first on the key an earlier build's
+    /// key set gave it (⌘5, ⌃5, ⌥5 or F17), else the first in the list; it keeps its id, key and place. Hotkeys that
+    /// record together with other things, and every other hotkey, stay as they are. Applied to every list that loads
     /// (`HotkeySettings`' decoding), whatever its version.
     static func withOneScreenRecordingKey(_ bindings: [HotkeyBinding]) -> [HotkeyBinding] {
         let recording = HotkeyAction.startStopRecording

@@ -123,7 +123,7 @@ struct HotkeyKeySetTests {
 
     /// The ⌘1–⌘5 list in an earlier sidebar order (build 449's default: ⌘1 NBB Overlay, ⌘2 Window Backdrop, ⌘3
     /// Crosshair, ⌘4 Start timer, ⌘5 Screen Recording): picking ⌘1–⌘5 gives each tool its sidebar number and lists
-    /// them in sidebar order, so Home reads ⌘1 to ⌘5 down the page.
+    /// them in sidebar order, so the Hotkeys page reads ⌘1 to ⌘5 down the page.
     @Test func pickingASetPutsAListInAnEarlierOrderInSidebarOrder() {
         let earlier = [
             HotkeyBinding(combo: combo(18, .command), actions: [nbb]),
@@ -278,9 +278,9 @@ struct HotkeyKeySetTests {
         #expect(center.bindings == [custom, nbbKey])
     }
 
-    // MARK: Home's Add Hotkey… and Edit keep the sidebar order
+    // MARK: The Hotkeys page's Add Hotkey… and Edit keep the sidebar order
 
-    /// "⌘1 Crosshair", as Home lists a hotkey.
+    /// "⌘1 Crosshair", as the Hotkeys page lists a hotkey.
     private func listing(_ bindings: [HotkeyBinding]) -> [String] {
         bindings.map { "\($0.combo.displayString) \(HotkeyWording.summary($0.actions))" }
     }

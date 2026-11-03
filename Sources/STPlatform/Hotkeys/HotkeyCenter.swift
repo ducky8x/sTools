@@ -299,9 +299,9 @@ public final class HotkeyCenter {
     }
 
     /// Adds a binding and returns its id. A tool's own hotkey (its only action is one tool's, and the tool had none)
-    /// goes in the tool's sidebar place among the own hotkeys, which Home lists first; any other goes at the end
-    /// (`HotkeyKeySet.ordered`). A problem shows up in `statuses`. Editors ask before adding a second key for a tool's
-    /// action alone (`ownHotkeyReplaced(bySaving:editing:)`).
+    /// goes in the tool's sidebar place among the own hotkeys, which the Hotkeys page lists first; any other goes at
+    /// the end (`HotkeyKeySet.ordered`). A problem shows up in `statuses`. Editors ask before adding a second key for a
+    /// tool's action alone (`ownHotkeyReplaced(bySaving:editing:)`).
     @discardableResult
     public func add(combo: HotkeyCombo, actions: [HotkeyAction]) -> UUID {
         let binding = HotkeyBinding(combo: combo, actions: actions)

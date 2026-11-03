@@ -120,7 +120,7 @@ struct HotkeyWordingTests {
     // MARK: Where hotkeys work and the key set
 
     /// The line every other place that edits a hotkey shows (a tool page's Hotkey row, Timer Overlay's Hotkey row, the
-    /// Key Rebinder's key panel), so what Home ▸ Hotkeys sets is in view there too.
+    /// Key Rebinder's key panel), so what the Hotkeys page sets is in view there too.
     @Test func theLineSaysWhereHotkeysWorkAndTheKeySet() {
         #expect(HotkeyWording.whereAndKeySet(scope: .sToolsAndMinecraft, keySet: .command, accessibilityGranted: true)
             == "Hotkeys work in sTools and Minecraft · Key set: ⌘1–⌘5")
@@ -134,8 +134,8 @@ struct HotkeyWordingTests {
         #expect(HotkeyKeySet.name(of: .control) == "⌃1–⌃5")
     }
 
-    /// Recognizing Minecraft needs Accessibility, so without it In sTools and Minecraft works only in sTools, as Home
-    /// says under Where hotkeys work; Everywhere doesn't need it.
+    /// Recognizing Minecraft needs Accessibility, so without it In sTools and Minecraft works only in sTools, as the
+    /// Hotkeys page says under Where hotkeys work; Everywhere doesn't need it.
     @Test func withoutAccessibilityTheLineSaysOnlyInSTools() {
         #expect(HotkeyWording.whereAndKeySet(scope: .sToolsAndMinecraft, keySet: .command, accessibilityGranted: false)
             == "Hotkeys work only in sTools until Accessibility is allowed · Key set: ⌘1–⌘5")
