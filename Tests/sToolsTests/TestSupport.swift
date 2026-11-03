@@ -152,13 +152,15 @@ final class Harness {
 
     /// `prologueCompleted: false` launches as a first launch, with the introduction showing. `withKeyRebinder`
     /// adds a Key Rebinder over the harness's folder, connected like the app's: Karabiner-Elements reads as not
-    /// installed and `karabiner_cli` never runs, so nothing touches `~/.config/karabiner`.
+    /// installed and `karabiner_cli` never runs, so nothing touches `~/.config/karabiner`. `karabiner` adds one whose
+    /// Karabiner-Elements is that scripted one instead, which answers with its profiles.
     ///
     /// `hotkeys` is the `hotkeys.json` the launch finds: an existing, empty list by default; nil for a new install,
     /// which starts with ⌘1–⌘5.
     init(accessibility: PermissionStatus = .granted, instances: [MinecraftInstance] = [],
          theme: STTheme = STTheme(), usesRealControllers: Bool = false, hotkeyRegistrar: any HotkeyRegistering = FakeHotkeyRegistrar(),
-         prologueCompleted: Bool = true, withKeyRebinder: Bool = false, hotkeys: HotkeySettings? = HotkeySettings()) {
+         prologueCompleted: Bool = true, withKeyRebinder: Bool = false, karabiner: HarnessKarabiner? = nil,
+         hotkeys: HotkeySettings? = HotkeySettings()) {
         self.hotkeyRegistrar = hotkeyRegistrar
         directory = FileManager.default.temporaryDirectory.appending(path: "sTools-app-\(UUID().uuidString)")
         karabinerConfigURL = directory.appending(path: "karabiner", directoryHint: .isDirectory).appending(path: "karabiner.json")
@@ -188,13 +190,13 @@ final class Harness {
             : fakes.mapValues { $0 as any ToolController }
         all[.timerOverlay] = timer
         var keyRebinder: KeyRebinderController?
-        if withKeyRebinder {
+        if withKeyRebinder || karabiner != nil {
             try? FileManager.default.createDirectory(at: karabinerConfigURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             keyRebinder = KeyRebinderController(
                 services: services, configURL: karabinerConfigURL,
                 backupsDirectory: directory.appending(path: "Karabiner Backups", directoryHint: .isDirectory),
-                cli: KarabinerCLI(runner: FailingCommandRunner(), cliURL: directory.appending(path: "no-karabiner_cli")),
-                probes: KarabinerProbes(appBundleExists: { false }, cliVersion: { nil }, configReadable: { false }))
+                cli: KarabinerCLI(runner: karabiner ?? FailingCommandRunner(), cliURL: directory.appending(path: "no-karabiner_cli")),
+                probes: karabiner?.probes ?? KarabinerProbes(appBundleExists: { false }, cliVersion: { nil }, configReadable: { false }))
         }
         model = AppModel(services: services, theme: theme, sound: .silent, controllers: all, keyRebinder: keyRebinder,
                          hotkeyRegistrar: hotkeyRegistrar, hotkeyHUD: hotkeyHUD, loginItem: FakeLoginItem())

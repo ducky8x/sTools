@@ -1,3 +1,4 @@
+import KeyRebinder
 import ScreenRecording
 import STPlatform
 import TimerOverlay
@@ -28,9 +29,29 @@ extension AppModel {
     }
 
     /// One hotkey press (spec 6.1's toggle semantics are already resolved by `HotkeyCenter`): carries out its
-    /// events in order, then confirms the press once (`confirm`).
+    /// events in order, then confirms the press once (`confirm`). A Karabiner profile comes last: the Key Rebinder
+    /// switches it through Karabiner-Elements' command-line tool, and the press is confirmed once that is done, in one
+    /// line with the rest.
     func handleHotkeyPress(_ events: [HotkeyEvent]) {
-        confirm(events.compactMap { handleHotkeyEvent($0) })
+        let effects = events.compactMap { handleHotkeyEvent($0) }
+        let profile = events.lazy.compactMap { event -> HotkeyProfileAction? in
+            if case .switchProfile(let action) = event { action } else { nil }
+        }.first
+        guard let profile else {
+            confirm(effects)
+            return
+        }
+        Task {
+            let outcome = await switchProfile(profile)
+            confirm(effects + [outcome])
+        }
+    }
+
+    /// A profile hotkey's switch, through the Key Rebinder (spec 6.1), with what it did. Without a Key Rebinder there is
+    /// no Karabiner-Elements to switch.
+    func switchProfile(_ action: HotkeyProfileAction) async -> HotkeyConfirmation.Effect {
+        guard let keyRebinder else { return .profile(.unavailable(.notInstalled)) }
+        return .profile(await keyRebinder.switchProfile(for: action))
     }
 
     /// Confirms what a press did, or what it led to once that happened (a start the key made writing its first
