@@ -39,9 +39,9 @@ let package = Package(
             path: "Benchmarks/OverlayBench"),
         .testTarget(name: "STDesignTests", dependencies: ["STDesign"]),
         .testTarget(name: "STPlatformTests", dependencies: ["STPlatform"]),
-        // The test bundle finds Sparkle.framework next to it in the build folder.
-        .testTarget(name: "sToolsTests", dependencies: ["sTools"],
-                    linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@loader_path/../../.."])]),
+        // The test bundle finds Sparkle.framework next to it in the build folder, through the @loader_path/../../.. rpath
+        // SwiftPM gives every test bundle. Adding it here as well made the linker warn about a duplicate.
+        .testTarget(name: "sToolsTests", dependencies: ["sTools"]),
     ]
     + tools.map { name in
         // The Key Rebinder's tests read their fixture files from the source folder (`FixtureLoader`, through #filePath), so
