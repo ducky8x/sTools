@@ -220,10 +220,19 @@ struct MotionRootTests {
         box.isOn = false
         #expect(!sameImage(hosted.capture(), atStart), "turned off again: the change animates")
 
-        // Back on: the next change lands at once, wherever the last animation had got to.
+        // Back on: the next change lands at once, wherever the last animation had got to. Since macOS 27.2 a change
+        // made with animations turned off no longer ends an animation still running on the same value: SwiftUI keeps
+        // adding what that animation had left to go, so the bar is drawn past the right edge until it would have
+        // ended. In the app that is the first change after Reduce animations comes on mid-animation, for at most
+        // the rest of that animation. Known until the root can end a running animation, or macOS ends it again.
         theme.motionMode = .reduced
         box.isOn = true
-        #expect(sameImage(hosted.capture(), settledBar()))
+        withKnownIssue("macOS 27.2 keeps a running animation going under a change made without animation") {
+            #expect(sameImage(hosted.capture(), settledBar()))
+        } when: {
+            ProcessInfo.processInfo.isOperatingSystemAtLeast(
+                OperatingSystemVersion(majorVersion: 27, minorVersion: 2, patchVersion: 0))
+        }
     }
 
     @Test func animateMakesItsChangesAtOnceWhileReduced() {
