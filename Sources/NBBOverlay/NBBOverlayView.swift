@@ -203,9 +203,7 @@ struct NBBTriangulationBlock: View {
                         GridRow {
                             Text(verbatim: "\(Int(eyeThrow.xInOverworld)), \(Int(eyeThrow.zInOverworld))").font(nbbNumber())
                             NBBThrowAngle(eyeThrow: eyeThrow, settings: settings)
-                            if let error = NBBThrowError.text(eyeThrow) {
-                                Text(verbatim: error).font(nbbNumber()).foregroundStyle(STColor.inkSecondary)
-                            }
+                            Text(verbatim: NBBThrowError.text(eyeThrow)).font(nbbNumber()).foregroundStyle(STColor.inkSecondary)
                         }
                         .foregroundStyle(STColor.ink)
                     }
@@ -249,20 +247,19 @@ private struct NBBPredictionRowView: View {
     }
 }
 
-/// A small tag beside the Predictions heading: Overworld, Nether, or (from a window, which doesn't say) Location, in the
-/// heading's own letters, tinted faintly green for the Overworld and red for the Nether.
+/// A small tag beside the Predictions heading: Overworld or Nether, in the heading's own letters, tinted faintly green
+/// for the Overworld and red for the Nether.
 struct NBBColumnMark: View {
     let column: NBBCoordinateColumn
 
-    static func colorHex(_ column: NBBCoordinateColumn) -> String? {
+    static func colorHex(_ column: NBBCoordinateColumn) -> String {
         switch column {
         case .overworld: "#6FCB7A"
         case .nether: "#E8695C"
-        case .windowLocation: nil
         }
     }
 
-    private var color: Color { Self.colorHex(column).map { STColorWellHex.color(from: $0) } ?? STColor.inkSecondary }
+    private var color: Color { STColorWellHex.color(from: Self.colorHex(column)) }
 
     var body: some View {
         Text(column.title.uppercased())

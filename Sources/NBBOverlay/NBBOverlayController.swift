@@ -20,22 +20,9 @@ public final class NBBOverlayController: ToolController {
 
     @ObservationIgnored private let services: ToolServices
     @ObservationIgnored private let connection: NBBConnection
-    /// The running Ninjabrain Bots, watched while the tool is on: which one the overlay reads, and the page's list.
+    /// The running Ninjabrain Bots, watched while the tool is on, for the page's list. The overlay reads whichever one
+    /// holds the API.
     public let copies: NBBCopiesMonitor
-    /// What the followed copy's window shows, while it's read from its window (it doesn't hold the API).
-    public private(set) var windowSnapshot: NBBWindowSnapshot?
-    /// Whether a read of a followed copy's window came back since window reading started. Until then the overlay goes
-    /// on showing what it showed (the API's result, or the copy it followed before), so a switch doesn't blink.
-    private(set) var hasReadWindow = false
-    @ObservationIgnored private let windowReader: any NBBWindowReading
-    @ObservationIgnored private var windowPoll: Task<Void, Never>?
-    @ObservationIgnored private var windowPollPID: Int32?
-    /// Counts window polls, so a read that ends after its poll stopped or moved to another copy is dropped.
-    @ObservationIgnored private var windowPollGeneration = 0
-    /// How often a copy's window is looked at: ten times a second, off the main actor. Most looks ask only the texts
-    /// that change with Ninjabrain Bot's result and find nothing new (`AXNBBWindowReader`); twice a second it was,
-    /// a change waited 250 ms on average and up to half a second.
-    @ObservationIgnored let windowPollInterval: Duration
     @ObservationIgnored let panel = OverlayPanel(role: .topmost)
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
     /// For Reduce animations: while motion is reduced, the overlay shows and hides at once.
@@ -51,7 +38,7 @@ public final class NBBOverlayController: ToolController {
     @ObservationIgnored private var currentDisplay: DisplayInfo?
     /// How many times the overlay's content was built into the panel. For tests.
     @ObservationIgnored private(set) var drawCount = 0
-    /// How many times what the overlay watches (Minecraft's window, the copies) changed and the watch handled it. For tests.
+    /// How many times Minecraft's window changed and the watch handled it. For tests.
     @ObservationIgnored private(set) var watchRounds = 0
     /// Whether the watch is armed: at most one, however often the tool is switched on (`watchForUpdates()`).
     @ObservationIgnored private var isWatchingForUpdates = false
@@ -70,14 +57,9 @@ public final class NBBOverlayController: ToolController {
         var settings: NBBOverlaySettings
     }
 
-    public init(
-        services: ToolServices, connection: NBBConnection = NBBConnection(), copies: NBBCopiesMonitor? = nil, theme: STTheme? = nil,
-        windowReader: (any NBBWindowReading)? = nil, windowPollInterval: Duration = .milliseconds(100)
-    ) {
+    public init(services: ToolServices, connection: NBBConnection = NBBConnection(), copies: NBBCopiesMonitor? = nil, theme: STTheme? = nil) {
         self.services = services
         self.theme = theme
-        self.windowReader = windowReader ?? AXNBBWindowReader()
-        self.windowPollInterval = windowPollInterval
         self.connection = connection
         self.copies = copies ?? NBBCopiesMonitor()
         settings = services.settings.load(NBBOverlaySettings.self)
@@ -89,20 +71,15 @@ public final class NBBOverlayController: ToolController {
         didSet { if sample != oldValue { refreshIfEnabled() } }
     }
 
-    /// Ninjabrain Bot's latest stronghold result: from the API, or from the followed copy's window.
-    public var stronghold: NBBEvents.Stronghold? { readsWindow ? windowSnapshot?.stronghold : connection.stronghold }
+    /// Ninjabrain Bot's latest stronghold result, from its API.
+    public var stronghold: NBBEvents.Stronghold? { connection.stronghold }
 
-    /// Whether the overlay follows a copy it reads from its window (once the first read came back).
-    public var readsWindow: Bool { copies.readsWindow && hasReadWindow }
-
-    // The window gives predictions, eye throws and notes only; the boat and the other views come over the API.
-    private var currentBlind: NBBEvents.Blind? { readsWindow ? nil : connection.blind }
-    private var currentDivine: NBBEvents.Divine? { readsWindow ? nil : connection.divine }
-    private var currentBoat: NBBEvents.Boat? { readsWindow ? nil : connection.boat }
-    private var currentAllAdvancements: NBBEvents.AllAdvancements? { readsWindow ? nil : connection.allAdvancements }
+    private var currentBlind: NBBEvents.Blind? { connection.blind }
+    private var currentDivine: NBBEvents.Divine? { connection.divine }
+    private var currentBoat: NBBEvents.Boat? { connection.boat }
+    private var currentAllAdvancements: NBBEvents.AllAdvancements? { connection.allAdvancements }
     private var currentMessages: [(severity: NBBEvents.MessageSeverity, text: String)] {
-        if readsWindow { return (windowSnapshot?.messages ?? []).map { (severity: .info, text: $0) } }
-        return NBBOverlayLayout.plainTextMessages(from: connection.informationMessages?.informationMessages ?? [])
+        NBBOverlayLayout.plainTextMessages(from: connection.informationMessages?.informationMessages ?? [])
     }
 
     /// The line under a sample result.
@@ -110,8 +87,8 @@ public final class NBBOverlayController: ToolController {
 
     /// Ninjabrain Bot's reported version, for the page's requirement strip.
     public var nbbVersion: String? { connection.version }
-    /// Whether sTools can read the copy it follows: its window, or the API's stronghold subscription.
-    public var isReachable: Bool { readsWindow ? windowSnapshot != nil : connection.isReachable }
+    /// Whether the API's stronghold subscription is connected.
+    public var isReachable: Bool { connection.isReachable }
 
     /// What the overlay shows for Ninjabrain Bot's live result, for the page's preview. Never the intro's sample,
     /// which is shown only in the intro's trial.
@@ -141,14 +118,12 @@ public final class NBBOverlayController: ToolController {
             connection.onChange = { [weak self] in self?.refreshIfEnabled() }
             connection.start()
             copies.start()
-            syncWindowReading()
             observeChanges()
             refreshIfEnabled()
         } else {
             connection.onChange = nil
             connection.stop()
             copies.stop()
-            syncWindowReading()
             for observer in observers { NotificationCenter.default.removeObserver(observer) }
             observers.removeAll()
             fadeGeneration += 1
@@ -220,10 +195,10 @@ public final class NBBOverlayController: ToolController {
         if !isWatchingForUpdates { watchForUpdates() }
     }
 
-    /// `services.minecraft` and `copies` are `@Observable`; this re-arms itself after every change so a Minecraft
-    /// display change or another copy redraws the panel. Ninjabrain Bot's results don't come this way: an observation's
-    /// change comes before the value is set, so acting on it takes one more main-actor hop. A stream's value
-    /// (`connection.onChange`) and a window read (`showWindow`) redraw the panel directly instead.
+    /// `services.minecraft` is `@Observable`; this re-arms itself after every change so a Minecraft display change
+    /// redraws the panel. Ninjabrain Bot's results don't come this way: an observation's change comes before the value
+    /// is set, so acting on it takes one more main-actor hop. A stream's value (`connection.onChange`) redraws the panel
+    /// directly instead.
     ///
     /// There is one watch at a time: switching the tool on while the last one is still armed keeps that one, and a watch
     /// whose change comes after the tool was switched off ends there instead of arming again (Crosshair's does the same).
@@ -231,56 +206,16 @@ public final class NBBOverlayController: ToolController {
         isWatchingForUpdates = true
         withObservationTracking {
             _ = services.minecraft.active
-            _ = copies.copies
-            _ = copies.choice
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 isWatchingForUpdates = false
                 guard isEnabled else { return }
                 watchRounds += 1
-                syncWindowReading()
                 refreshIfEnabled()
                 watchForUpdates()
             }
         }
-    }
-
-    /// Looks at the followed copy's window ten times a second while the tool is on and that copy doesn't hold the API;
-    /// stops otherwise. The reads run off the main actor, and a snapshot reaches it only when it differs from the last one.
-    private func syncWindowReading() {
-        let pid = isEnabled && copies.readsWindow ? copies.readCopy?.pid : nil
-        guard pid != windowPollPID else { return }
-        windowPoll?.cancel()
-        windowPoll = nil
-        windowPollPID = pid
-        windowPollGeneration += 1
-        guard let pid else {
-            if windowSnapshot != nil { windowSnapshot = nil }
-            if hasReadWindow { hasReadWindow = false }
-            return
-        }
-        let generation = windowPollGeneration
-        let reader = windowReader, interval = windowPollInterval
-        windowPoll = Task.detached(priority: .utility) { [weak self] in
-            var last: NBBWindowSnapshot??
-            while !Task.isCancelled, self != nil {
-                let snapshot = await reader.read(pid: pid)
-                if last != .some(snapshot) {
-                    last = .some(snapshot)
-                    await self?.showWindow(snapshot, generation: generation)
-                }
-                try? await Task.sleep(for: interval)
-            }
-        }
-    }
-
-    private func showWindow(_ snapshot: NBBWindowSnapshot?, generation: Int) {
-        guard generation == windowPollGeneration else { return }
-        guard snapshot != windowSnapshot || !hasReadWindow else { return }
-        if snapshot != windowSnapshot { windowSnapshot = snapshot }
-        if !hasReadWindow { hasReadWindow = true }
-        refreshIfEnabled()
     }
 
     private func refreshIfEnabled() {

@@ -67,14 +67,12 @@ enum HomeLamps {
         return HomeLamp(state: .lit, sentence: sentence)
     }
 
-    /// Lit while Ninjabrain Bot is linked: the running NBB Overlay reads its API or its window, or, while the overlay is
-    /// off, its API answered Home's last look (`answers`, nil before the first).
-    static func ninjabrainBot(overlayIsOn: Bool, reachable: Bool, readsWindow: Bool, answers: Bool?) -> HomeLamp {
+    /// Lit while Ninjabrain Bot is linked: the running NBB Overlay reads its API, or, while the overlay is off, its API
+    /// answered Home's last look (`answers`, nil before the first).
+    static func ninjabrainBot(overlayIsOn: Bool, reachable: Bool, answers: Bool?) -> HomeLamp {
         if overlayIsOn {
             guard reachable else { return HomeLamp(state: .dim, sentence: PrologueCopy.ninjabrainSilent) }
-            return HomeLamp(state: .lit, sentence: readsWindow
-                ? "Ninjabrain Bot is linked through its window."
-                : "Ninjabrain Bot is linked through its API.")
+            return HomeLamp(state: .lit, sentence: "Ninjabrain Bot is linked through its API.")
         }
         switch answers {
         case true?: return HomeLamp(state: .lit, sentence: PrologueCopy.ninjabrainAnswers)

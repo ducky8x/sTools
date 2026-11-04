@@ -25,33 +25,6 @@ public enum NBBEvents {
         public var chunkZ: Int
         public var certainty: Double
         public var overworldDistance: Double
-        /// The travel angle and the turn to it, as a Ninjabrain Bot window showed them (`NBBWindowReader`). The API sends
-        /// neither; over the API they're worked out from `playerPosition` the way Ninjabrain Bot does.
-        var shownAngle: Double? = nil
-        var shownAngleChange: Double? = nil
-        /// The window's own Location and Nether columns and its distance (which Ninjabrain Bot already gives in the
-        /// player's dimension), as a Ninjabrain Bot window showed them. The API sends none of them; over the API they're
-        /// worked out from the chunk and `playerPosition` the way Ninjabrain Bot does (`NBBStrongholdCoordinates`).
-        var shownLocation: NBBBlock? = nil
-        var shownNether: NBBBlock? = nil
-        var shownDistance: Int? = nil
-
-        init(
-            chunkX: Int, chunkZ: Int, certainty: Double, overworldDistance: Double, shownAngle: Double? = nil, shownAngleChange: Double? = nil,
-            shownLocation: NBBBlock? = nil, shownNether: NBBBlock? = nil, shownDistance: Int? = nil
-        ) {
-            self.chunkX = chunkX
-            self.chunkZ = chunkZ
-            self.certainty = certainty
-            self.overworldDistance = overworldDistance
-            self.shownAngle = shownAngle
-            self.shownAngleChange = shownAngleChange
-            self.shownLocation = shownLocation
-            self.shownNether = shownNether
-            self.shownDistance = shownDistance
-        }
-
-        private enum CodingKeys: String, CodingKey { case chunkX, chunkZ, certainty, overworldDistance }
     }
 
     public struct EyeThrow: Codable, Equatable, Sendable {
@@ -65,17 +38,6 @@ public enum NBBEvents {
         public var error: Double
         /// Not an enumerated set in the wiki; kept as the server's own string rather than guessing cases.
         public var type: String
-        /// The angle adjustment as a Ninjabrain Bot window wrote it beside the angle ("+6", "-0.01"), kept as it is
-        /// (`NBBWindowReader`). The API sends the numbers instead (`correction`, `correctionIncrements`).
-        var shownCorrection: String? = nil
-        /// Whether the throw's error is known: a Ninjabrain Bot window hides it unless its Show angle errors is on.
-        var showsError = true
-        /// The error as a Ninjabrain Bot window wrote it ("-0.002"), kept as it is (`NBBWindowReader`).
-        var shownError: String? = nil
-
-        private enum CodingKeys: String, CodingKey {
-            case xInOverworld, zInOverworld, angle, angleWithoutCorrection, correction, correctionIncrements, error, type
-        }
     }
 
     public enum ResultType: String, Codable, Sendable {

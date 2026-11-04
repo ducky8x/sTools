@@ -17,11 +17,7 @@ public struct NBBOverlaySettingsView: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             if controller.isEnabled, !controller.isReachable {
-                STRequirementStrip(
-                    kind: .warning,
-                    message: controller.readsWindow
-                        ? "sTools can\u{2019}t read this Ninjabrain Bot\u{2019}s window. It needs Accessibility, and the window must be open."
-                        : "Ninjabrain Bot isn\u{2019}t answering yet. Open it and turn on its API.")
+                STRequirementStrip(kind: .warning, message: "Ninjabrain Bot isn\u{2019}t answering yet. Open it and turn on its API.")
             }
             if controller.copies.showsCopies {
                 NBBCopiesList(monitor: controller.copies)
@@ -257,8 +253,7 @@ private struct NBBPagePreview: View {
     }
 }
 
-/// The open Ninjabrain Bots, with the one the overlay reads marked. Pick another with Read This One; every copy stays
-/// open. A copy holding the API is read over it, any other from its window (predictions, eye throws and notes; no boat).
+/// The open Ninjabrain Bots, with the one holding the API marked: the overlay reads that one.
 private struct NBBCopiesList: View {
     let monitor: NBBCopiesMonitor
     @Environment(\.stTheme) private var theme
@@ -280,9 +275,6 @@ private struct NBBCopiesList: View {
                     Spacer(minLength: 8)
                     if monitor.isRead(copy) {
                         Text("Reading").stStyle(.caption).foregroundStyle(STColor.gold)
-                    } else {
-                        Button("Read This One") { monitor.choice = .copy(copy.pid) }
-                            .buttonStyle(STButtonStyle(.secondary))
                     }
                     if monitor.copies.count > 1 {
                         Button("Quit") { monitor.quit(copy) }
@@ -293,20 +285,10 @@ private struct NBBCopiesList: View {
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel("Ninjabrain Bot \(index + 1)\(monitor.isRead(copy) ? ", read by the overlay" : "")")
             }
-            Text(caption)
+            Text(NBBCopiesMonitor.caption)
                 .stStyle(.caption).foregroundStyle(theme.inkSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 4)
-            if monitor.choice != .automatic {
-                Button("Follow the Newest Copy") { monitor.choice = .automatic }
-                    .buttonStyle(STButtonStyle(.quiet))
-                    .padding(.top, 4)
-            }
         }
-    }
-
-    private var caption: String {
-        let api = "Only one Ninjabrain Bot can use the API at once."
-        return monitor.choice == .automatic ? "The overlay follows the copy opened last. " + api : api
     }
 }

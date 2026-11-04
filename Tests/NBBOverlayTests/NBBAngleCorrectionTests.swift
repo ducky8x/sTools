@@ -2,11 +2,11 @@ import Testing
 @testable import NBBOverlay
 
 private func eyeThrow(
-    angle: Double = -80.63, without: Double = -80.64, correction: Double = 0.01, increments: Int? = 1, shown: String? = nil
+    angle: Double = -80.63, without: Double = -80.64, correction: Double = 0.01, increments: Int? = 1
 ) -> NBBEvents.EyeThrow {
     NBBEvents.EyeThrow(
         xInOverworld: -1374.7, zInOverworld: 81.61, angle: angle, angleWithoutCorrection: without, correction: correction,
-        correctionIncrements: increments, error: 0.0022, type: "NORMAL", shownCorrection: shown)
+        correctionIncrements: increments, error: 0.0022, type: "NORMAL")
 }
 
 /// The angle adjustment beside a throw's angle, as Ninjabrain Bot 1.5.2 writes it (`ThrowPanel.updateCorrection`).
@@ -43,12 +43,6 @@ struct NBBAngleCorrectionTests {
     /// Before 1.5.2 the API sends no increments; the angle change is shown instead.
     @Test func withoutIncrementsTheAngleChangeIsShown() {
         #expect(NBBAngleCorrection.text(eyeThrow(correction: 0.01, increments: nil), display: .increments) == "+0.01")
-    }
-
-    /// A window's own text is shown as it is, whichever choice is set here: the window follows Ninjabrain Bot's own.
-    @Test func aWindowsOwnCorrectionTextIsKept() {
-        #expect(NBBAngleCorrection.text(eyeThrow(shown: "+6"), display: .angleChange) == "+6")
-        #expect(NBBAngleCorrection.text(eyeThrow(shown: "-0.01"), display: .increments) == "-0.01")
     }
 
     /// ducky's throw (Ninjabrain Bot 1.5.2 showed "91.83+2"; the API sent correction 0.004405, correctionIncrements 2):

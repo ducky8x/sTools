@@ -74,8 +74,7 @@ struct NBBCopiesTests {
     @Test func oneSharingCopyIsReadOverTheAPIAndNotListed() async {
         let (monitor, _) = await monitor([copy(1, at: 10, sharing: true)])
         defer { monitor.stop() }
-        #expect(monitor.readCopy?.pid == 1)
-        #expect(!monitor.readsWindow)
+        #expect(monitor.holder?.pid == 1)
         #expect(!monitor.showsCopies)
     }
 
@@ -83,53 +82,53 @@ struct NBBCopiesTests {
         let (monitor, _) = await monitor([])
         defer { monitor.stop() }
         #expect(monitor.publishCount == 1)
-        #expect(monitor.readCopy == nil && !monitor.readsWindow && !monitor.showsCopies)
+        #expect(monitor.holder == nil && !monitor.showsCopies)
     }
 
-    /// ducky's case: an old copy holds the port, and the newer one opened with the game is the one in use.
-    @Test func automaticallyTheNewestCopyIsReadFromItsWindow() async {
-        let (monitor, _) = await monitor([copy(2, at: 20, sharing: false), copy(1, at: 10, sharing: true)])
+    /// ducky's case: an old copy holds the port, and the newer one opened with the game has no API. The overlay reads
+    /// the old one; the page lists both.
+    @Test func theCopyHoldingTheAPIIsReadAndEveryCopyIsListed() async {
+        let (monitor, control) = await monitor([copy(2, at: 20, sharing: false), copy(1, at: 10, sharing: true)])
         defer { monitor.stop() }
-        #expect(monitor.readCopy?.pid == 2)
-        #expect(monitor.readsWindow)
+        #expect(monitor.copies.map(\.pid) == [1, 2], "oldest first")
+        #expect(monitor.holder?.pid == 1)
+        #expect(monitor.isRead(copy(1, at: 10, sharing: true)) && !monitor.isRead(copy(2, at: 20, sharing: false)))
         #expect(monitor.showsCopies)
+        #expect(control.quit.isEmpty, "nothing is quit unless asked")
     }
 
-    @Test func pickingACopyReadsItAndBothStayOpen() async {
+    @Test func quittingACopyAsksItToQuitAndLooksAgain() async {
         let (monitor, control) = await monitor([copy(1, at: 10, sharing: true), copy(2, at: 20, sharing: false)])
         defer { monitor.stop() }
-        monitor.choice = .copy(1)
-        #expect(monitor.readCopy?.pid == 1)
-        #expect(!monitor.readsWindow, "the copy holding the port is read over the API")
-        #expect(monitor.copies.count == 2 && control.quit.isEmpty)
-    }
-
-    @Test func aPickedCopyThatQuitsFallsBackToAutomatic() async {
-        let (monitor, control) = await monitor([copy(1, at: 10, sharing: true), copy(2, at: 20, sharing: false)])
-        defer { monitor.stop() }
-        monitor.choice = .copy(1)
         monitor.quit(copy(1, at: 10, sharing: true))
         #expect(control.quit == [1])
-        await waitUntil { monitor.choice == .automatic }
-        #expect(monitor.choice == .automatic)
-        #expect(monitor.readCopy?.pid == 2 && monitor.readsWindow)
+        await waitUntil { monitor.copies.map(\.pid) == [2] }
+        #expect(monitor.copies.map(\.pid) == [2])
+        #expect(monitor.holder == nil && monitor.showsCopies, "the copy left has no API, so it stays listed")
     }
 
-    @Test func aLoneCopyWithoutTheAPIIsReadFromItsWindowAndListed() async {
+    @Test func aLoneCopyWithoutTheAPIIsListed() async {
         let (monitor, _) = await monitor([copy(2, at: 20, sharing: false)])
         defer { monitor.stop() }
-        #expect(monitor.readsWindow && monitor.showsCopies)
+        #expect(monitor.holder == nil && monitor.showsCopies)
     }
 
-    @Test func eachCopySaysWhenItOpenedAndHowItsRead() {
+    @Test func eachCopySaysWhenItOpenedAndWhetherItHasTheAPI() {
         let calendar = Calendar(identifier: .gregorian)
         let now = Date(timeIntervalSince1970: 1_800_036_000)
         let sharing = NBBCopy(pid: 1, startedAt: now.addingTimeInterval(-60), arguments: [], holdsAPI: true)
-        let window = NBBCopy(pid: 2, startedAt: now.addingTimeInterval(-86_400 * 3), arguments: [], holdsAPI: false)
+        let other = NBBCopy(pid: 2, startedAt: now.addingTimeInterval(-86_400 * 3), arguments: [], holdsAPI: false)
+        let unknown = NBBCopy(pid: 3, startedAt: nil, arguments: [], holdsAPI: false)
         #expect(NBBCopiesMonitor.description(of: sharing, now: now, calendar: calendar).hasSuffix(" \u{00B7} shares its data"))
         #expect(NBBCopiesMonitor.description(of: sharing, now: now, calendar: calendar).hasPrefix("Opened at "))
-        #expect(NBBCopiesMonitor.description(of: window, now: now, calendar: calendar).hasSuffix(" \u{00B7} read from its window"))
-        #expect(!NBBCopiesMonitor.description(of: window, now: now, calendar: calendar).hasPrefix("Opened at "))
+        #expect(NBBCopiesMonitor.description(of: other, now: now, calendar: calendar).hasSuffix(" \u{00B7} without the API"))
+        #expect(!NBBCopiesMonitor.description(of: other, now: now, calendar: calendar).hasPrefix("Opened at "))
+        #expect(NBBCopiesMonitor.description(of: other, now: now, calendar: calendar).hasPrefix("Opened "))
+        #expect(NBBCopiesMonitor.description(of: unknown, now: now, calendar: calendar) == "Open \u{00B7} without the API")
+    }
+
+    @Test func theListSaysWhichCopyTheOverlayReads() {
+        #expect(NBBCopiesMonitor.caption == "Only one Ninjabrain Bot can use the API at once, and the overlay reads the one that has it.")
     }
 
     @Test func stoppingForgetsTheCopies() async {

@@ -27,7 +27,7 @@ private struct NeverPromptingProber: PermissionProbing {
     func request(_ permission: Permission) async -> PermissionStatus { .granted }
 }
 
-/// A controller that never scans for the person's real Ninjabrain Bots or reads their windows.
+/// A controller that never scans for the person's real Ninjabrain Bots.
 @MainActor
 private func inertNBBController(
     services: ToolServices, connection: NBBConnection = NBBConnection(source: FakeEventSource([])), theme: STTheme? = nil
@@ -208,58 +208,6 @@ struct NBBOverlayControllerTests {
             #expect(!controller.isOverlayVisible)
             controller.setEnabled(false)
         }
-    }
-
-    /// ducky's case: an old copy holds the API with nothing in it, and the newer copy in use has a result. The overlay
-    /// follows the newer copy, read from its window; picking the old one switches back to the API.
-    @MainActor @Test func theOverlayFollowsTheChosenCopyReadFromItsWindow() async {
-        /// Records each read and whether it ran on the main thread.
-        final class FakeWindow: NBBWindowReading, @unchecked Sendable {
-            private let lock = NSLock()
-            private var recorded: [(pid: Int32, onMainThread: Bool)] = []
-            var reads: [Int32] { lock.withLock { recorded.map(\.pid) } }
-            var readsOnMainThread: Int { lock.withLock { recorded.filter(\.onMainThread).count } }
-            func read(pid: Int32) async -> NBBWindowSnapshot? {
-                lock.withLock { recorded.append((pid, pthread_main_np() != 0)) }
-                return NBBWindowSnapshot(stronghold: NBBOverlayControllerTests.result, messages: ["A note from the window."])
-            }
-        }
-        let scanner = FakeCopiesScanner([
-            NBBCopy(pid: 873, startedAt: Date(timeIntervalSince1970: 10), arguments: [], holdsAPI: true),
-            NBBCopy(pid: 92616, startedAt: Date(timeIntervalSince1970: 20), arguments: [], holdsAPI: false),
-        ])
-        let monitor = NBBCopiesMonitor(scanner: scanner, control: FakeCopiesControl(scanner: scanner))
-        let window = FakeWindow()
-        let controller = NBBOverlayController(
-            services: makeServices(tempDirectory: tempDirectory()), connection: NBBConnection(source: FakeEventSource([])),
-            copies: monitor, windowReader: window, windowPollInterval: .milliseconds(20))
-        controller.setEnabled(true)
-        defer { controller.setEnabled(false) }
-        await waitUntil { controller.readsWindow && controller.windowSnapshot != nil }
-        #expect(controller.readsWindow)
-        #expect(window.reads.first == 92616)
-        #expect(controller.stronghold == Self.result)
-        #expect(controller.isReachable)
-        #expect(controller.previewMessages.map(\.text) == ["A note from the window."])
-        #expect(controller.isOverlayVisible)
-        await waitUntil { window.reads.count >= 3 }
-        #expect(window.reads.count >= 3 && window.readsOnMainThread == 0, "the window is read off the main actor")
-
-        monitor.choice = .copy(873)
-        await waitUntil { controller.windowSnapshot == nil }
-        #expect(!controller.readsWindow)
-        #expect(controller.stronghold == nil, "the API copy has nothing yet")
-        let readsBefore = window.reads.count
-        try? await Task.sleep(for: .milliseconds(100))
-        #expect(window.reads.count == readsBefore, "the window isn't read while the API copy is followed")
-    }
-
-    /// A copy read from its window is looked at ten times a second, so a change shows within a tenth of a second (it
-    /// was half a second); most looks ask only a few texts (`AXNBBWindowReader`).
-    @MainActor @Test func aWindowIsLookedAtTenTimesASecond() {
-        let controller = inertNBBController(services: makeServices(tempDirectory: tempDirectory()))
-        #expect(controller.windowPollInterval == .milliseconds(100))
-        #expect(AXNBBWindowReader.fullReadInterval == .seconds(1))
     }
 
     /// The copies are looked for only while the tool is on.

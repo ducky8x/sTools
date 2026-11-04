@@ -7,7 +7,7 @@ import Observation
 /// and whether it holds the API's port.
 ///
 /// Ninjabrain Bot always opens its API on port 52533 on every address. A second copy started while another holds the
-/// port gets no API at all, and it doesn't try again when the first one quits. Such a copy is read from its window.
+/// port gets no API at all, and it doesn't try again when the first one quits.
 public struct NBBCopy: Equatable, Sendable, Identifiable {
     public var id: Int32 { pid }
     public var pid: Int32
@@ -26,21 +26,12 @@ public struct NBBCopy: Equatable, Sendable, Identifiable {
     }
 }
 
-/// Which Ninjabrain Bot the overlay follows.
-public enum NBBCopyChoice: Equatable, Sendable {
-    /// The newest copy: most likely the window the person just opened, for instance with Minecraft.
-    case automatic
-    /// The copy with this process number, for as long as it runs; then back to automatic.
-    case copy(Int32)
-}
-
 /// Lists the running Ninjabrain Bots. The live one reads the process table; tests use a fake.
 public protocol NBBCopiesScanning: Sendable {
     func scan() -> [NBBCopy]
 }
 
-/// Finds no copy, so the API at localhost is read and no window ever is: for tests and previews, which must never
-/// look at the person's real Ninjabrain Bots.
+/// Finds no copy: for tests and previews, which must never look at the person's real Ninjabrain Bots.
 public struct NoNBBCopiesScanner: NBBCopiesScanning {
     public init() {}
     public func scan() -> [NBBCopy] { [] }
@@ -52,9 +43,8 @@ public protocol NBBCopiesControlling: AnyObject {
     func quit(_ copy: NBBCopy)
 }
 
-/// Watches Ninjabrain Bot's copies while the NBB Overlay is on and says which one the overlay reads. A copy holding the
-/// API is read over it; any other copy is read from its window (`NBBWindowReader`), so the person can pick the copy they
-/// use while every copy stays open.
+/// Watches Ninjabrain Bot's copies while the NBB Overlay is on, for the page's list. The overlay reads the API at
+/// localhost, so it reads the copy holding the port; the list shows which one that is.
 ///
 /// The process table is scanned on a background task, never on the main actor: every 2 s while a copy is open, every
 /// 5 s while none is (the first copy to open takes the API, which the overlay reads without the scan's help, so only a
@@ -64,7 +54,6 @@ public protocol NBBCopiesControlling: AnyObject {
 @Observable
 public final class NBBCopiesMonitor {
     public private(set) var copies: [NBBCopy] = []
-    public var choice: NBBCopyChoice = .automatic
 
     @ObservationIgnored private let scanner: any NBBCopiesScanning
     @ObservationIgnored private let control: any NBBCopiesControlling
@@ -90,20 +79,14 @@ public final class NBBCopiesMonitor {
 
     public var isWatching: Bool { watch != nil }
 
-    /// The copy the overlay reads: the chosen one while it runs, else the newest. Nil when no copy was found (the API
-    /// at localhost is read then, in case Ninjabrain Bot runs in a way the scan doesn't recognize).
-    public var readCopy: NBBCopy? {
-        if case .copy(let pid) = choice, let chosen = copies.first(where: { $0.pid == pid }) { return chosen }
-        return copies.last
-    }
+    /// The copy holding the API, which the overlay reads. Nil when none does, or no copy was found (the API at
+    /// localhost is still read then, in case Ninjabrain Bot runs in a way the scan doesn't recognize).
+    public var holder: NBBCopy? { copies.first(where: \.holdsAPI) }
 
-    /// Whether the overlay reads a copy's window instead of the API: the copy it follows doesn't hold the port.
-    public var readsWindow: Bool { readCopy.map { !$0.holdsAPI } ?? false }
+    /// Whether the page lists the copies: more than one is open, or the one open has no API.
+    public var showsCopies: Bool { copies.count > 1 || copies.contains { !$0.holdsAPI } }
 
-    /// Whether the page lists the copies: more than one is open, or the one open can only be read from its window.
-    public var showsCopies: Bool { copies.count > 1 || readsWindow }
-
-    public func isRead(_ copy: NBBCopy) -> Bool { readCopy?.pid == copy.pid }
+    public func isRead(_ copy: NBBCopy) -> Bool { copy.holdsAPI }
 
     /// Starts watching; the first scan runs at once, in the background.
     public func start() {
@@ -159,10 +142,12 @@ public final class NBBCopiesMonitor {
         guard generation == self.generation else { return }
         publishCount += 1
         if found != copies { copies = found }
-        if case .copy(let pid) = choice, !found.contains(where: { $0.pid == pid }) { choice = .automatic }
     }
 
-    /// How the page names a copy: when it was opened and how sTools reads it.
+    /// The line under the page's list of copies.
+    public static let caption = "Only one Ninjabrain Bot can use the API at once, and the overlay reads the one that has it."
+
+    /// How the page names a copy: when it was opened and whether it has the API.
     public static func description(of copy: NBBCopy, now: Date = Date(), calendar: Calendar = .current) -> String {
         let opened: String
         if let started = copy.startedAt {
@@ -171,7 +156,7 @@ public final class NBBCopiesMonitor {
         } else {
             opened = "Open"
         }
-        return opened + (copy.holdsAPI ? " \u{00B7} shares its data" : " \u{00B7} read from its window")
+        return opened + (copy.holdsAPI ? " \u{00B7} shares its data" : " \u{00B7} without the API")
     }
 }
 

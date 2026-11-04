@@ -30,15 +30,11 @@ enum NBBCoordinateColumn: Equatable, Sendable {
     case overworld
     /// Ninjabrain Bot's Nether column and its distance in the Nether.
     case nether
-    /// A Ninjabrain Bot window's own Location and distance texts. The window doesn't say which dimension the last F3+C
-    /// was in, so the mark names the column instead of a dimension.
-    case windowLocation
 
     var title: String {
         switch self {
         case .overworld: "Overworld"
         case .nether: "Nether"
-        case .windowLocation: "Location"
         }
     }
 
@@ -46,7 +42,6 @@ enum NBBCoordinateColumn: Equatable, Sendable {
         switch self {
         case .overworld: "Overworld coordinates"
         case .nether: "Nether coordinates"
-        case .windowLocation: "Ninjabrain Bot\u{2019}s location"
         }
     }
 }
@@ -130,7 +125,7 @@ struct NBBBoatLook: Equatable, Sendable {
     var tintsPlate: Bool { tone != .gray }
 }
 
-/// One predictions-table row: Ninjabrain Bot's own values for one prediction (spec 5.1.3), from the API or its window.
+/// One predictions-table row: Ninjabrain Bot's own values for one prediction (spec 5.1.3).
 struct PredictionRow: Equatable, Sendable, Identifiable {
     var id: Int
     var chunkX: Int
@@ -214,11 +209,10 @@ enum NBBOverlayLayout {
         return look.tintsPlate ? look : nil
     }
 
-    /// Which columns the table shows: a window's own Location when the predictions come from a window; otherwise the
-    /// Nether column when the last F3+C was in the Nether (and the swap is on), else the Location column.
+    /// Which columns the table shows: the Nether column when the last F3+C was in the Nether (and the swap is on), else
+    /// the Location column.
     static func coordinateColumn(for stronghold: NBBEvents.Stronghold, netherCoordinatesInNether: Bool) -> NBBCoordinateColumn {
-        if stronghold.predictions.contains(where: { $0.shownLocation != nil }) { return .windowLocation }
-        return netherCoordinatesInNether && stronghold.playerPosition?.isInNether == true ? .nether : .overworld
+        netherCoordinatesInNether && stronghold.playerPosition?.isInNether == true ? .nether : .overworld
     }
 
     /// Up to `maxRows` predictions, dropping any whose certainty rounds to 0% (spec 5.1.3), in the
@@ -242,16 +236,11 @@ enum NBBOverlayLayout {
             case .nether:
                 coordinates = NBBStrongholdCoordinates.nether(chunkX: prediction.chunkX, chunkZ: prediction.chunkZ)
                 distance = NBBStrongholdCoordinates.distance(overworldDistance: prediction.overworldDistance, inNether: true)
-            case .windowLocation:
-                // Only the window's own texts; a row without them isn't shown rather than filled in by sTools.
-                guard let shownLocation = prediction.shownLocation, let shownDistance = prediction.shownDistance else { continue }
-                coordinates = shownLocation
-                distance = shownDistance
             }
             rows.append(PredictionRow(
                 id: rows.count, chunkX: prediction.chunkX, chunkZ: prediction.chunkZ,
                 certaintyPercent: percent, coordinates: coordinates, distance: distance,
-                angle: prediction.shownAngle ?? worked?.angle, angleChange: prediction.shownAngleChange ?? worked?.change))
+                angle: worked?.angle, angleChange: worked?.change))
         }
         return rows
     }

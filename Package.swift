@@ -26,8 +26,8 @@ let package = Package(
             linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]),
         // Measures a recording's CPU cost with fake sources (`swift run -c release RecordingBench`); never shipped.
         .executableTarget(name: "RecordingBench", dependencies: ["ScreenRecording", "STPlatform"], path: "Benchmarks/RecordingBench"),
-        // Measures what watching Ninjabrain Bot costs: the copies scan and a window read (`swift run -c release NBBBench`);
-        // reads only, never shipped.
+        // Measures what watching Ninjabrain Bot costs: the copies scan (`swift run -c release NBBBench`); reads only,
+        // never shipped.
         .executableTarget(name: "NBBBench", dependencies: ["NBBOverlay"], path: "Benchmarks/NBBBench"),
         // Measures what an animated Window Backdrop fill costs while it plays: CPU, GPU and memory, for videos and GIFs
         // it makes itself, in a window that never shows (`swift run -c release BackdropBench`); never shipped.
