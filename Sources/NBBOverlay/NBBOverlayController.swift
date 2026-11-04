@@ -90,6 +90,10 @@ public final class NBBOverlayController: ToolController {
     /// Whether the API's stronghold subscription is connected.
     public var isReachable: Bool { connection.isReachable }
 
+    /// Whether the page says Ninjabrain Bot isn't answering: the tool is on and nothing answers at localhost, and no
+    /// restart quit the copy that did on purpose.
+    public var saysNotAnswering: Bool { isEnabled && !isReachable && !copies.isRestarting }
+
     /// What the overlay shows for Ninjabrain Bot's live result, for the page's preview. Never the intro's sample,
     /// which is shown only in the intro's trial.
     var previewContent: NBBOverlayContent {

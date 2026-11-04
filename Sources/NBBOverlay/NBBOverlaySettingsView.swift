@@ -16,7 +16,7 @@ public struct NBBOverlaySettingsView: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            if controller.isEnabled, !controller.isReachable {
+            if controller.saysNotAnswering {
                 STRequirementStrip(kind: .warning, message: "Ninjabrain Bot isn\u{2019}t answering yet. Open it and turn on its API.")
             }
             if controller.copies.showsCopies {
