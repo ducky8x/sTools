@@ -18,7 +18,7 @@ struct BuildVersionTests {
     @Test func withoutAVersionItBuildsTheCurrentReleaseLine() async throws {
         let world = try await PublishFixture()
         let built = try await world.runRealBuildApp()
-        #expect(try version(in: built.output) == "0.2.0", "\(built.output)")
+        #expect(try version(in: built.output) == "0.3.0", "\(built.output)")
     }
 
     @Test func aVersionInTheEnvironmentWins() async throws {
