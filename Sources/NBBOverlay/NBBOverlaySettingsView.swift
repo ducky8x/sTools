@@ -287,7 +287,7 @@ private struct NBBCopiesList: View {
                     .keyboardShortcut(.defaultAction)
                 Button("Cancel", role: .cancel) {}
             },
-            message: { copy in Text(NBBCopiesMonitor.restartMessage(holder: monitor.holder.flatMap { $0.pid == copy.pid ? nil : $0 })) })
+            message: { _ in Text(NBBCopiesMonitor.restartMessage(holder: monitor.holder)) })
     }
 
     private func row(_ copy: NBBCopy, number: Int) -> some View {

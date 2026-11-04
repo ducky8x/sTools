@@ -2,6 +2,7 @@ import AppKit
 import Darwin
 import Foundation
 import Observation
+import STPlatform
 
 /// One running Ninjabrain Bot: a process whose command line names Ninjabrain (usually `java -jar Ninjabrain-Bot-….jar`),
 /// and whether it holds the API's port.
@@ -74,6 +75,7 @@ public final class NBBCopiesMonitor {
     @ObservationIgnored private let restarter: any NBBCopiesRestarting
     @ObservationIgnored private let clock: any Clock<Duration>
     @ObservationIgnored private let timing: NBBRestartTiming
+    @ObservationIgnored private let log = STLog.logger("NBBCopies")
     @ObservationIgnored private let interval: Duration
     @ObservationIgnored private let idleInterval: Duration
     @ObservationIgnored private var watch: Task<Void, Never>?
@@ -194,6 +196,8 @@ public final class NBBCopiesMonitor {
     }
 
     private func restartEnded(_ outcome: NBBRestartOutcome) {
+        // The outcome and process numbers only: never the launch, whose environment is the person's.
+        log.notice("Restart ended: \(String(describing: outcome), privacy: .public)")
         restarting = nil
         // While the tool is off nothing is listed, so nothing is said.
         if watch != nil, let text = outcome.note {
