@@ -69,7 +69,7 @@ enum NBBRestartOutcome: Equatable, Sendable {
         }
     }
 
-    /// What the page says about it; nothing when it worked.
+    /// What the page says about it; nothing when it worked. The settings path stays on one line.
     var note: String? {
         switch self {
         case .restarted: nil
@@ -78,7 +78,7 @@ enum NBBRestartOutcome: Equatable, Sendable {
         case .portTaken: "Something else is using Ninjabrain Bot\u{2019}s API port (52533), so this one wasn\u{2019}t restarted."
         case .copyStayed: "This Ninjabrain Bot didn\u{2019}t quit, so it wasn\u{2019}t restarted."
         case .didntOpen: "Ninjabrain Bot didn\u{2019}t open again. Open it yourself."
-        case .openedWithoutAPI: "Ninjabrain Bot opened again without its API. In its Settings \u{25B8} Advanced, turn on Enable API (starts HTTP server)."
+        case .openedWithoutAPI: "Ninjabrain Bot opened again without its API. In its Settings\u{00A0}\u{25B8}\u{00A0}Advanced, turn on Enable API (starts HTTP server)."
         }
     }
 }

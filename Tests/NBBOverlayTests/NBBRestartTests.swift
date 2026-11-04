@@ -324,7 +324,7 @@ struct NBBRestartTests {
         await rig.start()
         await rig.restart()
         #expect(rig.clock.now.offset >= .seconds(20))
-        #expect(rig.monitor.note == "Ninjabrain Bot opened again without its API. In its Settings \u{25B8} Advanced, turn on Enable API (starts HTTP server).")
+        #expect(rig.monitor.note == "Ninjabrain Bot opened again without its API. In its Settings\u{00A0}\u{25B8}\u{00A0}Advanced, turn on Enable API (starts HTTP server).")
         await waitUntil { rig.monitor.copies.map(\.pid) == [900] }
         #expect(rig.monitor.showsCopies, "the note keeps the list up, with the new copy in it")
         rig.restarter.newTakesAPIAfter = 0

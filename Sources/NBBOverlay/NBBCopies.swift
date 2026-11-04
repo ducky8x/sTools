@@ -240,14 +240,30 @@ public final class NBBCopiesMonitor {
 
     /// How the page names a copy: when it was opened and whether it has the API.
     public static func description(of copy: NBBCopy, now: Date = Date(), calendar: Calendar = .current) -> String {
-        let opened: String
-        if let started = copy.startedAt {
-            let time = started.formatted(date: .omitted, time: .shortened)
-            opened = calendar.isDate(started, inSameDayAs: now) ? "Opened at \(time)" : "Opened \(started.formatted(.dateTime.month(.abbreviated).day())) at \(time)"
-        } else {
-            opened = "Open"
-        }
+        let opened = opened(copy, now: now, calendar: calendar).map { "O" + $0.dropFirst() } ?? "Open"
         return opened + (copy.holdsAPI ? " \u{00B7} shares its data" : " \u{00B7} without the API")
+    }
+
+    /// When a copy was opened, as a phrase: "opened at 9:12" today, "opened Nov 3 at 9:12" before. Nil when macOS
+    /// didn't say.
+    static func opened(_ copy: NBBCopy, now: Date, calendar: Calendar) -> String? {
+        guard let started = copy.startedAt else { return nil }
+        let time = started.formatted(date: .omitted, time: .shortened)
+        return calendar.isDate(started, inSameDayAs: now) ? "opened at \(time)" : "opened \(started.formatted(.dateTime.month(.abbreviated).day())) at \(time)"
+    }
+
+    /// The question before Read This One… restarts a copy.
+    public static let restartQuestion = "Restart this Ninjabrain Bot?"
+
+    /// What the restart does, with `holder` the copy holding the API now, if one does.
+    public static func restartMessage(holder: NBBCopy?, now: Date = Date(), calendar: Calendar = .current) -> String {
+        let saved = "Save state between sessions is on in Ninjabrain Bot\u{2019}s settings."
+        guard let holder else {
+            return "sTools restarts this Ninjabrain Bot so it gets the API. Its throws come back if \(saved)"
+        }
+        let opened = opened(holder, now: now, calendar: calendar).map { ", \($0)" } ?? ""
+        return "sTools quits the other Ninjabrain Bot\(opened), then restarts this one so it gets the API. "
+            + "This one\u{2019}s throws come back if \(saved) The other one\u{2019}s aren\u{2019}t kept."
     }
 }
 
