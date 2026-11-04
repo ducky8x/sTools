@@ -37,8 +37,7 @@ extension AppModel {
                 displays: displays.displays, accessibilityGranted: accessibilityGranted)
         case .ninjabrainBot:
             let overlay = runningNBBOverlay
-            return HomeLamps.ninjabrainBot(overlayIsOn: overlay != nil, reachable: overlay?.isReachable ?? false,
-                                           readsWindow: overlay?.readsWindow ?? false, answers: ninjabrainAnswers)
+            return HomeLamps.ninjabrainBot(overlayIsOn: overlay != nil, reachable: overlay?.isReachable ?? false, answers: ninjabrainAnswers)
         case .karabiner:
             let profiles = keyRebinder?.profiles
             return HomeLamps.karabiner(keyRebinder?.requirement, profile: profiles?.state == .ready ? profiles?.current : nil)

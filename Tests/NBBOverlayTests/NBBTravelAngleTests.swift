@@ -60,6 +60,8 @@ struct NBBTravelAngleTests {
     /// The API's JSON has no angle fields; decoding still works and leaves them to be worked out.
     @Test func aPredictionFromTheAPIDecodesWithoutAngles() throws {
         let prediction = try JSONDecoder().decode(NBBEvents.Prediction.self, from: Data(#"{"chunkX":1,"chunkZ":2,"certainty":0.5,"overworldDistance":10}"#.utf8))
-        #expect(prediction.shownAngle == nil && prediction.chunkZ == 2)
+        #expect(prediction.chunkZ == 2)
+        let rows = NBBOverlayLayout.predictionRows(from: [prediction], maxRows: 5)
+        #expect(rows.first?.angle == nil, "no player position, so nothing to work the angle out from")
     }
 }

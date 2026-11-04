@@ -16,12 +16,8 @@ public struct NBBOverlaySettingsView: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            if controller.isEnabled, !controller.isReachable {
-                STRequirementStrip(
-                    kind: .warning,
-                    message: controller.readsWindow
-                        ? "sTools can\u{2019}t read this Ninjabrain Bot\u{2019}s window. It needs Accessibility, and the window must be open."
-                        : "Ninjabrain Bot isn\u{2019}t answering yet. Open it and turn on its API.")
+            if controller.saysNotAnswering {
+                STRequirementStrip(kind: .warning, message: "Ninjabrain Bot isn\u{2019}t answering yet. Open it and turn on its API.")
             }
             if controller.copies.showsCopies {
                 NBBCopiesList(monitor: controller.copies)
@@ -257,56 +253,88 @@ private struct NBBPagePreview: View {
     }
 }
 
-/// The open Ninjabrain Bots, with the one the overlay reads marked. Pick another with Read This One; every copy stays
-/// open. A copy holding the API is read over it, any other from its window (predictions, eye throws and notes; no boat).
+/// The open Ninjabrain Bots, with the one holding the API marked: the overlay reads that one. Read This One… restarts
+/// another copy so it takes the API, after asking; while it runs, that row says so and nothing else in the list can be
+/// pressed. A note under the rows says when a restart didn't work.
 private struct NBBCopiesList: View {
     let monitor: NBBCopiesMonitor
+    /// The copy whose restart is being asked about.
+    @State private var asking: NBBCopy?
     @Environment(\.stTheme) private var theme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(monitor.copies.count > 1 ? "Ninjabrain Bots open" : "Ninjabrain Bot")
+            Text(monitor.listed.count > 1 ? "Ninjabrain Bots open" : "Ninjabrain Bot")
                 .stStyle(.label).foregroundStyle(theme.inkTertiary).padding(.bottom, 6)
-            ForEach(Array(monitor.copies.enumerated()), id: \.element.pid) { index, copy in
-                HStack(spacing: 10) {
-                    Circle()
-                        .fill(monitor.isRead(copy) ? STColor.gold : Color.clear)
-                        .overlay(Circle().strokeBorder(monitor.isRead(copy) ? STColor.gold : theme.stroke, lineWidth: 1))
-                        .frame(width: 9, height: 9)
-                        .accessibilityHidden(true)
-                    Text(NBBCopiesMonitor.description(of: copy))
-                        .stStyle(.body)
-                        .foregroundStyle(STColor.ink)
-                    Spacer(minLength: 8)
-                    if monitor.isRead(copy) {
-                        Text("Reading").stStyle(.caption).foregroundStyle(STColor.gold)
-                    } else {
-                        Button("Read This One") { monitor.choice = .copy(copy.pid) }
-                            .buttonStyle(STButtonStyle(.secondary))
-                    }
-                    if monitor.copies.count > 1 {
-                        Button("Quit") { monitor.quit(copy) }
-                            .buttonStyle(STButtonStyle(.quiet))
-                    }
-                }
-                .padding(.vertical, 6)
-                .accessibilityElement(children: .contain)
-                .accessibilityLabel("Ninjabrain Bot \(index + 1)\(monitor.isRead(copy) ? ", read by the overlay" : "")")
+            ForEach(Array(monitor.listed.enumerated()), id: \.element.pid) { index, copy in
+                row(copy, number: index + 1)
             }
-            Text(caption)
+            if let note = monitor.note {
+                Text(note)
+                    .stStyle(.caption).foregroundStyle(STColor.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 4)
+            }
+            Text(NBBCopiesMonitor.caption)
                 .stStyle(.caption).foregroundStyle(theme.inkSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 4)
-            if monitor.choice != .automatic {
-                Button("Follow the Newest Copy") { monitor.choice = .automatic }
-                    .buttonStyle(STButtonStyle(.quiet))
-                    .padding(.top, 4)
-            }
         }
+        .confirmationDialog(
+            NBBCopiesMonitor.restartQuestion, isPresented: isAsking, titleVisibility: .visible, presenting: asking,
+            actions: { copy in
+                Button("Restart") { monitor.restart(copy) }
+                    .keyboardShortcut(.defaultAction)
+                Button("Cancel", role: .cancel) {}
+            },
+            message: { _ in Text(NBBCopiesMonitor.restartMessage(holder: monitor.holder)) })
     }
 
-    private var caption: String {
-        let api = "Only one Ninjabrain Bot can use the API at once."
-        return monitor.choice == .automatic ? "The overlay follows the copy opened last. " + api : api
+    private func row(_ copy: NBBCopy, number: Int) -> some View {
+        let restarting = monitor.isRestarting(copy)
+        return HStack(spacing: 10) {
+            Circle()
+                .fill(monitor.isRead(copy) ? STColor.gold : Color.clear)
+                .overlay(Circle().strokeBorder(monitor.isRead(copy) ? STColor.gold : theme.stroke, lineWidth: 1))
+                .frame(width: 9, height: 9)
+                .accessibilityHidden(true)
+            Text(NBBCopiesMonitor.description(of: copy))
+                .stStyle(.body)
+                .foregroundStyle(STColor.ink)
+            Spacer(minLength: 8)
+            if restarting {
+                // In the button's place and at its height, so the row keeps its size.
+                ZStack(alignment: .trailing) {
+                    readButton(copy).hidden().accessibilityHidden(true)
+                    Text("Restarting\u{2026}").stStyle(.caption).foregroundStyle(STColor.gold)
+                }
+            } else {
+                if monitor.isRead(copy) {
+                    Text("Reading").stStyle(.caption).foregroundStyle(STColor.gold)
+                } else {
+                    readButton(copy)
+                }
+                if monitor.copies.count > 1 {
+                    Button("Quit") { monitor.quit(copy) }
+                        .buttonStyle(STButtonStyle(.quiet))
+                }
+            }
+        }
+        .disabled(monitor.isRestarting)
+        .padding(.vertical, 6)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Ninjabrain Bot \(number)\(restarting ? ", restarting" : monitor.isRead(copy) ? ", read by the overlay" : "")")
+    }
+
+    private func readButton(_ copy: NBBCopy) -> some View {
+        Button("Read This One\u{2026}") {
+            monitor.dismissNote()
+            asking = copy
+        }
+        .buttonStyle(STButtonStyle(.secondary))
+    }
+
+    private var isAsking: Binding<Bool> {
+        Binding(get: { asking != nil }, set: { if !$0 { asking = nil } })
     }
 }

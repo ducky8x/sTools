@@ -7,7 +7,6 @@ import Foundation
 enum NBBAngleCorrection {
     /// What's written beside the angle, or nil when Ninjabrain Bot writes nothing there.
     static func text(_ eyeThrow: NBBEvents.EyeThrow, display: NBBCorrectionDisplay) -> String? {
-        if let shown = eyeThrow.shownCorrection { return shown.isEmpty ? nil : shown }
         if display == .increments, let increments = eyeThrow.correctionIncrements {
             return increments == 0 ? nil : String(format: "%+d", increments)
         }
@@ -30,12 +29,10 @@ enum NBBAngleCorrection {
 }
 
 /// A throw's error as Ninjabrain Bot 1.5.2 writes it (`ThrowPanel.updateError`, `String.format(Locale.US, "%.3f", ...)`):
-/// a minus when it's negative and no sign otherwise. A window's own text is kept as it is.
+/// a minus when it's negative and no sign otherwise.
 enum NBBThrowError {
-    /// The error's text, or nil when the error isn't known.
-    static func text(_ eyeThrow: NBBEvents.EyeThrow) -> String? {
-        guard eyeThrow.showsError else { return nil }
-        return eyeThrow.shownError ?? NBBJavaFormat.fixed(eyeThrow.error, places: 3)
+    static func text(_ eyeThrow: NBBEvents.EyeThrow) -> String {
+        NBBJavaFormat.fixed(eyeThrow.error, places: 3)
     }
 }
 

@@ -1,15 +1,10 @@
-// Measures what watching Ninjabrain Bot costs the NBB Overlay, on this Mac's real process table and, if asked, a real
-// Ninjabrain Bot window. It only reads: nothing is changed or quit, no window shows, and no permission is asked (the
-// window read runs only when Accessibility is already allowed). It prints timings and counts, never what it read. Not
-// part of the app.
+// Measures what watching Ninjabrain Bot costs the NBB Overlay, on this Mac's real process table. It only reads: nothing
+// is changed or quit, no window shows, and no permission is asked. It prints timings and counts, never what it read.
+// Not part of the app.
 //
 //   swift run -c release NBBBench                      scan: ms per LiveNBBCopiesScanner().scan()
 //   swift run -c release NBBBench monitor --seconds 10 the main thread's time per second while NBBCopiesMonitor watches
-//   swift run -c release NBBBench window --seconds 10  ms per read of a copy's window, for a copy without the API, ten
-//                                                       a second as in the app (most only look at a few texts; reads
-//                                                       run on the reader's own queue)
 
-import ApplicationServices
 import Darwin
 import Foundation
 import NBBOverlay
@@ -100,33 +95,6 @@ func monitorMode(seconds: Double) async {
     }
 }
 
-@MainActor
-func windowMode(seconds: Double) async {
-    guard AXIsProcessTrusted() else {
-        print("window: Accessibility isn't allowed for this process; nothing read")
-        return
-    }
-    guard let copy = LiveNBBCopiesScanner().scan().last(where: { !$0.holdsAPI }) else {
-        print("window: no Ninjabrain Bot without the API is open; nothing read")
-        return
-    }
-    // As the overlay does: a read ten times a second, on the reader's own queue; the main actor only awaits it.
-    let reader = AXNBBWindowReader()
-    var times: [Double] = []
-    var unread = 0
-    let cpu0 = mainThreadCPUSeconds(), start = ContinuousClock.now
-    while milliseconds(since: start) < seconds * 1e3 {
-        let readStart = ContinuousClock.now
-        if await reader.read(pid: copy.pid) == nil { unread += 1 }
-        times.append(milliseconds(since: readStart))
-        try? await Task.sleep(for: .milliseconds(100))
-    }
-    let wall = milliseconds(since: start) / 1e3
-    print("window: \(summary(times)) off the main actor; \(unread) reads found nothing")
-    print(String(format: "  reads %.2f ms/s off the main actor, main thread CPU %.2f ms/s over %.1f s",
-                 times.reduce(0, +) / wall, (mainThreadCPUSeconds() - cpu0) * 1e3 / wall, wall))
-}
-
 // MARK: Main
 
 @main
@@ -148,8 +116,7 @@ struct NBBBench {
         switch arguments.first ?? "scan" {
         case "scan": scanMode(runs: runs)
         case "monitor": await monitorMode(seconds: seconds)
-        case "window": await windowMode(seconds: seconds)
-        default: print("modes: scan [--runs N], monitor [--seconds S], window [--seconds S]")
+        default: print("modes: scan [--runs N], monitor [--seconds S]")
         }
     }
 }

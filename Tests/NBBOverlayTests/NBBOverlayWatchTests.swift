@@ -4,8 +4,7 @@ import Testing
 @testable import NBBOverlay
 @testable import STPlatform
 
-// While the NBB Overlay is on it watches Minecraft's window and the Ninjabrain Bot copies (an observation that re-arms
-// itself after each change). Switching the tool off and on again used to leave the old watch running and start another,
+// While the NBB Overlay is on it watches Minecraft's window (an observation that re-arms itself after each change). Switching the tool off and on again used to leave the old watch running and start another,
 // so after n switch-ons every change of Minecraft's window ran n rounds of the same work, for as long as the app lived,
 // off or on. Crosshair's watch already ends with the tool and starts once.
 

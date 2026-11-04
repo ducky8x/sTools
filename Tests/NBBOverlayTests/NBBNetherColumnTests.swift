@@ -117,22 +117,9 @@ struct NBBNetherColumnTests {
         #expect(NBBOverlayLayout.coordinateColumn(for: decoded, netherCoordinatesInNether: true) == .nether)
     }
 
-    // MARK: - Window mode
-
-    @Test func windowModeShowsTheWindowsOwnLocationAndDistance() throws {
-        let window = NBBEvents.Prediction(
-            chunkX: -84, chunkZ: 5, certainty: 0.9, overworldDistance: 197,
-            shownLocation: NBBBlock(x: -84, z: 5), shownNether: NBBBlock(x: -168, z: 10), shownDistance: 197)
-        let data = try #require(triangulation(stronghold([window], player: nil), display: .fourFour))
-        #expect(data.column == .windowLocation, "the window has no dimension to follow")
-        #expect(data.predictions[0].coordinates == NBBBlock(x: -84, z: 5), "the window's own Location text, not sTools' 4,4 block")
-        #expect(data.predictions[0].distance == 197)
-    }
-
     @Test func eachColumnSaysWhatItShows() {
         #expect(NBBCoordinateColumn.overworld.title == "Overworld")
         #expect(NBBCoordinateColumn.nether.title == "Nether")
-        #expect(NBBCoordinateColumn.windowLocation.title == "Location")
     }
 
     @Test func theDisplayChoicesAreNinjabrainBots() {

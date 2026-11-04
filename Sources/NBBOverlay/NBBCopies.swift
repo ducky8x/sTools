@@ -2,12 +2,13 @@ import AppKit
 import Darwin
 import Foundation
 import Observation
+import STPlatform
 
 /// One running Ninjabrain Bot: a process whose command line names Ninjabrain (usually `java -jar Ninjabrain-Bot-….jar`),
 /// and whether it holds the API's port.
 ///
 /// Ninjabrain Bot always opens its API on port 52533 on every address. A second copy started while another holds the
-/// port gets no API at all, and it doesn't try again when the first one quits. Such a copy is read from its window.
+/// port gets no API at all, and it doesn't try again when the first one quits.
 public struct NBBCopy: Equatable, Sendable, Identifiable {
     public var id: Int32 { pid }
     public var pid: Int32
@@ -26,21 +27,12 @@ public struct NBBCopy: Equatable, Sendable, Identifiable {
     }
 }
 
-/// Which Ninjabrain Bot the overlay follows.
-public enum NBBCopyChoice: Equatable, Sendable {
-    /// The newest copy: most likely the window the person just opened, for instance with Minecraft.
-    case automatic
-    /// The copy with this process number, for as long as it runs; then back to automatic.
-    case copy(Int32)
-}
-
 /// Lists the running Ninjabrain Bots. The live one reads the process table; tests use a fake.
 public protocol NBBCopiesScanning: Sendable {
     func scan() -> [NBBCopy]
 }
 
-/// Finds no copy, so the API at localhost is read and no window ever is: for tests and previews, which must never
-/// look at the person's real Ninjabrain Bots.
+/// Finds no copy: for tests and previews, which must never look at the person's real Ninjabrain Bots.
 public struct NoNBBCopiesScanner: NBBCopiesScanning {
     public init() {}
     public func scan() -> [NBBCopy] { [] }
@@ -52,9 +44,16 @@ public protocol NBBCopiesControlling: AnyObject {
     func quit(_ copy: NBBCopy)
 }
 
-/// Watches Ninjabrain Bot's copies while the NBB Overlay is on and says which one the overlay reads. A copy holding the
-/// API is read over it; any other copy is read from its window (`NBBWindowReader`), so the person can pick the copy they
-/// use while every copy stays open.
+/// Where a restart is (`NBBCopiesMonitor.restart(_:)`): the copy, as listed when the restart began, and the process the
+/// restart is on, the copy's own and then, once started, its new one.
+public struct NBBRestartProgress: Equatable, Sendable {
+    public var copy: NBBCopy
+    public var pid: Int32
+}
+
+/// Watches Ninjabrain Bot's copies while the NBB Overlay is on, for the page's list. The overlay reads the API at
+/// localhost, so it reads the copy holding the port; the list shows which one that is, and restarts another copy so it
+/// takes the API (`restart(_:)`).
 ///
 /// The process table is scanned on a background task, never on the main actor: every 2 s while a copy is open, every
 /// 5 s while none is (the first copy to open takes the API, which the overlay reads without the scan's help, so only a
@@ -64,10 +63,19 @@ public protocol NBBCopiesControlling: AnyObject {
 @Observable
 public final class NBBCopiesMonitor {
     public private(set) var copies: [NBBCopy] = []
-    public var choice: NBBCopyChoice = .automatic
+    /// The restart under way, if one is.
+    public private(set) var restarting: NBBRestartProgress?
+    /// What went wrong with the last restart, until the next press in the list or until the restarted copy takes the API.
+    public private(set) var note: String?
+    /// The new process `note` is about, if one started.
+    @ObservationIgnored private var notedPID: Int32?
 
     @ObservationIgnored private let scanner: any NBBCopiesScanning
     @ObservationIgnored private let control: any NBBCopiesControlling
+    @ObservationIgnored private let restarter: any NBBCopiesRestarting
+    @ObservationIgnored private let clock: any Clock<Duration>
+    @ObservationIgnored private let timing: NBBRestartTiming
+    @ObservationIgnored private let log = STLog.logger("NBBCopies")
     @ObservationIgnored private let interval: Duration
     @ObservationIgnored private let idleInterval: Duration
     @ObservationIgnored private var watch: Task<Void, Never>?
@@ -77,33 +85,56 @@ public final class NBBCopiesMonitor {
     @ObservationIgnored private(set) var publishCount = 0
 
     /// `interval` while a copy is open, `idleInterval` while none is.
-    public init(
+    public convenience init(
         scanner: any NBBCopiesScanning = LiveNBBCopiesScanner(),
         control: any NBBCopiesControlling = LiveNBBCopiesControl(),
         interval: Duration = .seconds(2), idleInterval: Duration = .seconds(5)
     ) {
+        self.init(scanner: scanner, control: control, restarter: LiveNBBCopiesRestarter(), interval: interval, idleInterval: idleInterval)
+    }
+
+    /// With the restarter and the clock its waits sleep on, which tests make up.
+    init(
+        scanner: any NBBCopiesScanning, control: any NBBCopiesControlling, restarter: any NBBCopiesRestarting,
+        clock: any Clock<Duration> = ContinuousClock(), timing: NBBRestartTiming = NBBRestartTiming(),
+        interval: Duration = .seconds(2), idleInterval: Duration = .seconds(5)
+    ) {
         self.scanner = scanner
         self.control = control
+        self.restarter = restarter
+        self.clock = clock
+        self.timing = timing
         self.interval = interval
         self.idleInterval = idleInterval
     }
 
     public var isWatching: Bool { watch != nil }
 
-    /// The copy the overlay reads: the chosen one while it runs, else the newest. Nil when no copy was found (the API
-    /// at localhost is read then, in case Ninjabrain Bot runs in a way the scan doesn't recognize).
-    public var readCopy: NBBCopy? {
-        if case .copy(let pid) = choice, let chosen = copies.first(where: { $0.pid == pid }) { return chosen }
-        return copies.last
+    /// The copy holding the API, which the overlay reads. Nil when none does, or no copy was found (the API at
+    /// localhost is still read then, in case Ninjabrain Bot runs in a way the scan doesn't recognize).
+    public var holder: NBBCopy? { copies.first(where: \.holdsAPI) }
+
+    /// Whether the page lists the copies: more than one is open, the one open has no API, a restart is under way, or a
+    /// note says how the last one went.
+    public var showsCopies: Bool { copies.count > 1 || copies.contains { !$0.holdsAPI } || restarting != nil || note != nil }
+
+    public func isRead(_ copy: NBBCopy) -> Bool { copy.holdsAPI }
+
+    public var isRestarting: Bool { restarting != nil }
+
+    /// Whether `copy`'s row is the one being restarted: the copy itself, or its new process.
+    public func isRestarting(_ copy: NBBCopy) -> Bool {
+        guard let restarting else { return false }
+        return copy.pid == restarting.pid || copy.pid == restarting.copy.pid
     }
 
-    /// Whether the overlay reads a copy's window instead of the API: the copy it follows doesn't hold the port.
-    public var readsWindow: Bool { readCopy.map { !$0.holdsAPI } ?? false }
+    /// The page's rows: every copy, and the one being restarted while neither its old process nor its new one is listed.
+    public var listed: [NBBCopy] { Self.listed(copies, restarting: restarting) }
 
-    /// Whether the page lists the copies: more than one is open, or the one open can only be read from its window.
-    public var showsCopies: Bool { copies.count > 1 || readsWindow }
-
-    public func isRead(_ copy: NBBCopy) -> Bool { readCopy?.pid == copy.pid }
+    static func listed(_ copies: [NBBCopy], restarting: NBBRestartProgress?) -> [NBBCopy] {
+        guard let restarting, !copies.contains(where: { $0.pid == restarting.pid || $0.pid == restarting.copy.pid }) else { return copies }
+        return copies + [restarting.copy]
+    }
 
     /// Starts watching; the first scan runs at once, in the background.
     public func start() {
@@ -111,11 +142,13 @@ public final class NBBCopiesMonitor {
         watch = makeWatch()
     }
 
+    /// Stops watching. A restart under way goes on: a copy it quit always starts again.
     public func stop() {
         watch?.cancel()
         watch = nil
         generation += 1
         if !copies.isEmpty { copies = [] }
+        dismissNote()
     }
 
     /// Scans again now rather than at the next interval, while watching.
@@ -125,9 +158,52 @@ public final class NBBCopiesMonitor {
         watch = makeWatch()
     }
 
-    /// Asks a copy to quit, as its Quit menu would, and looks again.
+    /// Asks a copy to quit, as its Quit menu would, and looks again. Nothing while a restart is under way.
     public func quit(_ copy: NBBCopy) {
+        guard restarting == nil else { return }
+        dismissNote()
         control.quit(copy)
+        rescan()
+    }
+
+    /// Restarts `copy` so it takes the API (`NBBRestartRun`): quits the copy holding it, if one does, then `copy`, and
+    /// starts `copy` again as it was started. Runs off the main actor and ends on its own, whatever happens to the
+    /// monitor meanwhile; the list follows each step. Nothing while another restart is under way, or for a copy that
+    /// already holds the API.
+    public func restart(_ copy: NBBCopy) {
+        guard restarting == nil, watch != nil, copies.contains(copy), !copy.holdsAPI else { return }
+        dismissNote()
+        let holder = copies.first { $0.holdsAPI }
+        restarting = NBBRestartProgress(copy: copy, pid: copy.pid)
+        let restarter = restarter, clock = clock, timing = timing
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let outcome = await NBBRestartRun.run(copy, holder: holder, restarter: restarter, clock: clock, timing: timing) { [weak self] step in
+                await self?.restartMoved(step)
+            }
+            await self?.restartEnded(outcome)
+        }
+    }
+
+    /// Clears the note, as the next press in the list does.
+    public func dismissNote() {
+        if note != nil { note = nil }
+        notedPID = nil
+    }
+
+    private func restartMoved(_ step: NBBRestartStep) {
+        if case .started(let pid) = step { restarting?.pid = pid }
+        rescan()
+    }
+
+    private func restartEnded(_ outcome: NBBRestartOutcome) {
+        // The outcome and process numbers only: never the launch, whose environment is the person's.
+        log.notice("Restart ended: \(String(describing: outcome), privacy: .public)")
+        restarting = nil
+        // While the tool is off nothing is listed, so nothing is said.
+        if watch != nil, let text = outcome.note {
+            note = text
+            notedPID = outcome.newPID
+        }
         rescan()
     }
 
@@ -159,19 +235,39 @@ public final class NBBCopiesMonitor {
         guard generation == self.generation else { return }
         publishCount += 1
         if found != copies { copies = found }
-        if case .copy(let pid) = choice, !found.contains(where: { $0.pid == pid }) { choice = .automatic }
+        // A restarted copy that took the API after all (turned on in its settings) needs no note.
+        if let notedPID, found.contains(where: { $0.pid == notedPID && $0.holdsAPI }) { dismissNote() }
     }
 
-    /// How the page names a copy: when it was opened and how sTools reads it.
+    /// The line under the page's list of copies.
+    public static let caption = "Only one Ninjabrain Bot can use the API at once, and the overlay reads the one that has it."
+
+    /// How the page names a copy: when it was opened and whether it has the API.
     public static func description(of copy: NBBCopy, now: Date = Date(), calendar: Calendar = .current) -> String {
-        let opened: String
-        if let started = copy.startedAt {
-            let time = started.formatted(date: .omitted, time: .shortened)
-            opened = calendar.isDate(started, inSameDayAs: now) ? "Opened at \(time)" : "Opened \(started.formatted(.dateTime.month(.abbreviated).day())) at \(time)"
-        } else {
-            opened = "Open"
+        let opened = opened(copy, now: now, calendar: calendar).map { "O" + $0.dropFirst() } ?? "Open"
+        return opened + (copy.holdsAPI ? " \u{00B7} shares its data" : " \u{00B7} without the API")
+    }
+
+    /// When a copy was opened, as a phrase: "opened at 9:12" today, "opened Nov 3 at 9:12" before. Nil when macOS
+    /// didn't say.
+    static func opened(_ copy: NBBCopy, now: Date, calendar: Calendar) -> String? {
+        guard let started = copy.startedAt else { return nil }
+        let time = started.formatted(date: .omitted, time: .shortened)
+        return calendar.isDate(started, inSameDayAs: now) ? "opened at \(time)" : "opened \(started.formatted(.dateTime.month(.abbreviated).day())) at \(time)"
+    }
+
+    /// The question before Read This One… restarts a copy.
+    public static let restartQuestion = "Restart this Ninjabrain Bot?"
+
+    /// What the restart does, with `holder` the copy holding the API now, if one does.
+    public static func restartMessage(holder: NBBCopy?, now: Date = Date(), calendar: Calendar = .current) -> String {
+        let saved = "Save state between sessions is on in Ninjabrain Bot\u{2019}s settings."
+        guard let holder else {
+            return "sTools restarts this Ninjabrain Bot so it gets the API. Its throws come back if \(saved)"
         }
-        return opened + (copy.holdsAPI ? " \u{00B7} shares its data" : " \u{00B7} read from its window")
+        let opened = opened(holder, now: now, calendar: calendar).map { ", \($0)" } ?? ""
+        return "sTools quits the other Ninjabrain Bot\(opened), then restarts this one so it gets the API. "
+            + "This one\u{2019}s throws come back if \(saved) The other one\u{2019}s aren\u{2019}t kept."
     }
 }
 
@@ -283,38 +379,98 @@ public struct LiveNBBCopiesScanner: NBBCopiesScanning {
 
     /// The process's argv, from `KERN_PROCARGS2`: an argument count, the executable path, then the arguments.
     static func arguments(of pid: pid_t) -> [String]? {
+        procArgsBuffer(of: pid).flatMap(parseProcArgs)
+    }
+
+    /// The process's `KERN_PROCARGS2` buffer, environment and all.
+    static func procArgsBuffer(of pid: pid_t) -> [UInt8]? {
         var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
         var size = 0
         guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else { return nil }
         var buffer = [UInt8](repeating: 0, count: size)
         guard sysctl(&mib, 3, &buffer, &size, nil, 0) == 0 else { return nil }
-        return parseProcArgs(Array(buffer.prefix(size)))
+        return Array(buffer.prefix(size))
     }
 
-    /// Splits a `KERN_PROCARGS2` buffer into argv.
+    /// Splits a `KERN_PROCARGS2` buffer into argv, leaving the environment unread: what a scan needs.
     static func parseProcArgs(_ buffer: [UInt8]) -> [String]? {
+        guard let read = split(buffer, readsEnvironment: false), !read.arguments.isEmpty else { return nil }
+        return read.arguments
+    }
+
+    /// Splits a `KERN_PROCARGS2` buffer into the executable path, every argument and the environment, for a restart.
+    /// Nil unless the buffer holds as many whole arguments as its count says.
+    static func parseProcArgs(withEnvironment buffer: [UInt8]) -> NBBProcArgs? {
+        guard let read = split(buffer, readsEnvironment: true), read.isWhole else { return nil }
+        return NBBProcArgs(executablePath: read.executablePath, arguments: read.arguments, environment: read.environment)
+    }
+
+    /// The kernel's layout: the argument count, the executable path, padding, each argument, each environment entry, an
+    /// empty string, then strings macOS keeps for the loader (`ptr_munge=` and the like), which aren't the environment.
+    private static func split(_ buffer: [UInt8], readsEnvironment: Bool) -> (executablePath: String, arguments: [String], environment: [String], isWhole: Bool)? {
         let size = buffer.count
         guard size > MemoryLayout<Int32>.size else { return nil }
         let argc = buffer.withUnsafeBytes { $0.loadUnaligned(as: Int32.self) }
         var index = MemoryLayout<Int32>.size
-        // Skip the executable path and the padding after it.
-        while index < size, buffer[index] != 0 { index += 1 }
-        while index < size, buffer[index] == 0 { index += 1 }
-        var arguments: [String] = []
-        while arguments.count < Int(argc), index < size {
+        /// The string from `index` to its terminating zero; whether it had one.
+        func string() -> (String, terminated: Bool) {
             let start = index
             while index < size, buffer[index] != 0 { index += 1 }
-            arguments.append(String(decoding: buffer[start..<index], as: UTF8.self))
-            index += 1
+            defer { index += 1 }
+            return (String(decoding: buffer[start..<index], as: UTF8.self), index < size)
         }
-        return arguments.isEmpty ? nil : arguments
+        let executablePath = string().0
+        // The padding after the executable path.
+        while index < size, buffer[index] == 0 { index += 1 }
+        var arguments: [String] = []
+        var isWhole = true
+        while arguments.count < Int(argc), index < size {
+            let (argument, terminated) = string()
+            arguments.append(argument)
+            isWhole = isWhole && terminated
+        }
+        isWhole = isWhole && arguments.count == Int(argc)
+        var environment: [String] = []
+        while readsEnvironment, index < size, buffer[index] != 0 {
+            let (entry, terminated) = string()
+            if terminated { environment.append(entry) }
+        }
+        return (executablePath, arguments, environment, isWhole)
+    }
+
+    /// The process's current folder, through `libproc`.
+    static func workingDirectory(of pid: pid_t) -> String? {
+        var info = proc_vnodepathinfo()
+        let size = Int32(MemoryLayout<proc_vnodepathinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDVNODEPATHINFO, 0, &info, size) == size else { return nil }
+        let path = withUnsafeBytes(of: info.pvi_cdir.vip_path) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
+        return path.isEmpty ? nil : path
+    }
+
+    /// How the process was started, read only when a restart begins (a scan never reads the environment or the folder).
+    /// Nil when anything can't be read, the environment included: macOS hides it for its own programs, and starting
+    /// Ninjabrain Bot again without one would change how it runs.
+    static func launch(of pid: pid_t) -> NBBLaunch? {
+        guard let executablePath = executablePath(of: pid),
+              let read = procArgsBuffer(of: pid).flatMap(parseProcArgs(withEnvironment:)), !read.environment.isEmpty,
+              let workingDirectory = workingDirectory(of: pid) else { return nil }
+        return NBBLaunch(executablePath: executablePath, arguments: read.arguments, environment: read.environment, workingDirectory: workingDirectory)
     }
 
     static func startDate(of pid: pid_t) -> Date? {
         var info = proc_bsdinfo()
         let size = Int32(MemoryLayout<proc_bsdinfo>.size)
         guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
-        return Date(timeIntervalSince1970: TimeInterval(info.pbi_start_tvsec) + TimeInterval(info.pbi_start_tvusec) / 1_000_000)
+        return startDate(from: info)
+    }
+
+    static func startDate(from info: proc_bsdinfo) -> Date {
+        Date(timeIntervalSince1970: TimeInterval(info.pbi_start_tvsec) + TimeInterval(info.pbi_start_tvusec) / 1_000_000)
+    }
+
+    /// A process of `user` listening on `port`, on any address, if there is one. Other users' sockets can't be read.
+    static func listener(on port: UInt16, in table: some NBBProcessTable, user: uid_t) -> pid_t? {
+        table.pids().first { pid in pid > 0 && table.summary(of: pid)?.uid == user && table.listens(pid, on: port) }
     }
 
     /// Whether `pid` has a TCP socket listening on `port`, on any address.

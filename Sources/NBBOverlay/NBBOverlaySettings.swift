@@ -12,7 +12,7 @@ import STPlatform
 /// The predictions table's coordinate column shows Ninjabrain Bot's Location column in the Overworld and its Nether
 /// column in the Nether, by the last F3+C's dimension (`NBBCoordinateColumn`), and its distance column follows the same
 /// dimension. Its angle and turn hint come from Ninjabrain Bot's own formula over the API (`NBBTravelAngle`, from
-/// 1.5.2's source) or straight from its window.
+/// 1.5.2's source).
 public struct NBBOverlaySettings: SettingsDocument {
     public static let name = "nbbOverlay"
     /// Version 2 makes Correction shown as default to the number of adjustments (spec revision 34).
@@ -84,7 +84,7 @@ public struct NBBOverlaySettings: SettingsDocument {
     /// Each eye throw's angle adjustment beside its angle, as Ninjabrain Bot shows it.
     public var showsAngleCorrection = true
     /// How the angle adjustment is written, as Ninjabrain Bot's Adjustment display type: the number of adjustments ("+2")
-    /// by default (ducky's Ninjabrain Bot shows it so), or the angle change ("+0.004"). A window's own text is kept.
+    /// by default (ducky's Ninjabrain Bot shows it so), or the angle change ("+0.004").
     public var correctionDisplay: NBBCorrectionDisplay = .increments
     public var maxPredictionRows = 5
 

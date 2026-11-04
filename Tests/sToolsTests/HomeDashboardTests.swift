@@ -511,17 +511,15 @@ struct HomeLampTests {
     }
 
     @Test func ninjabrainBotLightsWhenLinked() {
-        #expect(HomeLamps.ninjabrainBot(overlayIsOn: true, reachable: true, readsWindow: false, answers: nil)
+        #expect(HomeLamps.ninjabrainBot(overlayIsOn: true, reachable: true, answers: nil)
             == HomeLamp(state: .lit, sentence: "Ninjabrain Bot is linked through its API."))
-        #expect(HomeLamps.ninjabrainBot(overlayIsOn: true, reachable: true, readsWindow: true, answers: nil)
-            == HomeLamp(state: .lit, sentence: "Ninjabrain Bot is linked through its window."))
-        #expect(HomeLamps.ninjabrainBot(overlayIsOn: true, reachable: false, readsWindow: false, answers: true)
+        #expect(HomeLamps.ninjabrainBot(overlayIsOn: true, reachable: false, answers: true)
             == HomeLamp(state: .dim, sentence: PrologueCopy.ninjabrainSilent))
-        #expect(HomeLamps.ninjabrainBot(overlayIsOn: false, reachable: false, readsWindow: false, answers: true)
+        #expect(HomeLamps.ninjabrainBot(overlayIsOn: false, reachable: false, answers: true)
             == HomeLamp(state: .lit, sentence: PrologueCopy.ninjabrainAnswers))
-        #expect(HomeLamps.ninjabrainBot(overlayIsOn: false, reachable: false, readsWindow: false, answers: false)
+        #expect(HomeLamps.ninjabrainBot(overlayIsOn: false, reachable: false, answers: false)
             == HomeLamp(state: .dim, sentence: PrologueCopy.ninjabrainSilent))
-        #expect(HomeLamps.ninjabrainBot(overlayIsOn: false, reachable: false, readsWindow: false, answers: nil)
+        #expect(HomeLamps.ninjabrainBot(overlayIsOn: false, reachable: false, answers: nil)
             == HomeLamp(state: .dim, sentence: "Looking for Ninjabrain Bot\u{2026}"))
     }
 
