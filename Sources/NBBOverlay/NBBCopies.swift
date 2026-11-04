@@ -268,31 +268,82 @@ public struct LiveNBBCopiesScanner: NBBCopiesScanning {
 
     /// The process's argv, from `KERN_PROCARGS2`: an argument count, the executable path, then the arguments.
     static func arguments(of pid: pid_t) -> [String]? {
+        procArgsBuffer(of: pid).flatMap(parseProcArgs)
+    }
+
+    /// The process's `KERN_PROCARGS2` buffer, environment and all.
+    static func procArgsBuffer(of pid: pid_t) -> [UInt8]? {
         var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
         var size = 0
         guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else { return nil }
         var buffer = [UInt8](repeating: 0, count: size)
         guard sysctl(&mib, 3, &buffer, &size, nil, 0) == 0 else { return nil }
-        return parseProcArgs(Array(buffer.prefix(size)))
+        return Array(buffer.prefix(size))
     }
 
-    /// Splits a `KERN_PROCARGS2` buffer into argv.
+    /// Splits a `KERN_PROCARGS2` buffer into argv, leaving the environment unread: what a scan needs.
     static func parseProcArgs(_ buffer: [UInt8]) -> [String]? {
+        guard let read = split(buffer, readsEnvironment: false), !read.arguments.isEmpty else { return nil }
+        return read.arguments
+    }
+
+    /// Splits a `KERN_PROCARGS2` buffer into the executable path, every argument and the environment, for a restart.
+    /// Nil unless the buffer holds as many whole arguments as its count says.
+    static func parseProcArgs(withEnvironment buffer: [UInt8]) -> NBBProcArgs? {
+        guard let read = split(buffer, readsEnvironment: true), read.isWhole else { return nil }
+        return NBBProcArgs(executablePath: read.executablePath, arguments: read.arguments, environment: read.environment)
+    }
+
+    /// The kernel's layout: the argument count, the executable path, padding, each argument, each environment entry, an
+    /// empty string, then strings macOS keeps for the loader (`ptr_munge=` and the like), which aren't the environment.
+    private static func split(_ buffer: [UInt8], readsEnvironment: Bool) -> (executablePath: String, arguments: [String], environment: [String], isWhole: Bool)? {
         let size = buffer.count
         guard size > MemoryLayout<Int32>.size else { return nil }
         let argc = buffer.withUnsafeBytes { $0.loadUnaligned(as: Int32.self) }
         var index = MemoryLayout<Int32>.size
-        // Skip the executable path and the padding after it.
-        while index < size, buffer[index] != 0 { index += 1 }
-        while index < size, buffer[index] == 0 { index += 1 }
-        var arguments: [String] = []
-        while arguments.count < Int(argc), index < size {
+        /// The string from `index` to its terminating zero; whether it had one.
+        func string() -> (String, terminated: Bool) {
             let start = index
             while index < size, buffer[index] != 0 { index += 1 }
-            arguments.append(String(decoding: buffer[start..<index], as: UTF8.self))
-            index += 1
+            defer { index += 1 }
+            return (String(decoding: buffer[start..<index], as: UTF8.self), index < size)
         }
-        return arguments.isEmpty ? nil : arguments
+        let executablePath = string().0
+        // The padding after the executable path.
+        while index < size, buffer[index] == 0 { index += 1 }
+        var arguments: [String] = []
+        var isWhole = true
+        while arguments.count < Int(argc), index < size {
+            let (argument, terminated) = string()
+            arguments.append(argument)
+            isWhole = isWhole && terminated
+        }
+        isWhole = isWhole && arguments.count == Int(argc)
+        var environment: [String] = []
+        while readsEnvironment, index < size, buffer[index] != 0 {
+            let (entry, terminated) = string()
+            if terminated { environment.append(entry) }
+        }
+        return (executablePath, arguments, environment, isWhole)
+    }
+
+    /// The process's current folder, through `libproc`.
+    static func workingDirectory(of pid: pid_t) -> String? {
+        var info = proc_vnodepathinfo()
+        let size = Int32(MemoryLayout<proc_vnodepathinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDVNODEPATHINFO, 0, &info, size) == size else { return nil }
+        let path = withUnsafeBytes(of: info.pvi_cdir.vip_path) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
+        return path.isEmpty ? nil : path
+    }
+
+    /// How the process was started, read only when a restart begins (a scan never reads the environment or the folder).
+    /// Nil when anything can't be read, the environment included: macOS hides it for its own programs, and starting
+    /// Ninjabrain Bot again without one would change how it runs.
+    static func launch(of pid: pid_t) -> NBBLaunch? {
+        guard let executablePath = executablePath(of: pid),
+              let read = procArgsBuffer(of: pid).flatMap(parseProcArgs(withEnvironment:)), !read.environment.isEmpty,
+              let workingDirectory = workingDirectory(of: pid) else { return nil }
+        return NBBLaunch(executablePath: executablePath, arguments: read.arguments, environment: read.environment, workingDirectory: workingDirectory)
     }
 
     static func startDate(of pid: pid_t) -> Date? {
