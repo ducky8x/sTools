@@ -26,17 +26,18 @@ public enum CursorArt {
     /// to fit.
     public static let largestSide: CGFloat = 128
 
-    /// The pointer, or nil for the Image shape with no image to draw.
-    public static func cursor(for settings: CustomCursorSettings, image: CGImage?) -> CursorImage? {
+    /// The pointer, or nil for the Image shape with no image to draw. The page's preview asks for its display's scale
+    /// alone.
+    public static func cursor(for settings: CustomCursorSettings, image: CGImage?, scales: [Int] = scales) -> CursorImage? {
         if settings.shape == .image {
-            return image.map { cursor(from: $0, settings: settings) }
+            return image.map { cursor(from: $0, settings: settings, scales: scales) }
         }
-        return shapeCursor(settings)
+        return shapeCursor(settings, scales: scales)
     }
 
     // MARK: Shapes
 
-    private static func shapeCursor(_ settings: CustomCursorSettings) -> CursorImage {
+    private static func shapeCursor(_ settings: CustomCursorSettings, scales: [Int]) -> CursorImage {
         let margin = settings.outlineEnabled ? settings.outlineWidth : 0
         let reach = CrosshairShapes.reach(settings.shape, size: settings.size, thickness: settings.thickness)
         // The canvas holds the shape, its outline and a point of room on every side. An odd width centers on a pixel's
@@ -66,7 +67,7 @@ public enum CursorArt {
     // MARK: Images
 
     /// The image's pixels count as points at 100%, then the scale, then whatever fits inside `largestSide`.
-    private static func cursor(from source: CGImage, settings: CustomCursorSettings) -> CursorImage {
+    private static func cursor(from source: CGImage, settings: CustomCursorSettings, scales: [Int]) -> CursorImage {
         let scale = Double(settings.imageScalePercent) / 100
         var width = Double(source.width) * scale
         var height = Double(source.height) * scale
