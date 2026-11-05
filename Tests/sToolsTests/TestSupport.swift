@@ -1,4 +1,5 @@
 import Backdrop
+import AppKit
 import CoreGraphics
 import Crosshair
 import CustomCursor
@@ -167,6 +168,7 @@ final class Harness {
          prologueCompleted: Bool = true, withKeyRebinder: Bool = false, karabiner: HarnessKarabiner? = nil,
          hotkeys: HotkeySettings? = HotkeySettings(), displays: [DisplayInfo] = [harnessDisplay],
          cursorSwapper: FakeCursorSwapper? = nil) {
+        OffScreenGuard.install()
         self.hotkeyRegistrar = hotkeyRegistrar
         let realCursor = usesRealControllers || cursorSwapper != nil
         self.cursorSwapper = cursorSwapper ?? FakeCursorSwapper()
@@ -242,6 +244,7 @@ func fakeInstance(pid: Int32 = 100, version: String = "1.16.1", launched: TimeIn
 /// `timeout` of looking.
 @MainActor
 func waitUntil(timeout: Duration = .seconds(20), _ condition: @MainActor () -> Bool) async -> Bool {
+    OffScreenGuard.install()
     let clock = SuspendingClock()
     let longestPauseCounted = Duration.milliseconds(250)
     var counted = Duration.zero
@@ -425,3 +428,50 @@ final class FakeCursorSwapper: CursorSwapping {
     }
 }
 
+// MARK: - Overlays after a real display change
+
+/// Keeps a test's windows off the person's screens when a real display changes. When a monitor is plugged in or out, or
+/// turns off and on, the window server moves every window that is on no display onto the main one, so an overlay a test
+/// parked far off screen would land on the person's screen and stay there. After each real change this orders out every
+/// window of the test process that is on a real display. A test it interrupts may fail; nothing stays on screen.
+@MainActor
+enum OffScreenGuard {
+    private static var isInstalled = false
+
+    /// Starts watching for real display changes, once per test process.
+    static func install() {
+        guard !isInstalled else { return }
+        isInstalled = true
+        CGDisplayRegisterReconfigurationCallback({ _, flags, _ in
+            guard !flags.contains(.beginConfigurationFlag) else { return }
+            DispatchQueue.main.async { MainActor.assumeIsolated { OffScreenGuard.orderOutWindowsOnRealDisplays() } }
+            // The window server may finish moving windows a moment after it reports the change.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                MainActor.assumeIsolated { OffScreenGuard.orderOutWindowsOnRealDisplays() }
+            }
+        }, nil)
+    }
+
+    /// The window numbers among `windows` that touch one of `displays`, all in Core Graphics coordinates.
+    nonisolated static func windowsOnDisplays(_ windows: [(number: Int, bounds: CGRect)], displays: [CGRect]) -> [Int] {
+        windows.filter { window in displays.contains { $0.intersects(window.bounds) } }.map(\.number)
+    }
+
+    static func orderOutWindowsOnRealDisplays() {
+        var count: UInt32 = 0
+        CGGetOnlineDisplayList(0, nil, &count)
+        var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        CGGetOnlineDisplayList(count, &ids, &count)
+        let displays = ids.prefix(Int(count)).map { CGDisplayBounds($0) }
+        let ours = NSApp.windows.filter(\.isVisible)
+        let list = (CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]]) ?? []
+        let numbers = Set(ours.map(\.windowNumber))
+        let placed = list.compactMap { info -> (number: Int, bounds: CGRect)? in
+            guard let number = info[kCGWindowNumber as String] as? Int, numbers.contains(number),
+                  let bounds = info[kCGWindowBounds as String] as? [String: CGFloat] else { return nil }
+            return (number, CGRect(x: bounds["X"] ?? 0, y: bounds["Y"] ?? 0, width: bounds["Width"] ?? 0, height: bounds["Height"] ?? 0))
+        }
+        let onScreen = Set(windowsOnDisplays(placed, displays: displays))
+        for window in ours where onScreen.contains(window.windowNumber) { window.orderOut(nil) }
+    }
+}

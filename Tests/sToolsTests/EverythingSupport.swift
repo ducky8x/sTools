@@ -148,6 +148,7 @@ final class EverythingHarness {
     ///   over the theme it is given, so a theme made reduced would be made full again).
     init(displays given: [DisplayInfo]? = nil, instances: [MinecraftInstance]? = nil,
          reducedMotion: Bool = true, theme: STTheme = STTheme()) {
+        OffScreenGuard.install()
         self.theme = theme
         let displays = given ?? [QADisplays.display(id: 1, origin: QADisplays.newOrigin())]
         displayBox = DisplayBox(displays)
