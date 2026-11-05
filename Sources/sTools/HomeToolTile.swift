@@ -255,7 +255,7 @@ struct HomeTileLabel: View {
 }
 
 /// A tile's number and name, and its status line under the name. In a tight tile the status starts at the tile's edge, and
-/// a name too long for the tile gives way to its shortest form ("Timer", "NBB").
+/// a name too long for the tile gives way to its shortest form ("Timer", "NBB"); elsewhere it shrinks a little instead.
 struct HomeTileHeading: View {
     let tool: ToolID
     let status: HomeToolTile.StatusLine
@@ -274,7 +274,7 @@ struct HomeTileHeading: View {
                 ViewThatFits(in: .horizontal) {
                     name(tool.title)
                     name(tool.sidebarTitle).minimumScaleFactor(0.8)
-                    name(tool.shortestTitle).minimumScaleFactor(0.8)
+                    if isTight { name(tool.shortestTitle).minimumScaleFactor(0.8) }
                 }
             }
             statusText

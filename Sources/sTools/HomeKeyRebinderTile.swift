@@ -67,7 +67,8 @@ struct HomeKeyRebinderTile: View {
                     .accessibilityHidden(true)
                 controls
                     .padding(.top, HomeTileLabel.controlsGap(tight: isTight))
-                    .padding(.leading, HomeTileLabel.numberColumn(theme.textScale))
+                    // Under the status line, which a tight tile starts at its edge.
+                    .padding(.leading, isTight ? 0 : HomeTileLabel.numberColumn(theme.textScale))
                     // As tall as the other tiles' controls when sized alone, so many profiles never make the tile taller;
                     // in a taller tile, as tall as its room.
                     .frame(minHeight: HomeTileLabel.controlsHeight(theme.textScale),
