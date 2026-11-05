@@ -1,8 +1,7 @@
 import Backdrop
 import AppKit
 import CoreGraphics
-import Crosshair
-import CustomCursor
+@testable import Crosshair
 import Foundation
 import KeyRebinder
 import NBBOverlay
@@ -151,9 +150,9 @@ final class Harness {
     /// The Key Rebinder's `karabiner.json` (with `withKeyRebinder`), in the harness's folder. Its folder exists;
     /// the file doesn't until a test writes it.
     let karabinerConfigURL: URL
-    /// What Custom Cursor's real controller swaps through (with `usesRealControllers`, or a `cursorSwapper` of the test's):
-    /// a fake, so no test changes the real pointer.
-    let cursorSwapper: FakeCursorSwapper
+    /// What the Crosshair's pointer settings go through (with `crosshairPointer`): fakes, so no test reads or changes the
+    /// real pointer.
+    let crosshairPointer: CrosshairPointerFakes?
 
     /// `prologueCompleted: false` launches as a first launch, with the introduction showing. `withKeyRebinder`
     /// adds a Key Rebinder over the harness's folder, connected like the app's: Karabiner-Elements reads as not
@@ -161,17 +160,17 @@ final class Harness {
     /// Karabiner-Elements is that scripted one instead, which answers with its profiles.
     ///
     /// `hotkeys` is the `hotkeys.json` the launch finds: an existing, empty list by default; nil for a new install,
-    /// which starts with ⌘1–⌘6. `displays` are the displays the app sees, `harnessDisplay` alone by default.
-    /// `cursorSwapper` gives Custom Cursor its real controller over that fake, with the other tools fake.
+    /// which starts with ⌘1–⌘5. `displays` are the displays the app sees, `harnessDisplay` alone by default.
+    /// `crosshairPointer` gives the Crosshair its real controller over those fakes, its panel never ordered in, with the
+    /// other tools as `usesRealControllers` says.
     init(accessibility: PermissionStatus = .granted, instances: [MinecraftInstance] = [],
          theme: STTheme = STTheme(), usesRealControllers: Bool = false, hotkeyRegistrar: any HotkeyRegistering = FakeHotkeyRegistrar(),
          prologueCompleted: Bool = true, withKeyRebinder: Bool = false, karabiner: HarnessKarabiner? = nil,
          hotkeys: HotkeySettings? = HotkeySettings(), displays: [DisplayInfo] = [harnessDisplay],
-         cursorSwapper: FakeCursorSwapper? = nil) {
+         crosshairPointer: CrosshairPointerFakes? = nil) {
         OffScreenGuard.install()
         self.hotkeyRegistrar = hotkeyRegistrar
-        let realCursor = usesRealControllers || cursorSwapper != nil
-        self.cursorSwapper = cursorSwapper ?? FakeCursorSwapper()
+        self.crosshairPointer = crosshairPointer
         directory = FileManager.default.temporaryDirectory.appending(path: "sTools-app-\(UUID().uuidString)")
         karabinerConfigURL = directory.appending(path: "karabiner", directoryHint: .isDirectory).appending(path: "karabiner.json")
         prober = FakeProber(accessibility: accessibility)
@@ -184,7 +183,7 @@ final class Harness {
         if let hotkeys { store.save(hotkeys) }
         var fakes: [ToolID: FakeController] = [:]
         if !usesRealControllers {
-            for tool in ToolID.allCases where tool.hasSwitch && tool != .timerOverlay && !(realCursor && tool == .customCursor) {
+            for tool in ToolID.allCases where tool.hasSwitch && tool != .timerOverlay && !(crosshairPointer != nil && tool == .crosshair) {
                 fakes[tool] = FakeController()
             }
         }
@@ -201,7 +200,11 @@ final class Harness {
                .crosshair: CrosshairController(services: services)]
             : fakes.mapValues { $0 as any ToolController }
         all[.timerOverlay] = timer
-        if realCursor { all[.customCursor] = CustomCursorController(services: services, swapper: self.cursorSwapper) }
+        if let crosshairPointer {
+            all[.crosshair] = CrosshairController(
+                services: services, imagesDirectory: directory.appending(path: "Images", directoryHint: .isDirectory), showsPanel: false,
+                pointer: PointerSwap(swapper: crosshairPointer.swapper, supportDirectory: directory), pointerWatch: crosshairPointer.watch)
+        }
         var keyRebinder: KeyRebinderController?
         if withKeyRebinder || karabiner != nil {
             try? FileManager.default.createDirectory(at: karabinerConfigURL.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -397,37 +400,6 @@ final class FakeTimerAnnouncer: TimerAnnouncing {
     func announce(_ announcement: TimerAnnouncement) { announcements.append(announcement) }
 }
 
-// MARK: - Custom Cursor
-
-/// Stands in for the window server's pointer calls: it records each apply and restore and never touches the real pointer.
-@MainActor
-final class FakeCursorSwapper: CursorSwapping {
-    var isSupported: Bool
-    private(set) var applied: [CursorImage] = []
-    private(set) var restoreCount = 0
-    private var isApplied = false
-
-    init(isSupported: Bool = true) {
-        self.isSupported = isSupported
-    }
-
-    var applyCount: Int { applied.count }
-    /// Whether the fake pointer is what macOS would draw now.
-    var showsCustomPointer: Bool { isApplied }
-
-    func registered(_ name: String) -> RegisteredCursor? { nil }
-
-    func apply(_ cursor: CursorImage, names: [String]) {
-        applied.append(cursor)
-        isApplied = true
-    }
-
-    func restore(_ originals: [RegisteredCursor]) {
-        restoreCount += 1
-        isApplied = false
-    }
-}
-
 // MARK: - Overlays after a real display change
 
 /// Keeps a test's windows off the person's screens when a real display changes. When a monitor is plugged in or out, or
@@ -473,5 +445,61 @@ enum OffScreenGuard {
         }
         let onScreen = Set(windowsOnDisplays(placed, displays: displays))
         for window in ours where onScreen.contains(window.windowNumber) { window.orderOut(nil) }
+    }
+}
+
+// MARK: - The Crosshair's pointer
+
+/// The Crosshair's pointer swap and watch, as fakes: nothing reads or changes the real pointer.
+@MainActor
+final class CrosshairPointerFakes {
+    let swapper = FakeCursorSwapper()
+    let watch = FakePointerWatch()
+}
+
+/// Stands in for the window server's pointer calls: it records each apply and restore and never touches the real pointer.
+@MainActor
+final class FakeCursorSwapper: CursorSwapping {
+    let isSupported = true
+    private(set) var applyCount = 0
+    private(set) var restoreCount = 0
+    /// Whether the fake's pointer is what macOS would draw now.
+    private(set) var showsTheCrosshair = false
+
+    func registered(_ name: String) -> RegisteredCursor? { nil }
+
+    func apply(_ cursor: CursorImage, names: [String]) {
+        applyCount += 1
+        showsTheCrosshair = true
+    }
+
+    func restore(_ originals: [RegisteredCursor]) {
+        restoreCount += 1
+        showsTheCrosshair = false
+    }
+}
+
+/// Stands in for the pointer watch: the test says whether the pointer shows, and a change while it watches is reported
+/// at once.
+@MainActor
+final class FakePointerWatch: PointerVisibilityWatching {
+    let isSupported = true
+    private(set) var isWatching = false
+    private var onChange: (@MainActor @Sendable (Bool) -> Void)?
+
+    /// Whether the pointer shows: false in the game, true in a menu.
+    var pointerShows = false {
+        didSet { if isWatching, pointerShows != oldValue { onChange?(pointerShows) } }
+    }
+
+    func start(_ onChange: @escaping @MainActor @Sendable (Bool) -> Void) {
+        isWatching = true
+        self.onChange = onChange
+        onChange(pointerShows)
+    }
+
+    func stop() {
+        isWatching = false
+        onChange = nil
     }
 }

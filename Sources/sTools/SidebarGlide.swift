@@ -15,8 +15,8 @@ enum SidebarGlide {
     static let order: [Route] = [.home, .hotkeys] + ToolID.allCases.map(Route.tool) + [.settings]
 
     /// Moves shorter than this, in points, play the short glide: at the default text size, a tool's neighbor
-    /// (53 pt), Home to Hotkeys (38 pt), Home to the first tool (93.5 pt), or the last tool to Settings (55.5 pt with full
-    /// spacing).
+    /// (53 pt), Home to Hotkeys (38 pt), Home to the first tool (93.5 pt), or the last tool to Settings in a window of
+    /// the default height (63.5 pt).
     static let shortTravel: CGFloat = 100
     /// Moves shorter than this play the medium glide (two or three rows); longer ones play the long glide.
     static let mediumTravel: CGFloat = 200
@@ -87,8 +87,8 @@ enum SidebarGlide {
 }
 
 /// The sidebar's rows' vertical centers, in points, as the sidebar last laid them out. Until it has, the layout at
-/// the default text size with full spacing, in a window 600 pt tall (`SidebarDensity.regularHeight`): Hotkeys 38 pt below
-/// Home, the first tool 93.5 pt below Home, the tools 53 pt apart, and Settings 55.5 pt below the last tool.
+/// the default text size in a window of the default height: Hotkeys 38 pt below Home, the first tool 93.5 pt below
+/// Home, the tools 53 pt apart, and Settings 63.5 pt below the last tool.
 struct SidebarLayout: Equatable {
     var centers: [Route: CGFloat] = [:]
 
@@ -98,7 +98,7 @@ struct SidebarLayout: Equatable {
         case .home: return 0
         case .hotkeys: return 38
         case .tool(let tool): return 93.5 + 53 * CGFloat(ToolID.allCases.firstIndex(of: tool) ?? 0)
-        case .settings: return 93.5 + 53 * CGFloat(ToolID.allCases.count - 1) + 55.5
+        case .settings: return 93.5 + 53 * CGFloat(ToolID.allCases.count - 1) + 63.5
         }
     }
 }

@@ -26,8 +26,8 @@ private func entry(_ id: String, keyCode: Int, modifiers: Int = 256, _ actions: 
 }
 
 /// ducky's own list, set by hand before key sets existed: ⌘1 Crosshair, ⌘2 Start timer, ⌘3 NBB Overlay, ⌘4 Screen
-/// Recording (under any name an earlier build wrote), ⌘5 Window Backdrop. It is today's ⌘1–⌘6 key set but for Custom
-/// Cursor's ⌘6, which no saved list is given.
+/// Recording (under any name an earlier build wrote), ⌘5 Window Backdrop. It is also the ⌘1–⌘5 key set in today's
+/// sidebar order.
 private func oldList(recording: [String] = ["startStopRecording"]) -> [String] {
     [entry(crosshairID, keyCode: 18, ["toggle.crosshair"]),
      entry(timerID, keyCode: 19, ["startTimer"]),
@@ -89,18 +89,17 @@ struct HotkeyMigrationTests {
 
     // MARK: ducky's list stays exactly as it is
 
-    /// ducky's list loads unchanged, keys, actions, ids and order: the ⌘1–⌘6 key set without Custom Cursor's ⌘6, which
-    /// no saved list is given. Without that key the Key set chooser shows Custom until a set is picked. The switches and
-    /// the scope stay too.
-    @Test func duckysListLoadsUnchangedWithoutTheSixthKey() throws {
+    /// ducky's list loads unchanged, keys, actions, ids and order, and the Key set chooser shows ⌘1–⌘5, because the key
+    /// set in sidebar order is that list. The switches and the scope stay too.
+    @Test func duckysListLoadsUnchangedAsCommandOneToFive() throws {
         let folder = try Folder(file(oldList()))
         let settings = folder.load()
         #expect(listing(settings.bindings) == sidebarOrder)
         #expect(settings.bindings.map(\.id.uuidString) == ownIDs)
-        #expect(settings.bindings == HotkeyKeySet.command.bindings().prefix(5).enumerated().map { index, binding in
+        #expect(settings.bindings == HotkeyKeySet.command.bindings().enumerated().map { index, binding in
             HotkeyBinding(id: UUID(uuidString: ownIDs[index])!, combo: binding.combo, actions: binding.actions)
-        }, "it is the ⌘1–⌘6 key set's first five")
-        #expect(HotkeyKeySet.current(in: settings.bindings) == nil)
+        }, "it is the ⌘1–⌘5 key set")
+        #expect(HotkeyKeySet.current(in: settings.bindings) == .command)
         #expect(settings.isEnabled)
         #expect(settings.showsConfirmation)
         #expect(settings.scope == .sToolsAndMinecraft)
@@ -145,14 +144,13 @@ struct HotkeyMigrationTests {
         }
     }
 
-    /// The same five keys in another order keep that order: nothing reorders a list someone has. With Custom Cursor's
-    /// key added it follows the ⌘1–⌘6 key set, which looks only at each tool's key.
+    /// The same five keys in another order keep that order: nothing reorders a list someone has. It still follows the
+    /// ⌘1–⌘5 key set, which looks only at each tool's key.
     @Test func theSameFiveKeysInAnotherOrderKeepThatOrder() throws {
         let settings = try Folder(file(oldList().reversed())).load()
         #expect(listing(settings.bindings) == sidebarOrder.reversed())
         #expect(settings.bindings.map(\.id.uuidString) == ownIDs.reversed())
-        let withCursor = settings.bindings + [HotkeyBinding(combo: HotkeyCombo(keyCode: 22, modifiers: .command), actions: [.toggle(.cursor)])]
-        #expect(HotkeyKeySet.current(in: withCursor) == .command)
+        #expect(HotkeyKeySet.current(in: settings.bindings) == .command)
     }
 
     /// The flags come through as they were: off stays off, and so do Everywhere and a hidden confirmation.
@@ -182,7 +180,7 @@ struct HotkeyMigrationTests {
                                        extra: #","showsConfirmation":false,"scope":"everywhere""#)).load()
         #expect(listing(settings.bindings) == sidebarOrder)
         #expect(settings.bindings.map(\.id.uuidString) == ownIDs, "each tool keeps its id")
-        #expect(HotkeyKeySet.current(in: settings.bindings) == nil, "no key for Custom Cursor: Custom")
+        #expect(HotkeyKeySet.current(in: settings.bindings) == .command)
         #expect(!settings.isEnabled)
         #expect(!settings.showsConfirmation)
         #expect(settings.scope == .everywhere)
@@ -232,15 +230,15 @@ struct HotkeyMigrationTests {
         #expect(listing(try Folder(file(version: 3, build449Entries)).load().bindings) == build449Order)
     }
 
-    /// Earlier builds started everyone with no hotkeys at all: that list becomes a new install's ⌘1–⌘6 too, with the
+    /// Earlier builds started everyone with no hotkeys at all: that list becomes a new install's ⌘1–⌘5 too, with the
     /// master switch as it was.
-    @Test func theEarlierEmptyListBecomesCommandOneToSix() throws {
+    @Test func theEarlierEmptyListBecomesCommandOneToFive() throws {
         for isEnabled in [true, false] {
             let folder = try Folder(file([], isEnabled: isEnabled))
             let settings = folder.load()
-            #expect(listing(settings.bindings) == sidebarOrder + ["⌘6 Custom Cursor"])
+            #expect(listing(settings.bindings) == sidebarOrder)
             #expect(settings.isEnabled == isEnabled)
-            #expect(Set(settings.bindings.map(\.id)).count == 6)
+            #expect(Set(settings.bindings.map(\.id)).count == 5)
         }
     }
 
@@ -362,13 +360,13 @@ struct HotkeyMigrationTests {
     }
 
     /// ducky's list with a second key for Screen Recording (its other former action, on ⌘6) keeps ⌘4, the key set's,
-    /// and is ducky's list again: no key for Custom Cursor, so Custom.
+    /// and is ducky's list again.
     @Test func duckysListWithASecondScreenRecordingKeyKeepsCommandFour() throws {
         let folder = try Folder(file(oldList() + [entry(secondRecordingID, keyCode: 22, ["toggle.screenRecording"])]))
         let settings = folder.load()
         #expect(listing(settings.bindings) == sidebarOrder)
         #expect(settings.bindings.map(\.id.uuidString) == ownIDs)
-        #expect(HotkeyKeySet.current(in: settings.bindings) == nil)
+        #expect(HotkeyKeySet.current(in: settings.bindings) == .command)
     }
 
     /// The center writes the one key back with the rest of the move to version 2, so the file holds what the Hotkeys
@@ -397,8 +395,8 @@ struct HotkeyMigrationTests {
         let registrar = MigrationRegistrar()
         let center = HotkeyCenter(store: store, registrar: registrar, toolStates: { [:] }, handler: { _ in })
         #expect(listing(center.bindings) == sidebarOrder)
-        #expect(center.keySet == nil)
-        #expect(Set(registrar.active.values) == Set(HotkeyKeySet.command.combos.prefix(5)))
+        #expect(center.keySet == .command)
+        #expect(Set(registrar.active.values) == Set(HotkeyKeySet.command.combos))
         await store.flush()
 
         let stored = try folder.stored()

@@ -57,10 +57,20 @@ public struct CrosshairSettings: SettingsDocument {
     /// reshaped per feedback: a single on/off switch rather than exclusive options, so it composes
     /// cleanly with the same setting on other tools).
     public var visibleOnlyWhileMinecraftFocused = false
+    /// Hides the overlay while Minecraft is in front and shows the pointer: its menus, inventories and pause screen. The
+    /// pointer stays macOS's arrow.
+    public var hidesInMinecraftMenus = false
+    /// Turns macOS's arrow into the crosshair while Minecraft is in front, so in its menus the pointer is the crosshair,
+    /// clicking at its center. The overlay hides there, as with `hidesInMinecraftMenus`.
+    public var isPointerInMinecraftMenus = false
     public var displayChoice: DisplayChoice = .followMinecraft
     public var specificDisplayID: UInt32?
 
     public init() {}
+
+    /// Whether the overlay hides while Minecraft shows the pointer. Being the pointer implies it: in the menus the pointer
+    /// is the crosshair then.
+    public var hidesWhileThePointerShows: Bool { hidesInMinecraftMenus || isPointerInMinecraftMenus }
 
     /// This value with every field inside its range.
     public func clamped() -> CrosshairSettings {
@@ -104,6 +114,8 @@ public struct CrosshairSettings: SettingsDocument {
         gap = container.lossy(Int.self, .gap) ?? defaults.gap
         opacityPercent = container.lossy(Int.self, .opacityPercent) ?? defaults.opacityPercent
         visibleOnlyWhileMinecraftFocused = container.lossy(Bool.self, .visibleOnlyWhileMinecraftFocused) ?? defaults.visibleOnlyWhileMinecraftFocused
+        hidesInMinecraftMenus = container.lossy(Bool.self, .hidesInMinecraftMenus) ?? defaults.hidesInMinecraftMenus
+        isPointerInMinecraftMenus = container.lossy(Bool.self, .isPointerInMinecraftMenus) ?? defaults.isPointerInMinecraftMenus
         displayChoice = container.lossy(DisplayChoice.self, .displayChoice) ?? defaults.displayChoice
         specificDisplayID = container.lossy(UInt32.self, .specificDisplayID)
         self = clamped()

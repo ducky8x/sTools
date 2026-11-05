@@ -136,12 +136,12 @@ struct HotkeyActionTests {
     }
 
     /// One chip per tool, in sidebar order: Crosshair, Start timer (Timer Overlay), NBB Overlay, Screen Recording's one
-    /// action, Window Backdrop, Custom Cursor. The key sets give the tools their keys in the same order.
+    /// action, Window Backdrop. The key sets give the tools their keys in the same order.
     @Test func allCasesFollowTheSidebar() {
         #expect(HotkeyAction.allCases == [.toggle(.crosshair), .startTimer, .toggle(.nbbOverlay), .startStopRecording,
-                                          .toggle(.windowBackdrop), .toggle(.cursor)])
+                                          .toggle(.windowBackdrop)])
         #expect(HotkeyAction.allCases == HotkeyKeySet.toolActions)
-        #expect(HotkeyTool.allCases == [.crosshair, .nbbOverlay, .windowBackdrop, .cursor], "the toggles, in sidebar order too")
+        #expect(HotkeyTool.allCases == [.crosshair, .nbbOverlay, .windowBackdrop], "the toggles, in sidebar order too")
     }
 
     @Test func storedAsPlainStrings() throws {

@@ -106,6 +106,20 @@ struct CrosshairControllerTests {
         #expect(controller.drawCount == 2)
     }
 
+    /// The overlay shows a newly chosen image at once: it's loaded before the settings change that draws it.
+    @MainActor
+    @Test func anImportedImageIsDrawnAtOnce() {
+        let directory = tempDirectory()
+        let controller = makeController(makeServices(tempDirectory: directory))
+        controller.setEnabled(true)
+        defer { controller.setEnabled(false) }
+        let picked = directory.appending(path: "picked.png")
+        writeTestImage(to: picked)
+        controller.importImage(from: picked)
+        #expect(controller.settings.shape == .image)
+        #expect(controller.sprite?.size == PixelSize(width: 9, height: 7))
+    }
+
     @MainActor
     @Test func importingAnUnreadableFileReportsAnErrorAndKeepsTheShape() {
         let directory = tempDirectory()

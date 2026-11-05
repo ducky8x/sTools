@@ -5,12 +5,14 @@ import Testing
 /// 5.7.1). No test, benchmark or helper may build it: they use a fake `CursorSwapping`. This reads every file under
 /// `Tests/` and `Benchmarks/` and fails if one names it. The names are put together here so this file doesn't name it
 /// either.
-@Suite("Custom Cursor: no test uses the real pointer")
+@Suite("The pointer: no test uses the real one")
 struct LiveSwapperGuardTests {
     private static let forbidden = ["Live" + "CursorSwapper", "makeLive" + "Swapper"]
 
     private static var packageRoot: URL {
+        // Tests/STPlatformTests/Pointer/<this file>
         URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
     }
 
     private static func swiftFiles(under folder: String) -> [URL] {

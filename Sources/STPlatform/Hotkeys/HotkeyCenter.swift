@@ -117,7 +117,7 @@ public final class HotkeyCenter {
     @ObservationIgnored private let registrar: any HotkeyRegistering
     @ObservationIgnored private let toolStates: @MainActor () -> [HotkeyTool: Bool]
     @ObservationIgnored private let handler: @MainActor ([HotkeyEvent]) -> Void
-    /// The combinations sTools' own menus use (the Go menu's ⌃⌘0–⌃⌘7, ⌘, ⌘[ and ⌘]), which a variant never takes while
+    /// The combinations sTools' own menus use (the Go menu's ⌃⌘0–⌃⌘6, ⌘, ⌘[ and ⌘]), which a variant never takes while
     /// sTools is in front, the only time a menu has them: the app passes them in, since they belong to its menus.
     @ObservationIgnored private let menuShortcuts: Set<HotkeyCombo>
     /// What is registered with the system right now. Empty while paused.
@@ -167,7 +167,7 @@ public final class HotkeyCenter {
         self.settings = store.load(HotkeySettings.self)
         // Its own file, which nothing writes until the option is changed.
         self.heldModifiers = store.load(HotkeyHeldModifierSettings.self)
-        // A file from an earlier version was upgraded as it loaded (an empty version 1 list becomes ⌘1–⌘6 in sidebar
+        // A file from an earlier version was upgraded as it loaded (an empty version 1 list becomes ⌘1–⌘5 in sidebar
         // order, and build 449's version 2 list goes back to ducky's keys; any other list is kept as it is): writing it
         // back makes that happen once.
         if let stored = store.storedVersion(HotkeySettings.self), stored < HotkeySettings.version {

@@ -1,12 +1,12 @@
 import Foundation
 
 /// `hotkeys.json` version 1 to 2 (spec 6.1, revision 9): the list every build before key sets started people with, no
-/// hotkeys at all, becomes the key set a new install has, ⌘1–⌘6 in sidebar order. It runs once: `HotkeyCenter` writes
+/// hotkeys at all, becomes the key set a new install has, ⌘1–⌘5 in sidebar order. It runs once: `HotkeyCenter` writes
 /// the result back as version 2, and from then on the list is the person's own.
 ///
 /// Only that empty list counts. Every list with a hotkey in it is kept exactly as it is, keys, actions, ids and order:
-/// ducky's own ⌘1 Crosshair, ⌘2 Start timer, ⌘3 NBB Overlay, ⌘4 Screen Recording, ⌘5 Window Backdrop (the ⌘1–⌘6 key
-/// set in today's sidebar order but for Custom Cursor's ⌘6, which no saved list is given), a changed key, an extra or missing hotkey,
+/// ducky's own ⌘1 Crosshair, ⌘2 Start timer, ⌘3 NBB Overlay, ⌘4 Screen Recording, ⌘5 Window Backdrop (which is also
+/// the ⌘1–⌘5 key set in today's sidebar order, so it reads as that set), a changed key, an extra or missing hotkey,
 /// another modifier, a hotkey with more than one action, an action this build doesn't know, or an entry it can't
 /// read. (Revision 10, owner: "the hotkeys stay the same, but the order in the sidebar changes": no build moves a
 /// list someone has.) The other settings (the master switch, the confirmation, Where hotkeys work) are never touched.
@@ -89,9 +89,8 @@ enum HotkeyListUpgrade {
 
         var ids: [HotkeyAction: UUID] = [:]
         for hotkey in hotkeys { ids[hotkey.actions[0]] = hotkey.id }
-        // The five tools build 449 had: a tool added since (Custom Cursor) gets no key here.
-        let bindings = HotkeyKeySet.command.bindings().compactMap { binding in
-            ids[binding.actions[0]].map { HotkeyBinding(id: $0, combo: binding.combo, actions: binding.actions) }
+        let bindings = HotkeyKeySet.command.bindings().map { binding in
+            HotkeyBinding(id: ids[binding.actions[0]] ?? binding.id, combo: binding.combo, actions: binding.actions)
         }
         guard let data = try? JSONEncoder().encode(bindings),
               let moved = try? JSONSerialization.jsonObject(with: data) else { return raw }

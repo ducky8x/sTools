@@ -1,10 +1,10 @@
 import CoreGraphics
 import Foundation
 import Testing
-@testable import CustomCursor
+@testable import STPlatform
 
 /// `Cursor/applied` and `Cursor/Originals/` in the support folder (spec 5.7.1), here in a temporary one.
-@Suite("Custom Cursor: its files")
+@Suite("The pointer's files")
 struct CursorFilesTests {
     private func folder() -> URL {
         FileManager.default.temporaryDirectory.appending(path: "sTools-cursor-files-\(UUID().uuidString)", directoryHint: .isDirectory)
@@ -63,13 +63,5 @@ struct CursorFilesTests {
     /// The three names macOS draws its arrow by on macOS 26 and later.
     @Test func theArrowsNames() {
         #expect(CursorNames.arrow == ["com.apple.coregraphics.Arrow", "com.apple.coregraphics.ArrowS", "com.apple.cursor.0"])
-    }
-}
-
-extension RegisteredCursor {
-    /// A stand-in for macOS 27's arrow: 28 × 40 points, clicking at 5, 5, with four images.
-    static func systemArrow(name: String) -> RegisteredCursor {
-        RegisteredCursor(name: name, size: CGSize(width: 28, height: 40), hotSpot: CGPoint(x: 5, y: 5), frameCount: 1, frameDuration: 0,
-                         images: [1, 2, 3, 4].map { makeImage(width: 28 * $0, height: 40 * $0) })
     }
 }

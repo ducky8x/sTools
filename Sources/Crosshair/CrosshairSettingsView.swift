@@ -2,7 +2,7 @@ import SwiftUI
 import STDesign
 
 /// Everything below the page header for the Crosshair tool: the live preview plate, the everyday
-/// settings, then an Advanced section for the rest (spec 5.3.2).
+/// settings with the two for Minecraft's menus last, then an Advanced section for the rest (spec 5.3.2).
 public struct CrosshairSettingsView: View {
     @Bindable private var controller: CrosshairController
     @State private var advancedExpanded = false
@@ -42,6 +42,7 @@ public struct CrosshairSettingsView: View {
                     }
                 }
                 CrosshairOffsetRow(settings: $controller.settings)
+                CrosshairMenuRows(controller: controller)
             }
 
             STAdvancedDisclosure(isExpanded: $advancedExpanded) {

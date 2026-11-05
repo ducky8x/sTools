@@ -47,7 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
-    /// Custom Cursor's pointer outlives sTools, so it goes back as sTools quits however the quit came (spec 5.7.2).
+    /// The Crosshair's pointer outlives sTools, so macOS's arrow goes back as sTools quits, however the quit came.
     func applicationWillTerminate(_ notification: Notification) {
         model.restorePointerForQuit()
     }

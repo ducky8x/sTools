@@ -17,7 +17,6 @@ private let crosshair = HotkeyAction.toggle(.crosshair)
 /// Screen Recording's one action: it has no toggle.
 private let recording = HotkeyAction.startStopRecording
 private let timer = HotkeyAction.startTimer
-private let cursor = HotkeyAction.toggle(.cursor)
 
 private func combo(_ keyCode: UInt16, _ modifiers: HotkeyCombo.Modifiers = []) -> HotkeyCombo {
     HotkeyCombo(keyCode: keyCode, modifiers: modifiers)
@@ -39,30 +38,30 @@ struct HotkeyKeySetTests {
     // MARK: What each set gives
 
     @Test func eachSetGivesOneKeyPerToolInSidebarOrder() {
-        #expect(HotkeyKeySet.toolActions == [crosshair, timer, nbb, recording, backdrop, cursor])
-        let digits: [UInt16] = [18, 19, 20, 21, 23, 22]
+        #expect(HotkeyKeySet.toolActions == [crosshair, timer, nbb, recording, backdrop])
+        let digits: [UInt16] = [18, 19, 20, 21, 23]
         #expect(HotkeyKeySet.command.combos == digits.map { combo($0, .command) })
         #expect(HotkeyKeySet.control.combos == digits.map { combo($0, .control) })
         #expect(HotkeyKeySet.option.combos == digits.map { combo($0, .option) })
         #expect(HotkeyKeySet.noKeys.combos.isEmpty)
 
-        #expect(HotkeyKeySet.command.combos.map(\.displayString) == ["⌘1", "⌘2", "⌘3", "⌘4", "⌘5", "⌘6"])
-        #expect(HotkeyKeySet.control.combos.map(\.displayString) == ["⌃1", "⌃2", "⌃3", "⌃4", "⌃5", "⌃6"])
-        #expect(HotkeyKeySet.option.combos.map(\.displayString) == ["⌥1", "⌥2", "⌥3", "⌥4", "⌥5", "⌥6"])
-        #expect(HotkeyKeySet.allCases.map(\.title) == ["⌘1–⌘6", "⌃1–⌃6", "⌥1–⌥6", "None"])
+        #expect(HotkeyKeySet.command.combos.map(\.displayString) == ["⌘1", "⌘2", "⌘3", "⌘4", "⌘5"])
+        #expect(HotkeyKeySet.control.combos.map(\.displayString) == ["⌃1", "⌃2", "⌃3", "⌃4", "⌃5"])
+        #expect(HotkeyKeySet.option.combos.map(\.displayString) == ["⌥1", "⌥2", "⌥3", "⌥4", "⌥5"])
+        #expect(HotkeyKeySet.allCases.map(\.title) == ["⌘1–⌘5", "⌃1–⌃5", "⌥1–⌥5", "None"])
     }
 
     /// VoiceOver says each set's name in words, as it says a hotkey's keys, rather than reading its symbols.
     @Test func eachSetHasASpokenName() {
         #expect(HotkeyKeySet.allCases.map(\.spokenTitle) == [
-            "Command 1 to Command 6", "Control 1 to Control 6", "Option 1 to Option 6", "None",
+            "Command 1 to Command 5", "Control 1 to Control 5", "Option 1 to Option 5", "None",
         ])
     }
 
     @Test func eachSetsHotkeysDoTheToolsMainActions() {
         for set in HotkeyKeySet.allCases where set != .noKeys {
             let bindings = set.bindings()
-            #expect(bindings.map(\.actions) == [[crosshair], [timer], [nbb], [recording], [backdrop], [cursor]], "\(set)")
+            #expect(bindings.map(\.actions) == [[crosshair], [timer], [nbb], [recording], [backdrop]], "\(set)")
             #expect(bindings.map(\.combo) == set.combos)
             #expect(bindings.allSatisfy { $0.combo.isValid }, "no set holds a combination macOS keeps")
             #expect(HotkeyKeySet.current(in: bindings) == set)
@@ -71,7 +70,7 @@ struct HotkeyKeySetTests {
         // A new install's keys, as the hotkey list names them: Timer Overlay's is Start timer, and Screen Recording's
         // is its one action, the one its page's Hotkey row sets.
         #expect(HotkeyKeySet.command.bindings().map { "\($0.combo.displayString) \(HotkeyWording.summary($0.actions))" }
-            == ["⌘1 Crosshair", "⌘2 Start timer", "⌘3 NBB Overlay", "⌘4 Screen Recording", "⌘5 Window Backdrop", "⌘6 Custom Cursor"])
+            == ["⌘1 Crosshair", "⌘2 Start timer", "⌘3 NBB Overlay", "⌘4 Screen Recording", "⌘5 Window Backdrop"])
         #expect(HotkeyKeySet.command.combo(for: .startStopRecording)?.displayString == "⌘4")
         #expect(HotkeyKeySet.option.combo(for: .startStopRecording)?.displayString == "⌥4")
     }
@@ -115,16 +114,16 @@ struct HotkeyKeySetTests {
 
         let after = HotkeyKeySet.control.applied(to: before)
         #expect(after.count == before.count)
-        #expect(Array(after[0...5]).map(\.combo) == HotkeyKeySet.control.combos)
-        #expect(Array(after[0...5]).map(\.actions) == [[crosshair], [timer], [nbb], [recording], [backdrop], [cursor]])
-        #expect(Array(after[0...5]).map(\.id) == Array(before[1...6]).map(\.id), "each own hotkey keeps its id")
-        #expect(Array(after[6...]) == [custom, recordingAndTimer], "other hotkeys stay as they are, in their order")
+        #expect(Array(after[0...4]).map(\.combo) == HotkeyKeySet.control.combos)
+        #expect(Array(after[0...4]).map(\.actions) == [[crosshair], [timer], [nbb], [recording], [backdrop]])
+        #expect(Array(after[0...4]).map(\.id) == Array(before[1...5]).map(\.id), "each own hotkey keeps its id")
+        #expect(Array(after[5...]) == [custom, recordingAndTimer], "other hotkeys stay as they are, in their order")
         #expect(HotkeyKeySet.current(in: after) == .control)
     }
 
     /// The ⌘1–⌘5 list in an earlier sidebar order (build 449's default: ⌘1 NBB Overlay, ⌘2 Window Backdrop, ⌘3
-    /// Crosshair, ⌘4 Start timer, ⌘5 Screen Recording): picking ⌘1–⌘6 gives each tool its sidebar number, adds ⌘6 for
-    /// Custom Cursor and lists them in sidebar order, so the Hotkeys page reads ⌘1 to ⌘6 down the page.
+    /// Crosshair, ⌘4 Start timer, ⌘5 Screen Recording): picking ⌘1–⌘5 gives each tool its sidebar number and lists
+    /// them in sidebar order, so the Hotkeys page reads ⌘1 to ⌘5 down the page.
     @Test func pickingASetPutsAListInAnEarlierOrderInSidebarOrder() {
         let earlier = [
             HotkeyBinding(combo: combo(18, .command), actions: [nbb]),
@@ -136,8 +135,8 @@ struct HotkeyKeySetTests {
         #expect(HotkeyKeySet.current(in: earlier) == nil, "Custom before")
         let after = HotkeyKeySet.command.applied(to: earlier)
         #expect(after.map { "\($0.combo.displayString) \(HotkeyWording.summary($0.actions))" }
-            == ["⌘1 Crosshair", "⌘2 Start timer", "⌘3 NBB Overlay", "⌘4 Screen Recording", "⌘5 Window Backdrop", "⌘6 Custom Cursor"])
-        #expect(after.prefix(5).map(\.id) == [earlier[2].id, earlier[3].id, earlier[0].id, earlier[4].id, earlier[1].id])
+            == ["⌘1 Crosshair", "⌘2 Start timer", "⌘3 NBB Overlay", "⌘4 Screen Recording", "⌘5 Window Backdrop"])
+        #expect(after.map(\.id) == [earlier[2].id, earlier[3].id, earlier[0].id, earlier[4].id, earlier[1].id])
         #expect(HotkeyKeySet.current(in: after) == .command)
     }
 
@@ -145,8 +144,8 @@ struct HotkeyKeySetTests {
         let custom = HotkeyBinding(combo: ctrlOptC, actions: [crosshair, nbb])
         let crosshairOnF6 = HotkeyBinding(combo: f6, actions: [crosshair])
         let after = HotkeyKeySet.option.applied(to: [custom, crosshairOnF6])
-        #expect(after.map(\.actions) == [[crosshair], [timer], [nbb], [recording], [backdrop], [cursor], [crosshair, nbb]])
-        #expect(after.prefix(6).map(\.combo) == HotkeyKeySet.option.combos)
+        #expect(after.map(\.actions) == [[crosshair], [timer], [nbb], [recording], [backdrop], [crosshair, nbb]])
+        #expect(after.prefix(5).map(\.combo) == HotkeyKeySet.option.combos)
         #expect(after[0].id == crosshairOnF6.id)
         #expect(after.last == custom)
     }
@@ -368,13 +367,13 @@ struct HotkeyKeySetTests {
     /// A new install's hotkeys are on from the first launch: they work only in sTools and Minecraft by default, so
     /// they take no other app's keys (a browser's ⌘1 still switches tabs).
     @MainActor
-    @Test func aNewInstallStartsWithCommandOneToSixAndHotkeysOn() {
+    @Test func aNewInstallStartsWithCommandOneToFiveAndHotkeysOn() {
         let (store, directory) = temporaryStore()
         defer { try? FileManager.default.removeItem(at: directory) }
         let registrar = KeySetRegistrar()
         let center = HotkeyCenter(store: store, registrar: registrar, toolStates: { [:] }, handler: { _ in })
         #expect(center.bindings.map(\.combo) == HotkeyKeySet.command.combos)
-        #expect(center.bindings.map(\.actions) == [[crosshair], [timer], [nbb], [recording], [backdrop], [cursor]])
+        #expect(center.bindings.map(\.actions) == [[crosshair], [timer], [nbb], [recording], [backdrop]])
         #expect(center.keySet == .command)
         #expect(center.isEnabled)
         #expect(center.scope == .sToolsAndMinecraft)
@@ -393,7 +392,7 @@ struct HotkeyKeySetTests {
         let center = HotkeyCenter(store: store, registrar: registrar, toolStates: { [:] }, handler: { events.append($0) })
         for binding in center.bindings { registrar.onPress?(binding.id) }
         #expect(events == [[.setTool(.crosshair, isOn: true)], [.startTimer], [.setTool(.nbbOverlay, isOn: true)],
-                           [.toggleRecording], [.setTool(.windowBackdrop, isOn: true)], [.setTool(.cursor, isOn: true)]])
+                           [.toggleRecording], [.setTool(.windowBackdrop, isOn: true)]])
     }
 
     /// A current file keeps what it has: an empty list (the None key set) stays empty. Lists from earlier versions

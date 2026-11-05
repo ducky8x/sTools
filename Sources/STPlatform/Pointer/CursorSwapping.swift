@@ -26,6 +26,25 @@ public struct RegisteredCursor: @unchecked Sendable {
     }
 }
 
+/// The pointer as macOS takes it (spec 5.7.1): its size and click point in points, top-left origin, and one image per
+/// scale, each the size in points times the scale in pixels.
+public struct CursorImage: @unchecked Sendable {
+    /// The scales a pointer is drawn at: 1×, 2× and 4×, so it stays sharp on a Retina display and under macOS's Pointer
+    /// size.
+    public static let scales = [1, 2, 4]
+
+    public var size: CGSize
+    public var hotSpot: CGPoint
+    /// One image per scale in `scales`, in that order.
+    public var images: [CGImage]
+
+    public init(size: CGSize, hotSpot: CGPoint, images: [CGImage]) {
+        self.size = size
+        self.hotSpot = hotSpot
+        self.images = images
+    }
+}
+
 /// Replaces and restores the pointer macOS draws, for every app (spec 5.7.1). The app uses the window server's private
 /// calls (`makeLiveSwapper()`); tests use a fake, because the real one changes the person's own pointer and what it sets
 /// outlives sTools.

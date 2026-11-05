@@ -9,6 +9,6 @@ extension GoCommand {
     }
 
     /// Every shortcut of the Go menu, which no hotkey takes as a variant (spec 6.1): hotkeys fire with Shift or Control
-    /// held as well, and the menu uses ⌃⌘0–⌃⌘7 and ⌃⌘H, so a hotkey on ⌘1 doesn't also fire with Control held.
+    /// held as well, and the menu uses ⌃⌘0–⌃⌘6 and ⌃⌘H, so a hotkey on ⌘1 doesn't also fire with Control held.
     static var menuShortcuts: Set<HotkeyCombo> { Set(menu.compactMap(\.shortcutCombo)) }
 }

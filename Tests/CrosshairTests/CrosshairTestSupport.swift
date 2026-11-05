@@ -193,3 +193,129 @@ func writeTestImage(to url: URL) {
     CGImageDestinationAddImage(destination, image, nil)
     CGImageDestinationFinalize(destination)
 }
+
+// MARK: - The pointer
+
+/// Stands in for the window server's pointer calls: it records each apply and restore and never touches the real pointer.
+@MainActor
+final class FakeCursorSwapper: CursorSwapping {
+    var isSupported: Bool
+    private(set) var applied: [CursorImage] = []
+    private(set) var restoreCount = 0
+    /// Whether the fake's pointer is what macOS would draw now.
+    private(set) var showsTheCrosshair = false
+
+    init(isSupported: Bool = true) {
+        self.isSupported = isSupported
+    }
+
+    var applyCount: Int { applied.count }
+    /// Every apply and restore, in order.
+    private(set) var calls: [String] = []
+
+    func registered(_ name: String) -> RegisteredCursor? { nil }
+
+    func apply(_ cursor: CursorImage, names: [String]) {
+        applied.append(cursor)
+        calls.append("apply")
+        showsTheCrosshair = true
+    }
+
+    func restore(_ originals: [RegisteredCursor]) {
+        restoreCount += 1
+        calls.append("restore")
+        showsTheCrosshair = false
+    }
+}
+
+/// Stands in for the pointer watch: the test says whether the pointer shows, and a change while it watches is reported
+/// at once. Nothing reads the real pointer.
+@MainActor
+final class FakePointerWatch: PointerVisibilityWatching {
+    var isSupported: Bool
+    private(set) var isWatching = false
+    private(set) var startCount = 0
+    private var onChange: (@MainActor @Sendable (Bool) -> Void)?
+
+    /// Whether the pointer shows: false in the game, true in a menu.
+    var pointerShows: Bool {
+        didSet { if isWatching, pointerShows != oldValue { onChange?(pointerShows) } }
+    }
+
+    init(pointerShows: Bool = false, isSupported: Bool = true) {
+        self.pointerShows = pointerShows
+        self.isSupported = isSupported
+    }
+
+    func start(_ onChange: @escaping @MainActor @Sendable (Bool) -> Void) {
+        stop()
+        guard isSupported else { return }
+        isWatching = true
+        startCount += 1
+        self.onChange = onChange
+        onChange(pointerShows)
+    }
+
+    func stop() {
+        isWatching = false
+        onChange = nil
+    }
+}
+
+/// A Crosshair whose panel is never ordered in, with a pointer swap over `swapper` and `watch`, in a folder of its own,
+/// and a Minecraft the test moves.
+@MainActor
+struct MenuRig {
+    let source: StaticMinecraftWindowSource
+    let services: ToolServices
+    let swapper: FakeCursorSwapper
+    let watch: FakePointerWatch
+    let controller: CrosshairController
+
+    init(minecraftInFront: Bool = true, display: DisplayInfo = fullHDDisplay, swapper: FakeCursorSwapper = FakeCursorSwapper(),
+         watch: FakePointerWatch = FakePointerWatch(), withPointer: Bool = true) {
+        source = StaticMinecraftWindowSource(instances: [menuRigMinecraft(frontmost: minecraftInFront, display: display)])
+        let directory = tempDirectory()
+        services = makeServices(tempDirectory: directory, source: source, displays: [display])
+        services.minecraft.start()
+        self.swapper = swapper
+        self.watch = watch
+        controller = CrosshairController(
+            services: services, imagesDirectory: directory.appending(path: "Images"), showsPanel: false,
+            pointer: withPointer ? PointerSwap(swapper: swapper, supportDirectory: directory) : nil, pointerWatch: watch)
+    }
+
+    /// Minecraft in front or behind, on the rig's display.
+    func setMinecraft(inFront: Bool, display: DisplayInfo = fullHDDisplay) {
+        source.instances = [menuRigMinecraft(frontmost: inFront, display: display)]
+        services.minecraft.refresh()
+    }
+
+    /// Minecraft quits.
+    func quitMinecraft() {
+        source.instances = []
+        services.minecraft.refresh()
+    }
+
+    func stop() {
+        controller.setEnabled(false)
+        services.minecraft.stop()
+    }
+}
+
+func menuRigMinecraft(frontmost: Bool, display: DisplayInfo = fullHDDisplay) -> MinecraftInstance {
+    let window = MinecraftWindow(windowNumber: 42, processID: 4242, title: "Minecraft* 1.16.1", frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+    return MinecraftInstance(window: window, launchDate: Date(timeIntervalSince1970: 1), isFrontmost: frontmost, displayID: display.id)
+}
+
+/// Waits, without blocking the main actor, until `condition` holds or 20 s of awake time pass.
+@MainActor
+func waitUntil(_ condition: @MainActor () -> Bool) async -> Bool {
+    let clock = SuspendingClock()
+    let deadline = clock.now.advanced(by: .seconds(20))
+    while !condition() {
+        guard clock.now < deadline else { return false }
+        try? await Task.sleep(for: .milliseconds(5))
+    }
+    return true
+}

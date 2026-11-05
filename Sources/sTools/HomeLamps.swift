@@ -24,8 +24,8 @@ struct HomeLamp: Equatable, Sendable {
     }
 }
 
-/// The three companions Home shows as visuals, in the strip beside the title in this order; in a wide window's column
-/// each stands by a row with a tool it serves (`HomeToolGrid.lamps`).
+/// The three companions Home shows as visuals, in the order of the tool rows beside them: Minecraft by the overlays,
+/// Ninjabrain Bot by the NBB Overlay and Karabiner-Elements by the Key Rebinder.
 enum HomeLampKind: CaseIterable, Sendable {
     case minecraft, ninjabrainBot, karabiner
 

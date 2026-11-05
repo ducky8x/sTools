@@ -10,9 +10,11 @@
 //   swift run -c release OverlayBench                     every scenario, 3 rounds of 20 s, each paired with "off"
 //   swift run -c release OverlayBench all --seconds 30 --rounds 5
 //
-// Scenarios: off (the app's run loop and nothing else), crosshair, backdrop (a still fill), timer (counting down, the
-// overlay redrawn once a second), nbb (a result on the plate, standing still, as between throws), nbb-updating (a new
-// result every second, far faster than a run makes them) and all (the four together). The numbers move by half or more
+// Scenarios: off (the app's run loop and nothing else), crosshair, crosshair-menus (the Crosshair with Hide in Minecraft's
+// menus on, so it reads whether the real pointer shows every 50 ms; it only reads, and the pointer showing on the desktop
+// hides the overlay, so this is the watch's cost), backdrop (a still fill), timer (counting down, the overlay redrawn once
+// a second), nbb (a result on the plate, standing still, as between throws), nbb-updating (a new result every second, far
+// faster than a run makes them) and all (the four together). The numbers move by half or more
 // with the Mac's load: compare scenarios inside one run, and rerun when the load changes.
 
 import AppKit
@@ -122,12 +124,12 @@ final class SilentAnnouncer: TimerAnnouncing {
 // MARK: The rig
 
 enum Scenario: String, CaseIterable {
-    case off, crosshair, backdrop, timer, nbb, nbbUpdating = "nbb-updating", all
+    case off, crosshair, crosshairMenus = "crosshair-menus", backdrop, timer, nbb, nbbUpdating = "nbb-updating", all
 
     var tools: Set<String> {
         switch self {
         case .off: []
-        case .crosshair: ["crosshair"]
+        case .crosshair, .crosshairMenus: ["crosshair"]
         case .backdrop: ["backdrop"]
         case .timer: ["timer"]
         case .nbb, .nbbUpdating: ["nbb"]
@@ -145,7 +147,7 @@ final class Rig {
     let nbb: NBBOverlayController
     let timer: TimerOverlayController
 
-    init(updatingNinjabrainBot: Bool) {
+    init(updatingNinjabrainBot: Bool, watchesThePointer: Bool = false) {
         let frame = CGRect(x: -40_000, y: -40_000, width: 1920, height: 1080)
         let display = DisplayInfo(
             id: 1, name: "Off screen", frame: frame, bounds: CGRect(x: frame.minX, y: 1080 - frame.maxY, width: 1920, height: 1080),
@@ -161,7 +163,10 @@ final class Rig {
             minecraft: minecraft, permissions: PermissionCenter(prober: GrantsEverything(), openURL: { _ in }))
         let theme = STTheme()
         let images = directory.appending(path: "Images", directoryHint: .isDirectory)
-        crosshair = CrosshairController(services: services, imagesDirectory: images)
+        // The pointer watch only reads; nothing here swaps the pointer.
+        crosshair = CrosshairController(services: services, imagesDirectory: images,
+                                        pointerWatch: watchesThePointer ? PointerVisibilityPoller() : nil)
+        if watchesThePointer { crosshair.settings.hidesInMinecraftMenus = true }
         backdrop = BackdropController(services: services, imagesDirectory: images, theme: theme)
         nbb = NBBOverlayController(
             services: services, connection: NBBConnection(source: ScriptedNinjabrainBot(updatesEverySecond: updatingNinjabrainBot)),
@@ -195,7 +200,7 @@ struct Sample {
 /// Runs `scenario` for `seconds` after a short settle, sampling the CPU once a second.
 @MainActor
 func run(_ scenario: Scenario, seconds: Int) async -> Sample {
-    let rig = Rig(updatingNinjabrainBot: scenario == .nbbUpdating)
+    let rig = Rig(updatingNinjabrainBot: scenario == .nbbUpdating, watchesThePointer: scenario == .crosshairMenus)
     rig.switchOn(scenario.tools)
     try? await Task.sleep(for: .seconds(2))
     var sample = Sample(processMillisecondsPerSecond: [], mainThreadMillisecondsPerSecond: [])

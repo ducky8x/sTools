@@ -41,12 +41,11 @@ public struct HotkeyBinding: Codable, Hashable, Identifiable, Sendable {
 public struct HotkeySettings: SettingsDocument {
     public static let name = "hotkeys"
     /// 2 since the key sets: a version 1 file with no hotkeys at all, the list every earlier build started with, becomes
-    /// a new install's key set in sidebar order, once (`HotkeyListUpgrade`); a list with hotkeys in it is never moved. 3 since the sidebar
+    /// ⌘1–⌘5 in sidebar order, once (`HotkeyListUpgrade`); a list with hotkeys in it is never moved. 3 since the sidebar
     /// order of revision 10: a version 2 file holding exactly the list build 449 moved ducky's keys to goes back to
-    /// ducky's ⌘1–⌘5 (`HotkeyListUpgrade.undoingBuild449`). Custom Cursor's `toggle.cursor` needed no new version: a
-    /// build without it drops that action and keeps the list.
+    /// ⌘1–⌘5, which is ducky's list (`HotkeyListUpgrade.undoingBuild449`).
     public static let version = 3
-    /// A new install's (no `hotkeys.json` yet): ⌘1–⌘6, one per tool in sidebar order, with hotkeys on. They work only
+    /// A new install's (no `hotkeys.json` yet): ⌘1–⌘5, one per tool in sidebar order, with hotkeys on. They work only
     /// in sTools and Minecraft by default, so they take no other app's keys from the first launch.
     public static let defaultValue = HotkeySettings(isEnabled: true, bindings: HotkeyKeySet.newInstall.bindings())
 

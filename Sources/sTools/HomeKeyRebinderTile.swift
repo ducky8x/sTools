@@ -23,7 +23,6 @@ struct HomeKeyRebinderTile: View {
     let model: AppModel
 
     @Environment(\.stTheme) private var theme
-    @Environment(\.homeTilesAreTight) private var isTight
     @Environment(\.stSoundPlayer) private var sound
     @State private var isHovering = false
     /// Why the last click didn't switch the profile, until the next click.
@@ -66,9 +65,8 @@ struct HomeKeyRebinderTile: View {
                     .hidden()
                     .accessibilityHidden(true)
                 controls
-                    .padding(.top, HomeTileLabel.controlsGap(tight: isTight))
-                    // Under the status line, which a tight tile starts at its edge.
-                    .padding(.leading, isTight ? 0 : HomeTileLabel.numberColumn(theme.textScale))
+                    .padding(.top, HomeTileLabel.controlsGap)
+                    .padding(.leading, HomeTileLabel.numberColumn(theme.textScale))
                     // As tall as the other tiles' controls when sized alone, so many profiles never make the tile taller;
                     // in a taller tile, as tall as its room.
                     .frame(minHeight: HomeTileLabel.controlsHeight(theme.textScale),
@@ -76,8 +74,8 @@ struct HomeKeyRebinderTile: View {
             }
             .padding(.leading, HomeTileLabel.leadingPadding)
             .padding(.trailing, HomeTileLabel.trailingPadding)
-            .padding(.top, HomeTileLabel.topPadding(tight: isTight))
-            .padding(.bottom, HomeTileLabel.bottomPadding(tight: isTight))
+            .padding(.top, HomeTileLabel.topPadding)
+            .padding(.bottom, HomeTileLabel.bottomPadding)
         }
         .onHover { isHovering = $0 }
         .accessibilityElement(children: .contain)

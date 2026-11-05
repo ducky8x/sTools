@@ -103,8 +103,8 @@ enum GoCommand: Hashable, Sendable {
         }
     }
 
-    /// Whether the shortcut holds Control as well as Command. The pages do (⌃⌘0 Home, ⌃⌘H Hotkeys, ⌃⌘1–⌃⌘7 the
-    /// tools): hotkeys fire with sTools in front, and a key set's ⌘1–⌘6 would take ⌘ with a digit. Settings, Back and
+    /// Whether the shortcut holds Control as well as Command. The pages do (⌃⌘0 Home, ⌃⌘H Hotkeys, ⌃⌘1–⌃⌘6 the
+    /// tools): hotkeys fire with sTools in front, and a key set's ⌘1–⌘5 would take ⌘ with a digit. Settings, Back and
     /// Forward keep their usual ⌘, ⌘[ and ⌘].
     var shortcutHoldsControl: Bool {
         switch self {
