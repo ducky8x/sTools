@@ -4,13 +4,16 @@ import Foundation
 ///
 /// A set owns one hotkey per tool, the tool's own hotkey: the first whose only action is the tool's main action (the
 /// hotkey a tool page's Hotkey row sets). Picking a set changes only those and lists them first, in sidebar order;
-/// every other hotkey stays as it is, after them. A new install starts with ⌘1–⌘5.
+/// every other hotkey stays as it is, after them. A new install starts with ⌘1–⌘6.
+///
+/// Custom Cursor, sixth, gets ⌘6, ⌃6 or ⌥6 only when a set is picked (spec 5.7.4): a list saved before it keeps its keys,
+/// so it has no key for Custom Cursor and follows no set until one is picked.
 public enum HotkeyKeySet: String, CaseIterable, Hashable, Sendable {
-    /// ⌘1–⌘5, a new install's.
+    /// ⌘1–⌘6, a new install's.
     case command
-    /// ⌃1–⌃5.
+    /// ⌃1–⌃6.
     case control
-    /// ⌥1–⌥5.
+    /// ⌥1–⌥6.
     case option
     /// No key for any tool ("None"; not `none`, which would read as `Optional.none` next to `keySet`).
     case noKeys
@@ -19,23 +22,23 @@ public enum HotkeyKeySet: String, CaseIterable, Hashable, Sendable {
     public static let newInstall: HotkeyKeySet = .command
 
     /// Each tool's main action, in sidebar order (`HotkeyAction.allCases`): Crosshair, Timer Overlay (Start timer),
-    /// NBB Overlay, Screen Recording (its one action, which starts and stops a recording) and Window Backdrop; Timer
-    /// Overlay and Screen Recording have no toggle. Key Rebinder, last in the sidebar, has no switch, so it gets no
-    /// key and each tool's digit is its sidebar number. The app's `ToolID.hotkeyAction` gives the same actions.
+    /// NBB Overlay, Screen Recording (its one action, which starts and stops a recording), Window Backdrop and Custom
+    /// Cursor; Timer Overlay and Screen Recording have no toggle. Key Rebinder, last in the sidebar, has no switch, so it
+    /// gets no key and each tool's digit is its sidebar number. The app's `ToolID.hotkeyAction` gives the same actions.
     public static var toolActions: [HotkeyAction] { HotkeyAction.allCases }
 
     /// The set's name in the chooser.
     public var title: String {
         switch self {
-        case .command: "⌘1–⌘5"
-        case .control: "⌃1–⌃5"
-        case .option: "⌥1–⌥5"
+        case .command: "⌘1–⌘6"
+        case .control: "⌃1–⌃6"
+        case .option: "⌥1–⌥6"
         case .noKeys: "None"
         }
     }
 
     /// The set's name as VoiceOver says it, in words like a hotkey's keys (`HotkeyWording.spokenName(for:)`): "Command
-    /// 1 to Command 5", "Option 1 to Option 5", "None".
+    /// 1 to Command 6", "Option 1 to Option 6", "None".
     public var spokenTitle: String {
         guard let first = combos.first, let last = combos.last else { return title }
         return "\(HotkeyWording.spokenName(for: first)) to \(HotkeyWording.spokenName(for: last))"
@@ -45,8 +48,8 @@ public enum HotkeyKeySet: String, CaseIterable, Hashable, Sendable {
     /// is nil) because a key was set by hand.
     public static func name(of set: HotkeyKeySet?) -> String { set?.title ?? "Custom" }
 
-    /// The digits 1 to 5 on the main row, as virtual key codes.
-    private static let digitKeyCodes: [UInt16] = [18, 19, 20, 21, 23]
+    /// The digits 1 to 6 on the main row, as virtual key codes.
+    private static let digitKeyCodes: [UInt16] = [18, 19, 20, 21, 23, 22]
 
     /// The key this set gives the tool whose main action is `action`: nil with None, or for an action that is no
     /// tool's main action.
@@ -109,7 +112,7 @@ public enum HotkeyKeySet: String, CaseIterable, Hashable, Sendable {
     }
 
     /// The order the Hotkeys page lists hotkeys in once a key set or a tool page has set a tool's key: the tools' own
-    /// hotkeys first, in sidebar order (⌘1 to ⌘5 down the page), then every other hotkey in its order. Only own hotkeys
+    /// hotkeys first, in sidebar order (⌘1 to ⌘6 down the page), then every other hotkey in its order. Only own hotkeys
     /// move, so a list already in this order comes back unchanged.
     public static func ordered(_ bindings: [HotkeyBinding]) -> [HotkeyBinding] {
         let own = toolActions.compactMap { ownBinding(for: $0, in: bindings) }

@@ -151,7 +151,7 @@ struct AppModelSettingsTests {
 
     @Test func resetAllToolsNamesEveryToolItResetsInSidebarOrder() {
         #expect(AppModel.resetAllToolsMessage.hasPrefix(
-            "This sets the settings of Crosshair, Timer Overlay, NBB Overlay, Screen Recording, Window Backdrop and "
+            "This sets the settings of Crosshair, Timer Overlay, NBB Overlay, Screen Recording, Window Backdrop, Custom Cursor and "
                 + "Key Rebinder back to their defaults."))
         #expect(AppModel.resetAllToolsMessage.contains("Screen Recording\u{2019}s sources and layout"))
     }

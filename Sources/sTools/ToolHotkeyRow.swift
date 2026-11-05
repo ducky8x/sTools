@@ -12,11 +12,12 @@ extension ToolID {
         case .nbbOverlay: .nbbOverlay
         case .windowBackdrop: .windowBackdrop
         case .crosshair: .crosshair
+        case .customCursor: .cursor
         case .screenRecording, .timerOverlay, .keyRebinder: nil
         }
     }
 
-    /// The tool's one hotkey action (spec 6.1): the toggle of the three overlay tools, Screen Recording's start/stop,
+    /// The tool's one hotkey action (spec 6.1): the toggle of Crosshair, NBB Overlay, Window Backdrop and Custom Cursor, Screen Recording's start/stop,
     /// Timer Overlay's Start timer. Nil for the Key Rebinder, which sets hotkeys on its keys instead. A key set's hotkey
     /// for the tool does this action too (Hotkeys ▸ Key set, `HotkeyKeySet.toolActions`).
     var hotkeyAction: HotkeyAction? {
@@ -137,7 +138,7 @@ struct ToolHotkeyRow: View {
     }
 
     /// Where hotkeys work and the key set the tools follow, as the Hotkeys page sets them: "Hotkeys work in sTools and
-    /// Minecraft · Key set: ⌘1–⌘5", or only in sTools while Accessibility is missing, as that page says.
+    /// Minecraft · Key set: ⌘1–⌘6", or only in sTools while Accessibility is missing, as that page says.
     var whereLine: String {
         HotkeyWording.whereAndKeySet(scope: hotkeys.scope, keySet: hotkeys.keySet,
                                      accessibilityGranted: model.accessibilityGranted)

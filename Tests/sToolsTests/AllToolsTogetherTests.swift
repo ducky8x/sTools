@@ -1,5 +1,6 @@
 import AppKit
 @testable import Crosshair
+import CustomCursor
 import Foundation
 @testable import NBBOverlay
 @testable import ScreenRecording
@@ -44,6 +45,9 @@ struct AllToolsTogetherTests {
         case .screenRecording:
             #expect(await waitUntil { harness.recording.sourcesAreReady })
             #expect(harness.panels(on: display).isEmpty, "a recording draws no window of its own")
+        case .customCursor:
+            #expect(harness.cursorSwapper.showsCustomPointer)
+            #expect(harness.panels(on: display).isEmpty, "the pointer is macOS's own, so it draws no window")
         case .keyRebinder:
             Issue.record("the Key Rebinder has no switch")
         }
@@ -89,14 +93,18 @@ struct AllToolsTogetherTests {
         let recorded = Set(OverlayPanel.visibleWindowNumbers())
         for panel in panels where !panel.isExcludedFromCapture { #expect(recorded.contains(UInt32(panel.windowNumber))) }
 
+        // Custom Cursor's pointer is macOS's own: no window, and it's applied.
+        #expect(harness.cursorSwapper.showsCustomPointer)
+
         // One by one they go, each taking only its own window.
         var remaining = panels.count
         for tool in qaSwitchableTools.reversed() {
             harness.model.setTool(tool, on: false)
-            if tool != .screenRecording { remaining -= 1 }
+            if tool != .screenRecording && tool != .customCursor { remaining -= 1 }
             #expect(await waitUntil { harness.panels(on: display).count == remaining }, "after \(tool.title) went off")
         }
         #expect(remaining == 0)
+        #expect(!harness.cursorSwapper.showsCustomPointer)
         await harness.finish()
     }
 

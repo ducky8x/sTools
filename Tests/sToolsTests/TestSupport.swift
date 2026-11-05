@@ -1,6 +1,7 @@
 import Backdrop
 import CoreGraphics
 import Crosshair
+import CustomCursor
 import Foundation
 import KeyRebinder
 import NBBOverlay
@@ -149,6 +150,9 @@ final class Harness {
     /// The Key Rebinder's `karabiner.json` (with `withKeyRebinder`), in the harness's folder. Its folder exists;
     /// the file doesn't until a test writes it.
     let karabinerConfigURL: URL
+    /// What Custom Cursor's real controller swaps through (with `usesRealControllers`, or a `cursorSwapper` of the test's):
+    /// a fake, so no test changes the real pointer.
+    let cursorSwapper: FakeCursorSwapper
 
     /// `prologueCompleted: false` launches as a first launch, with the introduction showing. `withKeyRebinder`
     /// adds a Key Rebinder over the harness's folder, connected like the app's: Karabiner-Elements reads as not
@@ -156,12 +160,16 @@ final class Harness {
     /// Karabiner-Elements is that scripted one instead, which answers with its profiles.
     ///
     /// `hotkeys` is the `hotkeys.json` the launch finds: an existing, empty list by default; nil for a new install,
-    /// which starts with ⌘1–⌘5. `displays` are the displays the app sees, `harnessDisplay` alone by default.
+    /// which starts with ⌘1–⌘6. `displays` are the displays the app sees, `harnessDisplay` alone by default.
+    /// `cursorSwapper` gives Custom Cursor its real controller over that fake, with the other tools fake.
     init(accessibility: PermissionStatus = .granted, instances: [MinecraftInstance] = [],
          theme: STTheme = STTheme(), usesRealControllers: Bool = false, hotkeyRegistrar: any HotkeyRegistering = FakeHotkeyRegistrar(),
          prologueCompleted: Bool = true, withKeyRebinder: Bool = false, karabiner: HarnessKarabiner? = nil,
-         hotkeys: HotkeySettings? = HotkeySettings(), displays: [DisplayInfo] = [harnessDisplay]) {
+         hotkeys: HotkeySettings? = HotkeySettings(), displays: [DisplayInfo] = [harnessDisplay],
+         cursorSwapper: FakeCursorSwapper? = nil) {
         self.hotkeyRegistrar = hotkeyRegistrar
+        let realCursor = usesRealControllers || cursorSwapper != nil
+        self.cursorSwapper = cursorSwapper ?? FakeCursorSwapper()
         directory = FileManager.default.temporaryDirectory.appending(path: "sTools-app-\(UUID().uuidString)")
         karabinerConfigURL = directory.appending(path: "karabiner", directoryHint: .isDirectory).appending(path: "karabiner.json")
         prober = FakeProber(accessibility: accessibility)
@@ -174,7 +182,9 @@ final class Harness {
         if let hotkeys { store.save(hotkeys) }
         var fakes: [ToolID: FakeController] = [:]
         if !usesRealControllers {
-            for tool in ToolID.allCases where tool.hasSwitch && tool != .timerOverlay { fakes[tool] = FakeController() }
+            for tool in ToolID.allCases where tool.hasSwitch && tool != .timerOverlay && !(realCursor && tool == .customCursor) {
+                fakes[tool] = FakeController()
+            }
         }
         controllers = fakes
         let opened = opened
@@ -189,6 +199,7 @@ final class Harness {
                .crosshair: CrosshairController(services: services)]
             : fakes.mapValues { $0 as any ToolController }
         all[.timerOverlay] = timer
+        if realCursor { all[.customCursor] = CustomCursorController(services: services, swapper: self.cursorSwapper) }
         var keyRebinder: KeyRebinderController?
         if withKeyRebinder || karabiner != nil {
             try? FileManager.default.createDirectory(at: karabinerConfigURL.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -382,3 +393,35 @@ final class FakeTimerAnnouncer: TimerAnnouncing {
     private(set) var announcements: [TimerAnnouncement] = []
     func announce(_ announcement: TimerAnnouncement) { announcements.append(announcement) }
 }
+
+// MARK: - Custom Cursor
+
+/// Stands in for the window server's pointer calls: it records each apply and restore and never touches the real pointer.
+@MainActor
+final class FakeCursorSwapper: CursorSwapping {
+    var isSupported: Bool
+    private(set) var applied: [CursorImage] = []
+    private(set) var restoreCount = 0
+    private var isApplied = false
+
+    init(isSupported: Bool = true) {
+        self.isSupported = isSupported
+    }
+
+    var applyCount: Int { applied.count }
+    /// Whether the fake pointer is what macOS would draw now.
+    var showsCustomPointer: Bool { isApplied }
+
+    func registered(_ name: String) -> RegisteredCursor? { nil }
+
+    func apply(_ cursor: CursorImage, names: [String]) {
+        applied.append(cursor)
+        isApplied = true
+    }
+
+    func restore(_ originals: [RegisteredCursor]) {
+        restoreCount += 1
+        isApplied = false
+    }
+}
+

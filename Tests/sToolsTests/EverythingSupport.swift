@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 @testable import Backdrop
 @testable import Crosshair
+import CustomCursor
 @testable import NBBOverlay
 @testable import ScreenRecording
 import STDesign
@@ -117,7 +118,8 @@ final class NothingToCapture: CaptureFactory {
     func minecraftAudio(processID: Int32) -> (any AudioCapture)? { nil }
 }
 
-/// The app with all five switchable tools real, over a display list the test changes.
+/// The app with all six switchable tools real, over a display list the test changes. Custom Cursor swaps through a fake
+/// and replaces the pointer everywhere, so it needs no Minecraft in front.
 @MainActor
 final class EverythingHarness {
     let directory = FileManager.default.temporaryDirectory.appending(path: "sTools-qa-everything-\(UUID().uuidString)", directoryHint: .isDirectory)
@@ -138,6 +140,8 @@ final class EverythingHarness {
     let backdrop: BackdropController
     let timer: TimerOverlayController
     let recording: ScreenRecordingController
+    let cursorSwapper = FakeCursorSwapper()
+    let cursor: CustomCursorController
     let model: AppModel
 
     /// - Parameter reducedMotion: Reduce animations, set the way its switch sets it (the app loads the saved appearance
@@ -174,9 +178,12 @@ final class EverythingHarness {
             services: services, makeFactory: { _ in NothingToCapture() }, loadAvailable: { _ in AvailableSources() },
             inProcessAudio: InProcessAudio(), decisionPresenter: NoQuestion())
         recording.options.folderPath = directory.appending(path: "Movies", directoryHint: .isDirectory).path
+        cursor = CustomCursorController(services: services, swapper: cursorSwapper)
+        cursor.settings.where = .everywhere
         model = AppModel(
             services: services, theme: theme, sound: .silent,
-            controllers: [.crosshair: crosshair, .timerOverlay: timer, .nbbOverlay: nbb, .screenRecording: recording, .windowBackdrop: backdrop],
+            controllers: [.crosshair: crosshair, .timerOverlay: timer, .nbbOverlay: nbb, .screenRecording: recording, .windowBackdrop: backdrop,
+                          .customCursor: cursor],
             hotkeyRegistrar: registrar, hotkeyHUD: hud, loginItem: FakeLoginItem())
         model.pingNinjabrainBot = { false }
         model.evaluateKarabiner = { .notInstalled }
@@ -236,5 +243,5 @@ final class EverythingHarness {
     }
 }
 
-/// The five tools that have a switch, in sidebar order.
-let qaSwitchableTools: [ToolID] = [.crosshair, .timerOverlay, .nbbOverlay, .screenRecording, .windowBackdrop]
+/// The six tools that have a switch, in sidebar order.
+let qaSwitchableTools: [ToolID] = [.crosshair, .timerOverlay, .nbbOverlay, .screenRecording, .windowBackdrop, .customCursor]

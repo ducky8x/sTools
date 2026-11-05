@@ -45,9 +45,9 @@ struct HomeProfileHotkeyTests {
                                   in: hotkeys) == .saved)
         #expect(HotkeyEditor.save(f6, actions: [.profile(.next)], existing: nil, in: hotkeys) == .saved)
         #expect(listing(hotkeys) == ["⌘1 Crosshair", "⌘2 Start timer", "⌘3 NBB Overlay", "⌘4 Screen Recording", "⌘5 Window Backdrop",
-                                     "⌃⌥C Crosshair + Window Backdrop + Switch to Minecraft", "F6 Next profile"])
+                                     "⌘6 Custom Cursor", "⌃⌥C Crosshair + Window Backdrop + Switch to Minecraft", "F6 Next profile"])
         // Editing a hotkey with None in the profile row takes its profile off.
-        let custom = hotkeys.bindings[5]
+        let custom = hotkeys.bindings[6]
         #expect(HotkeyEditor.save(ctrlOptC, actions: [.toggle(.crosshair), .toggle(.windowBackdrop)], existing: custom,
                                   in: hotkeys) == .saved)
         #expect(hotkeys.bindings.first { $0.id == custom.id }?.actions == [.toggle(.crosshair), .toggle(.windowBackdrop)])

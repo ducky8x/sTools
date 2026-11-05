@@ -163,7 +163,7 @@ struct ToolHotkeyRowTests {
         let harness = Harness(accessibility: .granted, hotkeys: nil)
         let hotkeys = harness.model.hotkeys
         let row = try #require(ToolHotkeyRow(model: harness.model, tool: .crosshair))
-        #expect(row.whereLine == "Hotkeys work in sTools and Minecraft · Key set: ⌘1–⌘5")
+        #expect(row.whereLine == "Hotkeys work in sTools and Minecraft · Key set: ⌘1–⌘6")
         let sToolsAndMinecraft = render(row, harness).representation(using: .png, properties: [:])
 
         hotkeys.scope = .everywhere
@@ -181,14 +181,14 @@ struct ToolHotkeyRowTests {
     @Test func withoutAccessibilityTheRowSaysOnlyInSTools() throws {
         let harness = Harness(accessibility: .denied, hotkeys: nil)
         let row = try #require(ToolHotkeyRow(model: harness.model, tool: .crosshair))
-        #expect(row.whereLine == "Hotkeys work only in sTools until Accessibility is allowed · Key set: ⌘1–⌘5")
+        #expect(row.whereLine == "Hotkeys work only in sTools until Accessibility is allowed · Key set: ⌘1–⌘6")
         harness.model.hotkeys.scope = .everywhere
-        #expect(row.whereLine == "Hotkeys work in every app · Key set: ⌘1–⌘5")
+        #expect(row.whereLine == "Hotkeys work in every app · Key set: ⌘1–⌘6")
 
         harness.model.hotkeys.scope = .sToolsAndMinecraft
         harness.prober.set(.accessibility, .granted)
         harness.model.permissions.refresh()
-        #expect(row.whereLine == "Hotkeys work in sTools and Minecraft · Key set: ⌘1–⌘5")
+        #expect(row.whereLine == "Hotkeys work in sTools and Minecraft · Key set: ⌘1–⌘6")
     }
 
     /// Timer Overlay's row is the same row: it records the Start-timer key in place, as the timer's own key in its
