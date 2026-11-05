@@ -3,8 +3,8 @@ import STDesign
 import STPlatform
 import SwiftUI
 
-/// Home (spec 3.5): every tool at a glance in sidebar order, the six with a switch three to a row and the Key Rebinder
-/// across the page, each with its status, its switch and its key, and Minecraft, Ninjabrain Bot and Karabiner-Elements as drawn visuals: in a column beside the tools where
+/// Home (spec 3.5): every tool at a glance, two columns and three rows in sidebar order, each with its status, its switch
+/// and its key, and Minecraft, Ninjabrain Bot and Karabiner-Elements as drawn visuals: in a column beside the tools where
 /// the window has room, in a strip beside the title where it hasn't. It fits the window without scrolling from the
 /// 680 × 500 minimum up at the default text size; larger text may scroll.
 ///
@@ -45,11 +45,8 @@ struct HomeLayout: Equatable {
     static let sidePadding: CGFloat = 24
     static let topPadding: CGFloat = 16
     static let bottomPadding: CGFloat = 14
-    /// Between tiles, and between rows; tight tiles' rows sit a little closer.
+    /// Between tiles, and between rows.
     static let gap: CGFloat = 10
-    static let tightRowGap: CGFloat = 8
-    /// The least room for three tiles side by side at their full room; narrower, they sit tight.
-    static let roomyTiles: CGFloat = 440
     /// The column of visuals beside the tools, and the room before it.
     static let lampColumnWidth: CGFloat = 112
     static let lampColumnGap: CGFloat = 14
@@ -62,17 +59,11 @@ struct HomeLayout: Equatable {
 
     /// Whether the visuals stand in a column beside the tools, rather than in a strip beside the title.
     let showsLampColumn: Bool
-    /// Whether the tiles keep less room above and below and start their controls at their edge, as in the narrowest
-    /// window, so seven tiles fit its height and a tile offering Allow… fits its width.
-    let tilesAreTight: Bool
 
     /// `pageWidth` is the page's whole width, right of the sidebar.
     init(pageWidth: CGFloat) {
         showsLampColumn = pageWidth - 2 * Self.sidePadding >= Self.columnRoom
-        tilesAreTight = pageWidth - 2 * Self.sidePadding < Self.roomyTiles
     }
-
-    var rowGap: CGFloat { tilesAreTight ? Self.tightRowGap : Self.gap }
 }
 
 /// Everything on Home, at its natural height: the header, the tiles and, while hotkeys are off, the line that says so.
@@ -100,14 +91,15 @@ struct HomePageContent: View {
     }
 }
 
-/// The tiles in sidebar order (`HomeToolGrid`), and in a wide window the visuals beside them, each by a row with a tool
-/// it serves (`HomeToolGrid.lamps`).
+/// The tiles, two to a row in sidebar order, and in a wide window the visuals beside them, each on the row of the tool
+/// it serves: Minecraft by Crosshair and Timer Overlay, Ninjabrain Bot by the NBB Overlay, Karabiner-Elements by the Key
+/// Rebinder.
 private struct HomeDashboard: View {
     let model: AppModel
     let layout: HomeLayout
 
     var body: some View {
-        VStack(spacing: layout.rowGap) {
+        VStack(spacing: HomeLayout.gap) {
             ForEach(Array(HomeToolGrid.rows.enumerated()), id: \.offset) { index, row in
                 HStack(spacing: HomeLayout.gap) {
                     ForEach(row) { tool in
@@ -121,7 +113,7 @@ private struct HomeDashboard: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                     if layout.showsLampColumn {
-                        HomeLampView(model: model, kind: HomeToolGrid.lamps[index], showsName: true)
+                        HomeLampView(model: model, kind: HomeLampKind.allCases[index], showsName: true)
                             .frame(width: HomeLayout.lampColumnWidth)
                             .frame(maxHeight: .infinity)
                             .padding(.leading, HomeLayout.lampColumnGap - HomeLayout.gap)
@@ -130,7 +122,6 @@ private struct HomeDashboard: View {
                 .frame(maxHeight: HomeLayout.tallestTile)
             }
         }
-        .environment(\.homeTilesAreTight, layout.tilesAreTight)
     }
 }
 

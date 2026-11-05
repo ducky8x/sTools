@@ -47,11 +47,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
-    /// Custom Cursor's pointer outlives sTools, so it goes back as sTools quits however the quit came (spec 5.7.2).
-    func applicationWillTerminate(_ notification: Notification) {
-        model.restorePointerForQuit()
-    }
-
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         Task {
             await model.shutDown()

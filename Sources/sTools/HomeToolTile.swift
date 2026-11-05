@@ -4,23 +4,11 @@ import ScreenRecording
 import SwiftUI
 import TimerOverlay
 
-/// Home's tools in sidebar order, read row by row (spec 3.5): the six with a switch three to a row, then the Key Rebinder,
-/// whose profile chips need the room, across the page.
+/// Home's tools: two columns and three rows in sidebar order, read row by row (spec 3.5).
 enum HomeToolGrid {
-    static let columns = 3
-
-    static let rows: [[ToolID]] = {
-        let switched = ToolID.allCases.filter(\.hasSwitch)
-        let rows = stride(from: 0, to: switched.count, by: columns).map { start in
-            Array(switched[start..<min(start + columns, switched.count)])
-        }
-        return rows + [ToolID.allCases.filter { !$0.hasSwitch }]
-    }()
-
-    /// The visual beside each row in a wide window, each by a row with a tool it serves: Ninjabrain Bot by the NBB
-    /// Overlay, Minecraft by Screen Recording, Window Backdrop and Custom Cursor, which follow its window, and
-    /// Karabiner-Elements by the Key Rebinder.
-    static let lamps: [HomeLampKind] = [.ninjabrainBot, .minecraft, .karabiner]
+    static let rows: [[ToolID]] = stride(from: 0, to: ToolID.allCases.count, by: 2).map { start in
+        Array(ToolID.allCases[start..<min(start + 2, ToolID.allCases.count)])
+    }
 }
 
 /// One tool on Home: its number and name, its live status, its key as a key cap and its switch. Clicking the tile opens
@@ -33,7 +21,6 @@ struct HomeToolTile: View {
     private let action: HotkeyAction?
 
     @Environment(\.stTheme) private var theme
-    @Environment(\.homeTilesAreTight) private var isTight
     @State private var keyActivity: STKeyCapActivity = .idle
     @State private var isHovering = false
 
@@ -56,10 +43,9 @@ struct HomeToolTile: View {
             .accessibilityValue(spokenStatus)
             .accessibilityHint("Opens the \(tool.title) page")
             controls
-                // Under the name; in a tight tile, from the tile's edge, so Allow… fits beside the key.
-                .padding(.leading, isTight ? HomeTileLabel.leadingPadding : HomeTileLabel.leading(theme.textScale))
+                .padding(.leading, HomeTileLabel.leading(theme.textScale))
                 .padding(.trailing, HomeTileLabel.trailingPadding - 2)
-                .padding(.bottom, HomeTileLabel.bottomPadding(tight: isTight))
+                .padding(.bottom, HomeTileLabel.bottomPadding)
         }
         .onHover { isHovering = $0 }
         .accessibilityElement(children: .contain)
@@ -69,14 +55,14 @@ struct HomeToolTile: View {
     // MARK: Controls
 
     private var controls: some View {
-        HStack(spacing: isTight ? 4 : 8) {
+        HStack(spacing: 8) {
             if let keyBinding {
                 STKeyCapRecorder(shortcut: keyBinding, label: keyLabel, spokenKey: spokenKey, isDimmed: !hotkeys.isEnabled,
                                  problem: keyProblem, revealsClear: isHovering, activity: $keyActivity,
                                  validate: refusal(for:))
                     .help(keyHelp)
             }
-            Spacer(minLength: isTight ? 0 : 4)
+            Spacer(minLength: 4)
             if offersAllow {
                 Button("Allow\u{2026}") { Task { await allowAccessibility() } }
                     .buttonStyle(STButtonStyle(.quiet))
@@ -219,16 +205,14 @@ struct HomeTileLabel: View {
     let isMessage: Bool
 
     @Environment(\.stTheme) private var theme
-    @Environment(\.homeTilesAreTight) private var isTight
 
-    /// The tile's padding above its name and below its controls, and at its sides. A tight tile (the narrowest window)
-    /// keeps less above and below.
-    static func topPadding(tight: Bool) -> CGFloat { tight ? 8 : 12 }
-    static func bottomPadding(tight: Bool) -> CGFloat { tight ? 6 : 10 }
+    /// The tile's padding above its name and below its controls, and at its sides.
+    static let topPadding: CGFloat = 12
+    static let bottomPadding: CGFloat = 10
     static let leadingPadding: CGFloat = 14
     static let trailingPadding: CGFloat = 12
     /// The least room between the status line and the controls.
-    static func controlsGap(tight: Bool) -> CGFloat { tight ? 4 : 6 }
+    static let controlsGap: CGFloat = 6
 
     /// Where the name, the status and the key cap start: past the number's column, as in the sidebar.
     static func leading(_ scale: Double) -> CGFloat { leadingPadding + numberColumn(scale) }
@@ -242,27 +226,25 @@ struct HomeTileLabel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HomeTileHeading(tool: tool, status: status, isMessage: isMessage)
-            Spacer(minLength: Self.controlsGap(tight: isTight))
+            Spacer(minLength: Self.controlsGap)
             Color.clear.frame(height: Self.controlsHeight(theme.textScale))
         }
         .padding(.leading, Self.leadingPadding)
         .padding(.trailing, Self.trailingPadding)
-        .padding(.top, Self.topPadding(tight: isTight))
-        .padding(.bottom, Self.bottomPadding(tight: isTight))
+        .padding(.top, Self.topPadding)
+        .padding(.bottom, Self.bottomPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .contentShape(Rectangle())
     }
 }
 
-/// A tile's number and name, and its status line under the name. In a tight tile the status starts at the tile's edge, and
-/// a name too long for the tile gives way to its shortest form ("Timer", "NBB"); elsewhere it shrinks a little instead.
+/// A tile's number and name, and its status line under the name.
 struct HomeTileHeading: View {
     let tool: ToolID
     let status: HomeToolTile.StatusLine
     let isMessage: Bool
 
     @Environment(\.stTheme) private var theme
-    @Environment(\.homeTilesAreTight) private var isTight
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -274,11 +256,10 @@ struct HomeTileHeading: View {
                 ViewThatFits(in: .horizontal) {
                     name(tool.title)
                     name(tool.sidebarTitle).minimumScaleFactor(0.8)
-                    if isTight { name(tool.shortestTitle).minimumScaleFactor(0.8) }
                 }
             }
             statusText
-                .padding(.leading, isTight ? 0 : HomeTileLabel.numberColumn(theme.textScale))
+                .padding(.leading, HomeTileLabel.numberColumn(theme.textScale))
                 .padding(.top, 2)
         }
     }
@@ -338,9 +319,4 @@ private struct HomeTileBody: View {
             .stAnimation(STMotion.press, value: configuration.isPressed)
             .stAnimation(STMotion.quick, value: isHovering)
     }
-}
-
-extension EnvironmentValues {
-    /// Whether Home's tiles sit tight, as they do in the narrowest window (`HomeLayout.tilesAreTight`).
-    @Entry var homeTilesAreTight = false
 }

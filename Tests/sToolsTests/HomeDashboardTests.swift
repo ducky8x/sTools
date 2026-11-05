@@ -176,29 +176,9 @@ struct HomePageTests {
 @MainActor
 @Suite("Home dashboard: tool tiles")
 struct HomeToolTileTests {
-    /// The six tools with a switch in three columns and two rows, then the Key Rebinder across the page, in sidebar order,
-    /// read row by row.
+    /// Two columns and three rows in sidebar order, read row by row.
     @Test func theTilesFollowTheSidebarRowByRow() {
-        #expect(HomeToolGrid.rows == [[.crosshair, .timerOverlay, .nbbOverlay], [.screenRecording, .windowBackdrop, .customCursor],
-                                      [.keyRebinder]])
-        #expect(HomeToolGrid.rows.flatMap { $0 } == ToolID.allCases)
-    }
-
-    /// In a wide window each visual stands beside a row with a tool it serves: Ninjabrain Bot by the NBB Overlay,
-    /// Minecraft by the tools that follow its window, Karabiner-Elements by the Key Rebinder.
-    @Test func eachVisualStandsByARowItServes() {
-        #expect(HomeToolGrid.lamps == [.ninjabrainBot, .minecraft, .karabiner])
-        #expect(HomeToolGrid.rows[0].contains(.nbbOverlay))
-        #expect(HomeToolGrid.rows[2] == [.keyRebinder])
-    }
-
-    /// In the narrowest window the tiles sit closer and their keys and switches start at the tile's edge, so a tile offering
-    /// Allow… fits; from the default window up they keep their full room.
-    @Test func theTilesTightenOnlyInANarrowWindow() {
-        #expect(HomeLayout(pageWidth: 680 - sidebarWidth).tilesAreTight)
-        for windowWidth in [CGFloat(760), 1000, 1440] {
-            #expect(!HomeLayout(pageWidth: windowWidth - sidebarWidth).tilesAreTight, "\(windowWidth)")
-        }
+        #expect(HomeToolGrid.rows == [[.crosshair, .timerOverlay], [.nbbOverlay, .screenRecording], [.windowBackdrop, .keyRebinder]])
     }
 
     /// A tile's switch takes the sidebar's path: Timer Overlay's starts a countdown, as its switch does everywhere.

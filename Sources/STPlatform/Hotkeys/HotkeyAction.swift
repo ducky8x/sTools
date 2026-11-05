@@ -1,12 +1,11 @@
 import Foundation
 
-/// The four tools a hotkey toggles, in sidebar order. Tool modules are not importable from STPlatform, so the
+/// The three tools a hotkey toggles, in sidebar order. Tool modules are not importable from STPlatform, so the
 /// app maps each case to the real `ToolController`. The raw value is the stored name.
 public enum HotkeyTool: String, Codable, CaseIterable, Hashable, Sendable {
     case crosshair
     case nbbOverlay
     case windowBackdrop
-    case cursor
 }
 
 /// What a hotkey does with the Key Rebinder's Karabiner profiles (spec 6.1). Karabiner-Elements gives a profile no
@@ -33,11 +32,11 @@ public enum HotkeyAction: Hashable, Sendable {
     case profile(HotkeyProfileAction)
 
     /// Every action, one per tool with a switch, in the order a picker should list them: the sidebar's (Crosshair,
-    /// Timer Overlay's Start timer, NBB Overlay, Screen Recording, Window Backdrop, Custom Cursor; the app's `ToolID`
-    /// holds that order, which a test checks this against), the order the key sets give the tools their keys in
+    /// Timer Overlay's Start timer, NBB Overlay, Screen Recording, Window Backdrop; the app's `ToolID` holds that
+    /// order, which a test checks this against), the order the key sets give the tools their keys in
     /// (`HotkeyKeySet.toolActions`).
     public static let allCases: [HotkeyAction] = [
-        .toggle(.crosshair), .startTimer, .toggle(.nbbOverlay), .startStopRecording, .toggle(.windowBackdrop), .toggle(.cursor),
+        .toggle(.crosshair), .startTimer, .toggle(.nbbOverlay), .startStopRecording, .toggle(.windowBackdrop),
     ]
 
     /// The profile action this is, or nil for a tool's action.
@@ -62,8 +61,7 @@ public enum HotkeyAction: Hashable, Sendable {
 ///
 /// A build from before profile actions reads `selectProfile.…` and `nextProfile` as actions it doesn't know and drops
 /// them from their hotkey (`HotkeyBinding`'s lossy decoding), keeping the hotkey, its key and the rest of the list. So
-/// `hotkeys.json` stays at version 3: at version 4 such a build would set the whole list aside instead. A build from
-/// before Custom Cursor drops `toggle.cursor` the same way.
+/// `hotkeys.json` stays at version 3: at version 4 such a build would set the whole list aside instead.
 extension HotkeyAction: Codable {
     private static let togglePrefix = "toggle."
     private static let recordingName = "startStopRecording"

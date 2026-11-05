@@ -116,7 +116,7 @@ struct HotkeysSection: View {
     static let alsoFireLabel = "Also fire while holding Shift or Control"
 
     /// What the option leaves out, where it matters: some combinations aren't free to take. ⇧⌘3 is macOS's screenshot,
-    /// and the Go menu's ⌃⌘0–⌃⌘7 are sTools' while it is in front.
+    /// and the Go menu's ⌃⌘0–⌃⌘6 are sTools' while it is in front.
     static let alsoFireNote = "Skips a combination that another hotkey or macOS already uses, such as \u{21E7}\u{2318}3, and sTools\u{2019} own menu shortcuts while it is in front."
 
     /// The strip's line while hotkeys are off (the same for either place hotkeys work).

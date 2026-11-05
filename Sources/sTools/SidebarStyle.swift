@@ -66,30 +66,27 @@ extension View {
     }
 }
 
-/// How tightly the sidebar sets its rows. From a window tall enough for seven tools at full spacing (`regularHeight`) up
-/// they keep it; in a shorter window, the default height among them, they sit closer, so every row fits down to the 500 pt
-/// minimum at the default text size. Larger text that still doesn't fit scrolls.
+/// How tightly the sidebar sets its rows. From the window's default height up they keep their full spacing; in a
+/// shorter window they sit closer, so every row fits down to the 500 pt minimum at the default text size. Larger text
+/// that still doesn't fit scrolls.
 enum SidebarDensity: Sendable {
     case regular, compact
 
-    /// The shortest window whose sidebar keeps its full spacing.
-    static let regularHeight: CGFloat = 600
-
     /// The density for a window `height` points tall.
     static func forWindow(height: CGFloat) -> SidebarDensity {
-        height >= regularHeight ? .regular : .compact
+        height >= 560 ? .regular : .compact
     }
 
     /// Above and below the name of Home, Hotkeys and Settings.
-    var navPadding: CGFloat { self == .regular ? 7 : 3 }
+    var navPadding: CGFloat { self == .regular ? 7 : 4 }
     /// Above a tool's name and below its status.
-    var toolPadding: CGFloat { self == .regular ? 6 : 2 }
+    var toolPadding: CGFloat { self == .regular ? 6 : 3 }
     /// Under the wordmark.
     var wordmarkGap: CGFloat { self == .regular ? 8 : 2 }
     /// Between Hotkeys and the first tool, and the least between the last tool and Settings.
-    var groupGap: CGFloat { self == .regular ? 8 : 3 }
+    var groupGap: CGFloat { self == .regular ? 8 : 4 }
     /// Under Settings.
-    var bottomPadding: CGFloat { self == .regular ? 12 : 6 }
+    var bottomPadding: CGFloat { self == .regular ? 12 : 8 }
 }
 
 extension EnvironmentValues {

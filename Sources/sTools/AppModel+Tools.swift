@@ -1,4 +1,3 @@
-import CustomCursor
 import Observation
 import ScreenRecording
 import STPlatform
@@ -10,23 +9,13 @@ extension AppModel {
 
     func isOn(_ tool: ToolID) -> Bool { toolIsOn[tool] ?? false }
 
-    /// Rule R10: a tool that needs Accessibility cannot be switched on without it. Key Rebinder has no switch, and a tool
-    /// this macOS can't run (`isSupported`) can't be switched on either.
+    /// Rule R10: a tool that needs Accessibility cannot be switched on without it. Key Rebinder has no switch.
     func canSwitch(_ tool: ToolID) -> Bool {
-        tool.hasSwitch && isSupported(tool) && (!tool.requiresAccessibility || accessibilityGranted)
+        tool.hasSwitch && (!tool.requiresAccessibility || accessibilityGranted)
     }
-
-    /// Whether this macOS has what the tool needs: only Custom Cursor can lack it, without the pointer calls.
-    func isSupported(_ tool: ToolID) -> Bool {
-        tool != .customCursor || customCursor?.isSupported ?? true
-    }
-
-    /// Custom Cursor's controller, when the app has one.
-    var customCursor: CustomCursorController? { controller(for: .customCursor, as: CustomCursorController.self) }
 
     func status(of tool: ToolID) -> ToolStatus {
         if !tool.hasSwitch { return .alwaysAvailable }
-        if !isSupported(tool) { return .notSupported }
         if isOn(tool) {
             // Timer Overlay says where its countdown is instead; `status` changes at most once a second.
             if tool == .timerOverlay, let timer = timerOverlay { return .timer(timer.status.text) }

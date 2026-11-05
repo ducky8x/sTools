@@ -73,15 +73,12 @@ struct AppModelPrologueTests {
         #expect(harness.model.isOn(.nbbOverlay))
     }
 
-    /// Every tool has its trial but Custom Cursor, which has none yet (spec 5.7.4); every trial is a tool's.
     @Test func everyToolHasItsTrial() {
-        for tool in ToolID.allCases where tool != .customCursor {
+        for tool in ToolID.allCases {
             let trial = tool.trial
             #expect(trial != nil)
             if let trial { #expect(ToolID(trial) == tool) }
         }
-        #expect(ToolID.customCursor.trial == nil)
-        #expect(PrologueTrial.allCases.map(ToolID.init) == ToolID.allCases.filter { $0 != .customCursor })
         #expect(ToolID.timerOverlay.trial == .timerOverlay)
     }
 

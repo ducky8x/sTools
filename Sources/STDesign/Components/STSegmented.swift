@@ -4,8 +4,8 @@ import SwiftUI
 public struct STSegmentedOption<Value: Hashable>: Identifiable {
     public let value: Value
     public let title: String
-    /// What VoiceOver calls the option when its title isn't what it should say ("Command 1 to Command 6" for
-    /// "⌘1–⌘6"); nil reads the title.
+    /// What VoiceOver calls the option when its title isn't what it should say ("Command 1 to Command 5" for
+    /// "⌘1–⌘5"); nil reads the title.
     public let spokenTitle: String?
     public var id: Value { value }
 

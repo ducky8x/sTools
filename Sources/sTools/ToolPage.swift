@@ -1,6 +1,5 @@
 import Backdrop
 import Crosshair
-import CustomCursor
 import KeyRebinder
 import NBBOverlay
 import ScreenRecording
@@ -8,7 +7,7 @@ import STDesign
 import SwiftUI
 import TimerOverlay
 
-/// One page for all seven tools: header with the tool's switch, the Accessibility strip when needed, the tool's
+/// One page for all six tools: header with the tool's switch, the Accessibility strip when needed, the tool's
 /// Hotkey row (not on the Key Rebinder, which sets hotkeys on its keys), then the tool's own settings.
 struct ToolPage: View {
     let model: AppModel
@@ -89,10 +88,6 @@ struct ToolContent: View {
         case .screenRecording:
             if let controller = model.controller(for: tool, as: ScreenRecordingController.self) {
                 ScreenRecordingView(controller: controller)
-            }
-        case .customCursor:
-            if let controller = model.customCursor {
-                CustomCursorSettingsView(controller: controller)
             }
         }
     }

@@ -119,7 +119,7 @@ struct HotkeyProfileCenterTests {
         #expect(h.center.hotkeys(switchingTo: "Minecraft").map(\.id) == [shared, own.id])
         #expect(h.center.hotkeys(switchingTo: "Typing").isEmpty)
         #expect(h.listing == ["⌘1 Crosshair", "⌘2 Start timer", "⌘3 NBB Overlay", "⌘4 Screen Recording", "⌘5 Window Backdrop",
-                              "⌘6 Custom Cursor", "⌃⌥C Crosshair + Switch to Minecraft", "F6 Switch to Minecraft"])
+                              "⌃⌥C Crosshair + Switch to Minecraft", "F6 Switch to Minecraft"])
 
         h.center.setProfileHotkey(f7, for: "Minecraft")
         #expect(h.center.profileHotkey(for: "Minecraft")?.id == own.id, "it keeps its id")
