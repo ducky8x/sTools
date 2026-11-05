@@ -105,7 +105,7 @@ struct HotkeyOwnKeyTests {
         let writes = h.store.writeCount
         h.center.replaceOwnHotkey(for: crosshair, with: f6, removing: nil)
         #expect(listing(h.center.bindings) == ["F6 Crosshair", "⌘2 Start timer", "⌘3 NBB Overlay", "⌘4 Screen Recording",
-                                               "⌘5 Window Backdrop", "⌃⌥C NBB Overlay + Crosshair"])
+                                               "⌘5 Window Backdrop", "⌘6 Custom Cursor", "⌃⌥C NBB Overlay + Crosshair"])
         #expect(h.own(crosshair)?.id == own?.id)
         #expect(h.registrar.active[own?.id ?? UUID()] == f6)
         #expect(h.center.keySet == nil, "a key set by hand: Custom")
@@ -119,7 +119,7 @@ struct HotkeyOwnKeyTests {
         let own = h.own(recording)
         h.center.replaceOwnHotkey(for: recording, with: f6, removing: h.custom.id)
         #expect(listing(h.center.bindings) == ["⌘1 Crosshair", "⌘2 Start timer", "⌘3 NBB Overlay", "F6 Screen Recording",
-                                               "⌘5 Window Backdrop"])
+                                               "⌘5 Window Backdrop", "⌘6 Custom Cursor"])
         #expect(h.own(recording)?.id == own?.id)
         #expect(h.registrar.active[h.custom.id] == nil)
     }
@@ -149,6 +149,6 @@ struct HotkeyOwnKeyTests {
         #expect(HotkeyWording.replaceOwnKeyWarning(recordingKey, with: f7)
             == "This replaces Screen Recording\u{2019}s key ⌘4 with F7. Other hotkeys don\u{2019}t change.")
         #expect(HotkeyKeySet.toolActions.map(\.toolTitle)
-            == ["Crosshair", "Timer Overlay", "NBB Overlay", "Screen Recording", "Window Backdrop"])
+            == ["Crosshair", "Timer Overlay", "NBB Overlay", "Screen Recording", "Window Backdrop", "Custom Cursor"])
     }
 }

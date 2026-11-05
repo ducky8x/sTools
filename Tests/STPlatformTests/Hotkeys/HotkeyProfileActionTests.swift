@@ -42,8 +42,8 @@ struct HotkeyProfileActionTests {
 
     // MARK: Not a tool's action
 
-    @Test func theToolsActionsStayTheFive() {
-        #expect(HotkeyAction.allCases.count == 5)
+    @Test func theToolsActionsStayTheSix() {
+        #expect(HotkeyAction.allCases.count == 6)
         #expect(!HotkeyAction.allCases.contains { $0.profileAction != nil })
         #expect(HotkeyKeySet.toolActions == HotkeyAction.allCases)
     }
@@ -162,7 +162,8 @@ struct HotkeyProfileFileTests {
         #expect(HotkeySettings.version == 3)
     }
 
-    /// ducky's version 3 file loads unchanged, keys, actions, ids and order, and nothing writes it back.
+    /// ducky's version 3 file loads unchanged, keys, actions, ids and order, and nothing writes it back. Written before
+    /// Custom Cursor, it has no key for it, so it follows no key set until one is picked.
     @Test func aVersionThreeFileLoadsUnchangedAndIsntWritten() async throws {
         let folder = try Folder(Self.version3File())
         let store = folder.store()
@@ -170,7 +171,7 @@ struct HotkeyProfileFileTests {
         #expect(center.bindings.map { "\($0.combo.displayString) \(HotkeyWording.summary($0.actions))" }
             == ["⌘1 Crosshair", "⌘2 Start timer", "⌘3 NBB Overlay", "⌘4 Screen Recording", "⌘5 Window Backdrop"])
         #expect(center.bindings.map { String($0.id.uuidString.suffix(2)) } == ["C1", "C2", "C3", "C4", "C5"])
-        #expect(center.keySet == .command)
+        #expect(center.keySet == nil)
         #expect(center.isEnabled && center.showsConfirmation && center.scope == .sToolsAndMinecraft)
         #expect(center.bindings.allSatisfy { $0.profileAction == nil })
         await store.flush()

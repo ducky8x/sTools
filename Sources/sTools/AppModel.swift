@@ -1,5 +1,6 @@
 import Backdrop
 import Crosshair
+import CustomCursor
 import KeyRebinder
 import NBBOverlay
 import Prologue
@@ -149,7 +150,11 @@ final class AppModel {
             displays: DisplayDirectory(),
             minecraft: MinecraftLocator(source: AXMinecraftSource()),
             permissions: PermissionCenter())
+        // First of the tools: a pointer that a crash or a force quit left applied is restored before anything else (spec
+        // 5.7.1).
+        let cursor = CustomCursorController(services: services, swapper: makeLiveSwapper())
         self.init(services: services, theme: theme, sound: sound, controllers: [
+            .customCursor: cursor,
             .nbbOverlay: NBBOverlayController(services: services, theme: theme),
             .windowBackdrop: BackdropController(services: services, theme: theme),
             .crosshair: CrosshairController(services: services),

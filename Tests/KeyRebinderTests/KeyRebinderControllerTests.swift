@@ -854,7 +854,7 @@ struct KeyRebinderHotkeyTests {
         #expect(harness.controller.hotkeyWhereLine == "Hotkeys work in sTools and Minecraft · Key set: None")
         center.scope = .everywhere
         center.apply(.option)
-        #expect(harness.controller.hotkeyWhereLine == "Hotkeys work in every app · Key set: ⌥1–⌥5")
+        #expect(harness.controller.hotkeyWhereLine == "Hotkeys work in every app · Key set: ⌥1–⌥6")
 
         let unconnected = try Harness()
         defer { unconnected.remove() }

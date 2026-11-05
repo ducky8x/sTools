@@ -326,12 +326,13 @@ struct SidebarRowCenterTests {
         #expect(SidebarGlide.order.prefix(3) == [.home, .hotkeys, .tool(.crosshair)], "Hotkeys right under Home")
     }
 
-    /// Before the sidebar has laid out, the glide's guess is the sidebar's own layout at the default size.
+    /// Before the sidebar has laid out, the glide's guess is the sidebar's own layout at the default text size with full
+    /// spacing.
     @Test func theEstimateIsTheLayoutAtTheDefaultSize() throws {
         _ = STFont.register()
         let harness = Harness()
         _ = renderBitmap(SidebarView(model: harness.model).environment(\.stTheme, harness.model.theme),
-                         size: CGSize(width: 236, height: 560))
+                         size: CGSize(width: 236, height: SidebarDensity.regularHeight))
         let measured = harness.model.sidebarGlide.layout
         let home = try #require(measured.centers[.home])
         for route in SidebarGlide.order {
@@ -341,15 +342,15 @@ struct SidebarRowCenterTests {
     }
 
     /// Every row fits from the window's 500 pt minimum up, at the default text size: Settings ends inside the window.
-    /// Below the default height the rows sit closer together.
-    @Test(arguments: [CGFloat(500), 530, 560, 700])
+    /// Below 600 pt, the default height among them, the rows sit closer together, so seven tools fit.
+    @Test(arguments: [CGFloat(500), 530, 560, 599, 600, 700])
     func everyRowFitsTheWindow(height: CGFloat) throws {
         _ = STFont.register()
         let harness = Harness()
         _ = renderBitmap(SidebarView(model: harness.model).environment(\.stTheme, harness.model.theme),
                          size: CGSize(width: 236, height: height))
         let density = SidebarDensity.forWindow(height: height)
-        #expect(density == (height < 560 ? .compact : .regular))
+        #expect(density == (height < 600 ? .compact : .regular))
         let settings = try #require(harness.model.sidebarGlide.layout.centers[.settings])
         let settingsHalf = (STTextStyle.sidebarName.metrics.lineHeight + 2 * density.navPadding) / 2
         #expect(SidebarView.lightsBand + settings + settingsHalf <= height, "Settings ends inside the window")

@@ -10,7 +10,7 @@ private let f6 = HotkeyCombo(keyCode: 97, modifiers: [])
 private let f7 = HotkeyCombo(keyCode: 98, modifiers: [])
 private let f8 = HotkeyCombo(keyCode: 100, modifiers: [])
 
-/// Hotkeys ▸ Key set: one key per tool, in sidebar order, and a new install's ⌘1–⌘5.
+/// Hotkeys ▸ Key set: one key per tool, in sidebar order, and a new install's ⌘1–⌘6.
 @MainActor
 @Suite("Key set chooser")
 struct HotkeyKeySetChooserTests {
@@ -20,7 +20,7 @@ struct HotkeyKeySetChooserTests {
     /// Overlay's Hotkey row sets: Start timer for Timer Overlay, the one Screen Recording action for Screen Recording.
     @Test func keySetsGiveTheToolsTheirKeysInSidebarOrder() {
         let tools = ToolID.allCases.filter { $0.hotkeyAction != nil }
-        #expect(tools == [.crosshair, .timerOverlay, .nbbOverlay, .screenRecording, .windowBackdrop])
+        #expect(tools == [.crosshair, .timerOverlay, .nbbOverlay, .screenRecording, .windowBackdrop, .customCursor])
         #expect(HotkeyKeySet.toolActions == tools.compactMap(\.hotkeyAction))
         #expect(ToolID.keyRebinder.hotkeyAction == nil)
         // The digits follow the sidebar's numbers.
@@ -29,17 +29,18 @@ struct HotkeyKeySetChooserTests {
         }
     }
 
-    @Test func aNewInstallStartsWithCommandOneToFive() throws {
+    @Test func aNewInstallStartsWithCommandOneToSix() throws {
         let harness = Harness(hotkeys: nil)
         let hotkeys = harness.model.hotkeys
         #expect(hotkeys.keySet == .command)
         #expect(hotkeys.bindings.map { "\($0.combo.displayString) \(HotkeyWording.summary($0.actions))" }
-            == ["⌘1 Crosshair", "⌘2 Start timer", "⌘3 NBB Overlay", "⌘4 Screen Recording", "⌘5 Window Backdrop"])
+            == ["⌘1 Crosshair", "⌘2 Start timer", "⌘3 NBB Overlay", "⌘4 Screen Recording", "⌘5 Window Backdrop",
+                "⌘6 Custom Cursor"])
         #expect(hotkeys.isEnabled, "on from the first launch, in sTools and Minecraft only")
         #expect(hotkeys.scope == .sToolsAndMinecraft)
         #expect(ToolHotkey.own(for: .toggle(.crosshair), in: hotkeys.bindings)?.combo.displayString == "⌘1")
         // Each page's Hotkey row shows the set's key for its tool, Screen Recording's and Timer Overlay's included.
-        for tool in [ToolID.crosshair, .timerOverlay, .nbbOverlay, .screenRecording, .windowBackdrop] {
+        for tool in [ToolID.crosshair, .timerOverlay, .nbbOverlay, .screenRecording, .windowBackdrop, .customCursor] {
             let action = try #require(ToolHotkeyRow(model: harness.model, tool: tool)?.action)
             #expect(ToolHotkey.own(for: action, in: hotkeys.bindings)?.combo.displayString == "⌘\(tool.number)", "\(tool)")
         }
@@ -56,7 +57,7 @@ struct HotkeyKeySetChooserTests {
     }
 
     @Test func theChooserNamesTheSetOrCustom() throws {
-        #expect(HotkeysSection.keySetTitle(.command) == "⌘1–⌘5")
+        #expect(HotkeysSection.keySetTitle(.command) == "⌘1–⌘6")
         #expect(HotkeysSection.keySetTitle(.noKeys) == "None")
         #expect(HotkeysSection.keySetTitle(nil) == "Custom")
 
@@ -70,16 +71,16 @@ struct HotkeyKeySetChooserTests {
     /// Every key set is in view on the Hotkeys page at once, in the order the arrow keys cycle through them, and so is
     /// each place hotkeys can work: neither waits behind a menu.
     @Test func everyChoiceIsInViewOnHome() {
-        #expect(HotkeysSection.keySetOptions.map(\.title) == ["⌘1–⌘5", "⌃1–⌃5", "⌥1–⌥5", "None"])
+        #expect(HotkeysSection.keySetOptions.map(\.title) == ["⌘1–⌘6", "⌃1–⌃6", "⌥1–⌥6", "None"])
         #expect(HotkeysSection.keySetOptions.map(\.value) == HotkeyKeySet.allCases.map(Optional.some))
         #expect(HotkeysSection.scopeOptions.map(\.title) == ["In sTools and Minecraft", "Everywhere"])
         #expect(HotkeysSection.scopeOptions.map(\.value) == HotkeyScope.allCases)
     }
 
-    /// VoiceOver reads each key set by its name in words ("Command 1 to Command 5"), not its symbols.
+    /// VoiceOver reads each key set by its name in words ("Command 1 to Command 6"), not its symbols.
     @Test func voiceOverReadsEveryKeySetInWords() {
         #expect(HotkeysSection.keySetOptions.map(\.accessibilityTitle) == [
-            "Command 1 to Command 5", "Control 1 to Control 5", "Option 1 to Option 5", "None",
+            "Command 1 to Command 6", "Control 1 to Control 6", "Option 1 to Option 6", "None",
         ])
         #expect(HotkeysSection.scopeOptions.map(\.accessibilityTitle) == ["In sTools and Minecraft", "Everywhere"])
     }
@@ -92,14 +93,14 @@ struct HotkeyKeySetChooserTests {
             HotkeysSection.keySetCaption(set).replacingOccurrences(of: "\u{00A0}", with: " ")
         }
         #expect(caption(.command)
-            == "⌘1 Crosshair · ⌘2 Start timer · ⌘3 NBB Overlay · ⌘4 Screen Recording · ⌘5 Window Backdrop")
+            == "⌘1 Crosshair · ⌘2 Start timer · ⌘3 NBB Overlay · ⌘4 Screen Recording · ⌘5 Window Backdrop · ⌘6 Custom Cursor")
         #expect(HotkeysSection.keySetCaption(.command).components(separatedBy: " · ")
             == ["⌘1\u{00A0}Crosshair", "⌘2\u{00A0}Start\u{00A0}timer", "⌘3\u{00A0}NBB\u{00A0}Overlay",
-                "⌘4\u{00A0}Screen\u{00A0}Recording", "⌘5\u{00A0}Window\u{00A0}Backdrop"])
+                "⌘4\u{00A0}Screen\u{00A0}Recording", "⌘5\u{00A0}Window\u{00A0}Backdrop", "⌘6\u{00A0}Custom\u{00A0}Cursor"])
         #expect(caption(.control)
-            == "⌃1 Crosshair · ⌃2 Start timer · ⌃3 NBB Overlay · ⌃4 Screen Recording · ⌃5 Window Backdrop")
+            == "⌃1 Crosshair · ⌃2 Start timer · ⌃3 NBB Overlay · ⌃4 Screen Recording · ⌃5 Window Backdrop · ⌃6 Custom Cursor")
         #expect(caption(.option)
-            == "⌥1 Crosshair · ⌥2 Start timer · ⌥3 NBB Overlay · ⌥4 Screen Recording · ⌥5 Window Backdrop")
+            == "⌥1 Crosshair · ⌥2 Start timer · ⌥3 NBB Overlay · ⌥4 Screen Recording · ⌥5 Window Backdrop · ⌥6 Custom Cursor")
         #expect(HotkeysSection.keySetCaption(.noKeys) == "No tool has a key yet.")
         #expect(HotkeysSection.keySetCaption(nil)
             == "Custom keys. Pick a set to give each tool a key.")
@@ -108,7 +109,7 @@ struct HotkeyKeySetChooserTests {
     @Test func theQuestionNamesTheKeysSetByHand() {
         var bindings = HotkeyKeySet.command.bindings()
         bindings[0].combo = f6
-        #expect(HotkeysSection.keySetQuestion(.control) == "Use ⌃1–⌃5?")
+        #expect(HotkeysSection.keySetQuestion(.control) == "Use ⌃1–⌃6?")
         #expect(HotkeysSection.keySetQuestion(.noKeys) == "Remove every tool\u{2019}s key?")
         #expect(HotkeysSection.keySetWarning(.control, bindings: bindings)
             == "This replaces the key you set for Crosshair (F6). Other hotkeys don\u{2019}t change.")
@@ -135,7 +136,7 @@ struct HotkeyKeySetChooserTests {
         let command = png()
         harness.model.hotkeys.apply(.option)
         let option = png()
-        #expect(harness.model.hotkeys.bindings.map(\.combo.displayString) == ["⌥1", "⌥2", "⌥3", "⌥4", "⌥5"])
+        #expect(harness.model.hotkeys.bindings.map(\.combo.displayString) == ["⌥1", "⌥2", "⌥3", "⌥4", "⌥5", "⌥6"])
         ToolHotkey.set(f6, for: .toggle(.crosshair), in: harness.model.hotkeys)
         #expect(harness.model.hotkeys.keySet == nil)
         let custom = png()

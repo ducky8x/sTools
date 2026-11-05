@@ -68,7 +68,7 @@ private final class RecordingHarness {
     static let patience: Duration = .seconds(60)
 
     /// `hotkeys` is the `hotkeys.json` the launch finds: an existing, empty list by default; nil for a new install,
-    /// which starts with ⌘1–⌘5. `sourcesTake`: how long the sources take to come up when the tool switches on, as the
+    /// which starts with ⌘1–⌘6. `sourcesTake`: how long the sources take to come up when the tool switches on, as the
     /// captures starting can on real hardware (a microphone that takes that long is added). `screenRecording`: Screen &
     /// System Audio Recording, granted by default (Accessibility always is).
     init(hotkeys: HotkeySettings? = HotkeySettings(), sourcesTake: Duration? = nil,

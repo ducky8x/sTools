@@ -1,5 +1,6 @@
 import Backdrop
 import Crosshair
+import CustomCursor
 import KeyRebinder
 import NBBOverlay
 import ScreenRecording
@@ -53,6 +54,7 @@ extension AppModel {
         RecordingOptions.name: RecordingOptions.version,
         RecordingLayout.name: RecordingLayout.version,
         TimerOverlaySettings.name: TimerOverlaySettings.version,
+        CustomCursorSettings.name: CustomCursorSettings.version,
     ]
 
     @discardableResult
@@ -69,10 +71,19 @@ extension AppModel {
     }
 
     /// Wipes every settings document; the caller must relaunch sTools afterward (settings objects
-    /// already loaded in memory are not touched and must not be saved again).
+    /// already loaded in memory are not touched and must not be saved again). Custom Cursor switches off first, so macOS's
+    /// arrow is back before its saved copy moves into the backup with everything else.
     @discardableResult
     func resetAppSettings() async throws -> URL? {
-        try await ResetService(directory: settings.directory, store: settings).reset(confirmed: true)
+        setTool(.customCursor, on: false)
+        customCursor?.restorePointer()
+        return try await ResetService(directory: settings.directory, store: settings).reset(confirmed: true)
+    }
+
+    /// Puts macOS's arrow back as sTools quits (`applicationWillTerminate`), whatever the switch says: a pointer left
+    /// registered would outlive sTools.
+    func restorePointerForQuit() {
+        customCursor?.restorePointer()
     }
 
     /// Resets every tool's own settings to default — narrower than "Reset sTools…": General,
@@ -84,6 +95,7 @@ extension AppModel {
         controller(for: .nbbOverlay, as: NBBOverlayController.self)?.resetToDefault()
         controller(for: .screenRecording, as: ScreenRecordingController.self)?.resetToDefault()
         controller(for: .windowBackdrop, as: BackdropController.self)?.resetToDefault()
+        customCursor?.resetToDefault()
         keyRebinder?.resetToDefault()
     }
 
@@ -112,6 +124,7 @@ extension AppModel {
             karabiner: keyRebinder?.diagnosticsSummary ?? "Not available",
             ninjabrain: ninjabrainSummary,
             minecraft: minecraft.active != nil ? "Detected: \(minecraft.active?.version ?? "unknown version")" : "Not running",
+            customCursor: customCursor?.diagnosticsSummary ?? "Not available",
             enabledTools: enabledTools,
             settingsFiles: SettingsFileInfo.list(in: settings.directory),
             logReader: logReader,

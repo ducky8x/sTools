@@ -8,6 +8,7 @@ extension HotkeyAction {
         case .toggle(.nbbOverlay): "NBB Overlay"
         case .toggle(.windowBackdrop): "Window Backdrop"
         case .toggle(.crosshair): "Crosshair"
+        case .toggle(.cursor): "Custom Cursor"
         case .startStopRecording: "Screen Recording"
         case .startTimer: "Start timer"
         case .profile(.select(let name)): "Switch to \(name)"

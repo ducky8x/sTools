@@ -70,7 +70,7 @@ struct GoCommandTests {
     @Test func menuListsHomeHotkeysToolsSettingsThenBackAndForward() {
         #expect(GoCommand.menu == [
             .home, .hotkeys, .tool(.crosshair), .tool(.timerOverlay), .tool(.nbbOverlay), .tool(.screenRecording),
-            .tool(.windowBackdrop), .tool(.keyRebinder), .settings, .back, .forward,
+            .tool(.windowBackdrop), .tool(.customCursor), .tool(.keyRebinder), .settings, .back, .forward,
         ])
     }
 
@@ -91,7 +91,8 @@ struct GoCommandTests {
         #expect(GoCommand.tool(.nbbOverlay).shortcutKey == "3")
         #expect(GoCommand.tool(.screenRecording).shortcutKey == "4")
         #expect(GoCommand.tool(.windowBackdrop).shortcutKey == "5")
-        #expect(GoCommand.tool(.keyRebinder).shortcutKey == "6")
+        #expect(GoCommand.tool(.customCursor).shortcutKey == "6")
+        #expect(GoCommand.tool(.keyRebinder).shortcutKey == "7")
         #expect(GoCommand.settings.shortcutKey == ",")
         #expect(GoCommand.back.shortcutKey == "[")
         #expect(GoCommand.forward.shortcutKey == "]")
@@ -102,10 +103,10 @@ struct GoCommandTests {
         #expect(Set(keys).count == keys.count)
     }
 
-    /// Hotkeys fire with sTools in front, so the pages hold ⌃⌘: ⌘1–⌘5 belong to the key set.
+    /// Hotkeys fire with sTools in front, so the pages hold ⌃⌘: ⌘1–⌘6 belong to the key set.
     @Test func thePagesHoldControlAndCommand() {
         #expect(GoCommand.menu.map(\.shortcutDisplay)
-            == ["⌃⌘0", "⌃⌘H", "⌃⌘1", "⌃⌘2", "⌃⌘3", "⌃⌘4", "⌃⌘5", "⌃⌘6", "⌘,", "⌘[", "⌘]"])
+            == ["⌃⌘0", "⌃⌘H", "⌃⌘1", "⌃⌘2", "⌃⌘3", "⌃⌘4", "⌃⌘5", "⌃⌘6", "⌃⌘7", "⌘,", "⌘[", "⌘]"])
     }
 
     /// The Hotkeys page holds ⌃⌘ like the other pages, on H for Hotkeys: no digit, so no key set's, and no shortcut of
@@ -119,7 +120,7 @@ struct GoCommandTests {
 
     /// No Go menu shortcut is a key any key set gives, so a press always reaches the one it means.
     @Test func noShortcutClashesWithAKeySet() {
-        let keyCodes: [Character: UInt16] = ["0": 29, "h": 4, "1": 18, "2": 19, "3": 20, "4": 21, "5": 23, "6": 22,
+        let keyCodes: [Character: UInt16] = ["0": 29, "h": 4, "1": 18, "2": 19, "3": 20, "4": 21, "5": 23, "6": 22, "7": 26,
                                              ",": 43, "[": 33, "]": 30]
         let keySetCombos = Set(HotkeyKeySet.allCases.flatMap(\.combos))
         for command in GoCommand.menu {
@@ -150,12 +151,13 @@ struct GoCommandTests {
 
 @Suite("ToolID")
 struct ToolIDTests {
-    @Test func toolsAreNumberedOneToSixInOrder() {
-        #expect(ToolID.allCases.map(\.number) == [1, 2, 3, 4, 5, 6])
+    @Test func toolsAreNumberedOneToSevenInOrder() {
+        #expect(ToolID.allCases.map(\.number) == [1, 2, 3, 4, 5, 6, 7])
         #expect(ToolID.allCases.map(\.title) == [
-            "Crosshair", "Timer Overlay", "NBB Overlay", "Screen Recording", "Window Backdrop", "Key Rebinder",
+            "Crosshair", "Timer Overlay", "NBB Overlay", "Screen Recording", "Window Backdrop", "Custom Cursor", "Key Rebinder",
         ])
-        #expect(ToolID.allCases == [.crosshair, .timerOverlay, .nbbOverlay, .screenRecording, .windowBackdrop, .keyRebinder])
+        #expect(ToolID.allCases == [.crosshair, .timerOverlay, .nbbOverlay, .screenRecording, .windowBackdrop, .customCursor,
+                                    .keyRebinder])
     }
 
     @Test func taglinesAreVerbatimFromRuleR13() {
@@ -165,6 +167,7 @@ struct ToolIDTests {
         #expect(ToolID.timerOverlay.tagline == "A timer for your fire res which you never keep track of.")
         #expect(ToolID.screenRecording.tagline == "A lightweight screen recorder.")
         #expect(ToolID.keyRebinder.tagline == "A simple rebinder connected to Karabiner.")
+        #expect(ToolID.customCursor.tagline == "Your own pointer for Minecraft\u{2019}s menus.")
     }
 
     @Test func onlyKeyRebinderIsFreeOfAccessibilityAndSwitch() {
@@ -182,19 +185,21 @@ struct ToolIDTests {
         let savedByAnEarlierOrder = ["nbbOverlay", "windowBackdrop", "crosshair", "timerOverlay", "screenRecording", "keyRebinder"]
         #expect(savedByAnEarlierOrder.compactMap(ToolID.init(rawValue:))
             == [.nbbOverlay, .windowBackdrop, .crosshair, .timerOverlay, .screenRecording, .keyRebinder])
-        #expect(Set(ToolID.allCases.map(\.rawValue)) == Set(savedByAnEarlierOrder))
+        #expect(Set(ToolID.allCases.map(\.rawValue)) == Set(savedByAnEarlierOrder + ["customCursor"]))
     }
 
     /// Lists of tools in the app's words follow the sidebar: the Prologue's "Used by" for Accessibility names every tool
     /// that needs it (rule R10), in sidebar order.
     @Test func toolListsInWordsFollowTheSidebar() {
         let needAccessibility = ToolID.allCases.filter(\.requiresAccessibility).map(\.title)
-        #expect(needAccessibility == ["Crosshair", "Timer Overlay", "NBB Overlay", "Screen Recording", "Window Backdrop"])
+        #expect(needAccessibility == ["Crosshair", "Timer Overlay", "NBB Overlay", "Screen Recording", "Window Backdrop", "Custom Cursor"])
         #expect(PermissionStepView.Copy.usedBy(.accessibility)
             == needAccessibility.joined(separator: ", "))
     }
 
     @Test func sidebarNamesFitTheSidebar() {
-        #expect(ToolID.allCases.map(\.sidebarTitle) == ["Crosshair", "Timer Overlay", "NBB Overlay", "Recording", "Backdrop", "Key Rebinder"])
+        #expect(ToolID.allCases.map(\.sidebarTitle) == ["Crosshair", "Timer Overlay", "NBB Overlay", "Recording", "Backdrop", "Cursor",
+                                                         "Key Rebinder"])
+        #expect(ToolID.allCases.map(\.shortestTitle) == ["Crosshair", "Timer", "NBB", "Recording", "Backdrop", "Cursor", "Key Rebinder"])
     }
 }

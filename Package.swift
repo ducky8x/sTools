@@ -1,7 +1,10 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
-let tools = ["Crosshair", "Backdrop", "NBBOverlay", "KeyRebinder", "ScreenRecording", "Prologue", "TimerOverlay"]
+let tools = ["Crosshair", "Backdrop", "NBBOverlay", "KeyRebinder", "ScreenRecording", "Prologue", "TimerOverlay", "CustomCursor"]
+
+/// What a tool module may import besides STDesign and STPlatform: Custom Cursor draws the Crosshair's shapes (spec 5.7.3).
+let toolDependencies: [String: [Target.Dependency]] = ["CustomCursor": ["Crosshair"]]
 
 let package = Package(
     name: "sTools",
@@ -15,7 +18,7 @@ let package = Package(
         .target(name: "STPlatform"),
     ]
     + tools.map { name in
-        .target(name: name, dependencies: ["STDesign", "STPlatform"],
+        .target(name: name, dependencies: ["STDesign", "STPlatform"] + (toolDependencies[name] ?? []),
                 resources: name == "KeyRebinder" ? [.copy("Resources")] : [])
     }
     + [

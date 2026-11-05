@@ -150,6 +150,7 @@ public struct DiagnosticsReport: Sendable {
     private let karabiner: String
     private let ninjabrain: String
     private let minecraft: String
+    private let customCursor: String?
     private let enabledTools: [String]
     private let settingsFiles: [SettingsFileInfo]
     private let logLines: [String]
@@ -163,6 +164,8 @@ public struct DiagnosticsReport: Sendable {
     ///   - karabiner: one-line (or multi-line) summary, for example version and whether it runs.
     ///   - ninjabrain: summary of the Ninjabrain Bot connection.
     ///   - minecraft: summary of the detected Minecraft instances.
+    ///   - customCursor: Custom Cursor's state: on, applied now, where, and whether this macOS has its calls; left out
+    ///     when nil.
     ///   - enabledTools: names of the tools that are switched on.
     ///   - logReader: asked for `logLineLimit` lines from the last `logWindow` seconds before `now`.
     ///   - homeDirectory: the path shortened to `~`.
@@ -174,6 +177,7 @@ public struct DiagnosticsReport: Sendable {
         karabiner: String,
         ninjabrain: String,
         minecraft: String,
+        customCursor: String? = nil,
         enabledTools: [String],
         settingsFiles: [SettingsFileInfo],
         logReader: any LogLineReading,
@@ -189,6 +193,7 @@ public struct DiagnosticsReport: Sendable {
         self.karabiner = karabiner
         self.ninjabrain = ninjabrain
         self.minecraft = minecraft
+        self.customCursor = customCursor
         self.enabledTools = enabledTools
         self.settingsFiles = settingsFiles
         generatedAt = now
@@ -228,6 +233,7 @@ public struct DiagnosticsReport: Sendable {
         out.append(Self.field("Karabiner-Elements", karabiner))
         out.append(Self.field("Ninjabrain Bot", ninjabrain))
         out.append(Self.field("Minecraft", minecraft))
+        if let customCursor { out.append(Self.field("Custom Cursor", customCursor)) }
         out.append("Enabled tools: \(enabledTools.isEmpty ? "none" : enabledTools.joined(separator: ", "))")
         out.append("")
         out.append(settingsFiles.isEmpty ? "Settings files: none" : "Settings files (names and sizes only):")

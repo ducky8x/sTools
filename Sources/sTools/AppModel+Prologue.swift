@@ -133,9 +133,10 @@ extension ToolID {
         }
     }
 
-    /// The tool's trial in the introduction.
+    /// The tool's trial in the introduction; Custom Cursor has none yet (spec 5.7.4).
     var trial: PrologueTrial? {
         switch self {
+        case .customCursor: nil
         case .crosshair: .crosshair
         case .windowBackdrop: .windowBackdrop
         case .nbbOverlay: .nbbOverlay
