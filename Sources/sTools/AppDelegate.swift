@@ -47,6 +47,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
+    /// The Crosshair's pointer outlives sTools, so macOS's arrow goes back as sTools quits, however the quit came.
+    func applicationWillTerminate(_ notification: Notification) {
+        model.restorePointerForQuit()
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         Task {
             await model.shutDown()

@@ -149,10 +149,13 @@ final class AppModel {
             displays: DisplayDirectory(),
             minecraft: MinecraftLocator(source: AXMinecraftSource()),
             permissions: PermissionCenter())
+        // Before anything else: a pointer that a crash or a force quit left as the crosshair goes back to macOS's arrow
+        // (spec 5.7.1).
+        let pointer = PointerSwap(swapper: makeLiveSwapper(), supportDirectory: services.settings.directory)
         self.init(services: services, theme: theme, sound: sound, controllers: [
             .nbbOverlay: NBBOverlayController(services: services, theme: theme),
             .windowBackdrop: BackdropController(services: services, theme: theme),
-            .crosshair: CrosshairController(services: services),
+            .crosshair: CrosshairController(services: services, pointer: pointer, pointerWatch: PointerVisibilityPoller()),
             // The app's own theme, so the overlay follows Reduce animations even while the window is closed.
             .timerOverlay: TimerOverlayController(services: services, theme: theme),
             // The Save/Delete question after a stop floats in a panel of its own, so it shows over Minecraft too.

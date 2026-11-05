@@ -69,10 +69,21 @@ extension AppModel {
     }
 
     /// Wipes every settings document; the caller must relaunch sTools afterward (settings objects
-    /// already loaded in memory are not touched and must not be saved again).
+    /// already loaded in memory are not touched and must not be saved again). The Crosshair puts macOS's arrow back
+    /// first, for good, so the pointer's files move into the backup with nothing left applied.
     @discardableResult
     func resetAppSettings() async throws -> URL? {
-        try await ResetService(directory: settings.directory, store: settings).reset(confirmed: true)
+        crosshair?.restorePointerForGood()
+        return try await ResetService(directory: settings.directory, store: settings).reset(confirmed: true)
+    }
+
+    /// The Crosshair's controller, when the app has a real one.
+    var crosshair: CrosshairController? { controller(for: .crosshair, as: CrosshairController.self) }
+
+    /// Puts macOS's arrow back as sTools quits (`applicationWillTerminate`), whatever the Crosshair's switch and settings
+    /// say: an arrow left as the crosshair would outlive sTools.
+    func restorePointerForQuit() {
+        crosshair?.restorePointerForGood()
     }
 
     /// Resets every tool's own settings to default — narrower than "Reset sTools…": General,

@@ -38,7 +38,7 @@ struct LiveSwapperGuardTests {
             let text = try String(contentsOf: file, encoding: .utf8)
             return text.contains(Self.forbidden[1])
         }
-        #expect(users.map(\.lastPathComponent).sorted() == ["CursorSwapping.swift"])
+        #expect(users.map(\.lastPathComponent).sorted() == ["AppModel.swift", "CursorSwapping.swift"])
     }
 
     /// No test calls the app model's own initializer, the production wiring that builds the live swapper.
