@@ -22,6 +22,8 @@ struct CrosshairSettingsTests {
         #expect(settings.gap == 0)
         #expect(settings.opacityPercent == 100)
         #expect(settings.visibleOnlyWhileMinecraftFocused == false)
+        #expect(settings.hidesInMinecraftMenus == false)
+        #expect(settings.isPointerInMinecraftMenus == false)
         #expect(settings.displayChoice == .followMinecraft)
         #expect(settings.specificDisplayID == nil)
         #expect(CrosshairSettings.name == "crosshair")
@@ -37,6 +39,8 @@ struct CrosshairSettingsTests {
         settings.imageName = "Images/0F0E0D0C-0000-0000-0000-000000000001.png"
         settings.imageAnchor = .bottomRight
         settings.visibleOnlyWhileMinecraftFocused = true
+        settings.hidesInMinecraftMenus = true
+        settings.isPointerInMinecraftMenus = true
         settings.displayChoice = .specific
         settings.specificDisplayID = 77
         let data = try JSONEncoder().encode(settings)
@@ -76,10 +80,30 @@ struct CrosshairSettingsTests {
     @Test func unusableValuesFallBackToDefaults() throws {
         let json = """
         {"shape": "hexagon", "fillHex": "red", "outlineHex": "#12", "imageAnchor": 7,
-         "visibleOnlyWhileMinecraftFocused": "sometimes", "displayChoice": "all", "size": "big"}
+         "visibleOnlyWhileMinecraftFocused": "sometimes", "displayChoice": "all", "size": "big",
+         "hidesInMinecraftMenus": 3, "isPointerInMinecraftMenus": "yes"}
         """
         let decoded = try JSONDecoder().decode(CrosshairSettings.self, from: Data(json.utf8))
         #expect(decoded == CrosshairSettings.defaultValue)
+    }
+
+    /// A file saved before the menu settings existed reads them as off.
+    @Test func theMenuSettingsStartOffInAnOlderFile() throws {
+        let decoded = try JSONDecoder().decode(CrosshairSettings.self, from: Data(#"{"size":12,"visibleOnlyWhileMinecraftFocused":true}"#.utf8))
+        #expect(!decoded.hidesInMinecraftMenus)
+        #expect(!decoded.isPointerInMinecraftMenus)
+        #expect(!decoded.hidesWhileThePointerShows)
+    }
+
+    /// Being the pointer hides the overlay in the menus too, whatever the hide setting holds: the pointer is the
+    /// crosshair there.
+    @Test(arguments: [(false, false, false), (true, false, true), (false, true, true), (true, true, true)])
+    func beingThePointerImpliesHiding(hides: Bool, isPointer: Bool, hidesWhileThePointerShows: Bool) {
+        var settings = CrosshairSettings.defaultValue
+        settings.hidesInMinecraftMenus = hides
+        settings.isPointerInMinecraftMenus = isPointer
+        #expect(settings.hidesWhileThePointerShows == hidesWhileThePointerShows)
+        #expect(settings.hidesInMinecraftMenus == hides, "the hide setting keeps its own value")
     }
 
     @Test func olderFilesWithACenterSideStillLoad() throws {
