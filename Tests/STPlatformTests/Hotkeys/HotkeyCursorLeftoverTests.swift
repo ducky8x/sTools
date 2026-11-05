@@ -2,8 +2,8 @@ import Foundation
 import Testing
 @testable import STPlatform
 
-/// A test build once had a seventh tool, Custom Cursor, with its own toggle, `toggle.cursor`, on ⌘6 in a key set. That
-/// tool is now part of the Crosshair, so a `hotkeys.json` saved by that build still loads: the action is dropped as any
+/// Earlier builds had a seventh tool, Custom Cursor, with its own toggle, `toggle.cursor`, on ⌘6 in a key set. That
+/// tool is now part of the Crosshair, so a `hotkeys.json` they saved still loads: the action is dropped as any
 /// action this build doesn't know is, and every other hotkey keeps its key, actions, id and place.
 @MainActor
 @Suite("Hotkeys: a list saved with Custom Cursor's toggle")
@@ -13,7 +13,7 @@ struct HotkeyCursorLeftoverTests {
         return #"{"id":"00000000-0000-0000-0000-0000000000F\#(id)","combo":{"keyCode":\#(keyCode),"modifiers":256},"actions":[\#(names)]}"#
     }
 
-    /// ⌘1–⌘6 as that build's key set gave it, plus ⌘C for the Crosshair and Custom Cursor together.
+    /// ⌘1–⌘6 as their key set gave it, plus ⌘C for the Crosshair and Custom Cursor together.
     private var savedList: String {
         let entries = [
             entry(1, keyCode: 18, ["toggle.crosshair"]), entry(2, keyCode: 19, ["startTimer"]),

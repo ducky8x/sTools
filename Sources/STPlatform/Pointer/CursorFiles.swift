@@ -3,7 +3,7 @@ import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 
-/// Custom Cursor's own files in the support folder (spec 5.7.1): `Cursor/applied`, there while sTools' pointer is
+/// The pointer's own files in the support folder (spec 5.7.1): `Cursor/applied`, there while sTools' pointer is
 /// registered, and `Cursor/Originals/`, macOS's arrow as it was before, to put back. A registered pointer outlives
 /// sTools, so the marker is how the next launch knows to restore it after a crash or a force quit.
 struct CursorFiles {

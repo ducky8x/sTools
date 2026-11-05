@@ -1,11 +1,10 @@
 import AppKit
 import CoreGraphics
 import Darwin
-import STPlatform
 
 /// Swaps the pointer through the window server's private calls, the ones other cursor tools use (spec 5.7.1). They're
 /// looked up by name when sTools starts, in CoreGraphics and then HIServices, and never linked, so a macOS without them
-/// still opens sTools; the tool then says it isn't supported.
+/// still opens sTools; the Crosshair then says it can't be the pointer there.
 ///
 /// What this registers stays after sTools quits, for every app, until it's restored or the person logs out. Only the app's
 /// own wiring builds one, through the factory beside `CursorSwapping`; a test that names this type fails
@@ -40,13 +39,13 @@ final class LiveCursorSwapper: CursorSwapping {
 
     /// The core cursors macOS numbers 0 to 43; a restore sets each back.
     private static let coreCursors: ClosedRange<Int32> = 0...43
-    private static let log = STLog.logger("CustomCursor")
+    private static let log = STLog.logger("Pointer")
 
     private let calls: Calls?
 
     init() {
         calls = Self.isInTestProcess ? nil : Self.lookUp()
-        if calls == nil { Self.log.notice("The pointer calls are missing, so Custom Cursor isn't supported here") }
+        if calls == nil { Self.log.notice("The pointer calls are missing, so the pointer can't be swapped here") }
     }
 
     var isSupported: Bool { calls != nil }

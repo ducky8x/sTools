@@ -8,8 +8,8 @@ enum CrosshairOutline {
     ///
     /// A disc is a stack of rows, each reaching some pixels to either side, so the filter runs in two passes: first the
     /// highest value in every row window a disc row needs, then the highest of the disc's rows. That gives the same pixels
-    /// as looking at every point of the disc, in a few passes over the mask instead of one per point, which keeps the 4×
-    /// images of a large Custom Cursor quick.
+    /// as looking at every point of the disc, in a few passes over the mask instead of one per point, which keeps a large
+    /// crosshair with a wide outline quick to draw.
     static func dilated(_ mask: CrosshairMask, width: Int) -> CrosshairMask {
         guard width > 0 else { return mask }
         let (columns, rows) = (mask.width, mask.height)
