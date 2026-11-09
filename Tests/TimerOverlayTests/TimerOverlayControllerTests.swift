@@ -66,7 +66,7 @@ struct TimerOverlayControllerTests {
         #expect(rig.presenter.isShowing && rig.activity.isHeld && rig.wakeWatcher.isWatching)
         #expect(rig.controller.isWatchingEnvironment)
         rig.scheduler.fireAll()
-        #expect(rig.controller.phase == .idle)
+        #expect(rig.controller.phase == .idle && !rig.controller.isEnabled)
         #expect(rig.alarm.rings.count == 1)
         #expect(rig.presenter.popOuts.count == 1, "the overlay left, releasing its panel")
         #expect(rig.isQuiet)
@@ -319,7 +319,7 @@ struct TimerOverlayControllerTests {
         rig.runToZero()
         rig.scheduler.fireAll()
         #expect(rig.alarm.rings.count == 1 && rig.controller.phase == .idle)
-        #expect(rig.controller.isEnabled && rig.controller.status == .ready, "the tool stays on after the run")
+        #expect(!rig.controller.isEnabled && rig.controller.status == .off, "the run switches the tool off as it ends")
     }
 
     @Test func switchingOnThatCantSwitchTheToolOnStartsNothing() {
@@ -643,6 +643,7 @@ struct TimerOverlayControllerTests {
         }
         #expect(abs(rig.clock.time - zero - expected) < 1e-6)
         #expect(rig.controller.phase == .idle && rig.isQuiet)
+        #expect(!rig.controller.isEnabled && rig.controller.status == .off, "the leave switches the tool off")
         let heard = try #require(rig.alarm.rings.first)
         #expect(heard.sound.lastPathComponent == "Tone.caf" && abs(heard.volume - 0.8) < 1e-9)
         #expect(rig.alarm.ringStarts == Array(0..<heard.schedule.ringStarts.count))
@@ -665,6 +666,80 @@ struct TimerOverlayControllerTests {
         #expect(abs(rig.clock.time - woke - (leave == .afterLastRing ? 7.2 : 5)) < 1e-6,
                 "times after zero count from the wake, so the alarm is heard")
         #expect(rig.isQuiet)
+        #expect(!rig.controller.isEnabled && rig.controller.status == .off, "a run that ended on wake switches off too")
+    }
+
+    // MARK: - A run that ends by itself switches the tool off (ducky, 2026-11-08)
+
+    /// The leave after time's up switches the tool off as a double press does, once the overlay has played its exit,
+    /// so the sidebar, Home and the page read Off instead of Ready.
+    @Test func aRunThatEndsByItselfSwitchesTheToolOffOnceTheOverlayHasLeft() {
+        let rig = TimerRig { $0.durationSeconds = 3 }
+        rig.presenter.exitsAtOnce = false
+        rig.controller.setEnabled(true)
+        rig.controller.start()
+        rig.runToZero()
+        while rig.controller.phase != .leaving, rig.scheduler.fireNext() {}
+        #expect(rig.controller.phase == .leaving && rig.presenter.isLeaving)
+        #expect(rig.controller.isEnabled, "the tool stays on while the overlay plays its exit")
+        rig.presenter.finishExit()
+        #expect(!rig.controller.isEnabled && rig.controller.status == .off && rig.controller.phase == .idle)
+        #expect(rig.presenter.popOuts.count == 1 && rig.isQuiet)
+    }
+
+    @Test func itSwitchesOffThroughTheAppWhenThereIsOne() {
+        let rig = TimerRig { $0.durationSeconds = 3 }
+        var asked = 0
+        rig.controller.requestDisable = { [weak controller = rig.controller] in
+            asked += 1
+            controller?.setEnabled(false)
+        }
+        rig.controller.setEnabled(true)
+        rig.controller.start()
+        rig.scheduler.fireAll()
+        #expect(asked == 1 && !rig.controller.isEnabled && rig.controller.status == .off)
+    }
+
+    /// As `switchOn()` does for `requestEnable`, the controller doesn't stay on when the app's switch didn't move.
+    @Test func itSwitchesItselfOffWhenTheAppLeavesItOn() {
+        let rig = TimerRig { $0.durationSeconds = 3 }
+        var asked = 0
+        rig.controller.requestDisable = { asked += 1 }
+        rig.controller.setEnabled(true)
+        rig.controller.start()
+        rig.scheduler.fireAll()
+        #expect(asked == 1 && !rig.controller.isEnabled && rig.controller.status == .off)
+    }
+
+    /// The overlay was hidden at the leave time ("Only while Minecraft is focused"), so there is no exit to wait for:
+    /// the tool switches off right then.
+    @Test func aHiddenOverlaySwitchesOffAtTheLeaveTime() async {
+        let rig = TimerRig { $0.durationSeconds = 3; $0.visibleOnlyWhileMinecraftFocused = true }
+        await rig.setMinecraft(on: timerTestDisplay, isFrontmost: true)
+        rig.controller.setEnabled(true)
+        rig.controller.start()
+        await rig.setMinecraft(on: timerTestDisplay, isFrontmost: false)
+        #expect(rig.presenter.popOuts.count == 1 && !rig.presenter.isShowing)
+        rig.runToZero()
+        #expect(rig.controller.phase == .ringing && rig.controller.isEnabled)
+        rig.scheduler.fireAll()
+        #expect(!rig.controller.isEnabled && rig.controller.status == .off && rig.isQuiet)
+        #expect(rig.presenter.popIns.count == 1, "nothing popped up at zero")
+    }
+
+    /// A press while the overlay leaves after time's up starts a new countdown, and the old exit switches nothing off.
+    @Test func aPressWhileTheRunLeavesByItselfStartsANewCountdownAndKeepsTheToolOn() {
+        let rig = TimerRig { $0.durationSeconds = 3 }
+        rig.presenter.exitsAtOnce = false
+        rig.controller.setEnabled(true)
+        rig.controller.start()
+        rig.runToZero()
+        while rig.controller.phase != .leaving, rig.scheduler.fireNext() {}
+        rig.clock.time += 1
+        #expect(rig.controller.press() == .acted)
+        #expect(rig.controller.phase == .counting && rig.presenter.popIns.count == 2)
+        rig.presenter.finishExit()
+        #expect(rig.controller.isEnabled && rig.controller.phase == .counting, "the overtaken exit finishes nothing")
     }
 
     @Test func theChimePlaysAtItsTime() {
@@ -715,6 +790,7 @@ struct TimerOverlayControllerTests {
         #expect(rig.controller.status == .timesUp, "the status doesn't count up")
         rig.scheduler.fireAll()
         #expect(rig.controller.phase == .idle && rig.isQuiet, "the overtime wakes end with the run")
+        #expect(!rig.controller.isEnabled, "overtime still leaves at the leave time, which switches the tool off")
     }
 
     @Test func switchingOffWhileTheOverlayLeavesEndsTheRunAtOnce() {
@@ -870,6 +946,7 @@ struct TimerOverlayControllerTests {
         rig.scheduler.fireAll()
         #expect(rig.controller.settings.durationSeconds == 150 && !rig.controller.isTestRun)
         #expect(rig.controller.phase == .idle && rig.isQuiet)
+        #expect(!rig.controller.isEnabled && rig.controller.status == .off, "Test ends the way a countdown does")
     }
 
     @Test func testSwitchesTheToolOnAndWaitsForACountdown() {
@@ -1098,6 +1175,8 @@ struct TimerPlacementModeTests {
         rig.scheduler.fireAll()
         #expect(rig.presenter.popOuts.isEmpty && rig.presenter.isShowing, "the plate stays")
         #expect(rig.controller.phase == .idle && rig.controller.content.text == "00:03")
+        #expect(rig.controller.isEnabled && rig.controller.isPlacing && rig.controller.status == .ready,
+                "while placing, the tool stays on")
         #expect(rig.presenter.pulses.count == 3 && rig.alarm.rings.count == 1)
         #expect(!rig.activity.isHeld && rig.scheduler.pending.isEmpty)
     }

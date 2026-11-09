@@ -47,14 +47,16 @@ struct TimerSleepsThroughZeroTests {
         harness.runTimerWakes(until: { !harness.presenter.isShowing && harness.timer.phase == .idle })
         #expect(harness.timer.phase == .idle && !harness.presenter.isShowing)
         #expect(harness.alarm.rings == 1, "never a second ring for one run")
-        #expect(harness.model.isOn(.timerOverlay), "the tool stays on")
+        #expect(!harness.model.isOn(.timerOverlay), "the run ended by itself, so the tool switched off")
+        #expect(harness.model.status(of: .timerOverlay) == .off)
         #expect(harness.model.timerDockBadge == nil)
         #expect(!harness.wakeSimulator.isWatching && harness.timerScheduler.pending.isEmpty, "nothing left running")
 
-        // The Start-timer key then starts a fresh countdown of the full length.
+        // The Start-timer key then switches the tool back on and starts a fresh countdown of the full length.
         harness.model.hotkeys.isEnabled = true
         let id = harness.model.hotkeys.add(combo: HotkeyCombo(keyCode: 97, modifiers: []), actions: [.startTimer])
         harness.registrar.onPress?(id)
+        #expect(harness.model.isOn(.timerOverlay))
         #expect(harness.timer.phase == .counting && harness.timer.content.text == "02:30")
         #expect(harness.model.timerDockBadge == "2:30")
         await harness.finish()

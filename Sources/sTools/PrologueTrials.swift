@@ -197,8 +197,10 @@ extension AppModel {
     }
 
     /// Timer Overlay's trial (spec 5.6.9). The Test item ticks when the controller reports that the run has left;
-    /// the trial keeps no timer of its own, and Test leaves the saved duration alone. The key item ticks whenever a
-    /// Start-timer key exists, one set before the trial too (a new install's ⌘2), not only once a key changes.
+    /// the trial keeps no timer of its own, and Test leaves the saved duration alone. The run switches the tool off as
+    /// it ends, but "Switch it on" stays ticked: the checklist keeps every item the page has recorded as done. The key
+    /// item ticks whenever a Start-timer key exists, one set before the trial too (a new install's ⌘2), not only once a
+    /// key changes.
     private func timerTrial() -> TrialContent {
         guard let timer = timerOverlay else { return Self.emptyTrial }
         let session = trials
