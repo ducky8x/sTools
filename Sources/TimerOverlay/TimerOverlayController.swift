@@ -18,12 +18,13 @@ public enum TimerPressResult: Equatable, Sendable {
 }
 
 /// Owns Timer Overlay (spec 5.6): one countdown, started by one key, that pops up over the game, counts down,
-/// rings and leaves by itself.
+/// rings and leaves by itself, and then switches the tool off.
 ///
 /// - Presses become actions through `PressPolicy`, stamped with the controller's own clock at the moment their key
 ///   moved, which the app passes as how long ago that was. The cancel gestures switch the tool off themselves
-///   (`setEnabled(false)`); the app reads `isEnabled` after each press and release, so its switch follows. Every
-///   press, and every release that acts, is logged at the notice level for Copy Diagnostics.
+///   (`setEnabled(false)`); the app reads `isEnabled` after each press and release, so its switch follows. A run that
+///   ends by itself switches off through `requestDisable` instead, since no key event follows it. Every press, every
+///   release that acts and every run that ends by itself is logged at the notice level for Copy Diagnostics.
 /// - `TimerEngine` runs the countdown; the presenter shows the overlay, the alarm player rings it and plays the cues
 ///   before zero, at `AlarmSchedule`'s times.
 /// - Motion: every pop-in, pop-out and pulse hands the presenter `theme.reduceMotion` as it starts, so Reduce
@@ -46,6 +47,9 @@ public final class TimerOverlayController: ToolController {
     /// Switches the tool on through the app (its sidebar switch and the Accessibility rule, R10); returns whether
     /// it is on afterwards. Without it, the controller switches itself on.
     @ObservationIgnored public var requestEnable: (@MainActor () -> Bool)?
+    /// Switches the tool off through the app (its sidebar switch) when a run ends by itself. Without it, the
+    /// controller switches itself off.
+    @ObservationIgnored public var requestDisable: (@MainActor () -> Void)?
 
     public var settings: TimerOverlaySettings {
         didSet {
@@ -429,12 +433,13 @@ public final class TimerOverlayController: ToolController {
 
     /// Ends the run (a cancel, the leave time, switching off): stops the alarm, and the overlay leaves the way it
     /// came. Once it has left, the run is cancelled, which ends the process activity. In placement mode the plate
-    /// stays and shows the sample again.
-    private func endRun() {
+    /// stays and shows the sample again. `switchingOff` is the leave time's: once the overlay has left, the tool
+    /// switches off too.
+    private func endRun(switchingOff: Bool = false) {
         stopRunWakes()
         stopRunSounds()
         guard isOverlayUp, !isPlacing else {
-            finishRun()
+            finishRun(switchingOff: switchingOff)
             return
         }
         phase = .leaving
@@ -445,13 +450,15 @@ public final class TimerOverlayController: ToolController {
         let generation = exitGeneration
         presenter.popOut(reduceMotion: theme.reduceMotion) { [weak self] in
             guard let self, self.exitGeneration == generation, self.phase == .leaving else { return }
-            self.finishRun()
+            self.finishRun(switchingOff: switchingOff)
         }
         updateWatching()
     }
 
-    /// Back to idle, with nothing scheduled, held or playing for the run.
-    private func finishRun() {
+    /// Back to idle, with nothing scheduled, held or playing for the run. With `switchingOff`, the tool then
+    /// switches off.
+    private func finishRun(switchingOff: Bool = false) {
+        let wasTestRun = isTestRun
         stopRunWakes()
         phase = .idle
         isTestRun = false
@@ -463,6 +470,19 @@ public final class TimerOverlayController: ToolController {
         refreshContent(at: now)
         refreshStatus(at: now)
         updateOverlay()
+        if switchingOff { switchOffAfterRun(wasTestRun: wasTestRun) }
+    }
+
+    /// A run that ended by itself switches the tool off (ducky, 2026-11-08), the way a double press does, through the
+    /// app's switch when there is one, so the sidebar, Home and the page read Off. No key was pressed, so the app
+    /// shows no confirmation. In placement mode the plate stays up and the tool stays on.
+    private func switchOffAfterRun(wasTestRun: Bool) {
+        guard isEnabled, !isPlacing else { return }
+        requestDisable?()
+        if isEnabled { setEnabled(false) }
+        let line = "\(wasTestRun ? "Test" : "Countdown") ended by itself: "
+            + "Timer Overlay on \u{2192} \(isEnabled ? "on" : "off")"
+        log.notice("\(line, privacy: .public)")
     }
 
     private func stopRunWakes() {
@@ -522,7 +542,8 @@ public final class TimerOverlayController: ToolController {
 
     // MARK: - The alarm
 
-    /// Rings the alarm from now, and schedules the overlay's leave by `AlarmSchedule`.
+    /// Rings the alarm from now, and schedules the overlay's leave by `AlarmSchedule`. The leave ends the run, and
+    /// once the overlay has left, the tool switches off.
     private func ring() {
         let resolution = AlarmSound.resolve(settings.soundID, own: ownSounds, macOSDirectory: macOSSoundsDirectory)
         let schedule = AlarmSchedule(soundLength: resolution.sound.length ?? Self.assumedSoundLength, settings: settings)
@@ -538,7 +559,7 @@ public final class TimerOverlayController: ToolController {
             guard let self else { return }
             self.leaveWake = nil
             guard self.phase == .ringing || self.phase == .lingering else { return }
-            self.endRun()
+            self.endRun(switchingOff: true)
         }
     }
 
