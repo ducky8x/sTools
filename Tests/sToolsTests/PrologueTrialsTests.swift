@@ -163,6 +163,36 @@ struct PrologueTrialsTests {
         content.onDisappear()
     }
 
+    /// The Test run switches the tool off as it ends (ducky, 2026-11-08). "Switch it on" stays ticked anyway, because
+    /// an item stays done once the trial's page has recorded it, so Continue isn't grayed out again.
+    @Test func theTimerTrialCanContinueAfterTheTestRunSwitchesTheToolOff() async throws {
+        let harness = Harness()
+        harness.model.beginPrologue(at: .timerTrial)
+        let prologue = try #require(harness.model.prologue)
+        let timer = harness.timer
+        let content = harness.model.trialContent(.timerOverlay)
+        content.onAppear()
+        // What the trial's page does on each change: record what is done now.
+        func recordAsThePageDoes() {
+            prologue.record(done: content.completed(), items: content.items(), for: .timerOverlay)
+        }
+        #expect(timer.runTest())
+        recordAsThePageDoes()
+        #expect(await waitUntil { harness.model.trials.timerTestRunning })
+        runTimer(harness.timerFakes, for: 120)
+        #expect(timer.phase == .idle && !harness.model.isOn(.timerOverlay), "the Test run switched the tool off")
+        #expect(await waitUntil { content.completed().contains("test") })
+        #expect(!content.completed().contains("on"))
+        recordAsThePageDoes()
+        let items = content.items()
+        prologue.skipItem("place", items: items, in: .timerOverlay)
+        prologue.skipItem("key", items: items, in: .timerOverlay)
+        let list = prologue.checklist(for: .timerOverlay, items: items)
+        #expect(list.state(of: "on") == .done && list.state(of: "test") == .done)
+        #expect(prologue.canContinue)
+        content.onDisappear()
+    }
+
     @Test func aRealCountdownStartedDuringTheTestDoesNotTickIt() async throws {
         let harness = Harness()
         harness.model.beginPrologue(at: .timerTrial)
