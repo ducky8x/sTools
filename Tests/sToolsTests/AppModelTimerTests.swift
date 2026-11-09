@@ -107,14 +107,37 @@ struct AppModelTimerTests {
         #expect(harness.model.status(of: .timerOverlay) == .timer("0:10 left"))
     }
 
-    @Test func theSwitchRunsTheCountdownToZeroAndTheOverlayLeaves() {
+    /// ducky, 2026-11-08: a run that ends by itself turns the tool off, as a double press does, instead of leaving it
+    /// on and Ready.
+    @Test func theSwitchRunsTheCountdownToZeroAndTheToolSwitchesOffOnceTheOverlayLeaves() {
         let harness = Harness()
         harness.timer.settings.durationSeconds = 5
-        harness.model.switchBinding(.timerOverlay).wrappedValue = true
+        let binding = harness.model.switchBinding(.timerOverlay)
+        binding.wrappedValue = true
         harness.timerFakes.scheduler.fire(until: { harness.timer.phase == .idle })
         #expect(harness.timerFakes.alarm.rings == 1 && !harness.timerFakes.presenter.isShowing)
-        #expect(harness.model.isOn(.timerOverlay), "a finished run leaves the tool on and ready")
-        #expect(harness.model.status(of: .timerOverlay) == .timer("Ready"))
+        #expect(!binding.wrappedValue && !harness.model.isOn(.timerOverlay) && !harness.timer.isEnabled,
+                "the app's switch follows the tool off")
+        #expect(harness.model.status(of: .timerOverlay) == .off)
+        #expect(!harness.model.isPollingForTools && harness.timerFakes.scheduler.pending.isEmpty)
+    }
+
+    /// A run the key started switches off at its end with no confirmation over the game, since no key was pressed
+    /// then; the next press switches the tool back on and starts a countdown.
+    @Test func aRunTheKeyStartedSwitchesOffAtItsEndWithoutAConfirmation() {
+        let harness = Harness()
+        harness.timer.settings.durationSeconds = 5
+        harness.model.hotkeys.showsConfirmation = true
+        harness.model.handleHotkeyPress([.startTimer])
+        #expect(harness.model.isOn(.timerOverlay) && harness.timer.phase == .counting)
+        harness.timerFakes.scheduler.fire(until: { harness.timer.phase == .idle })
+        #expect(!harness.model.isOn(.timerOverlay) && !harness.timer.isEnabled)
+        #expect(harness.model.status(of: .timerOverlay) == .off)
+        #expect(harness.hotkeyHUD.presented.isEmpty, "no line, sound or seal for a switch-off nobody pressed")
+        harness.timerFakes.clock.time += 1
+        harness.model.handleHotkeyPress([.startTimer])
+        #expect(harness.model.isOn(.timerOverlay) && harness.timer.phase == .counting)
+        #expect(harness.timer.content.text == "00:05")
     }
 
     @Test func switchingOffCancelsTheCountdownAsBefore() {
