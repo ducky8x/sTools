@@ -108,9 +108,10 @@ extension AppModel {
         }
     }
 
-    /// A cancel gesture (a double press, or Advanced's hold) switched Timer Overlay off itself (spec 5.6.2): its switch
-    /// follows, and the press is confirmed like any hotkey's switch, "Timer Overlay off" with the seal, because over
-    /// the game the overlay leaving looks just like a cancel. Nil when the tool is still on, or was already off.
+    /// A cancel gesture (a double press, or Advanced's hold) or a press that silenced the alarm (Advanced) switched
+    /// Timer Overlay off itself (spec 5.6.2): its switch follows, and the press is confirmed like any hotkey's switch,
+    /// "Timer Overlay off" with the seal, because over the game the overlay leaving looks just like a cancel. Nil when
+    /// the tool is still on, or was already off, as for the quick press after one that silenced.
     private func timerSwitchedOff(_ timer: TimerOverlayController, wasOn: Bool) -> HotkeyConfirmation.Effect? {
         guard !timer.isEnabled else { return nil }
         setTool(.timerOverlay, on: false)

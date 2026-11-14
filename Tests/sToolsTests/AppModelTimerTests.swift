@@ -427,6 +427,94 @@ struct AppModelTimerTests {
         #expect(harness.model.isOn(.timerOverlay) && harness.timer.phase == .counting)
     }
 
+    // MARK: - A press that silences (spec 5.6.2, revision 67)
+
+    /// A 10-second countdown the key started, with Advanced's "Silences and hides", brought to `phase` (ringing, or
+    /// lingering after the alarm), a second after zero.
+    private func silencing(_ phase: TimerPhase, gesture: TimerOverlaySettings.CancelGesture = .doublePress) -> Harness {
+        let harness = Harness()
+        harness.model.hotkeys.showsConfirmation = true
+        harness.timer.settings.durationSeconds = 10
+        harness.timer.settings.pressWhileRinging = .silenceAndHide
+        harness.timer.settings.cancelGesture = gesture
+        harness.model.handleHotkeyPress([.startTimer])
+        harness.timerFakes.scheduler.fire(until: { harness.timer.phase == .ringing })
+        if phase == .lingering {
+            // A Preview replaces the alarm, which then counts as ended, so the overlay lingers after it.
+            harness.timer.preview()
+            harness.timer.stopPreview()
+        }
+        harness.timerFakes.clock.time += 1
+        return harness
+    }
+
+    /// ducky, 2026-11-13: a press that silences the alarm switches Timer Overlay off, its switch with it, as letting
+    /// the alarm run out does, and over the game it says so, as the double press does.
+    @Test(arguments: [TimerPhase.ringing, .lingering])
+    func aPressThatSilencesSwitchesTheToolOffAndSaysSo(from phase: TimerPhase) {
+        let harness = silencing(phase)
+        #expect(harness.timer.phase == phase && harness.timerFakes.presenter.isShowing)
+        #expect(harness.hotkeyHUD.presented.isEmpty)
+
+        harness.model.handleHotkeyPress([.startTimer])
+        #expect(!harness.model.isOn(.timerOverlay) && !harness.timer.isEnabled)
+        #expect(harness.model.status(of: .timerOverlay) == .off)
+        #expect(harness.timer.phase == .idle && !harness.timerFakes.presenter.isShowing)
+        #expect(!harness.timerFakes.alarm.isPlaying && harness.timerFakes.presenter.popOuts.count == 1)
+        #expect(!harness.model.isPollingForTools, "nothing that needs Accessibility is on")
+        #expect(harness.hotkeyHUD.lines == ["Timer Overlay off"], "the switch-off is confirmed over the game")
+        #expect(harness.hotkeyHUD.presented.last?.sealed == true && harness.hotkeyHUD.presented.last?.displayID == 1)
+    }
+
+    /// The press after the one that silenced, within 0.4 s, is the double press's second half: the tool stays off and
+    /// nothing is said, as for a press that is ignored. A quick third press switches it back on and starts a countdown.
+    @Test(arguments: [TimerPhase.ringing, .lingering])
+    func aQuickSecondPressLeavesItOffAndAThirdStartsACountdown(from phase: TimerPhase) {
+        let harness = silencing(phase)
+        harness.model.handleHotkeyPress([.startTimer])
+        #expect(!harness.model.isOn(.timerOverlay) && harness.hotkeyHUD.presented.count == 1)
+
+        harness.timerFakes.clock.time += 0.3
+        harness.model.handleHotkeyPress([.startTimer])
+        #expect(!harness.model.isOn(.timerOverlay) && !harness.timer.isEnabled && harness.timer.phase == .idle)
+        #expect(harness.model.status(of: .timerOverlay) == .off)
+        #expect(harness.timerFakes.presenter.popIns.count == 1 && !harness.timerFakes.presenter.isShowing)
+        #expect(harness.hotkeyHUD.presented.count == 1, "no second line")
+
+        harness.timerFakes.clock.time += 0.3
+        harness.model.handleHotkeyPress([.startTimer])
+        #expect(harness.model.isOn(.timerOverlay) && harness.timer.isEnabled && harness.timer.phase == .counting)
+        #expect(harness.timer.content.text == "00:10")
+        #expect(harness.model.status(of: .timerOverlay) == .timer("0:10 left"))
+        #expect(harness.timerFakes.presenter.popIns.count == 2)
+        #expect(harness.hotkeyHUD.lines == ["Timer Overlay off"], "the countdown popping up confirms the switch back on")
+    }
+
+    /// What each press does to the switch: the press that silences switches it off; the quick press after it, and
+    /// the releases, change nothing.
+    @Test func theSilencingPressCarriesTheSwitchOff() {
+        let harness = silencing(.ringing)
+        #expect(harness.model.handleHotkeyEvent(.startTimer) == .tool(.timerOverlay, isOn: false))
+        #expect(harness.model.handleHotkeyEvent(.startTimerReleased) == nil)
+        harness.timerFakes.clock.time += 0.25
+        #expect(harness.model.handleHotkeyEvent(.startTimer) == nil)
+        #expect(harness.model.handleHotkeyEvent(.startTimerReleased) == nil)
+        #expect(!harness.model.isOn(.timerOverlay))
+    }
+
+    /// With Advanced's hold, the press that silences has already switched the tool off, so letting the key go a
+    /// second later neither switches it back on nor says anything more.
+    @Test func holdingTheKeyThatSilencedLeavesTheToolOff() {
+        let harness = silencing(.ringing, gesture: .hold)
+        harness.model.handleHotkeyPress([.startTimer])
+        #expect(!harness.model.isOn(.timerOverlay) && harness.hotkeyHUD.lines == ["Timer Overlay off"])
+        harness.timerFakes.clock.time += 1.5
+        harness.model.handleHotkeyPress([.startTimerReleased])
+        #expect(!harness.model.isOn(.timerOverlay) && !harness.timer.isEnabled && harness.timer.phase == .idle)
+        #expect(harness.timerFakes.presenter.popIns.count == 1)
+        #expect(harness.hotkeyHUD.lines == ["Timer Overlay off"], "the release adds nothing")
+    }
+
     @Test func pausingWithTheKeyKeepsTheToolOn() {
         let harness = Harness()
         harness.timer.settings.pressWhileCounting = .pauseOrResume
