@@ -2,11 +2,11 @@ import Foundation
 import Testing
 @testable import TimerOverlay
 
-// The note under Advanced ▸ Cancel gesture ▸ None reads "The key will never turn off the Timer Overlay. Use its
-// switch." (spec 5.6.2, revision 42). These tests pin that no gesture switches Timer Overlay off with None, whatever
-// the press table does with each press. One single press does: since revision 67, a press while the alarm rings or
-// lingers with "A press while ringing" set to "Silences and hides" switches the tool off, gesture or not, and the
-// note doesn't say so yet.
+// The note under Advanced ▸ Cancel gesture ▸ None reads "The key won’t turn off the Timer Overlay unless a press
+// silences the alarm. Use its switch." (spec 5.6.2, revision 68). These tests pin that no gesture switches Timer
+// Overlay off with None, whatever the press table does with each press. The note's exception is a single press: with
+// "A press while ringing" set to "Silences and hides", a press while the alarm rings or lingers switches the tool
+// off, gesture or not (revision 67).
 
 /// Key inputs, as (input, seconds): a double press and a third quick press, a hold at the 1 s limit and well past it,
 /// then a long hold followed by another double press and hold.

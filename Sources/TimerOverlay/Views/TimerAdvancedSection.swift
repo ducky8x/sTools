@@ -195,9 +195,12 @@ struct TimerAdvancedSection: View {
     }
 
     /// What the cancel gesture does, under its row (spec 5.6.2): either gesture switches Timer Overlay off, and the
-    /// next press switches it back on. With None no gesture does, so the line says the key never will and points to the
-    /// switch. Wording from ducky's M9 review; None's is worded apart, at ducky's request, because the reviewed line
-    /// ("Only the double click gesture will turn off the Timer Overlay.") isn't true there (revision 42).
+    /// next press switches it back on. With None no gesture does, so the line points to the switch. Wording from
+    /// ducky's M9 review; None's is worded apart, at ducky's request, because the reviewed line ("Only the double click
+    /// gesture will turn off the Timer Overlay.") isn't true there (revision 42). None's line names silencing because
+    /// one press still switches the tool off: when "A press while ringing" is "Silences and hides", the press that
+    /// silences the alarm does (revision 67). The line stays the same whatever that choice is (ducky's wording,
+    /// revision 68).
     static func cancelGestureNote(for gesture: TimerOverlaySettings.CancelGesture) -> String {
         let back = "Press again to turn it on and start."
         return switch gesture {
@@ -206,7 +209,7 @@ struct TimerAdvancedSection: View {
         case .hold:
             "Hold the key for \(points(PressPolicy.holdDuration)) s to switch Timer Overlay off. \(back)"
         case .off:
-            "The key will never turn off the Timer Overlay. Use its switch."
+            "The key won\u{2019}t turn off the Timer Overlay unless a press silences the alarm. Use its switch."
         }
     }
 
