@@ -111,6 +111,17 @@ private final class Keyboard {
         registrar.deliver({ registrar.onRelease?($0) }, DuckysFiles.startTimerKey, at: uptimeZero + time)
     }
 
+    /// Lets the test reach second `time`: the timer's wakes due by then fire in time order, both clocks moving to each.
+    func wait(until time: TimeInterval) {
+        let scheduler = harness.timerFakes.scheduler
+        while let next = scheduler.pending.min(by: { $0.due < $1.due }), next.due <= timerZero + time {
+            next.isCancelled = true
+            moveClocks(to: next.due - timerZero)
+            next.action()
+        }
+        moveClocks(to: time)
+    }
+
     private func moveClocks(to time: TimeInterval) {
         uptime.now = uptimeZero + time
         harness.timerFakes.clock.time = timerZero + time
@@ -212,6 +223,31 @@ struct TimerKeyTapTests {
         keys.tap(at: 6)
         keys.tap(at: 6.25)
         #expect(!keys.model.isOn(.timerOverlay) && keys.hudLines == ["Timer Overlay off"])
+    }
+
+    /// Advanced's "Silences and hides" (revision 67): a tap while the alarm rings silences it and switches the tool
+    /// off, and says so. A quick second tap is the double tap's second half: the tool stays off and nothing is said. A
+    /// quick third tap switches it back on with a fresh countdown.
+    @Test func aTapThatSilencesSwitchesTheToolOffAndAQuickSecondTapLeavesItOff() throws {
+        let keys = try Keyboard()
+        keys.timer.settings.pressWhileRinging = .silenceAndHide
+        keys.timer.settings.durationSeconds = 5
+        keys.tap(at: 0)
+        keys.wait(until: 6)
+        #expect(keys.timer.phase == .ringing && keys.model.isOn(.timerOverlay))
+
+        keys.tap(at: 6)
+        #expect(!keys.model.isOn(.timerOverlay) && !keys.timer.isEnabled && keys.timer.phase == .idle)
+        #expect(keys.model.status(of: .timerOverlay) == .off)
+        #expect(keys.hudLines == ["Timer Overlay off"])
+
+        keys.tap(at: 6.25)
+        #expect(!keys.model.isOn(.timerOverlay) && !keys.timer.isEnabled && keys.timer.phase == .idle)
+        #expect(keys.starts == 1 && keys.hudLines == ["Timer Overlay off"])
+
+        keys.tap(at: 6.5)
+        #expect(keys.model.isOn(.timerOverlay) && keys.timer.phase == .counting && keys.timer.content.text == "00:05")
+        #expect(keys.starts == 2 && keys.hudLines == ["Timer Overlay off"])
     }
 
     /// Advanced's hold: holding the key a second switches the tool off and says so; a tap only starts.

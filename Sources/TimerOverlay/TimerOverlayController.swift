@@ -5,12 +5,13 @@ import STPlatform
 
 /// What a Start-timer press did (spec 5.6.2), so the app can confirm it (plan decision 5).
 public enum TimerPressResult: Equatable, Sendable {
-    /// It started, restarted, paused, resumed or cancelled the timer, or silenced the alarm; or, as the second press
-    /// of a double press, it cancelled and switched the tool off. The overlay itself confirms it, so the app adds no
-    /// sound or line, except for the switch-off: over the game the overlay leaving looks like a cancel, so the app
-    /// says "Timer Overlay off", as for any hotkey switch.
+    /// It started, restarted, paused, resumed or cancelled the timer; or it switched the tool off, as the second press
+    /// of a double press or as a press that silenced the alarm (Advanced). The overlay itself confirms it, so the app
+    /// adds no sound or line, except for a switch-off: over the game the overlay leaving looks like a cancel, so the
+    /// app says "Timer Overlay off", as for any hotkey switch.
     case acted
-    /// The press table says to ignore it here (as Advanced's "is ignored" does).
+    /// The press table says to ignore it here (as Advanced's "is ignored" does), or it was the second press of a
+    /// double press whose first press had already switched the tool off.
     case ignored
     /// The tool is off and couldn't be switched on: Accessibility is missing (R10). The app shows
     /// "Timer Overlay needs Accessibility" without the seal.
@@ -21,10 +22,11 @@ public enum TimerPressResult: Equatable, Sendable {
 /// rings and leaves by itself, and then switches the tool off.
 ///
 /// - Presses become actions through `PressPolicy`, stamped with the controller's own clock at the moment their key
-///   moved, which the app passes as how long ago that was. The cancel gestures switch the tool off themselves
-///   (`setEnabled(false)`); the app reads `isEnabled` after each press and release, so its switch follows. A run that
-///   ends by itself switches off through `requestDisable` instead, since no key event follows it. Every press, every
-///   release that acts and every run that ends by itself is logged at the notice level for Copy Diagnostics.
+///   moved, which the app passes as how long ago that was. The cancel gestures and a press that silences the alarm
+///   switch the tool off themselves; the app reads `isEnabled` after each press and release, so its switch follows.
+///   A run that ends by itself switches off through `requestDisable` instead, since no key event follows it. Every
+///   press, every release that acts and every run that ends by itself is logged at the notice level for Copy
+///   Diagnostics.
 /// - `TimerEngine` runs the countdown; the presenter shows the overlay, the alarm player rings it and plays the cues
 ///   before zero, at `AlarmSchedule`'s times.
 /// - Motion: every pop-in, pop-out and pulse hands the presenter `theme.reduceMotion` as it starts, so Reduce
@@ -189,15 +191,28 @@ public final class TimerOverlayController: ToolController {
 
     // MARK: - The switch
 
-    /// Off cancels a run, hides the overlay and ends placement mode.
+    /// Off cancels a run, hides the overlay and ends placement mode. It also forgets the last press, so a key pressed
+    /// after the switch is a first press.
     public func setEnabled(_ enabled: Bool) {
+        guard enabled != isEnabled else { return }
+        if !enabled { policy.reset() }
+        applySwitch(enabled)
+    }
+
+    /// The key switched the tool off: a cancel gesture, or a press that silenced the alarm. It's `setEnabled(false)`
+    /// without forgetting that press, so a quick press after it can still be the double press's second half, which
+    /// leaves the tool off (spec 5.6.2). The app's switch follows once the press is handled.
+    private func switchOffByKey() {
+        applySwitch(false)
+    }
+
+    private func applySwitch(_ enabled: Bool) {
         guard enabled != isEnabled else { return }
         isEnabled = enabled
         if enabled {
             if settings.placementModeEnabled { placementSettingChanged() }
             updateOverlay()
         } else {
-            policy.reset()
             if settings.placementModeEnabled {
                 settings.placementModeEnabled = false
                 services.settings.save(settings)
@@ -281,7 +296,9 @@ public final class TimerOverlayController: ToolController {
     /// it). Stamped with the controller's clock at that moment, so the 0.4 s double press and the 1 s hold are measured
     /// between the keys themselves, on the countdown's own clock. While the tool is off it asks `requestEnable` first,
     /// as the key turns the tool on (spec 5.6.2). A double press cancels and switches the tool off, so the next press
-    /// switches it back on and starts a countdown.
+    /// switches it back on and starts a countdown. A press that silences the alarm switches the tool off too (Advanced),
+    /// and then a quick press after it is the double press's second half: the tool is already off, so that press
+    /// leaves it off and is ignored.
     @discardableResult
     public func press(secondsAgo: TimeInterval = 0) -> TimerPressResult {
         let age = max(0, secondsAgo)
@@ -289,6 +306,13 @@ public final class TimerOverlayController: ToolController {
         let wasOn = isEnabled
         let phaseBefore = phase
         let gap = policy.lastPress.map { at - $0 }
+        if !isEnabled, policy.isSecondOfDoublePress(at: at, settings: settings) {
+            // Asked before switching on, so the double press never switches the tool back on. Handling the press
+            // records it, so the press after it is a first press again.
+            let action = policy.handle(.press, at: at, phase: phase, settings: settings)
+            logKey("pressed", age: age, gap: gap, phase: phaseBefore, action: action, acted: false, wasOn: false)
+            return .ignored
+        }
         guard isEnabled || switchOn() else {
             log.notice("Start timer pressed: Timer Overlay is off and couldn't switch on")
             return .couldNotStart
@@ -331,14 +355,20 @@ public final class TimerOverlayController: ToolController {
         case .start, .restart, .newCountdown:
             // The key always means the saved duration, even during Test (plan decision 9).
             return beginRun(isTest: false)
-        case .cancel, .silenceAndHide:
+        case .cancel:
             guard phase != .idle, phase != .leaving else { return false }
             endRun()
             return true
+        case .silenceAndHide:
+            // Silencing switches the tool off, as letting the alarm run out does (spec 5.6.2, revision 67).
+            guard phase != .idle, phase != .leaving else { return false }
+            switchOffByKey()
+            return true
         case .cancelAndSwitchOff:
             // The cancel gestures (spec 5.6.2): switching off ends the run, so the overlay leaves the way it came and
-            // the alarm stops. The press that follows switches the tool back on.
-            setEnabled(false)
+            // the alarm stops. The press that follows switches the tool back on: it can't make a double press with
+            // this one.
+            switchOffByKey()
             return true
         case .pause:
             return pauseRun()

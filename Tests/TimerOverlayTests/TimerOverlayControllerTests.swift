@@ -222,8 +222,9 @@ struct TimerOverlayControllerTests {
             #expect(!rig.alarm.isPlaying && rig.presenter.popIns.count == 1, "the same plate counts again")
         case .silenceAndHide:
             #expect(result == .acted && rig.controller.phase == .idle && !rig.alarm.isPlaying)
-            #expect(rig.isQuiet)
-            #expect(rig.controller.isEnabled && rig.controller.status == .ready, "a single press that silences keeps the tool on")
+            #expect(rig.isQuiet && rig.presenter.popOuts.count == 1)
+            #expect(!rig.controller.isEnabled && rig.controller.status == .off,
+                    "a single press that silences switches the tool off, as letting the alarm run out does")
         case .ignore:
             #expect(result == .ignored && rig.controller.phase == (lingering ? .lingering : .ringing))
             #expect(rig.alarm.isPlaying == !lingering)
@@ -491,14 +492,155 @@ struct TimerOverlayControllerTests {
     }
 
     @Test func aDoublePressSwitchesOffEvenWithNothingLeftToCancel() {
-        let rig = TimerRig { $0.durationSeconds = 2; $0.pressWhileRinging = .silenceAndHide }
+        let rig = TimerRig { $0.pressWhileCounting = .cancel }
         rig.controller.setEnabled(true)
         rig.controller.start()
-        rig.runToZero()
+        rig.scheduler.advance(by: 3)
         #expect(rig.controller.press() == .acted && rig.controller.phase == .idle && rig.controller.isEnabled)
         rig.clock.time += 0.3
         #expect(rig.controller.press() == .acted)
         #expect(!rig.controller.isEnabled && rig.controller.status == .off && rig.isQuiet)
+    }
+
+    // MARK: - A press that silences switches the tool off (spec 5.6.2, revision 67)
+
+    /// ducky, 2026-11-13: with Advanced's "Silences and hides", a press while the alarm rings or lingers stops it, the
+    /// overlay leaves the way it came and the tool switches off, so letting the alarm run out and silencing it end the
+    /// same way. It switches off as the double press does, by itself: the app's switch follows once the press is
+    /// handled, and the app confirms it, so `requestDisable` isn't asked.
+    @Test(arguments: [TimerPhase.ringing, .lingering])
+    func aPressThatSilencesSwitchesTheToolOff(from phase: TimerPhase) {
+        let rig = offRig { $0.durationSeconds = 10; $0.pressWhileRinging = .silenceAndHide }
+        rig.presenter.exitsAtOnce = false
+        var disables = 0
+        rig.controller.requestDisable = { disables += 1 }
+        rig.controller.setEnabled(true)
+        reach(phase, on: rig)
+        #expect(rig.controller.phase == phase && rig.presenter.isShowing)
+
+        #expect(rig.controller.press() == .acted)
+        #expect(!rig.controller.isEnabled && rig.controller.status == .off)
+        #expect(rig.controller.phase == .leaving && rig.presenter.isLeaving, "the overlay leaves the way it came")
+        #expect(!rig.alarm.isPlaying && rig.alarm.stops == (phase == .ringing ? 1 : 0))
+        rig.presenter.finishExit()
+        #expect(rig.controller.phase == .idle && rig.presenter.popOuts.count == 1 && rig.isQuiet)
+        #expect(!rig.controller.isEnabled && disables == 0)
+    }
+
+    /// The press after the one that silenced, within 0.4 s, is the double press's second half: the tool is already
+    /// off, so it does nothing and stays off. The press after that is a first press again, so a quick third press
+    /// switches the tool on and starts a countdown, as after any double press.
+    @Test(arguments: [TimerPhase.ringing, .lingering])
+    func aQuickPressAfterSilencingLeavesTheToolOff(from phase: TimerPhase) {
+        let rig = offRig { $0.durationSeconds = 10; $0.pressWhileRinging = .silenceAndHide }
+        rig.presenter.exitsAtOnce = false
+        var asked = 0
+        rig.controller.requestEnable = { [weak controller = rig.controller] in
+            asked += 1
+            controller?.setEnabled(true)
+            return true
+        }
+        rig.controller.setEnabled(true)
+        reach(phase, on: rig)
+        #expect(rig.controller.press() == .acted && !rig.controller.isEnabled)
+        let popIns = rig.presenter.popIns.count
+        let announcements = rig.announcer.announcements.count
+
+        rig.clock.time += 0.3
+        #expect(rig.controller.press() == .ignored)
+        #expect(asked == 0, "it never asks to switch the tool on")
+        #expect(!rig.controller.isEnabled && rig.controller.status == .off)
+        #expect(rig.controller.phase == .leaving, "the exit plays on")
+        #expect(rig.presenter.popIns.count == popIns && rig.announcer.announcements.count == announcements)
+        rig.presenter.finishExit()
+        #expect(rig.controller.phase == .idle && rig.isQuiet)
+
+        rig.clock.time += 0.3
+        #expect(rig.controller.press() == .acted)
+        #expect(asked == 1 && rig.controller.isEnabled && rig.controller.phase == .counting)
+        #expect(rig.controller.content.text == "00:10" && rig.presenter.popIns.count == popIns + 1)
+
+        rig.clock.time += 0.3
+        #expect(rig.controller.press() == .acted, "the press after a fresh start can make a new double press")
+        #expect(!rig.controller.isEnabled)
+    }
+
+    /// The second half is over once its 0.4 s are: a later press switches the tool on and starts a countdown.
+    @Test func aPressAfterTheWindowSwitchesOnAndStarts() {
+        let rig = offRig { $0.durationSeconds = 10; $0.pressWhileRinging = .silenceAndHide }
+        rig.controller.setEnabled(true)
+        reach(.ringing, on: rig)
+        rig.controller.press()
+        #expect(!rig.controller.isEnabled)
+        rig.clock.time += 0.41
+        #expect(rig.controller.press() == .acted)
+        #expect(rig.controller.isEnabled && rig.controller.phase == .counting && rig.controller.content.text == "00:10")
+    }
+
+    /// With the hold or no gesture there is no double press, so a quick press after silencing is an ordinary press of
+    /// a tool that is off: it switches the tool on and starts a countdown.
+    @Test(arguments: [TimerOverlaySettings.CancelGesture.hold, .off])
+    func withoutTheDoublePressAQuickPressAfterSilencingStarts(gesture: TimerOverlaySettings.CancelGesture) {
+        let rig = offRig {
+            $0.durationSeconds = 10
+            $0.pressWhileRinging = .silenceAndHide
+            $0.cancelGesture = gesture
+        }
+        rig.controller.setEnabled(true)
+        reach(.ringing, on: rig)
+        #expect(rig.controller.press() == .acted && !rig.controller.isEnabled)
+        rig.clock.time += 0.2
+        #expect(rig.controller.press() == .acted)
+        #expect(rig.controller.isEnabled && rig.controller.phase == .counting && rig.controller.content.text == "00:10")
+    }
+
+    /// With the hold gesture, the press that silences has already switched the tool off, so letting the key go a
+    /// second or more later does nothing: nothing switches back on or starts.
+    @Test(arguments: [TimerPhase.ringing, .lingering])
+    func holdingTheKeyThatSilencedLeavesTheToolOff(from phase: TimerPhase) {
+        let rig = offRig {
+            $0.durationSeconds = 10
+            $0.pressWhileRinging = .silenceAndHide
+            $0.cancelGesture = .hold
+        }
+        var asked = 0
+        rig.controller.requestEnable = {
+            asked += 1
+            return true
+        }
+        rig.controller.setEnabled(true)
+        reach(phase, on: rig)
+        let popIns = rig.presenter.popIns.count
+        #expect(rig.controller.press() == .acted && !rig.controller.isEnabled)
+        rig.clock.time += 1.5
+        rig.controller.release()
+        #expect(!rig.controller.isEnabled && rig.controller.status == .off && rig.isQuiet)
+        #expect(asked == 0 && rig.presenter.popIns.count == popIns)
+    }
+
+    /// The switch isn't a key: switched on right after the press that silenced, the tool counts down, and a key
+    /// pressed then is a first press, which restarts the countdown and keeps the tool on.
+    @Test func theSwitchRightAfterSilencingMakesTheNextPressAFirstPress() {
+        let rig = offRig { $0.durationSeconds = 10; $0.pressWhileRinging = .silenceAndHide }
+        rig.controller.setEnabled(true)
+        reach(.ringing, on: rig)
+        rig.controller.press()
+        #expect(!rig.controller.isEnabled)
+        rig.clock.time += 0.1
+        #expect(rig.controller.startFromSwitch())
+        rig.clock.time += 0.1
+        #expect(rig.controller.press() == .acted)
+        #expect(rig.controller.isEnabled && rig.controller.phase == .counting)
+    }
+
+    /// Cancels (Advanced) still keeps the tool on: only the press that silences switches it off.
+    @Test func aPressThatCancelsStillKeepsTheToolOn() {
+        let rig = TimerRig { $0.pressWhileCounting = .cancel; $0.pressWhileRinging = .silenceAndHide }
+        rig.controller.setEnabled(true)
+        rig.controller.press()
+        rig.clock.time += 2
+        #expect(rig.controller.press() == .acted && rig.controller.phase == .idle)
+        #expect(rig.controller.isEnabled && rig.controller.status == .ready)
     }
 
     @Test func pausingKeepsTheToolOn() {

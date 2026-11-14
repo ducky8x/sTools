@@ -118,6 +118,7 @@ public struct TimerOverlaySettings: SettingsDocument {
     public enum PressWhileRinging: String, Codable, CaseIterable, Sendable {
         /// Stops the alarm and starts a new countdown.
         case newCountdown
+        /// Stops the alarm, hides the overlay and switches Timer Overlay off (spec 5.6.2, revision 67).
         case silenceAndHide
         case ignore
     }
