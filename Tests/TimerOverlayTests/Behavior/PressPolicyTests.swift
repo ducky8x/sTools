@@ -65,9 +65,10 @@ struct PressPolicyTests {
         #expect(PressPolicy.action(forPressIn: .lingering, settings: chosen) == action)
     }
 
-    @Test func thePressTableNeverSwitchesTheToolOff() {
-        // Only the cancel gestures switch it off. Pausing keeps it on, and so do the single presses that cancel or
-        // silence (Advanced).
+    @Test func thePressTableNeverAsksForTheGesturesSwitchOff() {
+        // A lone press never cancels and switches off the way the gestures do. Of the single presses, only Silences
+        // and hides switches the tool off (spec 5.6.2, revision 67), which its own action says; pausing and Cancels
+        // keep it on.
         for counting in TimerOverlaySettings.PressWhileCounting.allCases {
             for ringing in TimerOverlaySettings.PressWhileRinging.allCases {
                 for phase in TimerPhase.allCases {
@@ -122,17 +123,56 @@ struct PressPolicyTests {
     }
 
     @Test func aQuickSecondPressSwitchesOffEvenWithNothingLeftToCancel() {
-        // The first press silenced and hid the alarm, so only the switch is left to turn off.
-        var policy = PressPolicy()
-        let quiet = settings(ringing: .silenceAndHide)
-        #expect(send(&policy, .press, at: 0, in: .ringing, quiet) == .silenceAndHide)
-        #expect(send(&policy, .press, at: 0.3, in: .leaving, quiet) == .cancelAndSwitchOff)
-        #expect(send(&policy, .press, at: 0.6, in: .leaving, quiet) == .start)
-        // The same after a press that cancelled (Advanced).
+        // The first press cancelled (Advanced), so only the switch is left to turn off.
         var cancelling = PressPolicy()
         let cancels = settings(counting: .cancel)
         #expect(send(&cancelling, .press, at: 10, in: .counting, cancels) == .cancel)
         #expect(send(&cancelling, .press, at: 10.2, in: .leaving, cancels) == .cancelAndSwitchOff)
+        #expect(send(&cancelling, .press, at: 10.4, in: .leaving, cancels) == .start)
+    }
+
+    // MARK: A press that silences (revision 67)
+
+    /// The press that silences switches the tool off itself, so the quick press after it is the double press's
+    /// second half with nothing left to do; the press after that is a first press again.
+    @Test func aQuickPressAfterOneThatSilencesEndsTheDoublePress() {
+        var policy = PressPolicy()
+        let quiet = settings(ringing: .silenceAndHide)
+        #expect(send(&policy, .press, at: 0, in: .ringing, quiet) == .silenceAndHide)
+        #expect(policy.isSecondOfDoublePress(at: 0.3, settings: quiet))
+        #expect(policy.isSecondOfDoublePress(at: 0.4, settings: quiet), "the window is 0.4 s")
+        #expect(!policy.isSecondOfDoublePress(at: 0.41, settings: quiet))
+        #expect(send(&policy, .press, at: 0.3, in: .leaving, quiet) == .cancelAndSwitchOff)
+        #expect(!policy.isSecondOfDoublePress(at: 0.6, settings: quiet), "a third quick press is a first press again")
+        #expect(send(&policy, .press, at: 0.6, in: .leaving, quiet) == .start)
+        #expect(policy.isSecondOfDoublePress(at: 0.8, settings: quiet), "and it can begin a new double press")
+    }
+
+    @Test(arguments: [TimerOverlaySettings.CancelGesture.hold, .off])
+    func withoutTheDoublePressNoPressAfterSilencingIsASecondHalf(gesture: TimerOverlaySettings.CancelGesture) {
+        var policy = PressPolicy()
+        let quiet = settings(ringing: .silenceAndHide, gesture: gesture)
+        #expect(send(&policy, .press, at: 0, in: .ringing, quiet) == .silenceAndHide)
+        #expect(!policy.isSecondOfDoublePress(at: 0.2, settings: quiet))
+        #expect(send(&policy, .press, at: 0.2, in: .leaving, quiet) == .start)
+    }
+
+    /// Asking tells, before the press is handled, whether the press will be the second of a double press: the same
+    /// answer `handle` gives, and asking changes nothing.
+    @Test(arguments: [TimerOverlaySettings.CancelGesture.doublePress, .hold, .off])
+    func askingAgreesWithWhatThePressDoes(gesture: TimerOverlaySettings.CancelGesture) {
+        var policy = PressPolicy()
+        let quiet = settings(ringing: .silenceAndHide, gesture: gesture)
+        let presses: [(TimeInterval, TimerPhase)] = [
+            (0, .idle), (0.2, .counting), (0.4, .leaving), (0.5, .counting), (3, .ringing), (3.3, .leaving),
+            (3.6, .leaving), (3.9, .counting), (10, .lingering), (10.5, .leaving),
+        ]
+        for (time, phase) in presses {
+            let before = policy
+            let asked = policy.isSecondOfDoublePress(at: time, settings: quiet)
+            #expect(policy == before)
+            #expect(asked == (send(&policy, .press, at: time, in: phase, quiet) == .cancelAndSwitchOff), "\(time)")
+        }
     }
 
     @Test func aDoublePressSwitchesOffEvenWhenOnePressIsIgnored() {
@@ -190,10 +230,10 @@ struct PressPolicyTests {
     }
 
     @Test func aHoldSwitchesOffEvenWithNothingLeftToCancel() {
-        // The press silenced and hid the alarm, so only the switch is left to turn off, as with the double press.
+        // The press cancelled (Advanced), so only the switch is left to turn off, as with the double press.
         var policy = PressPolicy()
-        let hold = settings(ringing: .silenceAndHide, gesture: .hold)
-        #expect(send(&policy, .press, at: 0, in: .ringing, hold) == .silenceAndHide)
+        let hold = settings(counting: .cancel, gesture: .hold)
+        #expect(send(&policy, .press, at: 0, in: .counting, hold) == .cancel)
         #expect(send(&policy, .release, at: 1.5, in: .idle, hold) == .cancelAndSwitchOff)
     }
 

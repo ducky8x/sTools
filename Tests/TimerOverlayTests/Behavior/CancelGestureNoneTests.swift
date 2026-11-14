@@ -3,8 +3,10 @@ import Testing
 @testable import TimerOverlay
 
 // The note under Advanced ▸ Cancel gesture ▸ None reads "The key will never turn off the Timer Overlay. Use its
-// switch." (spec 5.6.2, revision 42). These tests pin that it's true: with no cancel gesture, nothing the Start-timer
-// key does leaves Timer Overlay switched off, whatever the press table does with each press.
+// switch." (spec 5.6.2, revision 42). These tests pin that no gesture switches Timer Overlay off with None, whatever
+// the press table does with each press. One single press does: since revision 67, a press while the alarm rings or
+// lingers with "A press while ringing" set to "Silences and hides" switches the tool off, gesture or not, and the
+// note doesn't say so yet.
 
 /// Key inputs, as (input, seconds): a double press and a third quick press, a hold at the 1 s limit and well past it,
 /// then a long hold followed by another double press and hold.
@@ -69,6 +71,7 @@ struct CancelGestureNoneTests {
     }
 
     /// Through the controller, from every phase a gesture can come in: Timer Overlay stays on and keeps its status.
+    /// A press while ringing starts a new countdown here (the default), so no single press switches the tool off.
     @MainActor
     @Test(arguments: [TimerPhase.counting, .paused, .ringing, .lingering])
     func aDoublePressAndAHoldLeaveTheToolOn(phase: TimerPhase) {
