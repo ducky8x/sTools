@@ -271,15 +271,16 @@ struct TimerPageRenderTests {
     }
 
     /// Advanced ▸ Cancel gesture says what the gesture does now: it switches Timer Overlay off, and the next press
-    /// brings it back (spec 5.6.2). With None no gesture does, so the note says the key never will and sends the owner
-    /// to the switch (revision 42; `CancelGestureNoneTests` pins that this is true).
+    /// brings it back (spec 5.6.2). With None no gesture does, so the note sends the owner to the switch, and it names
+    /// the one press that still switches the tool off, the one that silences the alarm (revisions 42 and 68;
+    /// `CancelGestureNoneTests` pins that no gesture does).
     @Test func theCancelGestureSaysWhatItDoes() {
         #expect(TimerAdvancedSection.cancelGestureNote(for: .doublePress)
             == "Press twice within 0.4 s to switch Timer Overlay off. Press again to turn it on and start.")
         #expect(TimerAdvancedSection.cancelGestureNote(for: .hold)
             == "Hold the key for 1 s to switch Timer Overlay off. Press again to turn it on and start.")
         #expect(TimerAdvancedSection.cancelGestureNote(for: .off)
-            == "The key will never turn off the Timer Overlay. Use its switch.")
+            == "The key won\u{2019}t turn off the Timer Overlay unless a press silences the alarm. Use its switch.")
     }
 
     // MARK: Motion
